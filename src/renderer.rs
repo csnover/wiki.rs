@@ -34,7 +34,7 @@ impl ArticleRenderer {
 
     fn render_nodes(&mut self, nodes: &Vec<Node>) {
         for node in nodes {
-            self.render_node(&node);
+            self.render_node(node);
         }
     }
 
@@ -76,8 +76,7 @@ impl ArticleRenderer {
             }
             Node::Category { target, .. } => {
                 self.append(&format!(
-                    r#"<a class="category" href="/article/{}">{}</a>"#,
-                    target, target
+                    r#"<a class="category" href="/article/{target}">{target}</a>"#,
                 ));
             }
             Node::CharacterEntity { character, .. } => {
@@ -91,13 +90,13 @@ impl ArticleRenderer {
                 self.close_tag("dl");
             }
             Node::StartTag { name, .. } => {
-                self.open_tag(&name);
+                self.open_tag(name);
             }
             Node::EndTag { name, .. } => {
-                self.close_tag(&name);
+                self.close_tag(name);
             }
             Node::Heading { level, nodes, .. } => {
-                let tag_name = format!("h{}", level);
+                let tag_name = format!("h{level}");
 
                 self.open_tag(&tag_name);
                 self.render_nodes(nodes);
@@ -108,7 +107,7 @@ impl ArticleRenderer {
             }
             Node::Image { target, text, .. } => {
                 self.open_tag("figure");
-                self.append(&format!(r#"<img src="{}"/>"#, target));
+                self.append(&format!(r#"<img src="{target}"/>"#));
 
                 self.open_tag("figcaption");
                 self.render_nodes(text);
@@ -116,12 +115,12 @@ impl ArticleRenderer {
                 self.close_tag("figure");
             }
             Node::Link { target, text, .. } => {
-                self.append(&format!("<a href=\"/article/{}\">", target));
+                self.append(&format!("<a href=\"/article/{target}\">"));
                 self.render_nodes(text);
                 self.append("</a>");
             }
             Node::Redirect { target, .. } => {
-                self.append(&format!("<a href=\"/article/{}\">Redirect</a>", target));
+                self.append(&format!("<a href=\"/article/{target}\">Redirect</a>"));
             }
             Node::ExternalLink { nodes, .. } => {
                 self.append(r##"<a href="#">"##);
@@ -188,9 +187,9 @@ impl ArticleRenderer {
                 self.append("</tbody></table>");
             }
             Node::Tag { name, nodes, .. } => {
-                self.open_tag(&name);
+                self.open_tag(name);
                 self.render_nodes(nodes);
-                self.close_tag(&name);
+                self.close_tag(name);
             }
             Node::Text { value, .. } => {
                 self.append(value);

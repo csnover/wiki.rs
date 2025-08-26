@@ -1,77 +1,77 @@
 // #![windows_subsystem = "windows"]
 
-use std::time::Instant;
-
-use anyhow::bail;
-use thiserror::Error;
-use url::Url;
-use urlencoding::decode;
-use wry::{
-    application::{
-        event::{Event, StartCause, WindowEvent},
-        event_loop::{ControlFlow, EventLoop},
-        window::WindowBuilder,
-    },
-    http::ResponseBuilder,
-    webview::WebViewBuilder,
-};
+use std::{sync::Arc, time::Instant};
 
 use crate::{
     pages::{render_article_page, render_results_page},
     resource::ResourceManager,
+    wiki::{article::ArticleDatabase, index::Index}
 };
+use axum::{extract::{Path, Query, State}, http::StatusCode, response::{Html, Response}, routing::get, Router};
+use tokio::net::TcpListener;
 
 mod pages;
 mod renderer;
 mod resource;
 mod wiki;
 
-#[derive(Debug)]
-enum ParsedUrl {
-    Resource(String),
-    Article(String),
-    Search(String),
+struct WikiState {
+    index: Index,
+    article_db: ArticleDatabase,
+    resources: ResourceManager,
 }
 
-#[derive(Error, Debug)]
-pub enum UrlError {
-    #[error("url namespace not found")]
-    UnknownNamespace,
+type AppState = Arc<WikiState>;
 
-    #[error("url path is incomplete")]
-    IncompletePath,
-
-    #[error("missing query parameter")]
-    MissingParameter,
+async fn get_resource(State(state): State<AppState>, Path(name): Path<String>) -> Result<Response, StatusCode> {
+    state.resources.find_resource(&name).map(Into::into).ok_or(StatusCode::NOT_FOUND)
 }
 
-fn parse_url(url: &str) -> anyhow::Result<ParsedUrl> {
-    let url = Url::parse(url)?;
-    let mut path = url.path_segments().unwrap();
+async fn get_article(State(state): State<AppState>, Path(name): Path<String>) -> Result<Html<String>, StatusCode> {
+    println!("Loading article {name}");
+    let time = Instant::now();
 
-    let mut next_path_part = move || return path.next().ok_or(UrlError::IncompletePath);
-    let namespace = decode(next_path_part()?)?;
+    let name_cleaned = name.replace("_", " ");
+    let article = state.index.find_article_exact(&name_cleaned);
+    if article.is_none() {
+        return Err(axum::http::StatusCode::NOT_FOUND);
+    }
 
-    let mut next_path_part_string = || anyhow::Ok(decode(next_path_part()?)?.to_string());
-    let query = url.query_pairs().next();
+    let article = article.unwrap();
+    println!("Located article in {:.2?}", time.elapsed());
 
-    Ok(match &*namespace {
-        "res" => ParsedUrl::Resource(next_path_part_string()?),
-        "article" => ParsedUrl::Article(next_path_part_string()?),
-        "search" => ParsedUrl::Search(query.ok_or(UrlError::MissingParameter)?.1.to_string()),
-        _ => bail!(UrlError::UnknownNamespace),
-    })
+    let time = Instant::now();
+    let article_data = state.article_db.get_article(article).unwrap();
+    println!("Extracted article in {:.2?}", time.elapsed());
+
+    let time = Instant::now();
+    let article_html = render_article_page(&state.resources, &article_data);
+    println!("Rendered article in {:.2?}", time.elapsed());
+
+    Ok(article_html.into())
 }
 
-fn main() -> anyhow::Result<()> {
+#[derive(serde::Deserialize)]
+struct SearchQuery { q: String }
+
+async fn search(State(state): State<AppState>, Query(SearchQuery { q: query }): Query<SearchQuery>) -> Html<String> {
+    let results = state.index.find_article(&query);
+    render_results_page(&state.resources, &query, &results).into()
+}
+
+async fn index_page() -> Html<String> {
+    Html("Hello".into())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     println!("Starting up wiki.rs ...");
 
-    dotenv::dotenv()?;
     let index_path = std::env::var("WIKI_INDEX_FILE")?;
     let articles_path = std::env::var("WIKI_ARTICLE_DB")?;
 
-    let index = wiki::index::Index::from_file(&index_path)?;
-    let article_db = wiki::article::ArticleDatabase::from_file(&articles_path)?;
+    let index = Index::from_file(&index_path)?;
+    let article_db = ArticleDatabase::from_file(&articles_path)?;
 
     println!("Loaded {} articles from index", index.size());
 
@@ -80,81 +80,24 @@ fn main() -> anyhow::Result<()> {
     resources.register_template("search.html", include_bytes!("../res/search.html"));
     resources.register_resource("styles.css", include_bytes!("../res/styles.css"));
 
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title("wiki.rs")
-        .build(&event_loop)?;
-
-    let mut _web_view = WebViewBuilder::new(window)?
-        .with_custom_protocol("local".into(), move |request| {
-            println!("Handling local request for {}", request.uri());
-            let url = parse_url(request.uri());
-
-            if let Ok(url) = url {
-                match url {
-                    ParsedUrl::Article(name) => {
-                        println!("Loading article {}", name);
-                        let time = Instant::now();
-
-                        let name_cleaned = name.replace("_", " ");
-                        let article = index.find_article_exact(&name_cleaned);
-                        if article.is_none() {
-                            return ResponseBuilder::new()
-                                .mimetype("text/plain")
-                                .body("not found".to_string().into_bytes());
-                        }
-
-                        let article = article.unwrap();
-                        println!("Located article in {:.2?}", time.elapsed());
-
-                        let time = Instant::now();
-                        let article_data = article_db.get_article(&article).unwrap();
-                        println!("Extracted article in {:.2?}", time.elapsed());
-
-                        let time = Instant::now();
-                        let article_html = render_article_page(&resources, &article_data);
-                        println!("Rendered article in {:.2?}", time.elapsed());
-
-                        ResponseBuilder::new()
-                            .mimetype("text/html")
-                            .body(article_html.into_bytes())
-                    }
-                    ParsedUrl::Search(query) => {
-                        let results = index.find_article(&query);
-
-                        ResponseBuilder::new()
-                            .mimetype("text/html")
-                            .body(render_results_page(&resources, &query, &results).into_bytes())
-                    }
-                    ParsedUrl::Resource(name) => {
-                        if let Some(resource) = resources.find_resource(&name) {
-                            return resource.into();
-                        }
-
-                        ResponseBuilder::new()
-                            .mimetype("text/plain")
-                            .body("not found".to_string().into_bytes())
-                    }
-                }
-            } else {
-                ResponseBuilder::new()
-                    .mimetype("text/plain")
-                    .body("not found".to_string().into_bytes())
-            }
-        })
-        .with_url("local://wiki.rs/article/Rust_(programming_language)")?
-        .build()?;
-
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
-
-        match event {
-            Event::NewEvents(StartCause::Init) => println!("Started wry window"),
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => *control_flow = ControlFlow::Exit,
-            _ => (),
-        }
+    let state = Arc::new(WikiState {
+        index,
+        article_db,
+        resources
     });
+
+    let app = Router::new()
+        .route("/res/{name}", get(get_resource))
+        .route("/article/{*name}", get(get_article))
+        .route("/search", get(search))
+        .route("/", get(index_page))
+        .with_state(state);
+
+    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
+
+    println!("Listening at 127.0.0.1:3000");
+
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }

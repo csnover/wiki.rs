@@ -2,7 +2,6 @@ use std::{fs::File, io};
 
 use anyhow::{bail, Ok};
 use bzip2_rs::DecoderReader;
-use chrono::{DateTime, Utc};
 use memmap::{Mmap, MmapOptions};
 use minidom::Element;
 use thiserror::Error;
@@ -15,10 +14,7 @@ pub struct ArticleDatabase {
 
 #[derive(Debug, Clone)]
 pub struct Article {
-    pub id: u64,
     pub title: String,
-    pub last_changed_at: DateTime<Utc>,
-    pub last_changed_by: String,
     pub body: String,
 }
 
@@ -75,23 +71,13 @@ impl ArticleDatabase {
     }
 
     fn parse_article(article: &Element) -> anyhow::Result<Article> {
-        let id: u64 = article.try_get_child("id")?.text().parse()?;
         let title = article.try_get_child("title")?.text();
 
         let revision = article.try_get_child("revision")?;
         let body = revision.try_get_child("text")?.text();
 
-        let last_changed_at: DateTime<Utc> = revision.try_get_child("timestamp")?.text().parse()?;
-        let last_changed_by = revision
-            .try_get_child("contributor")?
-            .try_get_child("username")?
-            .text();
-
         Ok(Article {
-            id,
             title,
-            last_changed_by,
-            last_changed_at,
             body,
         })
     }

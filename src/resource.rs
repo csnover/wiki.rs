@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 
 use kata::Template;
-use wry::{
-    http::{Response, ResponseBuilder},
-    Error,
-};
+use axum::response::Response;
 
 pub enum MimeType {
     Text,
@@ -29,19 +26,6 @@ impl MimeType {
         }
     }
 
-    fn to_string(&self) -> String {
-        match self {
-            MimeType::Text => "text/plain",
-            MimeType::Html => "text/html",
-            MimeType::Css => "text/css",
-            MimeType::Js => "application/javascript",
-            MimeType::Png => "image/png",
-            MimeType::Jpg => "image/jpg",
-            MimeType::OctetStream => "application/octet-stream",
-        }
-        .to_string()
-    }
-
     fn is_binary(&self) -> bool {
         match self {
             MimeType::Text => false,
@@ -52,6 +36,20 @@ impl MimeType {
             MimeType::Jpg => true,
             MimeType::OctetStream => true,
         }
+    }
+}
+
+impl core::fmt::Display for MimeType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            MimeType::Text => "text/plain",
+            MimeType::Html => "text/html",
+            MimeType::Css => "text/css",
+            MimeType::Js => "application/javascript",
+            MimeType::Png => "image/png",
+            MimeType::Jpg => "image/jpg",
+            MimeType::OctetStream => "application/octet-stream",
+        })
     }
 }
 
@@ -79,28 +77,38 @@ impl ResourceFile {
         }
     }
 
-    pub fn to_binary(&self) -> Vec<u8> {
+    pub fn as_bytes(&self) -> &[u8] {
+        match &self.data {
+            ResourceData::Binary(bin) => bin,
+            ResourceData::String(str) => str.as_bytes(),
+        }
+    }
+
+    fn to_binary(&self) -> Vec<u8> {
         match &self.data {
             ResourceData::Binary(bin) => bin.to_owned(),
             ResourceData::String(str) => str.as_bytes().to_owned(),
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        match &self.data {
+impl core::fmt::Display for ResourceFile {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match &self.data {
             ResourceData::Binary(bin) => {
-                String::from_utf8(bin.to_owned()).expect("Failed conversion to_string")
+                str::from_utf8(bin).expect("Failed conversion to_string")
             }
-            ResourceData::String(str) => str.to_owned(),
-        }
+            ResourceData::String(str) => str
+        })
     }
 }
 
-impl Into<Result<Response, Error>> for &ResourceFile {
-    fn into(self) -> Result<Response, Error> {
-        ResponseBuilder::new()
-            .mimetype(&self.mime_type)
-            .body(self.to_binary())
+impl From<&ResourceFile> for Response {
+    fn from(value: &ResourceFile) -> Self {
+        Response::builder()
+            .header("Content-Type", &value.mime_type)
+            .body(value.to_binary().into())
+            .unwrap()
     }
 }
 

@@ -41,11 +41,11 @@ impl IndexEntry {
         let page_id: u64 = page_id.parse()?;
         let page_name = page_name.to_owned();
 
-        return Ok(Self {
+        Ok(Self {
             offset,
             page_id,
             page_name,
-        });
+        })
     }
 }
 
@@ -60,12 +60,12 @@ impl Index {
         file.read_to_string(&mut data)?;
 
         let lines: Vec<&str> = data.par_lines().collect();
-        return Ok(Index {
+        Ok(Index {
             entries: lines
                 .par_iter()
                 .map(|line| IndexEntry::parse(line).expect("Failed to parse index entry"))
                 .collect(),
-        });
+        })
     }
 
     pub fn find_article(&self, query: &str) -> Vec<&IndexEntry> {
