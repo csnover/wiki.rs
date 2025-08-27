@@ -138,9 +138,11 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Starting up wiki.rs ...");
 
+    let time = Instant::now();
     let index = Index::from_file(&index_path)?;
-    let article_db = ArticleDatabase::from_file(&articles_path)?;
+    println!("Read index in {:.2?}", time.elapsed());
 
+    let article_db = ArticleDatabase::from_file(&articles_path)?;
     println!("Loaded {} articles from index", index.len());
 
     let mut resources = ResourceManager::new();

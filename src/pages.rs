@@ -6,6 +6,7 @@ use crate::{
     wiki::{article::Article, index::IndexEntry},
 };
 use rayon::iter::ParallelIterator;
+use std::time::Instant;
 
 pub fn render_article_page(resources: &ResourceManager, article: &Article) -> String {
     let mut renderer = ArticleRenderer::new();
@@ -29,9 +30,15 @@ pub fn render_results_page<'a>(
     query: &str,
     index_entries: impl ParallelIterator<Item = &'a IndexEntry<'a>>,
 ) -> String {
-    let results = index_entries
+    println!("Searching for {query}");
+    let time = Instant::now();
+    let mut results = index_entries
         .map(|entry| entry.page_name)
         .collect::<Vec<&str>>();
+    println!("Found {} matches in {:.2?}", results.len(), time.elapsed());
+    let time = Instant::now();
+    results.sort_unstable();
+    println!("Sorted results in {:.2?}", time.elapsed());
 
     let template = resources
         .find_template("search.html")
