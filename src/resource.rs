@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use kata::Template;
 use axum::response::Response;
+use kata::Template;
 
 pub enum MimeType {
     Text,
@@ -95,10 +95,8 @@ impl ResourceFile {
 impl core::fmt::Display for ResourceFile {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match &self.data {
-            ResourceData::Binary(bin) => {
-                str::from_utf8(bin).expect("Failed conversion to_string")
-            }
-            ResourceData::String(str) => str
+            ResourceData::Binary(bin) => str::from_utf8(bin).expect("Failed conversion to_string"),
+            ResourceData::String(str) => str,
         })
     }
 }

@@ -1,8 +1,8 @@
 use std::{fs::File, io};
 
-use anyhow::{bail, Ok};
+use anyhow::{Ok, bail};
 use bzip2_rs::DecoderReader;
-use memmap::{Mmap, MmapOptions};
+use memmap2::{Mmap, MmapOptions};
 use minidom::Element;
 use thiserror::Error;
 
@@ -76,10 +76,7 @@ impl ArticleDatabase {
         let revision = article.try_get_child("revision")?;
         let body = revision.try_get_child("text")?.text();
 
-        Ok(Article {
-            title,
-            body,
-        })
+        Ok(Article { title, body })
     }
 }
 

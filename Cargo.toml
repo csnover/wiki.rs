@@ -8,10 +8,12 @@ anyhow = "1"
 axum = { version = "0.8", features = ["macros"] }
 bzip2-rs = "0.1"
 kata = { path = "lib/kata" }
-memmap = "0.7"
+memmap2 = "0.9"
 minidom = "0.16"
 parse_wiki_text = "0.1"
+pico-args = "0.5"
 rayon = "1"
+regex = "1"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1.47", features = ["rt-multi-thread", "net", "macros"] }

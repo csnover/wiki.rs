@@ -5,6 +5,7 @@ use crate::{
     resource::ResourceManager,
     wiki::{article::Article, index::IndexEntry},
 };
+use rayon::iter::ParallelIterator;
 
 pub fn render_article_page(resources: &ResourceManager, article: &Article) -> String {
     let mut renderer = ArticleRenderer::new();
@@ -23,15 +24,14 @@ pub fn render_article_page(resources: &ResourceManager, article: &Article) -> St
         .expect("Failed to render article template")
 }
 
-pub fn render_results_page(
+pub fn render_results_page<'a>(
     resources: &ResourceManager,
     query: &str,
-    index_entries: &Vec<&IndexEntry>,
+    index_entries: impl ParallelIterator<Item = &'a IndexEntry<'a>>,
 ) -> String {
-    let results: Vec<&str> = index_entries
-        .iter()
-        .map(|entry| entry.page_name.as_str())
-        .collect();
+    let results = index_entries
+        .map(|entry| entry.page_name)
+        .collect::<Vec<&str>>();
 
     let template = resources
         .find_template("search.html")
