@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::{ffi::OsStr, sync::Arc, time::Instant};
 
 use crate::{
     pages::{render_article_page, render_results_page},
@@ -92,57 +92,85 @@ async fn index_page(State(state): State<AppState<'_>>) -> Html<String> {
         .into()
 }
 
-fn usage<T>(err: &'static str) -> anyhow::Result<T> {
+fn usage() {
     let exe = std::env::args().next().unwrap_or_default();
-    println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
-    println!("Usage: {exe} [options] <index.txt> <database.xml.bz2>\n");
-    println!("or, use environment variables:");
-    println!("    WIKI_INDEX_FILE");
-    println!("    WIKI_ARTICLE_DB\n");
-    println!("Options:");
-    println!("    --bind: Web server bind (default: 127.0.0.1:3000)\n");
-    Err(anyhow::Error::msg(err))
+    eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    eprintln!("Usage: {exe} [options] <index.txt> <database.xml.bz2>\n");
+    eprintln!("or, use environment variables:");
+    eprintln!("    WIKI_INDEX_FILE");
+    eprintln!("    WIKI_ARTICLE_DB\n");
+    eprintln!("Options:");
+    eprintln!("    --bind: Web server bind (default: 127.0.0.1:3000)\n");
 }
 
 fn free_arg(
     args: &mut pico_args::Arguments,
     key: &str,
     err: &'static str,
-) -> anyhow::Result<String> {
+) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(arg) = args.opt_free_from_str::<String>()? {
         Ok(arg)
     } else if let Ok(arg) = std::env::var(key) {
         Ok(arg)
     } else {
-        usage(err)
+        Err(err.into())
+    }
+}
+
+struct Args {
+    bind: String,
+    index_path: String,
+    articles_path: String,
+}
+
+impl Args {
+    fn new() -> Result<Args, Box<dyn std::error::Error>> {
+        let mut args = pico_args::Arguments::from_env();
+        let bind = args
+            .opt_value_from_str("--bind")?
+            .unwrap_or_else(|| "127.0.0.1:3000".to_string());
+        let _ = args.contains("--");
+        let index_path = free_arg(&mut args, "WIKI_INDEX_FILE", "Missing index file argument")?;
+        let articles_path = free_arg(
+            &mut args,
+            "WIKI_ARTICLE_DB",
+            "Missing article database argument",
+        )?;
+
+        let rest = args.finish();
+        if !rest.is_empty() {
+            return Err(format!(
+                "Unknown arguments: {}",
+                rest.join(OsStr::new(" ")).display()
+            )
+            .into());
+        }
+
+        Ok(Self {
+            bind,
+            index_path,
+            articles_path,
+        })
     }
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let mut args = pico_args::Arguments::from_env();
-    let listen = args
-        .opt_value_from_str("--listen")?
-        .unwrap_or_else(|| "127.0.0.1:3000".to_string());
-    let _ = args.contains("--");
-    let index_path = free_arg(&mut args, "WIKI_INDEX_FILE", "Missing index file argument")?;
-    let articles_path = free_arg(
-        &mut args,
-        "WIKI_ARTICLE_DB",
-        "Missing article database argument",
-    )?;
-
-    if !args.finish().is_empty() {
-        return usage("Unknown extra arguments passed");
-    }
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = match Args::new() {
+        Ok(args) => args,
+        Err(err) => {
+            usage();
+            return Err(err);
+        }
+    };
 
     println!("Starting up wiki.rs ...");
 
     let time = Instant::now();
-    let index = Index::from_file(&index_path)?;
+    let index = Index::from_file(&args.index_path)?;
     println!("Read index in {:.2?}", time.elapsed());
 
-    let article_db = ArticleDatabase::from_file(&articles_path)?;
+    let article_db = ArticleDatabase::from_file(&args.articles_path)?;
     println!("Loaded {} articles from index", index.len());
 
     let mut resources = ResourceManager::new();
@@ -164,8 +192,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(index_page))
         .with_state(state);
 
-    let listener = TcpListener::bind(&listen).await?;
-    println!("Listening at {listen}");
+    let listener = TcpListener::bind(&args.bind).await?;
+    println!("Listening at {}", args.bind);
 
     axum::serve(listener, app).await.map_err(Into::into)
 }

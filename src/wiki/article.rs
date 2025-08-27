@@ -1,8 +1,7 @@
 use std::{fs::File, io};
 
-use anyhow::{Ok, bail};
 use bzip2_rs::DecoderReader;
-use memmap2::{Mmap, MmapOptions};
+use memmap2::Mmap;
 use minidom::Element;
 use thiserror::Error;
 
@@ -25,22 +24,31 @@ pub enum ArticleError {
 
     #[error("missing property on page")]
     MissingProperty(String),
+
+    #[error("invalid utf-8: {0}")]
+    InvalidUtf8(#[from] std::string::FromUtf8Error),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("DOM error: {0}")]
+    Dom(#[from] minidom::Error),
 }
 
 impl ArticleDatabase {
-    pub fn from_file(path: &str) -> anyhow::Result<Self> {
+    pub fn from_file(path: &str) -> Result<Self, ArticleError> {
         Self::load(File::open(path)?)
     }
 
-    pub fn load(file: File) -> anyhow::Result<Self> {
+    pub fn load(file: File) -> Result<Self, ArticleError> {
         Ok(Self {
-            data: unsafe { MmapOptions::new().map(&file)? },
+            data: unsafe { Mmap::map(&file)? },
         })
     }
 
-    pub fn get_article(&self, idx: &IndexEntry) -> anyhow::Result<Article> {
+    pub fn get_article(&self, idx: &IndexEntry) -> Result<Article, ArticleError> {
         let chunk = self.get_article_chunk(idx)?;
-        let root: Element = chunk.parse()?;
+        let root = chunk.parse::<Element>()?;
         let article = root.children().find(|ch| {
             let option = ch.get_child("id", "");
             if let Some(id) = option {
@@ -52,11 +60,11 @@ impl ArticleDatabase {
 
         match article {
             Some(article) => Self::parse_article(article),
-            None => bail!(ArticleError::ArticleNotFound),
+            None => Err(ArticleError::ArticleNotFound),
         }
     }
 
-    fn get_article_chunk(&self, idx: &IndexEntry) -> anyhow::Result<String> {
+    fn get_article_chunk(&self, idx: &IndexEntry) -> Result<String, ArticleError> {
         let offset = idx.offset as usize;
         let bzip_data = &self.data[offset..];
 
@@ -70,7 +78,7 @@ impl ArticleDatabase {
         Ok(reconstructed_xml)
     }
 
-    fn parse_article(article: &Element) -> anyhow::Result<Article> {
+    fn parse_article(article: &Element) -> Result<Article, ArticleError> {
         let title = article.try_get_child("title")?.text();
 
         let revision = article.try_get_child("revision")?;
@@ -81,15 +89,15 @@ impl ArticleDatabase {
 }
 
 trait TryGetChild {
-    fn try_get_child(&self, name: &str) -> anyhow::Result<&Element>;
+    fn try_get_child(&self, name: &str) -> Result<&Element, ArticleError>;
 }
 
 impl TryGetChild for &Element {
-    fn try_get_child(&self, name: &str) -> anyhow::Result<&Element> {
+    fn try_get_child(&self, name: &str) -> Result<&Element, ArticleError> {
         let child = self.get_child(name, "");
         match child {
             Some(child) => Ok(child),
-            None => bail!(ArticleError::MissingProperty(name.to_owned())),
+            None => Err(ArticleError::MissingProperty(name.to_owned())),
         }
     }
 }

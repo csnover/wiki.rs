@@ -39,6 +39,7 @@ pub fn render_results_page<'a>(
     let time = Instant::now();
     results.sort_unstable();
     println!("Sorted results in {:.2?}", time.elapsed());
+    let count = format!("{}", results.len());
 
     let template = resources
         .find_template("search.html")
@@ -46,6 +47,7 @@ pub fn render_results_page<'a>(
 
     let mut ctx = TemplateContext::new();
     ctx.set_str("query", query);
+    ctx.set_str("count", &count);
     ctx.set_str_array("results", &results);
 
     template
