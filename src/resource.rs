@@ -1,7 +1,18 @@
-use std::collections::HashMap;
-
 use axum::response::Response;
-use kata::Template;
+use kata::{ParseError, Template};
+use std::{collections::HashMap, string::FromUtf8Error};
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("failed to load resource file: {0}")]
+    InvalidUtf8(#[from] FromUtf8Error),
+
+    #[error("failed to parse template: {0}")]
+    BadTemplate(#[from] ParseError),
+
+    #[error("template '{0}' not found")]
+    TemplateNotFound(&'static str),
+}
 
 pub enum MimeType {
     Text,
@@ -64,17 +75,17 @@ pub struct ResourceFile {
 }
 
 impl ResourceFile {
-    pub fn new(mime_type: MimeType, data: Vec<u8>) -> Self {
+    pub fn new(mime_type: MimeType, data: Vec<u8>) -> Result<Self, Error> {
         let resource_data = if mime_type.is_binary() {
             ResourceData::Binary(data)
         } else {
-            ResourceData::String(String::from_utf8(data).expect("Failed to load resource file"))
+            ResourceData::String(String::from_utf8(data)?)
         };
 
-        Self {
+        Ok(Self {
             mime_type: mime_type.to_string(),
             data: resource_data,
-        }
+        })
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -94,10 +105,18 @@ impl ResourceFile {
 
 impl core::fmt::Display for ResourceFile {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(match &self.data {
-            ResourceData::Binary(bin) => str::from_utf8(bin).expect("Failed conversion to_string"),
-            ResourceData::String(str) => str,
-        })
+        match &self.data {
+            ResourceData::Binary(bin) => {
+                for chunk in bin.utf8_chunks() {
+                    f.write_str(chunk.valid())?;
+                    for b in chunk.invalid() {
+                        write!(f, "\\x{b:02x}")?;
+                    }
+                }
+                Ok(())
+            }
+            ResourceData::String(str) => f.write_str(str),
+        }
     }
 }
 
@@ -123,32 +142,36 @@ impl ResourceManager {
         }
     }
 
-    pub fn register_resource(&mut self, name: &str, data: &[u8]) {
+    pub fn register_resource(&mut self, name: &str, data: &[u8]) -> Result<(), Error> {
         self.resource_files.insert(
             name.to_string(),
-            ResourceFile::new(Self::infer_mime(name), data.to_owned()),
+            ResourceFile::new(Self::infer_mime(name), data.to_owned())?,
         );
+        Ok(())
     }
 
-    pub fn register_template(&mut self, name: &str, data: &[u8]) {
-        self.register_resource(name, data);
+    pub fn register_template(&mut self, name: &str, data: &[u8]) -> Result<(), Error> {
+        self.register_resource(name, data)?;
         if let Some(res) = self.find_resource(name) {
             let res_str = res.to_string();
-            let template = Template::compile(&res_str).expect("Failed to compile template");
+            let template = Template::compile(&res_str)?;
             self.template_cache.insert(name.to_owned(), template);
         }
+        Ok(())
     }
 
     pub fn find_resource(&self, name: &str) -> Option<&ResourceFile> {
         self.resource_files.get(name)
     }
 
-    pub fn find_template(&self, name: &str) -> Option<&Template> {
-        self.template_cache.get(name)
+    pub fn find_template(&self, name: &'static str) -> Result<&Template, Error> {
+        self.template_cache
+            .get(name)
+            .ok_or(Error::TemplateNotFound(name))
     }
 
     fn infer_mime(name: &str) -> MimeType {
-        let extension_sep_idx = name.rfind(".");
+        let extension_sep_idx = name.rfind('.');
         match extension_sep_idx {
             Some(extension_sep_idx) => {
                 let ext = &name[extension_sep_idx..];

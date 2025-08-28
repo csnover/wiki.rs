@@ -1,15 +1,8 @@
-use std::{fs::File, io};
-
+use super::index::IndexEntry;
 use bzip2_rs::DecoderReader;
 use memmap2::Mmap;
 use minidom::Element;
-use thiserror::Error;
-
-use super::index::IndexEntry;
-
-pub struct ArticleDatabase {
-    data: Mmap,
-}
+use std::{fs::File, io};
 
 #[derive(Debug, Clone)]
 pub struct Article {
@@ -17,12 +10,12 @@ pub struct Article {
     pub body: String,
 }
 
-#[derive(Error, Debug)]
-pub enum ArticleError {
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
     #[error("requested article not found")]
     ArticleNotFound,
 
-    #[error("missing property on page")]
+    #[error("missing property on page: {0}")]
     MissingProperty(String),
 
     #[error("invalid utf-8: {0}")]
@@ -35,18 +28,22 @@ pub enum ArticleError {
     Dom(#[from] minidom::Error),
 }
 
+pub struct ArticleDatabase {
+    data: Mmap,
+}
+
 impl ArticleDatabase {
-    pub fn from_file(path: &str) -> Result<Self, ArticleError> {
+    pub fn from_file(path: &str) -> Result<Self, std::io::Error> {
         Self::load(File::open(path)?)
     }
 
-    pub fn load(file: File) -> Result<Self, ArticleError> {
+    pub fn load(file: File) -> Result<Self, std::io::Error> {
         Ok(Self {
             data: unsafe { Mmap::map(&file)? },
         })
     }
 
-    pub fn get_article(&self, idx: &IndexEntry) -> Result<Article, ArticleError> {
+    pub fn get_article(&self, idx: &IndexEntry) -> Result<Article, Error> {
         let chunk = self.get_article_chunk(idx)?;
         let root = chunk.parse::<Element>()?;
         let article = root.children().find(|ch| {
@@ -60,11 +57,11 @@ impl ArticleDatabase {
 
         match article {
             Some(article) => Self::parse_article(article),
-            None => Err(ArticleError::ArticleNotFound),
+            None => Err(Error::ArticleNotFound),
         }
     }
 
-    fn get_article_chunk(&self, idx: &IndexEntry) -> Result<String, ArticleError> {
+    fn get_article_chunk(&self, idx: &IndexEntry) -> Result<String, Error> {
         let offset = idx.offset as usize;
         let bzip_data = &self.data[offset..];
 
@@ -78,26 +75,18 @@ impl ArticleDatabase {
         Ok(reconstructed_xml)
     }
 
-    fn parse_article(article: &Element) -> Result<Article, ArticleError> {
-        let title = article.try_get_child("title")?.text();
-
-        let revision = article.try_get_child("revision")?;
-        let body = revision.try_get_child("text")?.text();
-
+    fn parse_article(article: &Element) -> Result<Article, Error> {
+        let title = try_get_child(article, "title")?.text();
+        let revision = try_get_child(article, "revision")?;
+        let body = try_get_child(revision, "text")?.text();
         Ok(Article { title, body })
     }
 }
 
-trait TryGetChild {
-    fn try_get_child(&self, name: &str) -> Result<&Element, ArticleError>;
-}
-
-impl TryGetChild for &Element {
-    fn try_get_child(&self, name: &str) -> Result<&Element, ArticleError> {
-        let child = self.get_child(name, "");
-        match child {
-            Some(child) => Ok(child),
-            None => Err(ArticleError::MissingProperty(name.to_owned())),
-        }
+fn try_get_child<'a>(element: &'a Element, name: &str) -> Result<&'a Element, Error> {
+    let child = element.get_child(name, "");
+    match child {
+        Some(child) => Ok(child),
+        None => Err(Error::MissingProperty(name.to_owned())),
     }
 }

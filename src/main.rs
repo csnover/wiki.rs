@@ -1,33 +1,58 @@
-use std::{ffi::OsStr, sync::Arc, time::Instant};
-
-use crate::{
-    pages::{render_article_page, render_results_page},
-    resource::ResourceManager,
-    wiki::{article::ArticleDatabase, index::Index},
-};
+use crate::resource::ResourceManager;
 use axum::{
     Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, Response},
+    response::{Html, IntoResponse, Response},
     routing::get,
 };
+use kata::TemplateContext;
+use rayon::iter::ParallelIterator;
+use renderer::ArticleRenderer;
+use std::{ffi::OsStr, sync::Arc, time::Instant};
 use tokio::net::TcpListener;
+use db::{Database, article::Error as ArticleError};
 
+mod db;
 mod pages;
 mod renderer;
 mod resource;
-mod wiki;
+
+#[derive(Debug, thiserror::Error)]
+enum Error {
+    #[error(transparent)]
+    Article(#[from] ArticleError),
+    #[error(transparent)]
+    Resource(#[from] resource::Error),
+    #[error(transparent)]
+    Renderer(#[from] renderer::Error),
+    #[error(transparent)]
+    Kana(#[from] kata::RenderError),
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        match self {
+            Error::Article(error) => match error {
+                ArticleError::ArticleNotFound => (StatusCode::NOT_FOUND, format!("{error}")),
+                _ => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            },
+            Error::Resource(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Error::Renderer(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Error::Kana(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+        }
+        .into_response()
+    }
+}
 
 struct WikiState<'a> {
-    index: Index<'a>,
-    article_db: ArticleDatabase,
+    database: db::Database<'a>,
     resources: ResourceManager,
 }
 
 type AppState<'a> = Arc<WikiState<'a>>;
 
-async fn get_resource(
+async fn resource(
     State(state): State<AppState<'_>>,
     Path(name): Path<String>,
 ) -> Result<Response, StatusCode> {
@@ -38,31 +63,26 @@ async fn get_resource(
         .ok_or(StatusCode::NOT_FOUND)
 }
 
-async fn get_article(
+async fn article(
     State(state): State<AppState<'_>>,
     Path(name): Path<String>,
-) -> Result<Html<String>, StatusCode> {
-    println!("Loading article {name}");
-    let time = Instant::now();
+) -> Result<Html<String>, Error> {
+    let name = name.replace('_', " ");
 
-    let name_cleaned = name.replace("_", " ");
-    let article = state.index.find_article_exact(&name_cleaned);
-    if article.is_none() {
-        return Err(axum::http::StatusCode::NOT_FOUND);
-    }
-
-    let article = article.unwrap();
-    println!("Located article in {:.2?}", time.elapsed());
+    let article = state.database.get(&name)?;
 
     let time = Instant::now();
-    let article_data = state.article_db.get_article(article).unwrap();
-    println!("Extracted article in {:.2?}", time.elapsed());
 
-    let time = Instant::now();
-    let article_html = render_article_page(&state.resources, &article_data);
-    println!("Rendered article in {:.2?}", time.elapsed());
+    let template = state.resources.find_template("article.html")?;
+    let body = ArticleRenderer::render(&state.database, &article)?;
+    let mut ctx = TemplateContext::new();
+    ctx.set_str("body", &body);
+    ctx.set_str("title", &article.title);
+    let html = template.render(&ctx)?;
 
-    Ok(article_html.into())
+    log::trace!("Rendered article in {:.2?}", time.elapsed());
+
+    Ok(html.into())
 }
 
 #[derive(serde::Deserialize)]
@@ -73,23 +93,35 @@ struct SearchQuery {
 async fn search(
     State(state): State<AppState<'_>>,
     Query(SearchQuery { q: query }): Query<SearchQuery>,
-) -> Html<String> {
+) -> Result<Html<String>, Error> {
     let query = regex::RegexBuilder::new(&query)
         .case_insensitive(true)
         .build()
         .unwrap();
-    let results = state.index.find_article(&query);
-    render_results_page(&state.resources, query.as_str(), results).into()
+
+    log::debug!("Searching for {query}");
+    let time = Instant::now();
+    let mut results = state.database.search(&query).collect::<Vec<&str>>();
+    log::trace!("Found {} matches in {:.2?}", results.len(), time.elapsed());
+    results.sort_unstable();
+    log::trace!("Sorted results in {:.2?}", time.elapsed());
+
+    let count = format!("{}", results.len());
+    let template = state.resources.find_template("search.html")?;
+    let mut ctx = TemplateContext::new();
+    ctx.set_str("query", query.as_str());
+    ctx.set_str("count", &count);
+    ctx.set_str_array("results", &results);
+    template.render(&ctx).map(Html::from).map_err(Into::into)
 }
 
-async fn index_page(State(state): State<AppState<'_>>) -> Html<String> {
+async fn index_page(State(state): State<AppState<'_>>) -> Result<Html<String>, Error> {
     state
         .resources
-        .find_template("index.html")
-        .expect("Failed to find index template")
+        .find_template("index.html")?
         .render(&kata::TemplateContext::new())
-        .expect("Failed to render search template")
-        .into()
+        .map(Html::from)
+        .map_err(Into::into)
 }
 
 fn usage() {
@@ -156,6 +188,8 @@ impl Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
     let args = match Args::new() {
         Ok(args) => args,
         Err(err) => {
@@ -164,36 +198,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    println!("Starting up wiki.rs ...");
-
-    let time = Instant::now();
-    let index = Index::from_file(&args.index_path)?;
-    println!("Read index in {:.2?}", time.elapsed());
-
-    let article_db = ArticleDatabase::from_file(&args.articles_path)?;
-    println!("Loaded {} articles from index", index.len());
+    log::info!("Starting up wiki.rs ...");
 
     let mut resources = ResourceManager::new();
-    resources.register_template("index.html", include_bytes!("../res/index.html"));
-    resources.register_template("article.html", include_bytes!("../res/article.html"));
-    resources.register_template("search.html", include_bytes!("../res/search.html"));
-    resources.register_resource("styles.css", include_bytes!("../res/styles.css"));
+    resources.register_template("index.html", include_bytes!("../res/index.html"))?;
+    resources.register_template("article.html", include_bytes!("../res/article.html"))?;
+    resources.register_template("search.html", include_bytes!("../res/search.html"))?;
+    resources.register_resource("styles.css", include_bytes!("../res/styles.css"))?;
 
     let state = Arc::new(WikiState {
-        index,
-        article_db,
+        database: Database::from_file(&args.index_path, &args.articles_path)?,
         resources,
     });
 
     let app = Router::new()
-        .route("/res/{name}", get(get_resource))
-        .route("/article/{*name}", get(get_article))
+        .route("/res/{name}", get(resource))
+        .route("/article/{*name}", get(article))
         .route("/search", get(search))
         .route("/", get(index_page))
         .with_state(state);
 
     let listener = TcpListener::bind(&args.bind).await?;
-    println!("Listening at {}", args.bind);
+    log::info!("Listening at {}", args.bind);
 
     axum::serve(listener, app).await.map_err(Into::into)
 }
