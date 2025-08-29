@@ -1,69 +1,1614 @@
-body {
-    padding: 0;
+@font-face {
+    font-family: source-serif;
+    src: url("fonts/SourceSerif4.woff2") format(woff2);
+}
+@font-face {
+    font-family: source-serif;
+    font-style: italic;
+    src: url("fonts/SourceSerif4-Italic.woff2") format(woff2);
+}
+@font-face {
+    font-family: archivo;
+    size-adjust: 96%;
+    src: url("fonts/Archivo.woff2") format(woff2);
+}
+@font-face {
+    font-family: archivo;
+    font-style: italic;
+    size-adjust: 96%;
+    src: url("fonts/Archivo-Italic.woff2") format(woff2);
+}
+@font-face {
+    font-family: inconsolata;
+    size-adjust: 106%;
+    src: url("fonts/Inconsolata.woff2") format(woff2);
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
     margin: 0;
+    padding: 0;
 }
-main {
-    margin: auto;
-    padding: 2rem;
-    line-height: 1.6;
-    font-size: 18px;
-    color: #333;
+
+:root {
+    --aside-max: 30vw;
+    --shade-bg: #f9f9f9;
+    --border-fg: lightgrey;
+    --highlight: rebeccapurple;
+    --border-th: #999;
+    --bg: white;
+    --fg: black;
+    --serif: source-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --sans: archivo, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --mono: inconsolata, "Segoe UI Mono", "Roboto Mono", monospace, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --box-margin: 1rem;
+    --figure-margin: calc(var(--box-margin) * 2);
+    --ol-gutter: 1.5rem;
+    /* Bad things happen to the baseline grid if this is not unitless */
+    --rlh: 1.55;
+    --body-bottom: 2rem;
+    --body-left: 4rem;
+    --body-right: 2rem;
+
+    font: 0.95rem/var(--rlh) var(--serif);
+    font-weight: 380;
+    font-variant-numeric: oldstyle-nums;
+    letter-spacing: -.015rem;
+}
+
+:link {
+    color: hsl(225, 73%, 22%);
+    text-decoration-color: royalblue;
+}
+
+:visited {
+    color: hsl(270, 50%, 20%);
+    text-decoration-color: rebeccapurple;
+}
+
+:any-link {
+    text-underline-position: from-font;
+
+    &:hover {
+        text-decoration-color: transparent;
+    }
+}
+
+:target:target:target:target {
+    background-color: lightyellow;
+}
+
+.wiki-rs-body {
+    align-items: baseline;
+    border-top: .25rem solid var(--highlight);
+    display: grid;
+    gap: 0 4rem;
+    grid-template-columns: auto fit-content(33%);
+    padding: 4rem var(--body-right) var(--body-bottom) var(--body-left);
+}
+
+.wiki-rs-index {
+    align-content: center;
+    font-size: 2rem;
+    font-weight: 200;
+    justify-content: center;
+    min-height: 70vh;
+}
+
+.wiki-rs-search {
+    --border-size: 2px;
+    --icon-size: 1.7em;
+
+    border-bottom: var(--border-size) solid currentColor;
+    contain: paint style;
+    display: flex;
+    font-family: var(--sans);
+    position: relative;
+
+    &:focus-within {
+        border-color: var(--highlight);
+        outline: var(--border-size) solid var(--highlight);
+    }
+
+    label {
+        cursor: text;
+        line-height: var(--rlh);
+        left: var(--icon-size);
+        opacity: .3;
+        position: absolute;
+        visibility: hidden;
+    }
+
+    input {
+        --icon-h: calc(1em * 22 / 16);
+        --icon-w: calc(1em * 20 / 16);
+
+        all: unset;
+        background: transparent url('data:image/svg+xml,<svg viewBox="0 0 20 22" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="10" r="6.5" fill="transparent" stroke="black" stroke-width="2.5" vector-effect="non-scaling-stroke"/><line x1="7.5" y1="14.5" x2="2" y2="20" stroke="black" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>') 0 center/var(--icon-w) var(--icon-h) no-repeat;
+        border: 0;
+        box-sizing: border-box;
+        color: rgba(0, 0, 0, 0.3);
+        flex: 1;
+        font-family: var(--sans);
+        font-size: 1em;
+        height: calc(1em * var(--rlh));
+        padding-left: var(--icon-size);
+
+        &::placeholder {
+            all: unset;
+            font-family: var(--sans);
+            opacity: 0;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        &:focus {
+            color: var(--fg);
+
+            &::placeholder {
+                opacity: .3;
+            }
+        }
+
+        &:not(:valid, :focus) {
+            + label {
+                visibility: visible;
+            }
+        }
+    }
+
+    [type=submit] {
+        all: unset;
+        align-self: baseline;
+        border: 1px outset transparent;
+        cursor: pointer;
+        line-height: calc(1em * var(--rlh) - 3px);
+        margin: 1px 1px 1px .25em;
+        padding-inline: .25em;
+        user-select: none;
+        text-decoration: underline;
+        visibility: hidden;
+
+        :focus-within > & {
+            background-color: var(--shade-bg);
+            border-color: var(--border-fg);
+            text-decoration: none;
+        }
+
+        &:hover, &:focus {
+            text-decoration: none;
+        }
+
+        &:active {
+            background-color: var(--border-fg);
+            border-style: inset;
+        }
+    }
+
+    &:valid [type=submit] {
+        visibility: visible;
+    }
+
+
+    /* padding-left of search + input must = --icon-size */
+    .wiki-rs-index > & {
+        padding-left: .15em;
+        max-width: 50vw;
+        min-width: 21.4em;
+
+        label {
+            opacity: 1;
+        }
+
+        input {
+            padding-left: 1.55em;
+        }
+
+        [type=submit] {
+            font-weight: 600;
+            font-stretch: 75%;
+        }
+    }
+}
+
+.wiki-rs-title {
+    display: flex;
+    align-items: baseline;
+    grid-column: 1;
+    grid-row: 1;
+
+    > * {
+        min-width: 0;
+    }
+
+    > :first-child {
+        flex: 1;
+    }
+
+    > .mw-indicators {
+        display: flex;
+        white-space: nowrap;
+
+        img {
+            height: revert-layer;
+            vertical-align: bottom;
+        }
+
+        > * + * {
+            margin-left: 1rem;
+        }
+    }
+}
+
+.wiki-rs-incomplete {
+    --icon-h: 1em;
+    --icon-w: 1em;
+    background: transparent url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M16 13h16c1.1 0 2-.9 2-2s-.9-2-2-2H16c-1.1 0-2 .9-2 2s.9 2 2 2zm0 6h16c1.1 0 2-.9 2-2s-.9-2-2-2H16c-1.1 0-2 .9-2 2s.9 2 2 2zM40 2H8a2 2 0 0 0-2 2v24.8c0 .6.4 1 .9 1.1.3 0 .6-.1.8-.3l4.2-3.9 5.9 5.6 6.2-5.7 5.5 5.1c.4.3 1 .3 1.4 0l5.3-5.1 4.1 3.7c.4.4 1 .4 1.4 0 .2-.2.3-.5.3-.8V4a2 2 0 0 0-2-2zm-2 19.9-1.2-1.1c-.4-.3-1-.3-1.4 0l-5.2 5-5.5-5c-.4-.3-1-.3-1.4 0l-5.4 5-5.3-5c-.4-.3-1-.3-1.4 0L10 22V6h28v15.9zm-2.6 7.9-5.2 5-5.5-5c-.4-.3-1-.3-1.4 0l-5.4 5-5.3-5c-.4-.3-1-.3-1.4 0L6 34.7V44c0 1.1.9 2 2 2h32a2 2 0 0 0 2-2v-9.6l-5.2-4.6c-.4-.3-1-.3-1.4 0zM38 42H10v-5.6l1.9-1.7 5.2 5c.4.3 1 .3 1.4 0l5.5-5.1 5.5 5.1c.4.3 1 .3 1.4 0l5.3-5.1 1.8 1.6V42z"/></svg>') 0 center/var(--icon-w) var(--icon-h) no-repeat;
+    font-family: var(--sans);
+    padding-left: 1.1em;
+    padding-right: .05em;
+}
+
+.wiki-rs-nav {
+    --top: 2rem;
+    display: flex;
+    flex-direction: column;
+    grid-column: 2;
+    grid-row: 1/3;
+    max-height: calc(100vh - var(--top) * 2);
+    position: sticky;
+    top: var(--top);
+}
+
+.wiki-rs-toc {
+    --scrollbar-padding: .5rem;
+    font-family: var(--sans);
+    font-size: 105%;
+    font-stretch: 80%;
+    margin-top: 4rem;
+    margin-right: calc(var(--scrollbar-padding * -1));
+    overflow-y: auto;
+    padding-right: var(--scrollbar-padding);
+    scrollbar-width: thin;
+    scrollbar-color: grey transparent;
+
+    ul {
+        list-style: none;
+        padding-left: 0;
+        margin-left: 1rem;
+    }
+
+    & > ul {
+        margin-left: 0;
+    }
+}
+
+.wiki-rs-content {
+    container: main-article / inline-size;
+    grid-column: 1;
+    grid-row: 2;
+    hyphenate-limit-chars: 4 2 2;
+    hyphens: auto;
+    overflow: hidden;
+    overflow-wrap: break-word;
+    /* weird padding and margin stuff to avoid big overflow (caused by giant
+       nowrap tables) whilst allowing small overflow (because normally tables
+       and ordered lists bleed into the margins) */
+    margin-right: -2rem;
+    margin-left: -4rem;
+    padding-left: 4rem;
+    padding-right: 4rem;
     text-align: justify;
+    text-justify: distribute;
+    text-justify: inter-character;
 }
-@media screen and (min-width: 768px) {
-    main {
-        max-width: 80%;
+
+.wiki-rs-bye {
+    display: flex;
+    font-family: var(--sans);
+    margin-top: 4rem;
+
+    > svg {
+        height: 2.25rlh;
+        margin-right: .5rem;
+        transform: translateY(-.075rlh);
+    }
+
+    > div {
+        > :first-child {
+            font-weight: 550;
+        }
+
+        > hr {
+            margin-block: calc(var(--box-margin) * 2) calc(var(--box-margin) * .33);
+        }
+
     }
 }
-@media screen and (min-width: 1366px) {
-    main {
-        max-width: 60%;
+
+.wiki-rs-pagination {
+    --gap: 2em;
+    background-color: var(--bg);
+    border-top: 3px solid currentColor;
+    grid-column: span 2;
+    font-family: var(--sans);
+    font-variant-numeric: tabular-nums;
+    margin-left: calc(var(--body-right) - var(--body-left));
+    margin-bottom: calc(var(--body-bottom) * -1);
+    margin-top: 4rem;
+    padding-bottom: var(--body-bottom);
+    padding-top: .5rem;
+    position: sticky;
+    bottom: 0;
+
+    > ul {
+        display: flex;
+        gap: var(--gap);
+        justify-content: center;
+        list-style: none;
+        padding: 0;
+
+        > * {
+            margin-top: 0;
+            padding: 0;
+            white-space: nowrap;
+
+            /* Affordance */
+            > :any-link {
+                margin-inline: -.5em;
+                padding-inline: .5em;
+            }
+        }
+
+        > .first::after,
+        > .last::before {
+            content: '…';
+        }
+
+        > .first::after {
+            margin-left: var(--gap);
+        }
+
+        > .last::before {
+            margin-right: var(--gap);
+        }
     }
 }
-a {
-    color: #0645ad;
-    text-decoration: none;
+
+.wiki-rs-search-results {
+    column-width: 30em;
+    gap: calc(var(--ol-gutter) * 2);
+    margin-top: 4rem;
 }
-a:hover {
-    text-decoration: underline;
+
+abbr {
+    cursor: help;
+    text-decoration: underline dotted;
 }
-a.category {
-    display: block;
-    background-color: #f8f9fa;
-    border: 1px solid #a2a9b1;
-    margin: -1px 0 0 -1px;
-    padding: 0.25rem 0.5rem;
-}
+
 table {
     border-collapse: collapse;
 }
+
+hr {
+    border: solid currentColor;
+    border-width: thin 0 0;
+}
+
+img {
+    height: auto;
+}
+
+cite {
+    font-style: normal;
+}
+
+code, kbd, pre, samp, tt {
+    font-family: var(--mono);
+}
+
+sub {
+    position: relative;
+    top: .125em;
+    vertical-align: baseline;
+}
+
+sup {
+    position: relative;
+    top: -.5em;
+    vertical-align: baseline;
+}
+
+math {
+    font-family: var(--serif);
+}
+
+pre {
+    hyphens: none;
+    tab-size: 4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+b, strong {
+    font-weight: 650;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--sans);
+    font-variant-numeric: normal;
+    hyphens: none;
+}
+
+h1 {
+    font-size: 3.5rem;
+    font-stretch: 80%;
+    font-weight: 200;
+    line-height: 1.1;
+}
+
+h2 {
+    border-top: 3px solid currentColor;
+    font-size: 1.5rem;
+    font-stretch: semi-expanded;
+    line-height: 1rlh;
+    margin-right: auto;
+    padding: .1rlh 0 .4rlh;
+    width: fit-content;
+
+    + * {
+        margin-top: var(--box-margin);
+    }
+
+    + h3 {
+        margin-top: 0;
+    }
+}
+
+h3 {
+    font-size: 1rem;
+    font-stretch: 150%;
+    text-transform: uppercase;
+}
+
+h5 {
+    font-size: 0.83em;
+    font-stretch: 150%;
+    text-transform: uppercase;
+}
+
+h6 {
+    font-size: 0.83em;
+    font-stretch: 120%;
+}
+
+ol, ul, dl {
+    padding-left: var(--ol-gutter);
+
+    > * + * {
+        margin-top: calc(var(--box-margin) * .25);
+
+        .plainlist & {
+            margin-top: 0;
+        }
+    }
+}
+
+:is(ol, ul) > * {
+    padding-left: .1rem;
+
+    .plainlist & {
+        padding-left: 0;
+    }
+}
+
+ul {
+    padding-left: 1rem;
+}
+
+dl {
+    padding-left: 0;
+}
+
+dt {
+    font-family: var(--sans);
+}
+
+/* Because this element is extremely heavily abused as a mechanism for indenting
+   content, we have little choice but to also do that */
+dd {
+    margin-left: 1rem;
+}
+
 th {
-    background-color: #eaecf0;
-    text-align: center;
+    font-family: var(--sans);
+    hyphens: none;
 }
-td {
-    background-color: #f8f9fa;
-    border: 1px solid #a2a9b1;
+
+.reference {
+    font-family: var(--sans);
+    font-size: 75%;
+    font-variant-numeric: normal;
+    position: relative;
+    text-decoration: none;
+    top: -.5em;
+    white-space: nowrap;
+
+    &::before {
+        content: '[';
+    }
+
+    &::after {
+        content: ']';
+    }
 }
-:is(th, td) {
-    padding: 0.125rem;
+
+.references,
+.wiki-rs-search-results ol {
+    margin-inline-start: calc(var(--ol-gutter) * -1);
+
+    > *::marker {
+        font-family: var(--sans);
+        font-size: 83%;
+        font-variant-numeric: tabular-nums;
+    }
 }
-:is(h1, h2) {
-    border-bottom: 1px solid #a2a9b1;
-    font-family: 'Times New Roman', Times, serif;
+
+/* TODO: :where() is supposed to have zero specificity, but it is adding 0,0,1
+   specificity? So double-classing it is, because this rule should win. */
+.categories.categories {
+    border-top: .25rem solid currentColor;
+    font-family: var(--sans);
+    font-size: 95%;
+    font-variant-numeric: normal;
+    font-weight: 350;
+    list-style: none;
+    padding: .5rem 0;
+    margin-top: 4rem;
+
+    &::before {
+        content: 'in: ';
+        font: italic 600 1em var(--serif);
+    }
+
+    > * {
+        display: inline;
+    }
+
+    > * + * {
+        margin-top: 0;
+
+        &::before {
+            content: ' / ';
+        }
+    }
 }
-article {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-.main-nav {
-    display: flex;
-    padding: 1rem;
-    background-color: #f7f7f7;
-}
-.main-nav > input {
-    margin-left: auto;
-    border: 1px solid gray;
-    border-radius: 1px;
-    padding: 0.5rem 0.5rem;
-    outline: none !important;
+
+/* overrides for garbage <templatestyle> injections */
+.mw-parser-output {
+    --background-color-base: transparent;
+    --background-color-interactive-subtle: transparent;
+    --background-color-neutral: transparent;
+    --background-color-neutral-subtle: transparent;
+    --border-color-base: var(--border-fg);
+    --color-base: #000;
+    --tag-size: .4rem;
+    --box-tag: transparent linear-gradient(135deg, var(--fg) var(--tag-size), transparent var(--tag-size)) 0%/calc(var(--tag-size) * 2) no-repeat;
+
+    contain: inline-size layout style paint;
+
+    /**********/
+    /* Layout */
+    /**********/
+
+    /*
+    The standard `* + *` rule for layout cannot be used because many templates
+    break if the renderer tries to wrap all phrasing content in a `<p>`.
+    'Template:Documentation' is one example, where `.documentation-startbox`
+    uses `display: flex` with `<span>` children, so the flex layout breaks if
+    they are wrapped.
+
+    Instead, all the supported non-phrasing content elements are selected using
+    a zero-specificity `:where` selector.
+    */
+    :where(:is(blockquote, center, div, dl, figure, h1, h2, h3, h4, h5, h6, ol, p, pre, table, ul):not(:first-child)) {
+        margin-top: var(--box-margin);
+    }
+
+    * + h2 {
+        margin-top: 5rem;
+    }
+
+    * + h3 {
+        margin-top: calc(var(--box-margin) * 1.5);
+
+        + p,
+        + :is(.mw-halign-right, .mw-halign-left, .floatright) + * {
+            margin-top: 0;
+        }
+    }
+
+    :is(h4, h5, h6) + * {
+        margin-top: 0;
+
+        &:is(.mw-halign-right, .mw-halign-left) + * {
+            margin-top: 0;
+        }
+    }
+
+    * + dt {
+        margin-top: var(--box-margin);
+    }
+
+    /******************/
+    /* Common classes */
+    /******************/
+
+    .monospaced {
+        font-family: var(--mono);
+    }
+
+    .error {
+        color: rebeccapurple;
+        font-family: var(--sans);
+        font-weight: normal;
+    }
+
+    .nowrap {
+        white-space: nowrap;
+    }
+
+    .wikitable,
+    .tracklist, /* 'Template:Track listing' */
+    .us-census-pop /* 'Template:US Census population' */
+    {
+        --padding: .5rem;
+
+        border: 0;
+        border-bottom: thin solid var(--border-fg);
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+        margin-inline: calc(var(--padding) * -1);
+        width: calc(100% + var(--padding) * 2);
+
+        tbody > tr:nth-child(2n) {
+            background-color: var(--shade-bg);
+            /* For the case where there are shaded rowspans, ensure they are
+            visually separated */
+            border-top: thin solid var(--bg);
+        }
+
+        caption, td, th {
+            background-color: transparent;
+            border: 0;
+        }
+
+        caption {
+            font-family: var(--sans);
+            padding: 0;
+        }
+
+        td, th {
+            padding: .1rem var(--padding);
+            text-align: start;
+        }
+
+        th {
+            font-variant-numeric: tabular-nums;
+
+            &[colspan] {
+                text-align: center;
+            }
+        }
+
+        tr:first-child > th {
+            vertical-align: bottom;
+        }
+
+        tr:first-child > th:not([scope=row]),
+        th[scope=col] {
+            border-bottom: thin solid var(--border-th);
+        }
+
+        &.floatright,
+        &.us-census-pop-right /* 'Template:US Census population' */ {
+            max-width: 50cqw;
+            width: auto;
+        }
+    }
+
+    .floatright,
+    .tright, /* 'Template:Thumb image' */
+    .us-census-pop-right /* 'Template:US Census population' */ {
+        clear: right;
+        float: right;
+        margin-bottom: var(--figure-margin);
+        margin-left: var(--figure-margin);
+    }
+
+    /* :-((((( */
+    /* 'Chelyabinsk meteor' commits this atrocity */
+    [style*="float:right"]:has(> .wikitable[style*="float:right"][style*="margin"]) {
+        margin-left: var(--figure-margin);
+        > * {
+            margin-left: 0 !important;
+            margin-right: calc(var(--padding) * -1) !important;
+            width: auto;
+        }
+    }
+
+    /***********/
+    /* Figures */
+    /***********/
+
+    figure {
+        overflow: hidden;
+
+        &.mw-halign-left,
+        &.mw-halign-right {
+            max-width: var(--aside-max);
+
+            p + & {
+                margin-top: var(--box-margin);
+            }
+        }
+
+        &.mw-halign-left {
+            clear: left;
+            float: left;
+            margin-right: var(--figure-margin);
+            margin-bottom: var(--figure-margin);
+        }
+
+        &.mw-halign-right {
+            clear: right;
+            float: right;
+            margin-left: var(--figure-margin);
+            margin-bottom: var(--figure-margin);
+        }
+
+        img {
+            display: block;
+        }
+    }
+
+    figcaption {
+        font-family: var(--sans);
+
+        /* Used in 'Canada' */
+        .legend {
+            margin-top: 0;
+        }
+
+        span.legend + span.legend {
+            margin-left: .25em;
+
+            &::before {
+                content: ' ';
+                white-space: normal;
+            }
+        }
+
+        .legend-color {
+            border-color: var(--fg);
+            line-height: .5;
+            min-width: calc(1ex + 2px);
+            height: calc(1ex + 2px);
+            vertical-align: baseline;
+        }
+    }
+
+    /*************************/
+    /* Template:!mxt         */
+    /* Template:Section link */
+    /*************************/
+
+    [style*="font-family: monospace"],
+    [style*="font-family:monospace"] {
+        font-family: var(--mono) !important;
+    }
+
+    /********************/
+    /* Template:Hatnote */
+    /********************/
+
+    .hatnote.hatnote {
+        margin-bottom: 0;
+        padding-left: 0;
+
+        :is(h2, h3, h4) + &,
+        .hatnote + & {
+            margin-top: 0;
+        }
+    }
+
+    /********************/
+    /* Template:Infobox */
+    /* Template:Sidebar */
+    /********************/
+
+    .infobox, .sidebar {
+        --tag-size: 1rem;
+
+        border: solid var(--fg);
+        border-width: 3px 0;
+        border-collapse: separate;
+        clear: right;
+        /* TODO: This breaks baseline alignment of the nav. */
+        float: right;
+        font-family: var(--sans);
+        margin: 0 0 var(--figure-margin) var(--figure-margin);
+        max-width: 25rem;
+        padding: 0;
+        /* !important: 'Crazy Taxi' */
+        width: auto !important;
+
+        * + & {
+            /* !important: 'Wikipedia' */
+            margin-top: var(--box-margin) !important;
+        }
+
+        &.sidebar {
+            font-size: inherit;
+            max-width: 18rem;
+        }
+
+        td, th {
+            padding: 0;
+            vertical-align: top;
+        }
+
+        th {
+            font-stretch: 80%;
+            /* TODO: This is partially because justified text alignment is
+               specified too broadly and gets inherited */
+            text-align: start;
+        }
+
+        .infobox-above,
+        .infobox-title,
+        .sidebar-title,
+        .sidebar-title-with-pretitle {
+            background-color: transparent !important; /* !important: 'Fart' */
+            font-size: 1rem !important; /* !important: 'Crazy Taxi' */
+            font-stretch: 120%;
+            font-style: normal !important; /* !important: 'Crazy Taxi' */
+            font-weight: bold;
+            line-height: 1.2;
+
+            /* !important: 'Minnesota' */
+            [style*="font-size"] {
+                font-size: inherit !important;
+            }
+        }
+
+        .infobox-subheader {
+            background-color: transparent;
+        }
+
+        /* !important: 'Template:Conservation status' */
+        .sidebar-title > [style*=font-size] {
+            font-size: smaller !important;
+            font-stretch: normal;
+            margin-top: 0;
+        }
+
+        .sidebar-pretitle {
+            font-size: 95%;
+        }
+
+        .sidebar-pretitle,
+        .sidebar-heading,
+        .sidebar-content,
+        .sidebar-below {
+            background-color: transparent !important;
+            color: inherit !important;
+
+            /* !important: 'Template:Conservation status' */
+            :any-link > [style*=color] {
+                color: inherit !important;
+            }
+
+            /* !important: 'Template:Content policy list' */
+            > [style*="font-size:120%"] {
+                font-size: inherit !important;
+                font-stretch: 110%;
+            }
+        }
+
+        .sidebar-below {
+            font-weight: normal;
+            padding-top: calc(var(--box-margin) * .5);
+        }
+
+        .sidebar-content {
+            text-align: left !important;
+        }
+
+        .sidebar-navbar {
+            font-stretch: 110%;
+        }
+
+        .sidebar-title-with-pretitle {
+            text-align: center;
+
+            .tmp-color {
+                color: inherit !important;
+            }
+        }
+
+        .sidebar-image {
+            border-top: thin solid currentColor;
+            padding-top: calc(var(--box-margin) * .75);
+        }
+
+        /* This is actually redundant information; the title of the page,
+           and the first graf of the page, both say what it is. It is not
+           necessary to say it a third time. */
+        &.hproduct .infobox-above {
+            display: none;
+        }
+
+        &.ib-country, &.ib-settlement {
+            /* !important: 'Canada' */
+            .paragraphbreak {
+                margin-top: 0 !important;
+            }
+
+            :is(td, th, .ib-country-anthem) {
+                border: 0;
+                margin: 0;
+                padding: 0;
+            }
+
+            tr:has(> .infobox-image) + tr > .infobox-full-data,
+            tr:has(> .infobox-image) + tr + tr > .infobox-full-data,
+            tr:has(> .infobox-image) + tr + tr + tr > .infobox-full-data {
+                padding-top: .5rem;
+            }
+
+            /* TODO: This is a reapplication of a rule that already exists
+               due to specificity conflicts */
+            .infobox-label {
+                padding-right: 0.3rem;
+            }
+
+            .infobox-header {
+                padding-top: .25rem;
+            }
+
+            /* !important: 'Canada' */
+            .infobox-image div[style] {
+                padding: 0 !important;
+            }
+        }
+
+        .infobox-label {
+            padding-right: .3rem;
+            line-height: 1.2;
+            /* keep first baseline alignment w/ reduced line height */
+            transform: translateY(.185em);
+
+            > * {
+                /* !important: At least 'Template:Infobox company' creates an
+                   inline block with inline top padding style which breaks the
+                   text grid */
+                padding-top: 0 !important;
+            }
+        }
+
+        /* .ib-company .infobox-data changes the line height,
+           so does .ib-settlement */
+        .infobox-data {
+            line-height: 1rlh;
+        }
+
+        .infobox-image {
+            text-align: center;
+
+            img {
+                display: block;
+                margin-inline: auto;
+                width: 100%;
+            }
+
+            * + * {
+                margin-top: 0;
+            }
+        }
+
+        .infobox-header {
+            /* !important: 'Rust (programming language)' */
+            background-color: transparent !important;
+            /* !important: 'Minnesota' */
+            border-top: 0 !important;
+
+            &.description {
+                font-stretch: normal;
+            }
+
+            /* Because it is a table cell, to get a horizontal rule with
+               spacing, choose poison: a nasty selector that walks backward, or
+               a pseudo-element */
+            /* padding-top: .6rem;
+            &::before {
+                border-top: thin solid var(--fg);
+                content: '';
+                display: block;
+                transform: translateY(.1rem);
+            } */
+        }
+
+        .infobox-caption,
+        .sidebar-caption {
+            font-style: italic;
+            margin-top: 0;
+        }
+
+        * + .plainlist {
+            margin-top: 0;
+        }
+    }
+
+
+    /*******************/
+    /* Template:Navbox */
+    /*******************/
+
+    /* nest everything to increase specificity, since the templatestyles uses
+       complex selectors with high specificities */
+    .navbox {
+        &.navbox,
+        .navbox-title,
+        .navbox-group,
+        .navbox-subgroup,
+        .navbox-list,
+        .navbox-even,
+        .navbox-odd,
+        .navbox-abovebelow {
+            /* !important: 'Sociology' */
+            background-color: transparent !important;
+            border: 0;
+            margin-top: 0;
+        }
+
+        &.navbox {
+            border-top: 3px solid currentColor;
+            /* !important: 'Crazy Taxi' */
+            padding: 0 !important;
+
+            /* Lots of empty garbage elements inside navboxes */
+            div:empty {
+                display: none;
+
+                + * {
+                    margin-top: 0;
+                }
+            }
+
+            li {
+                padding-left: 0;
+            }
+        }
+
+        /* There is a much more pleasant way to do this, which is to use border-top
+        on `tr + tr`. Unfortunately, to make sure there is a bottom border on a
+        last row but *not* on a `.navbox-abovebelow`, the border has to be put on
+        the bottom so it can be erased by `.navbox-abovebelow`. */
+        tr > :is(.navbox-title, .navbox-abovebelow, .navbox-group, .navbox-image, .navbox-list) {
+            border-bottom: thin solid var(--border-fg);
+        }
+        .navbox-subgroup tr:last-child > :is(.navbox-abovebelow, .navbox-group, .navbox-image, .navbox-list) {
+            border-bottom: 0;
+        }
+        tr:last-child > .navbox-abovebelow {
+            border-bottom: 0;
+        }
+
+        .navbox-list + .navbox-list {
+            /* !important: 'Template:IBM personal computers' */
+            border-left: thin solid var(--border-fg) !important;
+        }
+
+        /* 'Template:Mozilla' uses one of these weirdo hybrids */
+        .navbox-list-with-group > div:first-child:not(:empty) {
+            &:has(~ .navbox-subgroup) {
+                /* !important: 'Template:Mozilla' */
+                padding-inline: 1rem !important;
+            }
+
+            ~ .navbox-subgroup {
+                border-top: thin solid var(--border-fg);
+            }
+        }
+
+        .navbox-title,
+        .navbox-group,
+        .navbox-abovebelow {
+            font-family: var(--sans);
+        }
+
+        /* TODO: Is this just broken because string replacement is broken? */
+        .navbox-columns-table {
+            width: 100%;
+        }
+
+        .navbox-abovebelow {
+            font-size: 1rem;
+        }
+
+        .navbox-title {
+            font-size: 1rem;
+            font-stretch: 110%;
+
+            > :not(.navbar) {
+                /* !important: Pages like 'Crazy Taxi' on an anonymous
+                container */
+                font-size: 1rem !important;
+            }
+        }
+
+        .navbox-group:has(+ td .navbox-subgroup) {
+            border-right: thin solid var(--border-fg);
+        }
+
+        .navbox-image {
+            display: none;
+        }
+
+        /* 'Wikipedia:Five pillars' uses this */
+        .navbox-columns-table {
+            strong {
+                font-family: var(--sans);
+            }
+
+            .navbox-list {
+                border: 0 !important;
+            }
+
+            .navbox-list + * {
+                padding-left: calc(var(--box-margin) * .25) !important;
+            }
+        }
+    }
+
+    .navbox-styles {
+        display: none;
+    }
+
+    /* extra specificity to override `.navbox + .navbox-styles + .navbox` */
+    * + .navbox.navbox.navbox {
+        margin-top: 4rem;
+    }
+
+    /***********************/
+    /* Template:Portal     */
+    /* Template:Portal bar */
+    /***********************/
+
+    .portalborder {
+        background: var(--box-tag);
+        border: 0;
+        padding: .25rem var(--tag-size);
+
+        &.portalright {
+            padding-right: 0;
+        }
+    }
+
+    .portalbox-entry {
+        font-family: var(--sans);
+        font-size: 88%; /* match side-box */
+        line-height: 1;
+        height: auto;
+        font-style: normal;
+        font-weight: normal;
+    }
+
+    .portalbox-image,
+    .portalbox-link {
+        padding: 0;
+    }
+    .portalbox-link {
+        padding-left: .3em;
+    }
+
+    .portal-bar, .sister-bar {
+        font-family: var(--sans);
+        margin-top: 4rem;
+    }
+    .portal-bar-bordered, .sister-bar {
+        background-color: transparent;
+        border: 0;
+        border-top: thin solid var(--border-fg);
+        border-bottom: thin solid var(--border-fg);
+    }
+
+    /***************************************/
+    /* Template:Side box (portal-adjacent) */
+    /***************************************/
+
+    .side-box {
+        border: 0;
+        background: var(--box-tag);
+        font-family: var(--sans);
+        max-width: var(--aside-max);
+        width: auto;
+
+        .side-box-flex > * + * {
+            margin-top: 0;
+        }
+
+        .side-box-text {
+            padding-block: 0;
+        }
+
+        * + hr {
+            margin-top: calc(var(--box-margin) * .25);
+        }
+
+        > * + * {
+            margin-top: calc(var(--box-margin) * .25);
+        }
+    }
+
+    /***************************************/
+    /* Template:Shortcut (portal-adjacent) */
+    /***************************************/
+
+    .module-shortcutboxplain {
+        background: var(--box-tag);
+        border: 0;
+        font-family: var(--sans);
+        margin: 0 0 var(--figure-margin) var(--figure-margin);
+        padding: 0 0 0 var(--tag-size);
+
+        > * + * {
+            margin: 0;
+        }
+    }
+
+    .module-shortcutlist {
+        border: 0;
+    }
+
+    /********************/
+    /* Template:Reflist */
+    /********************/
+
+    .reflist, .refbegin {
+        font-size: inherit;
+        margin-bottom: 0;
+    }
+
+    .reflist-columns {
+        gap: calc(var(--ol-gutter) * 2);
+        margin-top: 0;
+    }
+
+    /***********************/
+    /* Template:Blockquote */
+    /***********************/
+
+    blockquote, .templatequote {
+        font-style: italic;
+        margin-bottom: 0;
+        padding-inline: 2.5rem;
+
+        em, em em em, em em em em em {
+            font-style: normal;
+        }
+
+        em em, em em em em, em em em em em em {
+            font-style: italic;
+        }
+    }
+
+    .templatequotecite {
+        font-family: var(--sans);
+        line-height: 1rlh;
+        margin-top: .5em;
+        text-align: end;
+
+        em, em em em, em em em em em {
+            font-style: italic;
+        }
+
+        em em, em em em em, em em em em em em {
+            font-style: normal;
+        }
+    }
+
+    /******************/
+    /* Template:Mbox  */
+    /* Template:Ambox */
+    /* Template:Cmbox */
+    /* Template:Fmbox */
+    /* Template:Imbox */
+    /* Template:Ombox */
+    /* Template:Tmbox */
+    /******************/
+
+    .ambox, .ombox, .cmbox {
+        background: var(--box-tag);
+        border: 0;
+        font-family: var(--sans);
+        margin-inline: 0;
+
+        img {
+            aspect-ratio: 1;
+            display: block;
+        }
+
+        /* TODO: This violates the top-only rule because of missing <p> due to
+           bad parsing */
+        hr {
+            margin: .5rem 0 calc(.5rem - 1px);
+        }
+
+        .mw-parser-output > &:first-child {
+            margin-top: var(--box-margin);
+        }
+    }
+
+    .mbox-text {
+        padding: 0;
+    }
+
+    .mbox-image {
+        padding: .1rem .3rem 0 .3rem;
+        vertical-align: top;
+    }
+
+    .mbox-empty-cell {
+        padding-left: .5rem;
+    }
+
+    .mbox-small {
+        margin: 0 0 var(--figure-margin) var(--figure-margin);
+    }
+
+    /**************************/
+    /* Template:Documentation */
+    /**************************/
+
+    .documentation-container {
+        * + & {
+            border-top: 3px solid currentColor;
+            margin-top: 2rem;
+            padding-top: .5rem;
+        }
+    }
+
+    .documentation {
+        background-color: transparent;
+        border: 0;
+        padding: 0;
+    }
+
+    .documentation-startbox {
+        align-items: baseline;
+        border-bottom-color: var(--fg);
+        display: flex;
+        font-family: var(--sans);
+        padding: 0;
+        margin-bottom: 0;
+
+        > :first-child {
+            flex: 1;
+        }
+    }
+
+    .documentation-heading {
+        font-stretch: 120%;
+
+        img {
+            max-height: 1cap;
+        }
+    }
+
+    .documentation-metadata {
+        background-color: transparent;
+        border: 0;
+        border-top: 3px solid;
+        font-family: var(--sans);
+        font-style: normal;
+        padding: .5rem 0 0;
+        margin: 4rem 0 0;
+    }
+
+    /*******************************/
+    /* Template:Video game reviews */
+    /*******************************/
+
+    .video-game-reviews {
+        margin-bottom: var(--figure-margin);
+        margin-left: var(--figure-margin);
+    }
+    .vgr-reviews caption {
+        font-family: var(--sans);
+    }
+
+    .vgr-center {
+        text-align: left;
+    }
+
+    .vgr-stacked {
+        margin-top: calc(var(--box-margin) * .5);
+    }
+
+    .vgr-title {
+        font-family: var(--sans);
+    }
+
+    /***************************/
+    /* Template:Image frame    */
+    /* Template:Multiple image */
+    /***************************/
+
+    .thumb {
+        font-family: var(--sans);
+        /* api.php?meta=siteinfo&siprop=general thumblimits maxes out at 400 */
+        max-width: 400px;
+
+        .thumbcaption {
+            margin-top: 0;
+        }
+
+        .multiimageinner {
+            /* !important: This module blindly calculates values even if none
+               are available, which means it ends up forced to 100px wide */
+            max-width: none !important;
+            width: auto !important;
+        }
+
+        .tsingle {
+            margin: 0;
+        }
+
+        .trow {
+            gap: calc(var(--figure-margin) / 2);
+
+            > * {
+                flex: 1 1 0%;
+                min-width: 0;
+            }
+
+            .thumbimage:has(~ .text-align-center) {
+                text-align: center;
+            }
+        }
+    }
+
+    /***********************/
+    /* Template:Row header */
+    /***********************/
+
+    .table-rh {
+        /* !important: Even though this template uses a class, it still also
+           unconditionally inlines styles */
+        background-color: transparent !important;
+        color: inherit !important;
+        font-family: var(--sans);
+        line-height: 1.2;
+
+        > .hatnote {
+            font-weight: normal !important;
+            margin-top: calc(var(--box-margin) * .5);
+        }
+    }
+
+    /*****************************/
+    /* Template:Spoken Wikipedia */
+    /*****************************/
+
+    .spoken-wikipedia {
+        border: 0;
+        border-top: 3px solid currentColor;
+        font-family: var(--sans);
+    }
+    .spoken-wikipedia-disclaimer {
+        hyphens: manual;
+    }
+
+    /************************/
+    /* Template:Compact TOC */
+    /************************/
+
+    .toc {
+        border-top: 3px solid currentColor;
+        font-family: var(--sans);
+
+        .toctitle {
+            font-stretch: 120%;
+
+            + * {
+                border-top: thin solid var(--border-fg);
+                margin-top: 0;
+                padding-top: calc(var(--box-margin) * .25);
+            }
+        }
+
+        > div {
+            text-align: center;
+        }
+    }
+
+    /**********************/
+    /* Template:Quote box */
+    /**********************/
+
+    .quotebox {
+        background: transparent;
+        border: 0;
+        border-bottom: thin solid currentColor;
+        border-top: 3px solid currentColor;
+        padding: calc(var(--box-margin) * 2) var(--box-margin) calc(var(--box-margin) * 2) calc(var(--box-margin) * 2);
+
+        &.floatright {
+            margin: 0 calc(var(--box-margin) * -1) var(--figure-margin) var(--figure-margin);
+        }
+
+        .left-aligned {
+            text-align: justify;
+        }
+
+        cite {
+            font-style: italic;
+
+            /* 'Social class' uses this and it looks bad */
+            &.left-aligned {
+                text-align: right;
+            }
+        }
+    }
+
+    /**************************************/
+    /* Template:Timeline of release years */
+    /**************************************/
+
+    .release-timeline {
+        border-collapse: separate;
+        border-spacing: 0 1px;
+        clear: right;
+        font-family: var(--sans);
+        font-size: 95%;
+        float: right;
+        line-height: inherit;
+        margin: 0 calc(var(--box-margin) * -1) var(--figure-margin) var(--figure-margin);
+        padding: 0;
+        width: auto;
+
+        > caption {
+            border-bottom: thin solid var(--border-th);
+        }
+
+        td, th {
+            line-height: 1.2;
+        }
+
+        th[style*="border-right"] {
+            border-right-width: .5ch !important;
+        }
+
+        td {
+            font-stretch: 80%;
+        }
+    }
+
+    /************************************/
+    /* Template:Template journal inline */
+    /************************************/
+
+    .tj-tape {
+        font-family: var(--mono);
+    }
+
+    /********************/
+    /* Template:Div col */
+    /********************/
+
+    * + .div-col {
+        margin-top: var(--box-margin);
+    }
 }

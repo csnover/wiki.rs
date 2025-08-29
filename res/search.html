@@ -1,25 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <meta charset="UTF-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>{{ count }} results for {{ query }}</title>
-        <link rel="stylesheet" href="/res/styles.css" />
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="content-security-policy" content="img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
+        <title><%- total %> result<% if total != 1 { %>s<% } %> for <%= query %></title>
+        <link rel="stylesheet" href="<%= base_path %>/styles.css">
     </head>
-    <body>
-        <nav class="main-nav">
-            <form action="/search">
-                <input name="q" type="search" placeholder="Search Wikipedia" />
+    <body class="wiki-rs-body">
+        <div class="wiki-rs-nav">
+            <form action="<%= base_path %>/search" class="wiki-rs-search">
+                <input id="q" name="q" type="search" placeholder="Use regular expressions" required>
+                <label for="q">Search <%= site %></label>
+                <button type="submit">Go</button>
             </form>
-        </nav>
-        <main>
-            <h1>{{ count }} results for <i>{{ query }}</i></h1>
-            {{ foreach result in results }}
-            <div>
-                <a href="/article/{{ result }}">{{ result }}</article>
-            </div>
-            {{ end }}
+        </div>
+        <div class="wiki-rs-title">
+            <h1><%- total %> result<% if total != 1 { %>s<% } %> for <i><%= query %></i></h1>
+        </div>
+        <main class="wiki-rs-content wiki-rs-search-results">
+            <ol>
+                <% for result in results { %>
+                    <% /* Article names are entity-encoded in the database index */ %>
+                    <li><a href="<%= base_path %>/article/<%- result %>"><%- result %></a></li>
+                <% } %>
+            </ol>
         </main>
+        <% if page_count > 1 { %>
+            <% const RANGE: u8 = 2; %>
+            <nav class="wiki-rs-pagination"><ul>
+                <% if page > RANGE.into() { %>
+                    <li<% if page > usize::from(RANGE) + 1 { %> class="first"<% } %>><a href="?q=<%= query %>&amp;page=1&amp;per_page=<%- per_page %>">1</a></li>
+                <% } %>
+                <% for i in -isize::from(RANGE)..=isize::from(RANGE) { %>
+                    <% if let Some(mut page) = page.checked_add_signed(i) && page < page_count { %>
+                        <% page += 1; %>
+                        <% if i == 0 { %>
+                            <li class="current"><%- page %></li>
+                        <% } else { %>
+                            <li><a href="?q=<%= query %>&amp;page=<%- page %>&amp;per_page=<%- per_page %>"><%- page %></a></li>
+                        <% } %>
+                    <% } %>
+                <% } %>
+
+                <% if page_count > page + usize::from(RANGE) + 1 { %>
+                    <li<% if page_count > page + usize::from(RANGE) + 2 { %> class="last"<% } %>><a href="?q=<%= query %>&amp;page=<%- page_count %>&amp;per_page=<%- per_page %>"><%- page_count %></a></li>
+                <% } %>
+            </ul></nav>
+        <% } %>
     </body>
 </html>

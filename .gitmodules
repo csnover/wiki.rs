@@ -1,3 +1,0 @@
-[submodule "lib/kata"]
-	path = lib/kata
-	url = git@github.com:Twometer/kata.git

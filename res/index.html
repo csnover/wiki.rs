@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <meta charset="UTF-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>wiki.rs</title>
-        <link rel="stylesheet" href="/res/styles.css" />
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="content-security-policy" content="img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
+        <title><%= site %></title>
+        <link rel="stylesheet" href="<%= base_path %>/styles.css">
     </head>
-    <body>
-        <nav class="main-nav">
-            <form action="/search">
-                <input name="q" type="search" placeholder="Search Wikipedia" />
-            </form>
-        </nav>
+    <body class="wiki-rs-body wiki-rs-index">
+        <form action="<%= base_path %>/search" class="wiki-rs-search">
+            <input id="q" name="q" type="search" placeholder="Search <%= site %> – Use regular expressions" title="Use regular expressions" required autofocus>
+            <label for="q">Search <%= site %></label>
+            <button type="submit">Go</button>
+        </form>
     </body>
 </html>

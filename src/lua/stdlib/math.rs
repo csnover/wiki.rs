@@ -1,0 +1,86 @@
+//! Lua 5.1-compatible mathematics standard library.
+
+use crate::lua::prelude::*;
+use piccolo::{
+    TypeError,
+    meta_ops::{self, MetaResult},
+};
+
+/// Loads the maths library.
+pub fn load_math(ctx: Context<'_>) -> Result<(), TypeError> {
+    let math = ctx.get_global::<Table<'_>>("math")?;
+
+    math.set_field(
+        ctx,
+        "mod",
+        Callback::from_fn(&ctx, |ctx, _, mut stack| {
+            let (lhs, rhs) = stack.consume::<(Value<'_>, Value<'_>)>(ctx)?;
+
+            Ok(match meta_ops::modulo(ctx, lhs, rhs)? {
+                MetaResult::Value(value) => {
+                    stack.push_back(value);
+                    CallbackReturn::Return
+                }
+                MetaResult::Call(call) => {
+                    stack.extend(call.args);
+                    CallbackReturn::Call {
+                        function: call.function,
+                        then: None,
+                    }
+                }
+            })
+        }),
+    );
+
+    math.set_field(
+        ctx,
+        "log10",
+        extras::callback("log10", &ctx, |_, v: f64| Some(v.log10())),
+    );
+
+    math.set_field(
+        ctx,
+        "pow",
+        Callback::from_fn(&ctx, |ctx, _, mut stack| {
+            let (lhs, rhs) = stack.consume::<(f64, f64)>(ctx)?;
+            stack.replace(ctx, lhs.powf(rhs));
+            Ok(CallbackReturn::Return)
+        }),
+    );
+
+    Ok(())
+}
+
+// TODO: Expose helpers upstream?
+// SPDX-SnippetBegin
+// SPDX-License-Identifier: MIT
+// SPDX-SnippetComment: Copied from piccolo
+mod extras {
+    //! Utility functions extracted from piccolo.
+
+    use gc_arena::Mutation;
+    use piccolo::{Callback, CallbackReturn, Context, FromMultiValue, IntoMultiValue, IntoValue};
+
+    /// A helper for writing simple callbacks which receive arguments of type
+    /// `A` and return a value of type `R`.
+    pub(super) fn callback<'gc, F, A, R>(
+        name: &'static str,
+        mc: &Mutation<'gc>,
+        f: F,
+    ) -> Callback<'gc>
+    where
+        F: Fn(Context<'gc>, A) -> Option<R> + 'static,
+        A: FromMultiValue<'gc>,
+        R: IntoMultiValue<'gc>,
+    {
+        Callback::from_fn(mc, move |ctx, _, mut stack| {
+            if let Some(res) = f(ctx, stack.consume(ctx)?) {
+                stack.replace(ctx, res);
+                Ok(CallbackReturn::Return)
+            } else {
+                Err(format!("Bad argument to {name}").into_value(ctx).into())
+            }
+        })
+    }
+}
+// SPDX-SnippetEnd

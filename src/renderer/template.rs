@@ -1,0 +1,360 @@
+//! Template rendering types and functions.
+
+use super::{
+    Error, Result, State,
+    expand_templates::ExpandMode,
+    parser_fns::call_parser_fn,
+    resolve_redirects,
+    stack::{KeyCacheKvs, Kv, StackFrame},
+    surrogate::Surrogate as _,
+    tags::render_runtime,
+};
+use crate::{
+    LoadMode,
+    common::make_url,
+    config::CONFIG,
+    lua::run_vm,
+    renderer::{WriteSurrogate, expand_templates::ExpandTemplates},
+    title::{Namespace, Title},
+    wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
+};
+use std::{borrow::Cow, pin::pin, rc::Rc, time::Instant};
+
+/// Calls a Lua function.
+pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    arguments: &KeyCacheKvs<'_, '_>,
+) -> Result {
+    let Some(callee) = arguments.eval(state, sp, 0)? else {
+        log::warn!("tried to call #invoke with no module name");
+        return Ok(());
+    };
+
+    let Some(fn_name) = arguments.eval(state, sp, 1)? else {
+        return Err(Error::MissingFunctionName);
+    };
+
+    let callee = Title::new(&callee, Namespace::find_by_id(Namespace::MODULE));
+
+    let code = match state.statics.db.get(callee.key()) {
+        Ok(code) => resolve_redirects(&state.statics.db, code)?,
+        Err(err) => {
+            log::warn!("could not load module {callee}: {err}");
+            sp.backtrace();
+            return Ok(());
+        }
+    };
+
+    // TODO: The source code in the frame has to be the one associated with the
+    // `arguments`, not the module source code, for arguments lookups to work
+    // correctly, which is bad.
+    let sp = sp.chain(callee, sp.source.clone(), &arguments[2..])?;
+
+    // log::trace!("Invoking {}|{}", &code.title, fn_name);
+    let now = Instant::now();
+    let result = run_vm(state, pin!(&sp), &code, &fn_name).map_err(|err| Error::Module {
+        name: code.title.clone(),
+        fn_name: fn_name.to_string(),
+        err: Box::new(err.into()),
+    });
+
+    state
+        .timing
+        .entry(sp.name.to_string())
+        .and_modify(|(count, duration)| {
+            *count += 1;
+            *duration += now.elapsed();
+        })
+        .or_insert_with(|| (1, now.elapsed()));
+
+    let result = result?;
+    let sp = sp.clone_with_source(FileMap::new(&result));
+    let tree = state.statics.parser.parse_no_expansion(&sp.source)?;
+    // eprintln!("{result}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &tree.root));
+    out.adopt_output(state, &sp, &tree)?;
+    Ok(())
+}
+
+/// Renders a parameter.
+pub(super) fn render_parameter<W: WriteSurrogate + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    span: Span,
+    name: &[Spanned<Token>],
+    default: Option<&[Spanned<Token>]>,
+) -> Result {
+    if state.load_mode == LoadMode::Base {
+        return render_fallback(out, state, sp);
+    }
+
+    let key = sp.eval(state, name)?;
+
+    if !sp.expand_raw(out, state, &key)? {
+        if let Some(default) = default {
+            out.adopt_tokens(state, sp, default)?;
+        } else {
+            out.adopt_text(state, sp, span, &sp.source[span.into_range()])?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Renders a template.
+pub(super) fn render_template<'tt, W: WriteSurrogate>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &'tt StackFrame<'_>,
+    bounds: Span,
+    target: &'tt [Spanned<Token>],
+    arguments: &'tt [Spanned<Argument>],
+) -> Result {
+    // eprintln!("render_template {sp:?} {:?}", inspect(&sp.source, target));
+
+    if state.load_mode == LoadMode::Base {
+        return render_fallback(out, state, sp);
+    }
+
+    // Deferring evaluation of a parser function’s first argument enables
+    // `#iferror` to handle errors more accurately when they are raised by
+    // wiki.rs code (vs when they are caused by some template generating its
+    // own error element, if that ever happens). Of course, content before a ':'
+    // could also be just a namespace. We won’t know until we can inspect the
+    // callee and compare against the site configuration.
+    let mut callee = String::new();
+    let mut rest = target.iter();
+    let mut has_colon = false;
+    let mut first = None;
+    for part in rest.by_ref() {
+        // It is not good enough to just look for text nodes because there are
+        // insane but legal constructions like `{{ {{#if:1|#if:}} 1|y|n }}`
+        // (evaluates to "y").
+        let text = if let Spanned {
+            span,
+            node: Token::Text,
+        } = part
+        {
+            Cow::Borrowed(&sp.source[span.into_range()])
+        } else if let Spanned {
+            node: Token::Generated(text),
+            ..
+        } = part
+        {
+            Cow::Borrowed(text.as_str())
+        } else {
+            sp.eval(state, core::slice::from_ref(part))?
+        };
+
+        if let Some((lhs, rhs)) = text.split_once(':') {
+            callee += lhs;
+            has_colon = true;
+            if !rhs.is_empty() {
+                first = Some(Spanned {
+                    node: Token::Generated(rhs.to_string()),
+                    span: part.span,
+                });
+            }
+            break;
+        }
+
+        callee += &text;
+    }
+    let rest = rest.as_slice();
+    let callee = callee.trim_ascii();
+    // eprintln!("{callee} / {first:?} / {rest:?}");
+
+    // Whilst the documentation at
+    // <https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Magic_words#How_magic_words_work>
+    // makes claims about the order of operations of magic words, they are
+    // actually processed thus:
+    //
+    // 1. Is it a subst, and the parser is configured to retain the output
+    //    as literal text? If so, emit as text and do no more work.
+    // 2. If no args, try to match as a variable, and expand the variable
+    //    if so.
+    // 3. Change configuration settings based on special symbols 'msgnw',
+    //    'msg', and 'raw'.
+    // 4. Is there a ':' in the name? If so, assume it is a parser function,
+    //    try to call the parser function, and allow processing to continue
+    //    if the parser function does not match.
+    // 5. Check if it is a template, and if so, process the template, with
+    //    stack recursion limits.
+    // 6. Query a database.
+    // 7. Emit as text.
+
+    // Technically, MediaWiki has some magic words that are case-sensitive
+    // and others which are case-insensitive. In practice, this does not
+    // seem to matter, and can just treat everything as lowercase. MW uses
+    // Unicode-aware functions for this, although everything seems to be ASCII.
+    let callee_lower = callee.to_lowercase();
+
+    let use_function_hook = is_function_call(arguments.is_empty(), has_colon, &callee_lower);
+
+    // TODO: There is some undocumented stuff to remove 'msgnw', 'msg', or 'raw'
+    // magic words from the callee and then to change some options before
+    // continuing.
+
+    if use_function_hook {
+        if callee == "#invoke" && state.load_mode != LoadMode::Module {
+            return render_fallback(out, state, sp);
+        }
+
+        // It is important to actually not pass a zeroth argument is there is
+        // not one
+        let first =
+            has_colon.then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
+
+        let arguments = first
+            .into_iter()
+            .chain(arguments.iter().map(Kv::Argument))
+            .collect::<Vec<_>>();
+
+        call_parser_fn(out, state, sp, Some(bounds), &callee_lower, &arguments)
+    } else {
+        let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
+
+        let callee = sp.eval(state, target)?;
+        call_template(
+            out,
+            state,
+            sp,
+            &Kv::Partial(target.iter().collect()),
+            callee.trim_ascii(),
+            &arguments,
+        )
+    }
+}
+
+/// Transcludes a template.
+pub fn call_template<W: WriteSurrogate + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    target: &Kv<'_>,
+    callee: &str,
+    arguments: &[Kv<'_>],
+) -> Result {
+    // log::trace!("{} is wanting {callee}", sp.name);
+    let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
+
+    let Ok(template) = state.statics.db.get(callee.key()) else {
+        log::warn!("No template found for '{callee}'");
+
+        // 'Template:Date and time templates' contains a
+        // `{{<nowiki/>{{template call which returns wikilink}}<nowiki/>}}`.
+        // TODO: It is not totally clear which thing is intended to trigger this
+        // fallback mode. It is valid to create a target by interpolating with a
+        // template call, so is it the existence of a extension tag (in which
+        // case the parser should not parse those inside a template target)? Is
+        // it because the *expanded* target contains non-text tokens? It
+        // *cannot* actually be due to the database lookup failing because
+        // *that* is supposed to fall back to a wikilink to edit the template.
+        // Therefore, this is not a totally correct fallback, and more work
+        // needs to be done elsewhere.
+        out.write_str("{{")?;
+        target.eval_into(out, state, sp)?;
+        for argument in arguments {
+            out.write_str("|")?;
+            argument.eval_into(out, state, sp)?;
+        }
+        out.write_str("}}")?;
+
+        return Ok(());
+    };
+
+    let Ok(template) = resolve_redirects(&state.statics.db, template) else {
+        log::warn!("Template redirects failed for {callee}");
+        return Ok(());
+    };
+
+    let now = Instant::now();
+
+    let sp = sp.chain(callee, FileMap::new(&template.body), arguments)?;
+    // For now, just assume that the cache will always be big enough and unwrap
+    let root = Rc::clone(
+        state
+            .statics
+            .template_cache
+            .get_or_insert_fallible(template.id, || {
+                state.statics.parser.parse(&sp.source, true).map(Rc::new)
+            })?
+            .unwrap(),
+    );
+
+    {
+        // At least 'Template:Color' builds HTML elements in pieces in a way
+        // where it is impossible to parse them correctly before template
+        // expansion is completed, which is very annoying because it requires
+        // this buffering and double-parsing where it would not otherwise be
+        // necessary.
+        let mut evaluator = ExpandTemplates::new(ExpandMode::Strip);
+        evaluator.adopt_output(state, &sp, &root)?;
+        let partial = evaluator.finish();
+
+        let root = state.statics.parser.parse_no_expansion(&partial)?;
+        let sp = sp.clone_with_source(FileMap::new(&partial));
+        // eprintln!("{partial}\n\n{:#?}", inspect(&sp.source, &root.root));
+        out.adopt_output(state, &sp, &root)?;
+    }
+
+    state
+        .timing
+        .entry(sp.name.to_string())
+        .and_modify(|(count, duration)| {
+            *count += 1;
+            *duration += now.elapsed();
+        })
+        .or_insert_with(|| (1, now.elapsed()));
+    Ok(())
+}
+
+/// Returns true if the given template target is a variable or parser function.
+pub(super) fn is_function_call(empty_arguments: bool, has_colon: bool, callee_lower: &str) -> bool {
+    // We can just assume that if it starts with a '#' then it is a parser
+    // function since the way MediaWiki URLs work mean these cannot be
+    // templates, and the list of function hooks from the MediaWiki API does
+    // not actually include the hash.
+    (empty_arguments && CONFIG.variables.contains(callee_lower))
+        || callee_lower.starts_with('#')
+        || (has_colon && CONFIG.function_hooks.contains(callee_lower))
+        || callee_lower == "subst"
+        || callee_lower == "safesubst"
+}
+
+/// Handles a template or parameter which is disabled due to the current
+/// [`LoadMode`].
+pub(super) fn render_fallback<W: WriteSurrogate + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+) -> Result {
+    let href = make_url(
+        None,
+        &state.statics.base_uri,
+        sp.root().name.full_text(),
+        Some("mode=module"),
+        false,
+    )?;
+
+    render_runtime(out, state, sp, |source| {
+        token!(
+            source,
+            Token::ExternalLink {
+                target: token!(source, [Token::Text { href }]).into(),
+                content: token![source, [
+                    Token::StartTag {
+                        name: token!(source, Span { "span" }),
+                        attributes: token![source, [ "class" => "wiki-rs-incomplete" ]].into(),
+                        self_closing: false,
+                    },
+                    Token::Text { "Run scripts" },
+                    Token::EndTag { name: token!(source, Span { "span" }) }
+                ]]
+                .into()
+            }
+        )
+    })
+}

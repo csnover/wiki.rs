@@ -1,32 +1,47 @@
-use super::article::Article;
-use std::sync::Arc;
+//! A limiter for [`schnellru`] which limits the size of the cache according to
+//! its total size in bytes.
+
+use core::marker::PhantomData;
+
+/// A trait for implementing generic item size calculations for a
+/// [`ByMemoryUsage`] limiter.
+pub trait ByMemoryUsageCalculator {
+    /// The target type to size.
+    type Target;
+
+    /// Calculates the size of `value`.
+    fn size_of(value: &Self::Target) -> usize;
+}
 
 /// A limiter for a map which is limited by memory usage.
 #[derive(Copy, Clone, Debug)]
-pub struct ByMemoryUsage {
+pub struct ByMemoryUsage<T: ByMemoryUsageCalculator> {
+    /// Current memory usage.
     heap_size: usize,
+    /// Maximum allowed usage.
     max_bytes: usize,
+    /// [`PhantomData`] for the generic item size calculator.
+    __: PhantomData<T>,
 }
 
-impl ByMemoryUsage {
+impl<T: ByMemoryUsageCalculator> ByMemoryUsage<T> {
     /// Creates a new memory usage limiter with a given limit in bytes.
     pub const fn new(max_bytes: usize) -> Self {
         Self {
             max_bytes,
             heap_size: 0,
+            __: PhantomData,
         }
     }
 
+    /// Calculates the size of a token tree.
     #[inline]
-    fn size_of(value: &Arc<Article>) -> usize {
-        core::mem::size_of::<Arc<Article>>()
-            + core::mem::size_of::<Article>()
-            + value.title.capacity()
-            + value.body.capacity()
+    fn size_of(value: &T::Target) -> usize {
+        T::size_of(value)
     }
 }
 
-impl<K> schnellru::Limiter<K, Arc<Article>> for ByMemoryUsage {
+impl<T: ByMemoryUsageCalculator, K> schnellru::Limiter<K, T::Target> for ByMemoryUsage<T> {
     type KeyToInsert<'a> = K;
     type LinkType = u32;
 
@@ -40,8 +55,8 @@ impl<K> schnellru::Limiter<K, Arc<Article>> for ByMemoryUsage {
         &mut self,
         _: usize,
         key: Self::KeyToInsert<'_>,
-        value: Arc<Article>,
-    ) -> Option<(K, Arc<Article>)> {
+        value: T::Target,
+    ) -> Option<(K, T::Target)> {
         let new_size = Self::size_of(&value);
         if new_size <= self.max_bytes {
             self.heap_size += new_size;
@@ -57,8 +72,8 @@ impl<K> schnellru::Limiter<K, Arc<Article>> for ByMemoryUsage {
         _: usize,
         _: &mut K,
         _: K,
-        old_value: &mut Arc<Article>,
-        new_value: &mut Arc<Article>,
+        old_value: &mut T::Target,
+        new_value: &mut T::Target,
     ) -> bool {
         let new_size = Self::size_of(new_value);
         if new_size <= self.max_bytes {
@@ -70,7 +85,7 @@ impl<K> schnellru::Limiter<K, Arc<Article>> for ByMemoryUsage {
     }
 
     #[inline]
-    fn on_removed(&mut self, _: &mut K, value: &mut Arc<Article>) {
+    fn on_removed(&mut self, _: &mut K, value: &mut T::Target) {
         self.heap_size -= Self::size_of(value);
     }
 
@@ -85,7 +100,7 @@ impl<K> schnellru::Limiter<K, Arc<Article>> for ByMemoryUsage {
     }
 }
 
-impl From<usize> for ByMemoryUsage {
+impl<T: ByMemoryUsageCalculator> From<usize> for ByMemoryUsage<T> {
     fn from(max_bytes: usize) -> Self {
         Self::new(max_bytes)
     }

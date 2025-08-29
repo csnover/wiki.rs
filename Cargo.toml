@@ -1,21 +1,63 @@
 [package]
 name = "wiki-rs"
+description = "A high-performance offline reader of multistream MediaWiki dumps."
+license = "MIT AND GPL-2.0-or-later"
 version = "2.0.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.8", features = ["macros"] }
+anyhow = "1.0"
+arc-cell = "0.3"
+arrayvec = "0.7"
+axum = "0.8"
 bzip2-rs = "0.1"
+either = "1.15"
 env_logger = "0.11"
+fancy-regex = "0.16"
+gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "5a7534b883b703f23cfb8c3cfdf033460aa77ea9", features = ["allocator-api2", "hashbrown"] }
+html-escape = "0.2"
 log = "0.4"
-kata = { path = "lib/kata" }
+math-core = "0.1"
+memchr = "2.7"
 memmap2 = "0.9"
-minidom = "0.16"
-parse_wiki_text = "0.1"
+minidom = "0.18"
+peg = { git = "https://github.com/csnover/rust-peg.git", rev = "68a910801dbcf6acc19ba2f81c352435a9072cb4" }
+# urlencoding is smaller, but percent-encoding is already a sub-dependency
+percent-encoding = "2"
+phf = { version = "0.13.1", features = ["macros"] }
+piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "80b77dafe4b5fbc5d286135cc8de838c2465a818" }
+piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "80b77dafe4b5fbc5d286135cc8de838c2465a818" }
 pico-args = "0.5"
+r2d2 = "0.8"
 rayon = "1"
 regex = "1"
+sailfish = "0.10"
 schnellru = "0.2"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-transcode = "1"
+syntect = { version = "5.3", optional = true, default-features = false, features = ["default-syntaxes", "default-themes", "html", "parsing", "regex-fancy"] }
 thiserror = "2"
-tokio = { version = "1.47", features = ["rt-multi-thread", "net", "macros"] }
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
+tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tz-rs = { version = "0.7.1", features = [] }
+tzdb_data = "0.2"
+unicode-general-category = "1.1"
+unicode-normalization = "0.1"
+
+[features]
+default = ["debug-styles", "syntax-highlighting"]
+debug-styles = []
+syntax-highlighting = ["dep:syntect"]
+
+[build-dependencies]
+regex = "1"
+tzdb_data = "0.2"
+
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 3
+
+[profile.release]
+lto = "thin"

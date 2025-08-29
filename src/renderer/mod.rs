@@ -1,408 +1,276 @@
-use crate::db::{Database, article::Article};
-use parse_wiki_text::{Configuration, Node, Parameter};
-use std::borrow::Cow;
-use config::{CONFIG, MAGIC_WORDS};
+//! Article rendering types and functions.
+//!
+//! Wikitext can only be parsed correctly by an algorithm that operates as-if
+//! this sequence of steps is run in order (probably):
+//!
+//! 1. Preprocess annotation tags. Annotation tags which are not balanced are
+//!    treated as plain text. (TODO: Expand on how to do this, if it is ever
+//!    necessary.)
+//!
+//! 2. Preprocess extension tags by extracting each tag and its body (if any) as
+//!    raw text and inserting a “strip marker” in its place in the source text.
+//!    Unbalanced extension tags shall be treated as plain text.
+//!
+//!    ※ A strip marker is a character sequence that is unlikely to appear in
+//!    a Wikitext document which can be used to recover the original content by
+//!    scanning the source text again later. Strip markers are visible to Lua
+//!    scripts and parser functions they may be stripped by those things, so the
+//!    actual expansion of an extension tag shall not occur until later.
+//!
+//!    The list of possible extension tags is installation-specific.
+//!
+//! 3. Process inclusion control tags (`<noinclude>`, etc.) by this sequence of
+//!    steps:
+//!
+//!    1. Scan the entire document for any `<onlyinclude>` not inside a
+//!       `<nowiki>` tag. If found, treat all content outside of `<onlyinclude>`
+//!       as-if it were wrapped in `<noinclude>`.
+//!    2. For each inclusion control tag not inside a `<nowiki>` tag, delete the
+//!       tag. If the tag does not match the current processing mode, and the
+//!       tag has a balancing close tag, also delete all the text between the
+//!       opening and closing tag.
+//!
+//!    Unbalanced `</onlyinclude>` tags are treated as plain text; all other
+//!    unbalanced tags are treated as-if they were written as self-closing tags.
+//!
+//!    Inclusion control tags can cut across Wikitext expressions so it is not
+//!    possible to convert a Wikitext document into tree of Wikitext expressions
+//!    with inclusion control tags as branch nodes.
+//!
+//!    After this step, any string that looks like an inclusion control tag
+//!    shall be deleted(?).
+//!
+//! 4. Template expressions are expanded recursively. Steps 1–3 are performed on
+//!    the template sp, then the result of the template expansion is
+//!    interpolated into the source document as-if the plain text of the
+//!    expanded template had existed at that position in the source text
+//!    before parsing ever began.
+//!
+//!    As with inclusion control tags, templates can cut across Wikitext
+//!    expressions (this happens frequently with tables), so it is not possible
+//!    to convert a Wikitext document into a correct tree if templates are not
+//!    expanded.
+//!
+//!    A template expression with a valid but non-existent target shall expand
+//!    into the Wikitext expression `[[:Template:Name]]`. An invalid template
+//!    expression shall be treated as plain text. A template parameter
+//!    expression with no matching argument and no default value shall be
+//!    treated as plain text.
+//!
+//!    After this step, any string that looks like a template expression shall
+//!    be treated as plain text.
+//!
+//! 5. Scan the complete preprocessed source text for any strip markers or
+//!    extension tags. Interpolated the output of those extension tags into the
+//!    source text using the same as-if rule used for template expansions.
+//!
+//!    After this step, any string that looks like an strip marker or extension
+//!    tag shall be treated as plain text(?).
+//!
+//! 6. The Wikitext document is now finally “complete” and can be converted into
+//!    a tree. All other Wikitext expressions are processed at this step.
+//!
+//!    HTML entities shall be decoded to UTF-8, then the HTML control characters
+//!    `['<'| '>'|'&'|'"']` shall be entity-encoded, unless the character forms
+//!    part of a syntactically valid HTML5 tag and the tag name is in the
+//!    allowlist, in which case the control character shall be emitted as-is.
 
-mod config;
+use crate::{
+    LoadMode,
+    db::{Article, Database},
+    lru_limiter::ByMemoryUsage,
+    lua::VmCacheEntry,
+    php::DateTime,
+    renderer::lru_limiter::OutputSizeCalculator,
+    wikitext::{LineCol, Output, Parser},
+};
+use axum::http::Uri;
+use core::fmt;
+pub use expand_templates::{ExpandMode, ExpandTemplates};
+pub use manager::{In, RenderManager as Manager, RenderOutput};
+pub use parser_fns::call_parser_fn;
+use piccolo::Lua;
+use schnellru::LruMap;
+pub use stack::{Kv, StackFrame};
+use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
+pub use surrogate::Surrogate;
+pub use template::call_template;
 
+mod document;
+mod emitters;
+mod expand_templates;
+mod extension_tags;
+mod globals;
+mod image;
+mod lru_limiter;
+mod manager;
+mod parser_fns;
+mod stack;
+mod surrogate;
+mod tags;
+mod template;
+mod trim;
+
+/// An article rendering error.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {}
+pub enum Error {
+    /// A database call failed.
+    #[error("db error: {0}")]
+    Database(#[from] crate::db::Error),
 
-pub struct ArticleRenderer<'a> {
-    html: String,
-    is_italic: bool,
-    is_bold: bool,
-    is_bold_italic: bool,
-    is_comment: bool,
-    transcluding: usize,
-    config: Configuration,
-    db: &'a Database<'a>,
-    references: Vec<String>,
-    stack: Vec<String>,
+    /// An arithmetic expression evaluation error.
+    #[error("eval error: {0}")]
+    Expr(#[from] crate::expr::Error),
+
+    /// A write to a buffer failed.
+    #[error("fmt error: {0}")]
+    Fmt(#[from] fmt::Error),
+
+    /// Some Lua host code raised an error.
+    #[error("{0:#}")]
+    Lua(#[from] piccolo::ExternError),
+
+    /// An `#invoke` call was missing the required function argument.
+    #[error("script error: you must specify a function to call")]
+    MissingFunctionName,
+
+    /// A backtraced Lua module error.
+    #[error("{err}\n  at '{name}'|{fn_name}")]
+    Module {
+        /// The title of the module.
+        name: String,
+        /// The name of the function.
+        fn_name: String,
+        /// The error.
+        #[source]
+        err: Box<Error>,
+    },
+
+    /// A backtraced template error.
+    #[error("{err}\n  at '{frame}':{start}")]
+    Node {
+        /// The title of the template.
+        frame: String,
+        /// The line and column in the template where the error occurred.
+        start: LineCol,
+        /// The error.
+        #[source]
+        err: Box<Self>,
+    },
+
+    /// An error occurred parsing a floating point number.
+    #[error(transparent)]
+    ParseFloat(#[from] core::num::ParseFloatError),
+
+    /// An error occurred while parsing a Wikitext string.
+    #[error(transparent)]
+    Peg(#[from] crate::wikitext::Error),
+
+    /// Too many template calls.
+    #[error("template stack overflow: {0}")]
+    StackOverflow(String),
+
+    /// A [`StripMarker`](crate::wikitext::Token::StripMarker) was encountered
+    /// without a corresponding entry.
+    #[error("invalid strip marker {0}")]
+    StripMarker(usize),
+
+    /// A template called back into itself.
+    ///
+    /// Note that loop detection does not—and must not—apply in cases where the
+    /// loop is back to the root page, because this is used by (at least) all
+    /// pages which use 'Template:Documentation' to demonstrate the output of
+    /// a template from its own page.
+    #[error("template loop detected: {0}")]
+    TemplateRecursion(String),
+
+    /// An error occurred parsing or formatting a date.
+    #[error(transparent)]
+    Time(#[from] crate::php::DateTimeError),
 }
 
-impl<'a> ArticleRenderer<'a> {
-    pub fn render(db: &'a Database<'a>, article: &Article) -> Result<String, Error> {
-        let mut renderer = Self::new(db);
-        let root = renderer.config.parse(article.body.as_str());
-        renderer.render_nodes(&root.nodes, &[]);
-        Ok(renderer.html)
-    }
+/// The standard result type used by all fallible renderer functions.
+pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 
-    fn new(db: &'a Database<'a>) -> Self {
-        Self {
-            html: String::new(),
-            is_italic: false,
-            is_bold: false,
-            is_bold_italic: false,
-            is_comment: false,
-            transcluding: 0,
-            config: Configuration::new(&CONFIG),
-            db,
-            references: <_>::default(),
-            stack: <_>::default(),
-        }
-    }
+/// A unique scalar identifier for [`Article`]s.
+type ArticleId = u64;
 
-    fn render_nodes(&mut self, nodes: &[Node], args: &[Parameter<'_>]) {
-        for node in nodes {
-            self.render_node(node, args);
-        }
-    }
+/// Global variables which are used for the entire lifetime of a renderer
+/// thread.
+pub struct Statics {
+    /// The “current” time, according to the article database.
+    pub base_time: DateTime,
+    /// The server’s base URI.
+    pub base_uri: Uri,
+    /// The article database.
+    pub db: Arc<Database<'static>>,
+    /// The parser.
+    pub parser: Parser<'static>,
+    /// Parsed template cache.
+    template_cache: LruMap<ArticleId, Rc<Output>, ByMemoryUsage<OutputSizeCalculator>>,
+    /// The Lua interpreter.
+    pub vm: Lua,
+    /// VM module cache.
+    pub vm_cache: LruMap<ArticleId, VmCacheEntry, ByMemoryUsage<VmCacheEntry>>,
+}
 
-    fn render_node(&mut self, node: &Node, args: &[Parameter<'_>]) {
-        match node {
-            Node::Bold { .. } => {
-                if !self.is_bold {
-                    self.open_tag("strong");
-                } else {
-                    self.close_tag("strong");
-                }
-                self.is_bold = !self.is_bold;
-            }
-            Node::BoldItalic { .. } => {
-                if !self.is_bold_italic {
-                    self.open_tag("strong");
-                    self.open_tag("em");
-                } else {
-                    self.close_tag("em");
-                    self.close_tag("strong");
-                }
-                self.is_bold_italic = !self.is_bold_italic;
-            }
-            Node::Italic { .. } => {
-                if !self.is_italic {
-                    self.open_tag("em");
-                } else {
-                    self.close_tag("em");
-                }
-                self.is_italic = !self.is_italic;
-            }
-            Node::Comment { .. } => {
-                if !self.is_comment {
-                    self.append("<!--");
-                } else {
-                    self.append("-->");
-                }
-                self.is_comment = !self.is_comment;
-            }
-            Node::Category { target, .. } => {
-                self.append(&format!(
-                    r#"<a class="category" href="/article/{target}">{target}</a>"#,
-                ));
-            }
-            Node::CharacterEntity { character, .. } => {
-                self.append_chr(*character);
-            }
-            Node::DefinitionList { items, .. } => {
-                self.open_tag("dl");
-                for itm in items {
-                    self.render_nodes(&itm.nodes, args);
-                }
-                self.close_tag("dl");
-            }
-            Node::StartTag { name, .. } => {
-                self.open_tag(name);
-            }
-            Node::EndTag { name, .. } => {
-                self.close_tag(name);
-            }
-            Node::Heading { level, nodes, .. } => {
-                let tag_name = format!("h{level}");
+/// Renderer state that is shared across stack frames.
+pub struct State<'s> {
+    /// Article data.
+    pub globals: ArticleState,
+    /// The page load strategy.
+    pub load_mode: LoadMode,
+    /// Thread static global variables.
+    pub statics: &'s mut Statics,
+    /// Stripped extension tag substitutions.
+    // TODO: Store as Rc or something so these do not need to be cloned? Which
+    // is faster?
+    strip_markers: Vec<String>,
+    /// Page performance timing data.
+    timing: HashMap<String, (usize, Duration)>,
+}
 
-                self.open_tag(&tag_name);
-                self.render_nodes(nodes, args);
-                self.close_tag(&tag_name);
-            }
-            Node::HorizontalDivider { .. } => {
-                self.void_tag("hr");
-            }
-            Node::Image { target, text, .. } => {
-                self.open_tag("figure");
-                self.append(&format!(r#"<img src="{target}"/>"#));
+/// A convenience trait alias combining [`fmt::Write`] and [`Surrogate`].
+pub trait WriteSurrogate: fmt::Write + Surrogate<Error> {}
+impl<T> WriteSurrogate for T where T: fmt::Write + Surrogate<Error> {}
 
-                self.open_tag("figcaption");
-                self.render_nodes(text, args);
-                self.close_tag("figcaption");
-                self.close_tag("figure");
-            }
-            Node::Link { target, text, .. } => {
-                self.append(&format!("<a href=\"/article/{target}\">"));
-                self.render_nodes(text, args);
-                self.append("</a>");
-            }
-            Node::Redirect { target, .. } => {
-                self.append(&format!("<a href=\"/article/{target}\">Redirect</a>"));
-            }
-            Node::ExternalLink { nodes, .. } => {
-                self.append(r##"<a href="#">"##);
-                self.render_nodes(nodes, args);
-                self.append("</a>");
-            }
-            Node::ParagraphBreak { .. } => {
-                self.void_tag("p");
-            }
-            Node::MagicWord { start, end } => {
-                // These are not all magic words, just the “behavior switches”
-                log::trace!("MagicWord at {start} {end}");
-            }
-            Node::Parameter { name, default, .. } => {
-                fn text_content<'b>(nodes: &[Node<'b>]) -> Cow<'b, str> {
-                    match nodes {
-                        [Node::Text { value, .. }] => Cow::Borrowed(value),
-                        nodes => {
-                            let mut text = String::new();
-                            for node in nodes {
-                                if let Node::Text { value, .. } = node {
-                                    text += value;
-                                }
-                            }
-                            Cow::Owned(text)
-                        }
-                    }
-                }
+/// Shared article data.
+#[derive(Debug, Default)]
+pub struct ArticleState {
+    /// Collected categories to append to the footer of the page.
+    categories: globals::Categories,
+    /// The last ordinal used by an unlabelled external link.
+    external_link_ordinal: u32,
+    /// Indicator icons for the `<indicator>` extension tag.
+    indicators: globals::Indicators,
+    /// Table of contents.
+    outline: globals::Outline,
+    /// Collected references for the `<ref>` and `<references>` extension tags.
+    references: extension_tags::References,
+    /// Labelled section transclusion sections.
+    sections: extension_tags::LabelledSections,
+    /// Collected CSS for the `<templatestyles>` extension tag.
+    styles: extension_tags::Styles,
+    /// Sometimes settable magic variables, e.g. `{{SHORTDESC}}`.
+    pub variables: HashMap<String, String>,
+}
 
-                let param_name = text_content(name);
-                let value = args
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, arg)| {
-                        let arg_name = arg.name.as_deref().map(text_content).unwrap_or_else(|| {
-                            // Parameter 0 was the template name
-                            Cow::Owned(format!("{}", index + 1))
-                        });
-
-                        (param_name == arg_name).then_some(&arg.value)
-                    })
-                    .or(default.as_ref());
-
-                if let Some(value) = value {
-                    self.render_nodes(value, args);
-                } else {
-                    log::trace!("ERROR: Could not find parameter {name:?};\n\nARGS:  {args:?}");
-                }
-            }
-            Node::Template {
-                name, parameters, ..
-            } => {
-                // let parameters = parameters.clone().extend_from_slice(args);
-                self.render_template(name, parameters);
-            }
-            Node::Preformatted { nodes, .. } => {
-                self.open_tag("pre");
-                self.render_nodes(nodes, args);
-                self.close_tag("pre");
-            }
-            Node::Table {
-                attributes,
-                captions,
-                rows,
-                ..
-            } => {
-                self.append("<table ");
-                self.render_nodes(attributes, args);
-                self.append(">");
-
-                self.append("<thead><tr>");
-                for cap in captions {
-                    self.append("<th ");
-                    if let Some(attributes) = cap.attributes.as_ref() {
-                        self.render_nodes(attributes, args);
-                    }
-                    self.append(">");
-
-                    self.render_nodes(&cap.content, args);
-                    self.append("</th>");
-                }
-                self.append("</tr></thead>");
-
-                self.append("<tbody>");
-                for row in rows {
-                    self.append("<tr ");
-                    self.render_nodes(&row.attributes, args);
-                    self.append(">");
-
-                    for cell in &row.cells {
-                        self.append("<td ");
-                        if let Some(attributes) = cell.attributes.as_ref() {
-                            self.render_nodes(attributes, args);
-                        }
-                        self.append(">");
-
-                        self.render_nodes(&cell.content, args);
-                        self.append("</td>");
-                    }
-                    self.append("</tr>");
-                }
-                self.append("</tbody></table>");
-            }
-            Node::Tag { name, nodes, .. } => self.render_tag(name, nodes, args),
-            Node::Text { value, .. } => {
-                self.append(value);
-            }
-            Node::OrderedList { items, .. } => {
-                self.open_tag("ol");
-                for itm in items {
-                    self.open_tag("li");
-                    self.render_nodes(&itm.nodes, args);
-                    self.close_tag("li");
-                }
-                self.close_tag("ol");
-            }
-            Node::UnorderedList { items, .. } => {
-                self.open_tag("ul");
-                for itm in items {
-                    self.open_tag("li");
-                    self.render_nodes(&itm.nodes, args);
-                    self.close_tag("li");
-                }
-                self.close_tag("ul");
-            }
-        }
-    }
-
-    fn is_template(name: &[Node<'_>]) -> Option<String> {
-        /* From <https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Magic_words#How_magic_words_work>:
-
-        1. Does it have an associated magic word ID? As a first step in
-           resolving markup of the form {{XXX...}}, MediaWiki attempts to
-           translate XXX to a magic word ID. The translation table is defined by
-           $magicWords. If no magic word ID is associated with XXX, XXX is
-           presumed to be a template.
-
-        2. Is it a variable? If a magic word ID is found, MediaWiki next
-           checks to see if it has any parameters. If no parameters are found,
-           MediaWiki checks to see if the magic word ID has been declared as a
-           variable ID. […] If the magic word ID has been classified as a
-           variable, MediaWiki calls the ParserGetVariableValueSwitch function
-           to get the value associated with the variable name.
-
-        3. Is it a parser function? If there are any parameters or if the
-           magic word ID is missing from the list of variable magic word IDs,
-           then MediaWiki assumes that the magic word is a parser function or
-           template. If the magic word ID is found in the list of declared
-           parser functions, it is treated as a parser function and rendered
-           using the function named $renderingFunctionName. Otherwise, it is
-           presumed to be a template.
-        */
-        if let [Node::Text { value: name, .. }] = name
-            && !name.starts_with('#')
-        {
-            let name = name
-                .split_once(':')
-                .map_or(*name, |(name, _)| name)
-                .to_ascii_lowercase();
-            if MAGIC_WORDS.contains(&name.as_str()) {
-                None
-            } else {
-                let (first, rest) = name.split_at(1);
-                Some(format!("Template:{}{rest}", first.to_ascii_uppercase()))
-            }
+// TODO: This should really just resolve the redirects and then do the work, but
+// borrowck is being unbearable today and this is a toy project so who cares
+// TODO: This should be part of Database
+pub fn resolve_redirects(
+    db: &Database<'static>,
+    mut article: Arc<Article>,
+) -> Result<Arc<Article>, Error> {
+    // “Loop to fetch the article, with up to 2 redirects”
+    for attempt in 0..2 {
+        if let Some(target) = &article.redirect {
+            log::trace!("Redirection #{} to {target}", attempt + 1);
+            article = db.get(target)?;
         } else {
-            None
+            break;
         }
     }
 
-    fn render_template(&mut self, name: &[Node<'_>], args: &[Parameter<'_>]) {
-        // TODO: Insert a template from the Template: namespace, or if the template
-        //       is {{#invoke:$name|$arg1|...}}, it's a Lua template from the Module: namespace
-
-        // TODO: If the name split on : then we are missing parameters
-        if let Some(tpl_name) = Self::is_template(name) {
-            if let Ok(template) = self.db.get(&tpl_name) {
-                let root = self.config.parse(template.body.as_str());
-                self.transcluding += 1;
-                self.render_nodes(&root.nodes, args);
-                self.transcluding -= 1;
-                log::trace!("=== END {name:?}");
-            } else {
-                log::trace!("ERROR: No template found for {name:?}");
-            }
-            return;
-        }
-
-        log::trace!("TODO: Template {name:?}");
-        self.append("<details><summary>");
-        self.render_nodes(name, args);
-        self.append("</summary>");
-        self.append("<dl>");
-        for param in args {
-            if let Some(name) = &param.name {
-                self.append("<dt>");
-                self.render_nodes(name, args);
-                self.append("</dt>");
-            }
-            self.append("<dd>");
-            self.render_nodes(&param.value, args);
-            self.append("</dd>");
-        }
-        self.append("</dl></details>");
-        log::trace!("=== END {name:?}");
-    }
-
-    fn render_tag(&mut self, name: &str, nodes: &[Node<'_>], args: &[Parameter<'_>]) {
-        match name {
-            "noinclude" if self.transcluding != 0 => {}
-            "includeonly" if self.transcluding == 0 => {}
-            "onlyinclude" => {
-                log::trace!("TODO: Insane <onlyinclude> nonsense");
-            }
-            "nowiki" => {
-                log::trace!("TODO: Nowiki: {nodes:?}");
-            }
-            "noinclude" | "includeonly" => self.render_nodes(nodes, args),
-            "ref" => {
-                // Due to transclusion it is necessary to render immediately
-                // instead of storing the node list for later
-                let mut renderer = Self::new(self.db);
-                renderer.render_nodes(nodes, args);
-                self.references.push(renderer.html);
-                self.append(&format!(
-                    r##"<a href="#ref_{0}">[{0}]</a>"##,
-                    self.references.len()
-                ));
-            }
-            "references" => {
-                self.open_tag("ol");
-                for (id, reference) in core::mem::take(&mut self.references).iter().enumerate() {
-                    self.append(&format!(r#"<li id="ref_{id}">"#));
-                    self.append(reference);
-                    self.close_tag("li");
-                }
-                self.close_tag("ol");
-            }
-            _ => {
-                log::trace!("Tag {name}");
-                self.open_tag(name);
-                self.render_nodes(nodes, args);
-                self.close_tag(name);
-            }
-        }
-    }
-
-    fn append(&mut self, data: &str) {
-        self.html.push_str(data);
-    }
-
-    fn append_chr(&mut self, data: char) {
-        self.html.push(data);
-    }
-
-    fn open_tag(&mut self, tag: &str) {
-        self.append_chr('<');
-        self.append(tag);
-        self.append_chr('>');
-    }
-
-    fn close_tag(&mut self, tag: &str) {
-        self.append("</");
-        self.append(tag);
-        self.append_chr('>');
-    }
-
-    fn void_tag(&mut self, tag: &str) {
-        self.append_chr('<');
-        self.append(tag);
-        self.append("/>");
-    }
+    Ok(article)
 }

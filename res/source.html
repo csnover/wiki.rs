@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" class="syntect-code">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="content-security-policy" content="img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
+        <title>wiki.rs</title>
+        <link rel="stylesheet" href="<%= base_path %>/styles.css">
+        <style>
+            :root { padding: 1rem; }
+
+            table {
+                align-items: baseline;
+                display: grid;
+                grid-template-columns: min-content min-content auto;
+                gap: 0 0.5rem;
+
+                tbody, tr {
+                    display: contents;
+                }
+
+                td {
+                    vertical-align: top;
+                    &:first-child, &:nth-child(2) {
+                        font-family: var(--sans);
+                        font-variant-numeric: tabular-nums;
+                        user-select: none;
+                    }
+                }
+
+                code {
+                    white-space: pre-wrap;
+                }
+            }
+
+            <%= crate::pages::filter::css(&css) %>
+        </style>
+    </head>
+    <body>
+        <table class="syntect-code">
+            <%
+                let mut lines = lines;
+                while let Some((offset, line, code)) = lines.next().transpose()? {
+            %>
+                <tr>
+                    <td><small><%- offset %></small></td>
+                    <td><%- line %></td>
+                    <td><code><%- code %></code></td>
+                </tr>
+            <% } %>
+        </table>
+    </body>
+</html>
