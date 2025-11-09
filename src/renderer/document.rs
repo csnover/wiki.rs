@@ -217,16 +217,16 @@ impl Document {
     /// Writes a run of text, also converting wretched typewriter quote marks to
     /// beautiful works of fine typographical art, as we are not savages.
     fn text_run(&mut self, text: &str) -> Result {
-        fn is_break(c: char) -> bool {
+        fn is_break(prev: char, next: Option<char>) -> bool {
             use unicode_general_category::{
                 GeneralCategory::{InitialPunctuation, OpenPunctuation},
                 get_general_category,
             };
-            c.is_whitespace()
-                || matches!(
-                    get_general_category(c),
+            prev.is_whitespace()
+                || (matches!(
+                    get_general_category(prev),
                     OpenPunctuation | InitialPunctuation
-                )
+                ) && !next.is_some_and(char::is_whitespace))
         }
 
         fn is_code(tag: &str) -> bool {
@@ -245,15 +245,24 @@ impl Document {
                 .any(|e| matches!(e, Node::Tag(tag, _) if is_code(tag)));
 
         let mut prev = self.last_char;
-        for c in text.chars() {
+        let mut chars = text.chars().peekable();
+        while let Some(c) = chars.next() {
             match c {
                 '"' if !in_code => {
                     self.html
-                        .write_char(if is_break(prev) { '“' } else { '”' })?;
+                        .write_char(if is_break(prev, chars.peek().copied()) {
+                            '“'
+                        } else {
+                            '”'
+                        })?;
                 }
                 '\'' if !in_code => {
                     self.html
-                        .write_char(if is_break(prev) { '‘' } else { '’' })?;
+                        .write_char(if is_break(prev, chars.peek().copied()) {
+                            '‘'
+                        } else {
+                            '’'
+                        })?;
                 }
                 '<' => self.html += "&lt;",
                 '>' => self.html += "&gt;",
