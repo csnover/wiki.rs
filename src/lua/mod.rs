@@ -9,7 +9,7 @@ use crate::{
 };
 use axum::http::Uri;
 use core::ops::ControlFlow;
-use gc_arena::Rootable;
+use gc_arena::{Rootable, metrics::Pacing};
 use lualib::{LanguageLibrary, LuaEngine, TitleLibrary, UriLibrary};
 use piccolo::{
     Executor, ExecutorMode, ExternError, Fuel, Function, Lua, StashedClosure, StashedString,
@@ -146,8 +146,6 @@ pub(super) fn run_vm(
         if let Some(cached) = state.statics.vm_cache.get(&code.id) {
             cached.clone()
         } else {
-            state.statics.vm.gc_collect();
-            let size = state.statics.vm.total_memory();
             let ex = state.statics.vm.try_enter(|ctx| {
                 let mw = ctx.get_global::<Table<'_>>("mw")?;
                 let make_env = mw.get::<_, Function<'_>>(ctx, "makeEnv")?;
@@ -160,24 +158,54 @@ pub(super) fn run_vm(
                 .finish(&ex)
                 .map_err(piccolo::RuntimeError::from)?;
 
-            let (module, env) = state.statics.vm.try_enter(|ctx| {
+            state.statics.vm.gc_metrics().set_pacing(
+                Pacing::default()
+                    .with_min_sleep(0)
+                    .with_pause_factor(0.0)
+                    .with_timing_factor(0.0),
+            );
+            let old_size = {
+                let mut last_size = state.statics.vm.total_memory();
+                loop {
+                    state.statics.vm.gc_collect();
+                    let new_size = state.statics.vm.total_memory();
+                    if new_size == last_size {
+                        break new_size;
+                    }
+                    last_size = new_size;
+                }
+            };
+
+            let result = state.statics.vm.try_enter(|ctx| {
                 let env = ctx.fetch(&ex).take_result::<Table<'_>>(ctx)??;
-                Ok((
-                    ctx.stash(Closure::load_with_env(
-                        ctx,
-                        Some(sp.name.key()),
-                        code.body.as_bytes(),
-                        env,
-                    )?),
-                    ctx.stash(env),
-                ))
-            })?;
+                let module =
+                    Closure::load_with_env(ctx, Some(sp.name.key()), code.body.as_bytes(), env)?;
 
-            state.statics.vm.gc_collect();
-            let size = state.statics.vm.total_memory() - size;
+                Ok((ctx.stash(module), ctx.stash(env)))
+            });
 
+            // TODO: The GC does not seem to be deterministic enough to
+            // learn the size of a module by forcing GC, recording size,
+            // loading the module, forcing another GC, and recording the
+            // delta. When doing this, sometimes the delta ends up being
+            // negative, which should be impossible.
+            let new_size = {
+                let mut last_size = state.statics.vm.total_memory();
+                loop {
+                    state.statics.vm.gc_collect();
+                    let new_size = state.statics.vm.total_memory();
+                    if new_size == last_size {
+                        break new_size;
+                    }
+                    last_size = new_size;
+                }
+            };
+
+            state.statics.vm.gc_metrics().set_pacing(Pacing::default());
+
+            let size = new_size - old_size;
+            let (module, env) = result?;
             let entry = VmCacheEntry { module, env, size };
-
             state.statics.vm_cache.insert(code.id, entry.clone());
             entry
         };
