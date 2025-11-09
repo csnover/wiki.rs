@@ -24,14 +24,26 @@ use std::borrow::Cow;
 pub struct Document {
     /// The final rendered output.
     pub(super) html: String,
-    /// The last visible character rendered to the output.
-    last_char: char,
-    /// The [`TextStyle`] emitter.
-    text_style_emitter: TextStyleEmitter,
     /// The stack of inclusion control tags.
     in_include: Vec<InclusionMode>,
+    /// The last visible character rendered to the output.
+    last_char: char,
     /// The stack of open HTML elements.
     stack: Vec<Node>,
+    /// Tags for block level elements emitted at a given stack level.
+    ///
+    /// This is a workaround for templates that do not identify themselves for
+    /// styling but instead only emit inline styles (like
+    /// 'Template:Climate chart'), which need to have their styles overridden
+    /// nevertheless.
+    ///
+    /// This currently relies on templates sending through
+    /// [`Self::adopt_output`], and because expanded templates get erased (due
+    /// to reparsing) before they make it to `Document` this will not tag blocks
+    /// that were inside nested templates.
+    tag_blocks: Vec<(usize, String)>,
+    /// The [`TextStyle`] emitter.
+    text_style_emitter: TextStyleEmitter,
 }
 
 impl Document {
@@ -39,10 +51,11 @@ impl Document {
     pub(crate) fn new() -> Self {
         Self {
             html: <_>::default(),
-            last_char: ' ',
-            text_style_emitter: <_>::default(),
-            stack: <_>::default(),
             in_include: <_>::default(),
+            last_char: ' ',
+            stack: <_>::default(),
+            tag_blocks: <_>::default(),
+            text_style_emitter: <_>::default(),
         }
     }
 
@@ -205,6 +218,19 @@ impl Document {
             self.stack
                 .pop_if(|e| matches!(e, Node::Attribute))
                 .expect("element stack corruption");
+        }
+
+        // It is possible that a template starts in an ambiguous position where
+        // the output of its first tag results in some other elements being
+        // closed. To handle this case, `level` is treated as a maximum which
+        // is reduced so child elements of the template do not get tagged as it
+        // builds its own DOM tree.
+        if !PHRASING_TAGS.contains(&tag)
+            && let Some((level, class)) = self.tag_blocks.last_mut()
+            && self.stack.len() <= *level
+        {
+            *level = self.stack.len();
+            write!(self.html, r#" data-wiki-rs="{class}""#)?;
         }
 
         self.html.write_char('>')?;
@@ -630,13 +656,27 @@ impl Surrogate<Error> for Document {
         if output.has_onlyinclude {
             self.in_include.push(InclusionMode::OnlyInclude);
         }
-        self.adopt_tokens(state, sp, &output.root)?;
+        let class_name = sp.parent.is_some().then(|| {
+            sp.name
+                .text()
+                .to_ascii_lowercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "-")
+        });
+        if let Some(class_name) = &class_name {
+            self.tag_blocks.push((self.stack.len(), class_name.clone()));
+        }
+        let result = self.adopt_tokens(state, sp, &output.root);
+        if let Some(class_name) = class_name {
+            self.tag_blocks
+                .pop_if(|(_, name)| *name == class_name)
+                .expect("tag block stack corruption");
+        }
         if output.has_onlyinclude {
             self.in_include
                 .pop_if(|i| *i == InclusionMode::OnlyInclude)
                 .expect("include stack corruption");
         }
-        Ok(())
+        result
     }
 
     fn adopt_parameter(
