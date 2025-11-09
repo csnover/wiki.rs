@@ -10,6 +10,7 @@ use super::{
     surrogate::Surrogate as _,
 };
 use crate::{
+    common::anchor_encode,
     db::Database,
     title::{Namespace, Title},
     wikitext::{self, FileMap, Output, Span, Token},
@@ -325,8 +326,8 @@ fn r#ref(
 
     if let Some(id) = id {
         // TODO: Avoid intermediates.
-        let source =
-            format!(r#"<span class="reference" id="cite_ref-{id}">[[#ref_{id}|{id}]]</span>"#);
+        let anchor = anchor_encode(&format!("cite_ref-{id}"));
+        let source = format!(r#"<span class="reference" id="{anchor}">[[#ref_{id}|{id}]]</span>"#);
         let references = state.statics.parser.parse_no_expansion(&source)?;
         out.adopt_output(
             state,
@@ -371,9 +372,10 @@ fn references(
         let mut source = String::from(r#"<ol class="references">"#);
         for (id, text) in refs {
             if !text.is_empty() {
+                let anchor = anchor_encode(&format!("ref_{id}"));
                 write!(
                     source,
-                    r#"<li id="ref_{id}" class="mw-cite-backlink">[[#cite_ref-{id}|^]] {text}</li>"#
+                    r#"<li id="{anchor}" class="mw-cite-backlink">[[#cite_ref-{id}|^]] {text}</li>"#
                 )?;
             }
         }
@@ -426,7 +428,7 @@ fn section(
         .globals
         .sections
         .titles
-        .entry(arguments.sp.name.to_string())
+        .entry(arguments.sp.name.key().to_string())
         .or_default();
 
     if let Some(name) = begin {

@@ -79,13 +79,8 @@ impl<'a> StackFrame<'a> {
 
     /// Clones a stack frame to use with different source text.
     pub fn clone_with_source(&'a self, source: FileMap<'a>) -> StackFrame<'a> {
-        let name = Title::from_parts(
-            self.name.namespace(),
-            &(self.name.text().to_string() + "$" + &source),
-            None,
-            None,
-        )
-        .unwrap();
+        let name =
+            Title::from_parts(self.name.namespace(), self.name.key(), Some(&source), None).unwrap();
         Self {
             name,
             source,
@@ -116,17 +111,20 @@ impl<'a> StackFrame<'a> {
 
     /// Evaluates the argument with the given key.
     pub fn expand(&self, state: &mut State<'_>, key: &str) -> Result<Option<Cow<'_, str>>> {
-        if let Some(parent) = &self.parent {
-            Ok(self
-                .arguments
-                .get(state, parent, key)?
-                .map(|value| match value {
-                    Cow::Borrowed(b) => Cow::Borrowed(b.trim_ascii()),
-                    Cow::Owned(o) => Cow::Owned(o.trim_ascii().to_string()),
-                }))
+        Ok(if let Some(parent) = &self.parent {
+            self.arguments.get(state, parent, key)?.map(|value| {
+                if is_numeric_arg(key) {
+                    value
+                } else {
+                    match value {
+                        Cow::Borrowed(b) => Cow::Borrowed(b.trim_ascii()),
+                        Cow::Owned(o) => Cow::Owned(o.trim_ascii().to_string()),
+                    }
+                }
+            })
         } else {
-            Ok(None)
-        }
+            None
+        })
     }
 
     /// Evaluates the argument with the given key.
@@ -139,10 +137,12 @@ impl<'a> StackFrame<'a> {
         if let Some(parent) = &self.parent
             && let Some(index) = self.arguments.get_index(state, parent, key)?
         {
-            self.arguments
-                .get_raw(index)
-                .expect("key index mismatch")
-                .value_into(&mut Trim::new(out, parent), state, parent)?;
+            let value = self.arguments.get_raw(index).expect("key index mismatch");
+            if is_numeric_arg(key) {
+                value.value_into(out, state, parent)?;
+            } else {
+                value.value_into(&mut Trim::new(out, parent), state, parent)?;
+            }
             Ok(true)
         } else {
             Ok(false)
@@ -709,4 +709,9 @@ fn debug_backtrace(title: &Title, mut sp: &StackFrame<'_>) {
             break;
         }
     }
+}
+
+/// Returns true if the given key is a numeric argument key.
+fn is_numeric_arg(key: &str) -> bool {
+    key.chars().all(|c| c.is_ascii_digit())
 }

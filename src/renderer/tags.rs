@@ -1,8 +1,9 @@
 //! Plain HTML rendering functions.
 
-use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
+use super::{Error, Result, StackFrame, State, WriteSurrogate, image, trim::TrimLink};
 use crate::{
     common::anchor_encode,
+    renderer::Surrogate,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
@@ -116,8 +117,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
 ) -> Result<(), Error> {
     render_start_link(out, state, sp, &LinkKind::Internal(title))?;
     if content.is_empty() {
-        // TODO: Trim ':' from start.
-        out.adopt_tokens(state, sp, target)?;
+        TrimLink::new(out).adopt_tokens(state, sp, target)?;
     } else {
         render_single_attribute(out, state, sp, content)?;
     }
@@ -135,8 +135,20 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     link: &LinkKind<'_>,
 ) -> Result {
     let href = match link {
-        LinkKind::External(url) => html_escape::encode_double_quoted_attribute(url),
-        LinkKind::Internal(title) => Cow::Owned({
+        LinkKind::External(url) => {
+            // TODO: Hack together some URL parsing good enough that there is an
+            // actual way to check that the origin is the same
+            if url.starts_with('/') {
+                html_escape::encode_double_quoted_attribute(url).to_string()
+            } else {
+                format!(
+                    "{}/external/{}",
+                    state.statics.base_uri.path(),
+                    html_escape::encode_double_quoted_attribute(url)
+                )
+            }
+        }
+        LinkKind::Internal(title) => {
             if title.text().is_empty() {
                 format!("#{}", anchor_encode(title.fragment()))
             } else {
@@ -146,7 +158,7 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
                     title.partial_url()
                 )
             }
-        }),
+        }
     };
 
     render_runtime(out, state, sp, |source| {
@@ -245,4 +257,19 @@ pub(super) fn render_runtime<
     let source = &mut String::new();
     let token = f(source);
     out.adopt_token(state, &sp.clone_with_source(FileMap::new(source)), &token)
+}
+
+/// Renders runtime-generated tokens.
+pub(super) fn render_runtime_list<
+    W: WriteSurrogate + ?Sized,
+    F: FnOnce(&mut String) -> Vec<Spanned<Token>>,
+>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    f: F,
+) -> Result {
+    let source = &mut String::new();
+    let tokens = f(source);
+    out.adopt_tokens(state, &sp.clone_with_source(FileMap::new(source)), &tokens)
 }

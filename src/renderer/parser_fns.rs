@@ -451,7 +451,7 @@ mod string {
             } else {
                 false
             };
-            log::trace!("formatnum:{n:?}");
+            // log::trace!("formatnum:{n:?}");
 
             // TODO: This thing needs to do very sad things to work.
             // MW uses the `markerSkipCallback` to invoke formatting on every

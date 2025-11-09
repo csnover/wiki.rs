@@ -7,7 +7,7 @@ use super::{
     resolve_redirects,
     stack::{KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
-    tags::render_runtime,
+    tags::{render_runtime, render_runtime_list},
 };
 use crate::{
     LoadMode,
@@ -27,6 +27,10 @@ pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
     sp: &StackFrame<'_>,
     arguments: &KeyCacheKvs<'_, '_>,
 ) -> Result {
+    if state.load_mode != LoadMode::Module {
+        return render_fallback(out, state, sp);
+    }
+
     let Some(callee) = arguments.eval(state, sp, 0)? else {
         log::warn!("tried to call #invoke with no module name");
         return Ok(());
@@ -62,18 +66,47 @@ pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
 
     state
         .timing
-        .entry(sp.name.to_string())
+        .entry(sp.name.key().to_string())
         .and_modify(|(count, duration)| {
             *count += 1;
             *duration += now.elapsed();
         })
         .or_insert_with(|| (1, now.elapsed()));
 
-    let result = result?;
-    let sp = sp.clone_with_source(FileMap::new(&result));
-    let tree = state.statics.parser.parse_no_expansion(&sp.source)?;
-    // eprintln!("{result}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &tree.root));
-    out.adopt_output(state, &sp, &tree)?;
+    // 'Module:Maplink' absolutely relies on Wikidata, with no error guards,
+    // relying on MW just emitting HTML whenever an error occurs instead of
+    // any structured error handling.
+    match result {
+        Ok(result) => {
+            let sp = sp.clone_with_source(FileMap::new(&result));
+            let tree = state.statics.parser.parse_no_expansion(&sp.source)?;
+            // eprintln!("{result}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &tree.root));
+            out.adopt_output(state, &sp, &tree)?;
+        }
+        Err(err) => {
+            let root_error = {
+                let mut err = &err as &dyn std::error::Error;
+                while let Some(source) = err.source() {
+                    err = source;
+                }
+                err
+            };
+            log::error!("{}: {err:#}", sp.name);
+            render_runtime_list(out, state, &sp, |source| {
+                token![source, [
+                    Token::StartTag {
+                        name: token!(source, Span { "span" }),
+                        attributes: token![source, [ "class" => "error" ]].into(),
+                        self_closing: false,
+                    },
+                    Token::Text { root_error.to_string() },
+                    Token::EndTag { name: token!(source, Span { "span" }) },
+                ]]
+                .into()
+            })?;
+        }
+    }
+
     Ok(())
 }
 
@@ -104,6 +137,25 @@ pub(super) fn render_parameter<W: WriteSurrogate + ?Sized>(
 }
 
 /// Renders a template.
+///
+/// Whilst the documentation at
+/// <https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Magic_words#How_magic_words_work>
+/// makes claims about the order of operations of magic words, they are
+/// actually processed thus:
+///
+/// 1. Is it a subst, and the parser is configured to retain the output
+///    as literal text? If so, emit as text and do no more work.
+/// 2. If no args, try to match as a variable, and expand the variable
+///    if so.
+/// 3. Change configuration settings based on special symbols 'msgnw',
+///    'msg', and 'raw'.
+/// 4. Is there a ':' in the name? If so, assume it is a parser function,
+///    try to call the parser function, and allow processing to continue
+///    if the parser function does not match.
+/// 5. Check if it is a template, and if so, process the template, with
+///    stack recursion limits.
+/// 6. Query a database.
+/// 7. Emit as text.
 pub(super) fn render_template<'tt, W: WriteSurrogate>(
     out: &mut W,
     state: &mut State<'_>,
@@ -118,12 +170,72 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
         return render_fallback(out, state, sp);
     }
 
-    // Deferring evaluation of a parser function’s first argument enables
-    // `#iferror` to handle errors more accurately when they are raised by
-    // wiki.rs code (vs when they are caused by some template generating its
-    // own error element, if that ever happens). Of course, content before a ':'
-    // could also be just a namespace. We won’t know until we can inspect the
-    // callee and compare against the site configuration.
+    let Target {
+        has_colon,
+        first,
+        rest,
+        callee,
+    } = split_target(state, sp, target)?;
+    // eprintln!("{callee} / {first:?} / {rest:?}");
+
+    // Technically, MediaWiki has some magic words that are case-sensitive
+    // and others which are case-insensitive. In practice, this does not
+    // seem to matter, and can just treat everything as lowercase. MW uses
+    // Unicode-aware functions for this, although everything seems to be ASCII.
+    let callee_lower = callee.to_lowercase();
+
+    let use_function_hook = is_function_call(arguments.is_empty(), has_colon, &callee_lower);
+
+    // TODO: There is some undocumented stuff to remove 'msgnw', 'msg', or 'raw'
+    // magic words from the callee and then to change some options before
+    // continuing.
+
+    if use_function_hook {
+        // It is important to actually not pass a zeroth argument is there is
+        // not one
+        let first =
+            has_colon.then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
+
+        let arguments = first
+            .into_iter()
+            .chain(arguments.iter().map(Kv::Argument))
+            .collect::<Vec<_>>();
+
+        call_parser_fn(out, state, sp, Some(bounds), &callee_lower, &arguments)
+    } else {
+        let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
+
+        let callee = sp.eval(state, target)?;
+        call_template(
+            out,
+            state,
+            sp,
+            &Kv::Partial(target.iter().collect()),
+            callee.trim_ascii(),
+            &arguments,
+        )
+    }
+}
+
+/// Template target information.
+struct Target<'tt> {
+    /// The extracted callee.
+    callee: String,
+    /// The first argument of a parser function.
+    first: Option<Spanned<Token>>,
+    /// The rest of the tokens.
+    rest: &'tt [Spanned<Token>],
+    /// Whether the target split on a colon.
+    has_colon: bool,
+}
+
+/// Splits a template target in the form `callee:arg` into parts without
+/// evaluating the `arg` part.
+fn split_target<'tt>(
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    target: &'tt [Spanned<Token>],
+) -> Result<Target<'tt>, Error> {
     let mut callee = String::new();
     let mut rest = target.iter();
     let mut has_colon = false;
@@ -163,69 +275,13 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
         callee += &text;
     }
     let rest = rest.as_slice();
-    let callee = callee.trim_ascii();
-    // eprintln!("{callee} / {first:?} / {rest:?}");
-
-    // Whilst the documentation at
-    // <https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Magic_words#How_magic_words_work>
-    // makes claims about the order of operations of magic words, they are
-    // actually processed thus:
-    //
-    // 1. Is it a subst, and the parser is configured to retain the output
-    //    as literal text? If so, emit as text and do no more work.
-    // 2. If no args, try to match as a variable, and expand the variable
-    //    if so.
-    // 3. Change configuration settings based on special symbols 'msgnw',
-    //    'msg', and 'raw'.
-    // 4. Is there a ':' in the name? If so, assume it is a parser function,
-    //    try to call the parser function, and allow processing to continue
-    //    if the parser function does not match.
-    // 5. Check if it is a template, and if so, process the template, with
-    //    stack recursion limits.
-    // 6. Query a database.
-    // 7. Emit as text.
-
-    // Technically, MediaWiki has some magic words that are case-sensitive
-    // and others which are case-insensitive. In practice, this does not
-    // seem to matter, and can just treat everything as lowercase. MW uses
-    // Unicode-aware functions for this, although everything seems to be ASCII.
-    let callee_lower = callee.to_lowercase();
-
-    let use_function_hook = is_function_call(arguments.is_empty(), has_colon, &callee_lower);
-
-    // TODO: There is some undocumented stuff to remove 'msgnw', 'msg', or 'raw'
-    // magic words from the callee and then to change some options before
-    // continuing.
-
-    if use_function_hook {
-        if callee == "#invoke" && state.load_mode != LoadMode::Module {
-            return render_fallback(out, state, sp);
-        }
-
-        // It is important to actually not pass a zeroth argument is there is
-        // not one
-        let first =
-            has_colon.then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
-
-        let arguments = first
-            .into_iter()
-            .chain(arguments.iter().map(Kv::Argument))
-            .collect::<Vec<_>>();
-
-        call_parser_fn(out, state, sp, Some(bounds), &callee_lower, &arguments)
-    } else {
-        let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
-
-        let callee = sp.eval(state, target)?;
-        call_template(
-            out,
-            state,
-            sp,
-            &Kv::Partial(target.iter().collect()),
-            callee.trim_ascii(),
-            &arguments,
-        )
-    }
+    let callee = callee.trim_ascii().to_string();
+    Ok(Target {
+        callee,
+        first,
+        rest,
+        has_colon,
+    })
 }
 
 /// Transcludes a template.
@@ -302,7 +358,7 @@ pub fn call_template<W: WriteSurrogate + ?Sized>(
 
     state
         .timing
-        .entry(sp.name.to_string())
+        .entry(sp.name.key().to_string())
         .and_modify(|(count, duration)| {
             *count += 1;
             *duration += now.elapsed();
@@ -339,6 +395,9 @@ pub(super) fn render_fallback<W: WriteSurrogate + ?Sized>(
         false,
     )?;
 
+    // TODO: This actually needs to be an extension tag strip marker since
+    // templates can be in any arbitrary position, including inside attributes,
+    // so this results in an invalid tree.
     render_runtime(out, state, sp, |source| {
         token!(
             source,

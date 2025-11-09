@@ -17,46 +17,56 @@ macro_rules! token {
         $crate::wikitext::builder::token!(@list, $source, [$($acc)*][$($curr)* $next] $($rest)*)
     };
 
+    // An array of `Argument`.
     ($source:ident, [ $($name:expr => $value:expr),* $(,)? ]) => {
         [ $($crate::wikitext::builder::tok_arg($source, $name, $value)),* ]
     };
 
+    // An array of `Spanned<Token>`.
     ($source:ident, [ $($value:tt)* ]) => {
         $crate::wikitext::builder::token!(@list, $source, [][] $($value)*)
     };
 
+    // Empty array handler.
     ($source:ident, []) => {};
 
+    // An `Argument`.
     ($source:ident, Argument { $name:expr => $value:expr }) => {
         $crate::wikitext::builder::tok_arg($source, $name, $value)
     };
 
+    // A `Span`, with prefix and suffix.
     ($source:ident, Span { $prefix:expr ; $text:expr ; $suffix:expr }) => {
         $crate::wikitext::builder::tok_span($source, $prefix, $text, $suffix)
     };
 
+    // A `Span`.
     ($source:ident, Span { $text:expr }) => {
         $crate::wikitext::builder::tok_span($source, "", $text, "")
     };
 
+    // A `Token::EndTag`.
     ($source:ident, Token::EndTag { $($tt:tt)* }) => {
         $crate::wikitext::builder::tok($source, "</", |$source| {
             Token::EndTag { $($tt)* }
         }, ">")
     };
 
+    // A `Token::ExternalLink`.
     ($source:ident, Token::ExternalLink { $($tt:tt)* }) => {
         $crate::wikitext::builder::tok($source, "[", |$source| {
             Token::ExternalLink { $($tt)* }
         }, "]")
     };
 
+    // A `Token::StartTag`.
     ($source:ident, Token::StartTag { $($tt:tt)* }) => {
         $crate::wikitext::builder::tok($source, "<", |$source| {
             Token::StartTag { $($tt)* }
         }, ">")
     };
 
+    // A `Token::Text`.
     ($source:ident, Token::Text { $text:expr }) => {
         $crate::wikitext::builder::tok_text($source, $text)
     };

@@ -401,10 +401,20 @@ impl Surrogate<Error> for Document {
     fn adopt_end_tag(
         &mut self,
         _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
+        sp: &StackFrame<'_>,
+        span: Span,
         name: &str,
     ) -> Result {
+        if self
+            .stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Attribute))
+        {
+            log::error!("tag inside attribute (probably due to `render_runtime`)");
+            return self.text_run(&sp.source[span.into_range()]);
+        }
+
         self.end_tag(name)?;
         Ok(())
     }
@@ -679,11 +689,21 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         name: &str,
         attributes: &[Spanned<Argument>],
         self_closing: bool,
     ) -> Result {
+        if self
+            .stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Attribute))
+        {
+            log::error!("tag inside attribute (probably due to `render_runtime`)");
+            return self.text_run(&sp.source[span.into_range()]);
+        }
+
         self.start_tag(state, sp, name, attributes)?;
         if self_closing {
             self.end_tag(name)?;

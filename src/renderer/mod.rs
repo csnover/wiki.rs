@@ -31,7 +31,9 @@
 //!       opening and closing tag.
 //!
 //!    Unbalanced `</onlyinclude>` tags are treated as plain text; all other
-//!    unbalanced tags are treated as-if they were written as self-closing tags.
+//!    unbalanced close tags are treated as-if they were written as self-closing
+//!    tags. Unbalanced open tags are treated as-if they were closed at the end
+//!    of the file.
 //!
 //!    Inclusion control tags can cut across Wikitext expressions so it is not
 //!    possible to convert a Wikitext document into tree of Wikitext expressions

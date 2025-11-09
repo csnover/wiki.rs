@@ -450,11 +450,11 @@ impl Surrogate<Error> for ExpandTemplates {
     fn adopt_text(
         &mut self,
         _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
-        text: &str,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _text: &str,
     ) -> Result {
-        self.out.write_str(text)?;
+        self.out.write_str(&sp.source[span.into_range()])?;
         Ok(())
     }
 

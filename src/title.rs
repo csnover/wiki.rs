@@ -369,7 +369,7 @@ impl Title {
 
 impl core::fmt::Display for Title {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(self.key())
+        f.write_str(self.full_text())
     }
 }
 
@@ -416,7 +416,7 @@ pub fn normalize(text: &str) -> Cow<'_, str> {
         }
     } else {
         out += decoded[flushed..].trim_end_matches(trimmable);
-        Cow::Owned(out.to_string())
+        Cow::Owned(out)
     }
 }
 
