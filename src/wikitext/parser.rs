@@ -59,11 +59,6 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     = t:(
       sol_block_line(ctx)
       / inlineline(ctx)
-      // Don't match `sol` on its own when in a table data-block. This ensures
-      // we don't match a stray `||` on the line as a `<td>` when the newline
-      // itself may not have started with a `<td>`. The `sol_block_line` rule above
-      // does allow `sol` to be matched when required for lists, headings, hrs,
-      // and fresh table lines.
       / empty_block(ctx)
     )
     // TODO: Is this ever *not* balancing?
@@ -87,6 +82,11 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// another block (whitespace, comments, includes, annotations, and behavior
     /// switches).
     rule empty_block(ctx: &Context) -> Vec<Spanned<Token>>
+      // Don't match `sol` on its own when in a table data-block. This ensures
+      // we don't match a stray `||` on the line as a `<td>` when the newline
+      // itself may not have started with a `<td>`. The `sol_block_line` rule
+      // does allow `sol` to be matched when required for lists, headings, hrs,
+      // and fresh table lines.
     = &assert(
         ctx.table_caption || ctx.full_table || !ctx.table_data_block,
         "in table caption, in full table, outside table data block")
@@ -3071,41 +3071,81 @@ fn inline_breaks(state: &Parser<'_>, input: &str, pos: usize, ctx: &Context) -> 
     let at_terminator = match iter.next().unwrap() {
         '=' => {
             if (ctx.arrow && iter.next() == Some('>')) || (ctx.equal && html_or_empty) {
+                // `-{ from => variant }-`
+                //          ^
+                // `{{t|k=v}}`
+                //       ^
+                // `<ext-or-anno {{t|k=v}} />` ???
+                //                    X
                 true
             } else if ctx.h {
-                pos == input.len() - 1 || state.annotation_lookahead.is_match(&input[pos + 1..])
+                // `=heading=== <!-- junk --></inc-or-anno>␤`
+                //          ^
+                pos == input.len() - 1 || state.heading_end_lookahead.is_match(&input[pos + 1..])
             } else {
                 false
             }
         }
         '|' => {
+            // `<ext-or-inc-or-anno | />` ???
+            //                      X
             html_or_empty
-                && (ctx.template_arg
+                // `{{a|b|c}}`
+                //       ^
+            && (ctx.template_arg
+                    // `{| ... k="v"| ...`
+                    //              ^
                     || ctx.table_cell_attrs
+                    // `[[a|b|c]]`
+                    //       ^
                     || ctx.linkdesc
-                    || (ctx.table
-                        && pos < input.len() - 1
-                        && matches!(iter.next(), Some('[' | '}' | '|' | ']')))
-                    || (ctx.table && input.get(pos..pos + 6) == Some("|{{!}}")))
+                    // TODO: What are these pipe–square-bracket productions?
+                    // `{| ... d |[link??? |] || d2 |}`
+                    //           ^         ^  ^     ^
+                    || (ctx.table && matches!(iter.next(), Some('[' | ']' | '|' | '}')))
+                    // `{| ... d |{{!}} d2 ...` (equivalent to `||`)
+                    //           ^
+                    || (ctx.table && input[pos..].starts_with("|{{!}}")))
         }
         '!' => {
+            // `{| ! h !! h2 ...`
+            //         ^
+            // `{| ! h {{!!}} ...`
+            //           X
             ctx.table_head.get()
                 && !matches!(ctx.prod_kind.get(), Some(ProdKind::Template))
                 && iter.next() == Some('!')
         }
         '{' => {
+            // `{| ... k="v"{{!}}`  (equivalent to `|`)
+            //              ^
+            // `{| d {{!}}{{!}} d2 {{!}}| ...`  (equivalent to `||`)
+            //       ^             ^
             (ctx.table_cell_attrs && input[pos..].starts_with("{{!}}"))
                 || (ctx.table
                     && (input[pos..].starts_with("{{!}}{{!}}")
                         || input[pos..].starts_with("{{!}}|")))
         }
-        '}' => {
-            let c2 = iter.next();
-            let preproc = ctx.prod_kind.get();
-            (c2 == Some('}') && matches!(preproc, Some(ProdKind::Template)))
-                || (c2 == Some('-') && matches!(preproc, Some(ProdKind::Lang)))
-        }
+        '}' => match ctx.prod_kind.get() {
+            // `{{a}}`
+            //     ^
+            Some(ProdKind::Template) => iter.next() == Some('}'),
+            // `-{a}-`
+            //     ^
+            Some(ProdKind::Lang) => iter.next() == Some('-'),
+            _ => false,
+        },
         ':' => {
+            // `; dt : dd`
+            //       ^
+            // `; [http://]`
+            //         X
+            // `; [[link|b:c]]`
+            //            X
+            // `; -{variant:to}-`
+            //             X
+            // `; {{Template:Foo}}`
+            //              X
             ctx.colon
                 && !ctx.extlink
                 && !ctx.linkdesc
@@ -3114,35 +3154,24 @@ fn inline_breaks(state: &Parser<'_>, input: &str, pos: usize, ctx: &Context) -> 
                     Some(ProdKind::Lang | ProdKind::Template)
                 )
         }
+        // `-{ ... variant : to ; }-`
+        //                      ^
         ';' => ctx.semicolon,
         c @ ('\r' | '\n') => {
-            // The code below is just a manual / efficient
-            // version of this check.
-            //
-            // stops.table && /^\r\n?\s*[!|]/.test(input.substr(pos));
-            //
-            // It eliminates a substr on the string and eliminates
-            // a potential perf problem since "\n" and the inline_breaks
-            // test is common during tokenization.
             if !ctx.table || (c == '\n' && ctx.linkdesc) {
+                // `␤`
+                //  X
+                // `{| [[a|␤ ...`
+                //         X
                 false
             } else {
-                // Allow leading whitespace in tables
-                let pos = pos
-                    + 1
-                    + if c == '\r' {
-                        1 + usize::from(iter.next() == Some('\n'))
-                    } else {
-                        0
-                    };
-
-                // Since we switched on 'c' which is input[pos],
-                // we know that input[pos] is "\n".
-                // So, the /^\n/ part of the regexp is already satisfied.
-                // Look for /\s*[!|]/ below.
+                let extra = usize::from(c == '\r' && iter.next() == Some('\n'));
                 let mut ok = false;
-                for c in input[pos..].bytes() {
+                for c in input[pos + 1 + extra..].bytes() {
                     if matches!(c, b'!' | b'|') {
+                        // `{| ... ␤ ! ...`
+                        // `{| ... ␤ | ...`
+                        //           ^
                         ok = true;
                         break;
                     } else if !c.is_ascii_whitespace() {
@@ -3152,10 +3181,18 @@ fn inline_breaks(state: &Parser<'_>, input: &str, pos: usize, ctx: &Context) -> 
                 ok
             }
         }
+        // `{| ... k="v" [[link???]] ...`
+        //               ^
         '[' => ctx.table_cell_attrs && iter.next() == Some('['),
+        // `{| ... k="v" -{lang???}- ...`
+        //               ^
         '-' => ctx.table_cell_attrs && iter.next() == Some('{'),
         ']' => {
+            // `[http://example.com]`
+            //                     ^
             ctx.extlink
+                // `[[a]]`
+                //     ^
                 || (matches!(ctx.prod_kind.get(), Some(ProdKind::Link)) && iter.next() == Some(']'))
         }
         _ => panic!("unhandled case"),

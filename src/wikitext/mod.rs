@@ -29,11 +29,14 @@ pub type Error = peg::error::ParseError<LineCol>;
 /// A Wikitext parser.
 #[derive(Clone, Debug)]
 pub struct Parser<'a> {
-    /// A pattern used to identify inclusion control and annotation tags when
-    /// breaking an inline item inside a heading.
-    annotation_lookahead: Regex,
     /// The configuration for the parser.
     config: &'a Configuration,
+    /// A pattern used to identify the end of a heading.
+    ///
+    /// Normally a heading ends at the end of a line, but it is legal to have
+    /// whitespace, comments, annotation end tags, and inclusion control end
+    /// tags at the end of that line.
+    heading_end_lookahead: Regex,
     /// A pattern used for the “Very Special Performance Hack”.
     urltext_lookahead: Regex,
 }
@@ -49,26 +52,26 @@ impl<'a> Parser<'a> {
         .unwrap();
 
         let include_tags = ["noinclude", "includeonly", "onlyinclude"];
-        let mut annotation_lookahead = "^=*(?:[ \t]|<\\!--.*?-->|</?(?:".to_string();
+        let mut heading_end_lookahead = "^=*(?:[ \t]|<\\!--.*?-->|</?(?:".to_string();
         for (index, tag) in include_tags
             .iter()
             .chain(config.annotation_tags.iter())
             .enumerate()
         {
             if index != 0 {
-                annotation_lookahead.push('|');
+                heading_end_lookahead.push('|');
             }
-            annotation_lookahead += tag;
+            heading_end_lookahead += tag;
         }
-        annotation_lookahead += ")>)*(?:[\r\n]|$)";
-        let annotation_lookahead = regex::RegexBuilder::new(&annotation_lookahead)
+        heading_end_lookahead += ")>)*(?:[\r\n]|$)";
+        let heading_end_lookahead = regex::RegexBuilder::new(&heading_end_lookahead)
             .dot_matches_new_line(true)
             .build()
             .unwrap();
 
         Self {
-            annotation_lookahead,
             config,
+            heading_end_lookahead,
             urltext_lookahead,
         }
     }
