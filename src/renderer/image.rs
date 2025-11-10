@@ -153,8 +153,13 @@ pub(super) fn image_options<'s>(
                     .attrs
                     .insert("height".into(), Cow::Owned(value.to_string()));
             }
+        } else if let Some(value) = value.strip_prefix("upright ") {
+            options.upright = Some(value.parse::<f64>().unwrap_or(1.0));
         } else {
             match &*value {
+                "upright" => {
+                    options.upright = Some(0.75);
+                }
                 "left" | "right" | "center" | "none" => {
                     options.align = Some(value);
                 }
