@@ -490,10 +490,13 @@ ol, ul, dl {
     }
 }
 
-:is(ol, ul) > * {
+:is(ol, ul):not([class]) > * {
     padding-left: .1rem;
 
-    .plainlist & {
+    .plainlist &,
+    /* TODO: Too many templates rely on list items having no padding, like
+       navbar-brackets from 'Template:Navbar' */
+    &[class] {
         padding-left: 0;
     }
 }
@@ -616,12 +619,13 @@ th {
     a zero-specificity `:where` selector.
     */
     :where(:is(blockquote, center, div, dl, figure, h1, h2, h3, h4, h5, h6, ol, p, pre, table, ul):not(:first-child)),
+    > :first-child,
     > [class] /* Template:Mbox, etc. override flow when they should not */
     {
         margin-top: var(--box-margin);
     }
 
-    p {
+    blockquote, dd, li, p {
         /* 'Toronto' gets a lot of bad character distribution with
            shorter hyphenation limits */
         hyphenate-limit-chars: 6 3 4;
@@ -639,6 +643,10 @@ th {
         margin-top: calc(var(--box-margin) * 1.5);
 
         + p,
+        + ul,
+        + ol,
+        + dl,
+        + :is(.mw-halign-right, .mw-halign-left, .floatright),
         + :is(.mw-halign-right, .mw-halign-left, .floatright) + * {
             margin-top: 0;
         }
@@ -755,14 +763,19 @@ th {
         }
     }
 
-    /* 'Toronto' */
-    > .wikitable[style*="border"][style*="margin"] {
-        border-width: 0 0 thin !important;
+    > .wikitable[style*="border"][style*="margin"], /* 'Toronto' */
+    .succession-box /* 'Template:S-start' */
+    {
         margin-inline: calc(var(--table-padding-inline) * -1) !important;
 
         * + & {
             margin-top: var(--box-margin) !important;
         }
+    }
+
+    /* 'Toronto' */
+    > .wikitable[style*="border"][style*="margin"] {
+        border-width: 0 0 thin !important;
     }
 
     /***********/
@@ -971,6 +984,8 @@ th {
         }
 
         .sidebar-list-title {
+            /* !important: 'Template:Sociology' */
+            background: transparent !important;
             font-stretch: var(--sidebar-stretch);
             padding: 0;
             line-height: inherit;
@@ -1176,7 +1191,7 @@ th {
         }
 
         .navbox-abovebelow {
-            font-size: 1rem;
+            font-size: .9rem;
         }
 
         .navbox-title {
@@ -1187,6 +1202,20 @@ th {
                 /* !important: Pages like 'Crazy Taxi' on an anonymous
                 container */
                 font-size: 1rem !important;
+            }
+        }
+
+        .navbox-title,
+        .navbox-abovebelow,
+        .navbox-group {
+            /* !important: 'Template:New York City' */
+            &[style*="color\:"],
+            [style*="color\:"] {
+                color: inherit !important;
+            }
+
+            &[style*="box-shadow:"] {
+                box-shadow: none !important;
             }
         }
 
@@ -1226,6 +1255,11 @@ th {
     /*******************/
     /* Template:Navbar */
     /*******************/
+
+    .navbar-ct-full,
+    .navbar-ct-mini {
+        font-size: inherit;
+    }
 
     /***********************/
     /* Template:Portal     */
@@ -1658,6 +1692,10 @@ th {
         margin-top: var(--box-margin);
     }
 
+    .div-col-rules {
+        column-rule: none;
+    }
+
     /**************************/
     /* Template:Climate chart */
     /**************************/
@@ -1694,6 +1732,7 @@ th {
         }
 
         th {
+            border-top: thin solid var(--fg);
             font-size: 1rem !important;
         }
 
@@ -1724,6 +1763,7 @@ th {
             }
 
             > tr:first-child > th {
+                border-top: 3px solid var(--fg);
                 font-stretch: var(--sidebar-stretch);
             }
         }
@@ -1733,6 +1773,9 @@ th {
     /* Template:Weather box */
     /************************/
 
+    /* TODO: Multiple matches because ExpandTemplates is not marking child
+       templates itself (but it needs to, because not every instance of a thing
+       has a matching template expansion at the root )-:) */
     [data-wiki-rs$="weather-box"],
     [data-wiki-rs$="weatherbox"] {
         .wikitable {
@@ -1743,11 +1786,16 @@ th {
                 border: solid var(--bg);
                 border-width: thin 0 0 thin;
                 font-family: var(--sans);
+                font-size: 90%;
                 text-align: center;
                 text-align: "." right;
                 padding-inline: calc(var(--table-padding-inline) * .5);
                 width: 6%;
                 white-space: nowrap;
+
+                &::first-line {
+                    font-size: 1rem;
+                }
 
                 &:last-child {
                     padding-inline: var(--table-padding-inline);
@@ -1765,23 +1813,36 @@ th {
                 border-bottom: thin solid var(--border-th);
             }
 
-            tr:last-child > * {
-                /* hiding the border gap requires using a unit with a known
-                   size; `thin` is undefined in CSS */
-                border-top: 1px solid var(--border-fg);
-                line-height: 1rlh;
+            tr:last-child,
+            tr:nth-last-child(2):has(> [colspan]) {
+                background: transparent;
 
-                /* hiding the border gap */
-                &:last-child {
-                    position: relative;
+                > * {
+                    /* hiding the border gap requires using a unit with a known
+                    size; `thin` is undefined in CSS */
+                    border-top: 1px solid var(--border-fg);
+                    line-height: 1rlh;
 
-                    &::before {
-                        content: '';
-                        position: absolute;
-                        top: -1px;
-                        left: 0;
-                        right: 0;
-                        border-top: 1px solid var(--border-fg);
+                    /* hiding the border gap */
+                    &:last-child {
+                        position: relative;
+
+                        &::before {
+                            content: '';
+                            position: absolute;
+                            top: -1px;
+                            left: 0;
+                            right: 0;
+                            border-top: 1px solid var(--border-fg);
+                        }
+                    }
+                }
+
+                + tr:last-child > * {
+                    border-top: 0;
+
+                    &:last-child::before {
+                        display: none;
                     }
                 }
             }
@@ -1823,9 +1884,28 @@ th {
             padding: var(--table-padding-block) var(--table-padding-inline) !important;
         }
 
-        tr:last-child > * {
-            border-top-color: var(--border-fg) !important;
-            font-family: var(--sans);
+        tr:last-child:last-child {
+            background-color: transparent;
+
+             > * {
+                border-top-color: var(--border-fg) !important;
+                font-family: var(--sans);
+             }
+        }
+    }
+
+    /********************/
+    /* Template:S-start */
+    /********************/
+    .succession-box.succession-box {
+        border-top: thin solid var(--border-fg);
+
+        * {
+            text-align: inherit;
+        }
+
+        * + * {
+            margin-top: 0;
         }
     }
 }
