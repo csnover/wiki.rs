@@ -1,6 +1,12 @@
 use super::*;
 
 #[test]
+fn new_line_in_table_data() {
+    run_test("{|\n|B\nC||d\n|}");
+    panic!();
+}
+
+#[test]
 fn include() {
     run_test(
         "<noinclude>hello</noinclude><onlyinclude>hello</onlyinclude><includeonly>did i just typo before?</includeonly>",

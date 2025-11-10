@@ -439,6 +439,22 @@ pub enum Token {
     },
 }
 
+impl Token {
+    /// Whether this token is part of a table.
+    fn is_table_part(&self) -> bool {
+        matches!(
+            self,
+            Self::TableCaption { .. }
+                | Self::TableData { .. }
+                | Self::TableEnd
+                | Self::TableHeading { .. }
+                | Self::TableRow { .. }
+                | Self::TableStart { .. }
+        )
+    }
+}
+
+/// A conversion error for out-of-range heading levels.
 #[derive(Debug, thiserror::Error)]
 #[error("{0} is not a valid HTML heading level")]
 pub struct HeadingRangeError(u8);

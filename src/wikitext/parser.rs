@@ -563,7 +563,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     // FIXME: Not sure if we want to support it, but this should allow columns.
     rule table_caption_tag(ctx: &Context) -> Spanned<Token>
     = // avoid recursion via nested_block_in_table
-      &assert(!ctx.table_data_block, "not in data block")
+      &assert(!ctx.table_data_block, "not in table data block")
       t:spanned(<
           pipe() "+"
           attributes:(t:row_syntax_table_attrs(ctx)? { t.unwrap_or(vec![]) })
@@ -584,7 +584,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// ```
     rule table_row_tag(ctx: &Context) -> Spanned<Token>
     = // avoid recursion via nested_block_in_table
-      &assert(!ctx.table_data_block, "not in data block")
+      &assert(!ctx.table_data_block, "not in table data block")
       t:spanned(<
         pipe() "-"+
         attributes:(table_attributes(&ctx.without_table()))
@@ -647,7 +647,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// ```
     rule table_data_tags(ctx: &Context) -> Vec<Spanned<Token>>
     = // avoid recursion via nested_block_in_table
-      &assert(!ctx.table_data_block, "not table data block")
+      &assert(!ctx.table_data_block, "not in table data block")
       first:table_data_tag(ctx, <pipe() !['+'|'-']>)
       rest:table_data_tag(ctx, <pipe_pipe() {}>)*
     { reduce_tree(iter::once(first).chain(rest)) }
@@ -3325,6 +3325,24 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
             // still needs to be represented in the list item span to ensure
             // list items can be reserialised properly
             li_span.end = token.span.end;
+        } else if !token.is_table_part()
+            && let Some(Spanned {
+                span,
+                node: Token::TableData { content, .. },
+                ..
+            }) = v.last_mut()
+        {
+            // TODO: The `table_data_tag` (really, `empty_block`) rule
+            // terminates on a blank new line. The documented reason for this is
+            // to avoid treating "||" as a cell separator when it does not
+            // appear on the same line as the "␤|" which started the data block,
+            // but this should be handled by running until a newline with the
+            // `pipe_pipe` delimiter, then continue running until "␤|" or `eof`
+            // with no delimiter. However, this has been confusingly hard to
+            // apply in practice. So, for the moment, tokens that should be
+            // consumed by that rule are reparented here.
+            span.end = token.span.end;
+            content.push(token);
         } else if token.node != Token::Text || !token.span.is_empty() {
             v.push(token);
         }
