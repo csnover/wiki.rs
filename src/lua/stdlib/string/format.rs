@@ -2,7 +2,10 @@
 
 use crate::lua::prelude::*;
 use core::fmt::Write as _;
-use lua::{ConversionType, FormatElement, parse_format_string};
+use gc_arena::Gc;
+pub(super) use lua::{ConversionSpecifier, ConversionType};
+use lua::{FormatElement, parse_format_string};
+use piccolo::Function;
 
 /// Formats a string from values taken off the stack.
 pub(super) fn format_impl<'gc>(
@@ -19,17 +22,28 @@ pub(super) fn format_impl<'gc>(
             FormatElement::Verbatim(part) => result.push_str(part),
             FormatElement::Format(spec) => match spec.conversion_type {
                 ConversionType::Pointer => {
-                    if let Some(
-                        Value::Function(_)
-                        | Value::String(_)
-                        | Value::Table(_)
-                        | Value::Thread(_)
-                        | Value::UserData(_),
-                    ) = args.next()
-                    {
-                        log::warn!("pointer printing not implemented");
-                        result += "0x1";
-                        // spec.write_i64(&mut result, value)?;
+                    let value = match args.next() {
+                        None
+                        | Some(
+                            Value::Nil | Value::Boolean(_) | Value::Integer(_) | Value::Number(_),
+                        ) => None,
+                        Some(Value::Function(Function::Closure(c))) => {
+                            Some(Gc::as_ptr(c.into_inner()) as usize)
+                        }
+                        Some(Value::Function(Function::Callback(c))) => {
+                            Some(Gc::as_ptr(c.into_inner()) as usize)
+                        }
+                        Some(Value::String(s)) => Some(Gc::as_ptr(s.into_inner()) as usize),
+                        Some(Value::Table(t)) => Some(Gc::as_ptr(t.into_inner()) as usize),
+                        Some(Value::Thread(t)) => Some(Gc::as_ptr(t.into_inner()) as usize),
+                        Some(Value::UserData(d)) => Some(Gc::as_ptr(d.into_inner()) as usize),
+                    };
+
+                    if let Some(value) = value {
+                        // Clippy: The spec will reconvert it back to usize.
+                        // C-style APIs: wooo!!
+                        #[allow(clippy::cast_possible_wrap)]
+                        spec.write_i64(&mut result, value as i64)?;
                     } else {
                         result += "(null)";
                     }
