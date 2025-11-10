@@ -32,23 +32,24 @@
 
 :root {
     --aside-max: 30vw;
-    --shade-bg: #f9f9f9;
-    --border-fg: lightgrey;
-    --highlight: rebeccapurple;
-    --border-th: #999;
     --bg: white;
-    --fg: black;
-    --serif: source-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    --sans: archivo, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    --mono: inconsolata, "Segoe UI Mono", "Roboto Mono", monospace, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    --box-margin: 1rem;
-    --figure-margin: calc(var(--box-margin) * 2);
-    --ol-gutter: 1.5rem;
-    /* Bad things happen to the baseline grid if this is not unitless */
-    --rlh: 1.55;
     --body-bottom: 2rem;
     --body-left: 4rem;
     --body-right: 2rem;
+    --border-fg: lightgrey;
+    --bold: 650;
+    --border-th: #999;
+    --box-margin: 1rem;
+    --fg: black;
+    --figure-margin: calc(var(--box-margin) * 2);
+    --highlight: rebeccapurple;
+    --mono: inconsolata, "Segoe UI Mono", "Roboto Mono", monospace, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --ol-gutter: 1.5rem;
+    /* Bad things happen to the baseline grid if this is not unitless */
+    --rlh: 1.55;
+    --sans: archivo, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --serif: source-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --shade-bg: #f9f9f9;
 
     font: 0.95rem/var(--rlh) var(--serif);
     font-weight: 380;
@@ -266,7 +267,7 @@
     font-size: 105%;
     font-stretch: 80%;
     margin-top: 4rem;
-    margin-right: calc(var(--scrollbar-padding * -1));
+    margin-right: calc(var(--scrollbar-padding) * -1);
     overflow-y: auto;
     padding-right: var(--scrollbar-padding);
     scrollbar-width: thin;
@@ -287,8 +288,6 @@
     container: main-article / inline-size;
     grid-column: 1;
     grid-row: 2;
-    hyphenate-limit-chars: 4 2 2;
-    hyphens: auto;
     overflow: hidden;
     overflow-wrap: break-word;
     /* weird padding and margin stuff to avoid big overflow (caused by giant
@@ -298,9 +297,6 @@
     margin-left: -4rem;
     padding-left: 4rem;
     padding-right: 4rem;
-    text-align: justify;
-    text-justify: distribute;
-    text-justify: inter-character;
 }
 
 .wiki-rs-bye {
@@ -431,7 +427,7 @@ pre {
 }
 
 b, strong {
-    font-weight: 650;
+    font-weight: var(--bold);
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -591,9 +587,17 @@ th {
     --background-color-neutral: transparent;
     --background-color-neutral-subtle: transparent;
     --border-color-base: var(--border-fg);
-    --color-base: #000;
-    --tag-size: .4rem;
     --box-tag: transparent linear-gradient(135deg, var(--fg) var(--tag-size), transparent var(--tag-size)) 0%/calc(var(--tag-size) * 2) no-repeat;
+    --color-base: #000;
+    --table-padding-block: .1rem;
+    --table-padding-inline: .5rem;
+    --tag-size: .4rem;
+    --sidebar-stretch: 110%;
+
+    --legend-border: var(--fg);
+    --legend-lh: .5;
+    --legend-wh: calc(1ex + 2px);
+    --legend-valign: baseline;
 
     contain: inline-size layout style paint;
 
@@ -611,8 +615,20 @@ th {
     Instead, all the supported non-phrasing content elements are selected using
     a zero-specificity `:where` selector.
     */
-    :where(:is(blockquote, center, div, dl, figure, h1, h2, h3, h4, h5, h6, ol, p, pre, table, ul):not(:first-child)) {
+    :where(:is(blockquote, center, div, dl, figure, h1, h2, h3, h4, h5, h6, ol, p, pre, table, ul):not(:first-child)),
+    > [class] /* Template:Mbox, etc. override flow when they should not */
+    {
         margin-top: var(--box-margin);
+    }
+
+    p {
+        /* 'Toronto' gets a lot of bad character distribution with
+           shorter hyphenation limits */
+        hyphenate-limit-chars: 6 3 4;
+        hyphens: auto;
+        text-align: justify;
+        text-justify: distribute;
+        text-justify: inter-character;
     }
 
     * + h2 {
@@ -660,16 +676,15 @@ th {
 
     .wikitable,
     .tracklist, /* 'Template:Track listing' */
-    .us-census-pop /* 'Template:US Census population' */
+    .us-census-pop, /* 'Template:US Census population' */
+    [data-wiki-rs=template-historical-populations] /* 'Template:Historical populations' */
     {
-        --padding: .5rem;
-
         border: 0;
         border-bottom: thin solid var(--border-fg);
         border-collapse: collapse;
         font-variant-numeric: tabular-nums;
-        margin-inline: calc(var(--padding) * -1);
-        width: calc(100% + var(--padding) * 2);
+        margin-inline: calc(var(--table-padding-inline) * -1);
+        width: calc(100% + var(--table-padding-inline) * 2);
 
         tbody > tr:nth-child(2n) {
             background-color: var(--shade-bg);
@@ -689,7 +704,7 @@ th {
         }
 
         td, th {
-            padding: .1rem var(--padding);
+            padding: var(--table-padding-block) var(--table-padding-inline);
             text-align: start;
         }
 
@@ -711,7 +726,9 @@ th {
         }
 
         &.floatright,
-        &.us-census-pop-right /* 'Template:US Census population' */ {
+        &.us-census-pop-right, /* 'Template:US Census population' */
+        &[data-wiki-rs=template-historical-populations] /* 'Template:Historical populations' */
+        {
             max-width: 50cqw;
             width: auto;
         }
@@ -719,7 +736,8 @@ th {
 
     .floatright,
     .tright, /* 'Template:Thumb image' */
-    .us-census-pop-right /* 'Template:US Census population' */ {
+    .us-census-pop-right /* 'Template:US Census population' */
+    {
         clear: right;
         float: right;
         margin-bottom: var(--figure-margin);
@@ -732,8 +750,18 @@ th {
         margin-left: var(--figure-margin);
         > * {
             margin-left: 0 !important;
-            margin-right: calc(var(--padding) * -1) !important;
+            margin-right: calc(var(--table-padding-inline) * -1) !important;
             width: auto;
+        }
+    }
+
+    /* 'Toronto' */
+    > .wikitable[style*="border"][style*="margin"] {
+        border-width: 0 0 thin !important;
+        margin-inline: calc(var(--table-padding-inline) * -1) !important;
+
+        * + & {
+            margin-top: var(--box-margin) !important;
         }
     }
 
@@ -790,11 +818,11 @@ th {
         }
 
         .legend-color {
-            border-color: var(--fg);
-            line-height: .5;
-            min-width: calc(1ex + 2px);
-            height: calc(1ex + 2px);
-            vertical-align: baseline;
+            border-color: var(--legend-border);
+            line-height: var(--legend-lh);
+            min-width: var(--legend-wh);
+            height: var(--legend-wh);
+            vertical-align: var(--legend-valign);
         }
     }
 
@@ -912,7 +940,7 @@ th {
             /* !important: 'Template:Content policy list' */
             > [style*="font-size:120%"] {
                 font-size: inherit !important;
-                font-stretch: 110%;
+                font-stretch: var(--sidebar-stretch);
             }
         }
 
@@ -926,7 +954,7 @@ th {
         }
 
         .sidebar-navbar {
-            font-stretch: 110%;
+            font-stretch: var(--sidebar-stretch);
         }
 
         .sidebar-title-with-pretitle {
@@ -940,6 +968,20 @@ th {
         .sidebar-image {
             border-top: thin solid currentColor;
             padding-top: calc(var(--box-margin) * .75);
+        }
+
+        .sidebar-list-title {
+            font-stretch: var(--sidebar-stretch);
+            padding: 0;
+            line-height: inherit;
+        }
+
+        .sidebar-list-content {
+            margin-top: 0;
+        }
+
+        tr:has(> .sidebar-content > .sidebar-list) + tr > .sidebar-content > .sidebar-list {
+            margin-top: calc(var(--box-margin) * .5);
         }
 
         /* This is actually redundant information; the title of the page,
@@ -1139,7 +1181,7 @@ th {
 
         .navbox-title {
             font-size: 1rem;
-            font-stretch: 110%;
+            font-stretch: var(--sidebar-stretch);
 
             > :not(.navbar) {
                 /* !important: Pages like 'Crazy Taxi' on an anonymous
@@ -1180,6 +1222,10 @@ th {
     * + .navbox.navbox.navbox {
         margin-top: 4rem;
     }
+
+    /*******************/
+    /* Template:Navbar */
+    /*******************/
 
     /***********************/
     /* Template:Portal     */
@@ -1610,5 +1656,176 @@ th {
 
     * + .div-col {
         margin-top: var(--box-margin);
+    }
+
+    /**************************/
+    /* Template:Climate chart */
+    /**************************/
+
+    /* .infobox is for extra specificity */
+    [data-wiki-rs=template-climate-chart].infobox {
+        border: none !important;
+        font-variant-numeric: lining-nums;
+        margin-bottom: var(--figure-margin) !important;
+
+        &[style*="float\: left"] {
+            margin-right: var(--figure-margin) !important;
+        }
+
+        &[style*="float\: right"] {
+            margin-left: var(--figure-margin) !important;
+        }
+
+        /* axis display, part 1 */
+        [style*="bottom:dotted"] {
+            display: none;
+        }
+
+        /* axis display, part 2 */
+        tr:has(> td > [style*="position:relative"]) {
+            background: transparent url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><circle cx="1" cy="1" r=".5" fill="%23999" /></svg>') repeat-x 0 calc(50% + .5em);
+
+            /* improve legibility of labels on the axis */
+            span {
+                background-color: var(--bg);
+                padding-inline: .15em;
+                margin-inline: -.15em;
+            }
+        }
+
+        th {
+            font-size: 1rem !important;
+        }
+
+        td[colspan] > span:first-child {
+            border: 1px solid var(--legend-border);
+            color: transparent !important;
+            display: inline-block;
+            line-height: var(--legend-lh);
+            height: var(--legend-wh);
+            vertical-align: var(--legend-valign);
+            width: var(--legend-wh);
+        }
+
+        .infobox {
+            margin-right: 0 !important;
+            margin-top: calc(var(--box-margin) * .5) !important;
+
+            th {
+                /* The emulated margin-top of a secondary conversion chart */
+                padding-bottom: calc(var(--box-margin) * .25);
+            }
+        }
+
+        > tbody {
+            > tr > td > .infobox {
+                /* The margin-top of the primary conversion chart */
+                margin-top: calc(var(--box-margin) * .25) !important;
+            }
+
+            > tr:first-child > th {
+                font-stretch: var(--sidebar-stretch);
+            }
+        }
+    }
+
+    /************************/
+    /* Template:Weather box */
+    /************************/
+
+    [data-wiki-rs$="weather-box"],
+    [data-wiki-rs$="weatherbox"] {
+        .wikitable {
+            border-bottom: none;
+            width: calc(100% + var(--table-padding-inline) * 2) !important;
+
+            td {
+                border: solid var(--bg);
+                border-width: thin 0 0 thin;
+                font-family: var(--sans);
+                text-align: center;
+                text-align: "." right;
+                padding-inline: calc(var(--table-padding-inline) * .5);
+                width: 6%;
+                white-space: nowrap;
+
+                &:last-child {
+                    padding-inline: var(--table-padding-inline);
+                }
+            }
+
+            tr:first-child > th {
+                font-weight: normal;
+                &::first-line {
+                    font-weight: var(--bold);
+                }
+            }
+
+            tr:nth-child(2) > th[scope=row] {
+                border-bottom: thin solid var(--border-th);
+            }
+
+            tr:last-child > * {
+                /* hiding the border gap requires using a unit with a known
+                   size; `thin` is undefined in CSS */
+                border-top: 1px solid var(--border-fg);
+                line-height: 1rlh;
+
+                /* hiding the border gap */
+                &:last-child {
+                    position: relative;
+
+                    &::before {
+                        content: '';
+                        position: absolute;
+                        top: -1px;
+                        left: 0;
+                        right: 0;
+                        border-top: 1px solid var(--border-fg);
+                    }
+                }
+            }
+
+            th[scope=col] {
+                /* hiding the border gap requires using a unit with a known
+                   size; `thin` is undefined in CSS */
+                border-bottom-width: 1px;
+                text-align: center;
+
+                &[style*="border-left-width\:medium"] {
+                    position: relative;
+                    &::after {
+                        border-bottom: 1px solid var(--border-th);
+                        bottom: 0;
+                        content: '';
+                        left: 0;
+                        position: absolute;
+                        /* "thin" and "medium" are unspecified in CSS */
+                        width: 12px;
+                        transform: translate(-6px, 1px);
+                    }
+                }
+            }
+        }
+    }
+
+    /***********************************/
+    /* Template:Historical populations */
+    /***********************************/
+    [data-wiki-rs=template-historical-populations] {
+        border-bottom: none;
+
+        margin-right: calc(var(--table-padding-inline) * -1) !important;
+        margin-bottom: var(--figure-margin) !important;
+        margin-left: var(--figure-margin) !important;
+
+        th, td {
+            padding: var(--table-padding-block) var(--table-padding-inline) !important;
+        }
+
+        tr:last-child > * {
+            border-top-color: var(--border-fg) !important;
+            font-family: var(--sans);
+        }
     }
 }
