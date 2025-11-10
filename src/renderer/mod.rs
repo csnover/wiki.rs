@@ -1,7 +1,8 @@
 //! Article rendering types and functions.
 //!
 //! Wikitext can only be parsed correctly by an algorithm that operates as-if
-//! this sequence of steps is run in order (probably):
+//! this sequence of steps is run in order (probably, this description is based
+//! mostly on black box analysis with some review of MediaWiki source code):
 //!
 //! 1. Preprocess annotation tags. Annotation tags which are not balanced are
 //!    treated as plain text. (TODO: Expand on how to do this, if it is ever
@@ -76,6 +77,47 @@
 //!    `['<'| '>'|'&'|'"']` shall be entity-encoded, unless the character forms
 //!    part of a syntactically valid HTML5 tag and the tag name is in the
 //!    allowlist, in which case the control character shall be emitted as-is.
+//!
+//! The theory of operation of *this* renderer is to consider that the final
+//! output stage of a Wikitext renderer should operate as-if there were never
+//! any templates at all, and so tokens generated within template expansions can
+//! simply be sent directly up to the root as they are produced:
+//!
+//! ```text
+//!                 ┌───────┬────────┬─────┐
+//!                 │ text  │ entity │ ... │
+//!         ┌───────┼╌╌╌↓╌╌╌┼╌╌╌╌↓╌╌╌┼╌╌↓╌╌┤
+//!         │ <tag> │   ↓ {{ template }}↓  │
+//! ┌───────┼╌╌╌↓╌╌╌┼╌╌╌↓╌╌╌┼╌╌╌╌↓╌╌╌┼╌╌↓╌╌┼──────┬────────┬─────┐
+//! │ <tag> │   ↓   ┆   ↓ {{ template }}↓  │ text │ </tag> │ ... │
+//! └───────┴───────┴───────┴────↓───┴─────┴──────┴────────┴─────┘
+//!                          Document
+//! ```
+//!
+//! The obvious and fundamental flaw in this approach is that it expects that
+//! the smallest atom is a token, whereas in templates the smallest atom is
+//! actually a character. This means that templates sometimes need to accumulate
+//! into a string before they can be tokenised correctly. The assumption is that
+//! because Parsoid uses this same kind of model that no Wikitext will be
+//! totally broken by this approach (though, given that Parsoid is *still* under
+//! active development, maybe some questioning of the soundness of this line of
+//! thought is warranted).
+//!
+//! The most sound approach would be to expand templates while the PEG runs,
+//! replacing the templates in the original source text with the output of the
+//! expansion as the parser encounters them. The major downsides to *that*
+//! approach are that it would cause the same template source to be parsed many
+//! times instead of once (though having to re-parse the *result* of a lot of
+//! template expansions either way raises a question of how much this actually
+//! matters); it would require a custom [`peg::Parse`] implementation with
+//! interior mutability; it would require passing the mutable global state
+//! *into* the parser in a way which does not break; it would be impossible to
+//! abort processing on error because [`peg`] does not currently have a way to
+//! emit “fatal” errors. If it turns out that this absolutely *has* to be the
+//! way that things work to render all articles correctly, there is an old
+//! aborted attempt at this in another branch somewhere, which ran off the rails
+//! at the point where template parameter default values had to be spliced into
+//! overlapping memory.
 
 use crate::{
     LoadMode,
