@@ -258,6 +258,14 @@ pub struct Statics {
     pub vm_cache: LruMap<ArticleId, VmCacheEntry, ByMemoryUsage<VmCacheEntry>>,
 }
 
+/// A strip marker.
+enum StripMarker {
+    /// A strip marker containing block-level elements.
+    Block(String),
+    /// A strip marker containing only phrasing content.
+    Inline(String),
+}
+
 /// Renderer state that is shared across stack frames.
 pub struct State<'s> {
     /// Article data.
@@ -269,7 +277,7 @@ pub struct State<'s> {
     /// Stripped extension tag substitutions.
     // TODO: Store as Rc or something so these do not need to be cloned? Which
     // is faster?
-    strip_markers: Vec<String>,
+    strip_markers: Vec<StripMarker>,
     /// Page performance timing data.
     timing: HashMap<String, (usize, Duration)>,
 }

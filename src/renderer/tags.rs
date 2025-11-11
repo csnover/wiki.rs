@@ -262,7 +262,7 @@ pub(super) fn render_runtime<
 /// Renders runtime-generated tokens.
 pub(super) fn render_runtime_list<
     W: WriteSurrogate + ?Sized,
-    F: FnOnce(&mut String) -> Vec<Spanned<Token>>,
+    F: FnOnce(&mut State<'_>, &mut String) -> Vec<Spanned<Token>>,
 >(
     out: &mut W,
     state: &mut State<'_>,
@@ -270,6 +270,6 @@ pub(super) fn render_runtime_list<
     f: F,
 ) -> Result {
     let source = &mut String::new();
-    let tokens = f(source);
+    let tokens = f(state, source);
     out.adopt_tokens(state, &sp.clone_with_source(FileMap::new(source)), &tokens)
 }

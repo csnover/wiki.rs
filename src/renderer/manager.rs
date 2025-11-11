@@ -125,7 +125,7 @@ fn render(
         strip_markers: <_>::default(),
         timing: <_>::default(),
     };
-    let mut renderer = Document::new();
+    let mut renderer = Document::new(false);
     renderer.adopt_output(&mut state, &sp, &root)?;
     Ok(renderer.finish(state))
 }

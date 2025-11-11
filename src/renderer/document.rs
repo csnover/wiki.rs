@@ -1,7 +1,7 @@
 //! The root of a Wikitext document.
 
 use super::{
-    Error, Result, State, extension_tags,
+    Error, Result, State, StripMarker, extension_tags,
     manager::RenderOutput,
     stack::{Kv, StackFrame},
     surrogate::{self, Surrogate},
@@ -11,7 +11,7 @@ use super::{
 use crate::{
     renderer::emitters::{ListEmitter, ListKind, TextStyleEmitter},
     wikitext::{
-        AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant,
         MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
     },
 };
@@ -28,6 +28,10 @@ pub struct Document {
     in_include: Vec<InclusionMode>,
     /// The last visible character rendered to the output.
     last_char: char,
+    /// A hack.
+    fragment: bool,
+    /// A hack.
+    seen_block: bool,
     /// The stack of open HTML elements.
     stack: Vec<Node>,
     /// Tags for block level elements emitted at a given stack level.
@@ -48,11 +52,13 @@ pub struct Document {
 
 impl Document {
     /// Creates a new [`Document`].
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(fragment: bool) -> Self {
         Self {
+            fragment,
             html: <_>::default(),
             in_include: <_>::default(),
             last_char: ' ',
+            seen_block: <_>::default(),
             stack: <_>::default(),
             tag_blocks: <_>::default(),
             text_style_emitter: <_>::default(),
@@ -93,6 +99,20 @@ impl Document {
             indicators: state.globals.indicators,
             outline: state.globals.outline,
             styles: state.globals.styles.text,
+        }
+    }
+
+    /// Finalises a document fragment and returns the resulting output as a
+    /// strip marker object.
+    pub(crate) fn finish_fragment(mut self) -> StripMarker {
+        for rest in self.stack.drain(..).rev() {
+            let _ = rest.close(&mut self.html);
+        }
+
+        if self.seen_block {
+            StripMarker::Block(self.html)
+        } else {
+            StripMarker::Inline(self.html)
         }
     }
 
@@ -163,7 +183,7 @@ impl Document {
                 Graf::Text => {}
                 Graf::Start | Graf::Break => *graf = Graf::Text,
             }
-        } else if needs_graf(self.stack.last()) {
+        } else if self.needs_graf() {
             write!(self.html, "<p>")?;
             self.stack.push(Node::Graf(Graf::Start));
         }
@@ -185,7 +205,7 @@ impl Document {
         // Sometimes, table-row templates get things like 'Template:Tfd'
         // applied to them. When this happens, allow the browser to foster the
         // content out of the table. However, also make sure that if a new
-        // table or table row starts that it does not get treated as fosterable.
+        // table or table row starts that it interacts properly with the table.
         if !matches!(
             self.stack.last(),
             Some(node @ Node::Tag(last, _))
@@ -198,8 +218,11 @@ impl Document {
 
         if PHRASING_TAGS.contains(&tag) {
             self.expect_graf()?;
-        } else if let Some(Node::Tag(_, has_content)) = self.stack.last_mut() {
-            *has_content = true;
+        } else {
+            self.seen_block = true;
+            if let Some(Node::Tag(_, has_content)) = self.stack.last_mut() {
+                *has_content = true;
+            }
         }
 
         write!(self.html, "<{tag}")?;
@@ -317,21 +340,23 @@ impl Document {
         Trim::new(self, sp).adopt_tokens(state, sp, content)?;
         self.end_tag(tag)
     }
-}
 
-/// Returns true if a `<p>` needs to be added for text within the given
-/// `parent`.
-fn needs_graf(parent: Option<&Node>) -> bool {
-    // List items mustn’t receive graf tags at first because this breaks
-    // at least the layout of 'Template:Navbox'. Similarly, they cannot be
-    // given automatically in <div> because that breaks the
-    // header of 'Template:Documentation'. Basically, the expected Wikitext
-    // output is all so fragile that there is no way to emit grafs in a sane
-    // way, it pretty much always needs need to be the case that the first run
-    // of text in a block is emitted raw, which makes having good layout for
-    // text really difficult because having phrasing content directly inside
-    // blocks means a general selector is impossible.
-    parent.is_none() || matches!(parent, Some(Node::Tag(tag, true)) if !PHRASING_TAGS.contains(tag))
+    /// Returns true if a `<p>` needs to be added for text within the given
+    /// `parent`.
+    fn needs_graf(&self) -> bool {
+        // List items mustn’t receive graf tags at first because this breaks
+        // at least the layout of 'Template:Navbox'. Similarly, they cannot be
+        // given automatically in <div> because that breaks the
+        // header of 'Template:Documentation'. Basically, the expected Wikitext
+        // output is all so fragile that there is no way to emit grafs in a sane
+        // way, it pretty much always needs need to be the case that the first run
+        // of text in a block is emitted raw, which makes having good layout for
+        // text really difficult because having phrasing content directly inside
+        // blocks means a general selector is impossible.
+        let parent = self.stack.last();
+        (!self.fragment && parent.is_none())
+            || matches!(parent, Some(Node::Tag(tag, true)) if !PHRASING_TAGS.contains(tag))
+    }
 }
 
 impl fmt::Write for Document {
@@ -754,18 +779,30 @@ impl Surrogate<Error> for Document {
     fn adopt_strip_marker(
         &mut self,
         state: &mut State<'_>,
-        sp: &StackFrame<'_>,
+        _sp: &StackFrame<'_>,
         _span: Span,
         marker: usize,
     ) -> Result {
-        let Some(tag) = state.strip_markers.get(marker).cloned() else {
+        let Some(tag) = state.strip_markers.get(marker) else {
             return Err(Error::StripMarker(marker));
         };
 
-        // sp does not really matter in this situation since without expansions
-        // there is nothing to reference
-        let tree = state.statics.parser.parse_no_expansion(&tag)?;
-        self.adopt_output(state, &sp.clone_with_source(FileMap::new(&tag)), &tree)
+        match tag {
+            StripMarker::Inline(text) => {
+                self.html += text;
+            }
+            StripMarker::Block(text) => {
+                // Using "div" is a hack but one which does not really matter
+                // since anything that cannot parent a `<div>` cannot parent any
+                // other block-level element
+                while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
+                    e.close(&mut self.html)?;
+                }
+                self.html += text;
+            }
+        }
+
+        Ok(())
     }
 
     fn adopt_text(

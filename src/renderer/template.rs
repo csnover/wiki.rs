@@ -92,7 +92,7 @@ pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
                 err
             };
             log::error!("{}: {err:#}", sp.name);
-            render_runtime_list(out, state, &sp, |source| {
+            render_runtime_list(out, state, &sp, |_, source| {
                 token![source, [
                     Token::StartTag {
                         name: token!(source, Span { "span" }),
@@ -345,7 +345,9 @@ pub fn call_template<W: WriteSurrogate + ?Sized>(
         // where it is impossible to parse them correctly before template
         // expansion is completed, which is very annoying because it requires
         // this buffering and double-parsing where it would not otherwise be
-        // necessary.
+        // necessary, and makes extension tags very hard to deal with because
+        // they must be able to emit tags which are not serialisable in Wikitext
+        // (`<math>`, etc.).
         let mut evaluator = ExpandTemplates::new(ExpandMode::Strip);
         evaluator.adopt_output(state, &sp, &root)?;
         let partial = evaluator.finish();

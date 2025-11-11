@@ -7,9 +7,12 @@ use super::{
     surrogate::{self, Surrogate},
     tags, template,
 };
-use crate::wikitext::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, MARKER_PREFIX,
-    MARKER_SUFFIX, Output, Span, Spanned, TextStyle, Token,
+use crate::{
+    renderer::document::Document,
+    wikitext::{
+        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+        MARKER_PREFIX, MARKER_SUFFIX, Output, Span, Spanned, TextStyle, Token,
+    },
 };
 use core::{
     fmt::{self, Write as _},
@@ -19,7 +22,7 @@ use core::{
 /// Template expansion mode.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ExpandMode {
-    /// Expand templates in non-include mode. Thisis used when rendering the
+    /// Expand templates in non-include mode. This is used when rendering the
     /// bodies of extension tags present in the root document.
     #[default]
     Normal,
@@ -204,36 +207,24 @@ impl Surrogate<Error> for ExpandTemplates {
     ) -> Result {
         // TODO: Collecting into a `Vec<Kv>` first wastes time.
         let attributes = attributes.iter().map(Kv::Argument).collect::<Vec<_>>();
-        if self.mode == ExpandMode::Normal {
-            extension_tags::render_extension_tag(
-                self,
-                state,
-                sp,
-                Some(span),
-                name,
-                &attributes,
-                content,
-            )
-        } else {
-            let mut out = Self::new(ExpandMode::Include);
-            extension_tags::render_extension_tag(
-                &mut out,
-                state,
-                sp,
-                Some(span),
-                name,
-                &attributes,
-                content,
-            )?;
-            let content = out.finish();
-            write!(
-                self.out,
-                "{MARKER_PREFIX}{}{MARKER_SUFFIX}",
-                state.strip_markers.len()
-            )?;
-            state.strip_markers.push(content);
-            Ok(())
-        }
+        let mut out = Document::new(true);
+        extension_tags::render_extension_tag(
+            &mut out,
+            state,
+            sp,
+            Some(span),
+            name,
+            &attributes,
+            content,
+        )?;
+        let content = out.finish_fragment();
+        write!(
+            self.out,
+            "{MARKER_PREFIX}{}{MARKER_SUFFIX}",
+            state.strip_markers.len()
+        )?;
+        state.strip_markers.push(content);
+        Ok(())
     }
 
     fn adopt_external_link(

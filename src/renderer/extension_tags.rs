@@ -12,8 +12,13 @@ use super::{
 use crate::{
     common::anchor_encode,
     db::Database,
+    php::strtr,
+    renderer::tags::{render_runtime, render_runtime_list},
     title::{Namespace, Title},
-    wikitext::{self, FileMap, Output, Span, Token},
+    wikitext::{
+        self, FileMap, Output, Span, Token,
+        builder::{tok_arg, token},
+    },
 };
 use core::{fmt::Write as _, ops::Range};
 use std::collections::{HashMap, HashSet};
@@ -139,7 +144,7 @@ fn indicator(
         .transpose()?;
 
     if let Some(image) = image {
-        let mut out = Document::new();
+        let mut out = Document::new(true);
         out.adopt_token(state, &sp, image)?;
         state.globals.indicators.insert(name.to_string(), out.html);
     }
@@ -150,16 +155,22 @@ fn indicator(
 /// The `<nowiki>` extension tag.
 fn no_wiki(
     out: &mut dyn WriteSurrogate,
-    _: &mut State<'_>,
+    state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    // TODO: Because stripped tags are eagerly processed and stored in their
-    // postprocessed form to avoid retaining stack frames and then deserialised
-    // a second time, the content of `<nowiki>` needs to be escaped much more
-    // aggressively than in MW. This is probably a bad trade-off relative to
-    // just `Rc`ing the frames.
-    write!(out, "{}", wikitext::escape_no_wiki(arguments.body()))?;
-    Ok(())
+    // TODO: This is supposed to have a way to communicate to the caller that
+    // it is nowiki content, so it does not get parsed as Wikitext later. Which
+    // characters are being escaped is based on MW expecting that this content
+    // would be used in that manner. Currently we just store it and YOLO into
+    // the final document.
+    render_runtime(out, state, arguments.sp, |source| {
+        token!(source, Token::Text { strtr(arguments.body(), &[
+            ("-{", "-&#123;"),
+            ("}-", "&#125;-"),
+            ("<", "&lt;"),
+            (">", "&gt;"),
+        ])})
+    })
 }
 
 /// The `<pre>` extension tag.
@@ -168,19 +179,35 @@ fn pre(
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    out.write_str("<pre")?;
-    for argument in arguments.iter() {
-        out.write_char(' ')?;
-        // TODO: Sanitise and escape as needed
-        let text = argument.text(state, &arguments.sp.source);
-        out.write_str(&text)?;
-    }
-    out.write_char('>')?;
-    // TODO: Strip `<nowiki>`
-    write!(out, "{}", wikitext::escape_no_wiki(arguments.body()))?;
-    out.write_str("</pre>")?;
-
-    Ok(())
+    let sp = arguments.sp;
+    render_runtime_list(out, state, sp, |state, source| {
+        token![source, [
+            Token::StartTag {
+                name: token!(source, Span { "pre" }),
+                attributes: {
+                    // TODO: This is supposed to strip markers and use a
+                    // whitelist of valid attribute names.
+                    arguments.iter()
+                        .map(|kv| tok_arg(
+                            source,
+                            kv.name(state, sp).unwrap().unwrap(),
+                            kv.value(state, sp).unwrap()
+                        ))
+                        .collect::<Vec<_>>()
+                },
+                self_closing: false,
+            },
+            // '"' must be unescaped for strip markers;
+            // '&' must be unescaped for entities
+            // TODO: This is also supposed to replace `<nowiki>(.*)</nowiki>` by
+            // `$1`
+            Token::Text { strtr(arguments.body(), &[(">", "&gt;"), ("<", "&lt;")]) },
+            Token::EndTag {
+                name: token!(source, Span { "pre" })
+            }
+        ]]
+        .into()
+    })
 }
 
 /// Stored citation references.
@@ -460,12 +487,23 @@ fn syntax_highlight(
     // TODO: Hook a syntax highlighter
     // let lang = attrs.get(state, sp, "lang")?;
 
-    write!(
-        out,
-        "<{tag}>{}</{tag}>",
-        wikitext::escape_no_wiki(arguments.body())
-    )?;
-    Ok(())
+    let sp = arguments.sp;
+    render_runtime_list(out, state, sp, |_, source| {
+        token![source, [
+            Token::StartTag {
+                name: token!(source, Span { tag }),
+                attributes: vec![],
+                self_closing: false,
+            },
+            // TODO: (1) unstripNoWiki the body, and
+            // (2) hook up a syntax highlighter. The `strtr` is an alternative
+            // for having an actual syntax highlighter
+            Token::Text { strtr(arguments.body().trim_start_matches('\n').trim_ascii_end(), &[(">", "&gt;"), ("<", "&lt;")]) },
+            Token::EndTag {
+                name: token!(source, Span { tag })
+            }
+        ]].into()
+    })
 }
 
 /// The `<templatedata>` extension tag.
