@@ -138,6 +138,7 @@ use schnellru::LruMap;
 pub use stack::{Kv, StackFrame};
 use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 pub use surrogate::Surrogate;
+use tags::LinkKind;
 pub use template::call_template;
 
 mod document;
@@ -165,6 +166,10 @@ pub enum Error {
     /// An arithmetic expression evaluation error.
     #[error("eval error: {0}")]
     Expr(#[from] crate::expr::Error),
+
+    /// An extension tag error.
+    #[error(transparent)]
+    Extension(Box<dyn std::error::Error + Send + Sync + 'static>),
 
     /// A write to a buffer failed.
     #[error("fmt error: {0}")]

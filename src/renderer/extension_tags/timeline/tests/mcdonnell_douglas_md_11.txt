@@ -1,0 +1,23 @@
+
+ImageSize  = width:auto height:250 barincrement:38
+PlotArea   = left:35 bottom:15 top:10 right:18
+AlignBars  = justify
+DateFormat = yyyy
+Period     = from:0 till:50
+TimeAxis   = orientation:vertical
+ScaleMajor = unit:year increment:100 start:0
+
+PlotData=
+  color:green width:38–
+  bar:1990 from:start till:3 text:3 align:center
+  bar:1991 from:start till:31 text:31 align:center
+  bar:1992 from:start till:42 text:42 align:center
+  bar:1993 from:start till:36 text:36 align:center
+  bar:1994 from:start till:17 text:17 align:center
+  bar:1995 from:start till:18 text:18 align:center
+  bar:1996 from:start till:15 text:15 align:center
+  bar:1997 from:start till:12 text:12 align:center
+  bar:1998 from:start till:12 text:12 align:center
+  bar:1999 from:start till:8 text:8 align:center
+  bar:2000 from:start till:4 text:4 align:center
+  bar:2001 from:start till:2 text:2 align:center

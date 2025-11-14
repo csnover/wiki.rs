@@ -1,0 +1,13 @@
+ImageSize = width:400 height:70
+PlotArea  = width:400 height:70 left:0 bottom:0
+TimeAxis  = orientation:vertical # dummy, required
+Period    = from:0 till:1 # dummy, required
+Colors    =
+  id:canvas value:rgb(1,1,0.85)
+BackgroundColors = canvas:canvas
+TextData  =
+  pos:(20,67) textcolor:black fontsize:S
+  tabs:(10-right,14-left,50-left,90-left,230-left)
+  text:^1^1940^27/9^Germany,Italy and Japan sign [[Tripartite Pact]]
+  text:^10^1944^1-22/7^Bretton Woods 44 nations establish
+  text:^^^^^IMF and World Bank

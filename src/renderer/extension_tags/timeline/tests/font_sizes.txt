@@ -1,0 +1,13 @@
+ImageSize = width:144 height:92
+PlotArea  = top:20 left:20 bottom:20 right:20
+TimeAxis  = orientation:vertical #dummy
+Period   = from:1 till:2 # dummy
+Colors    =
+  id:bg  value:gray(0.95)
+Backgroundcolors = canvas:bg
+TextData =
+  pos:(10,70) fontsize:XS text:"fontsize:XS"
+  pos:(10,58) fontsize:S  text:"fontsize:S"
+  pos:(10,41) fontsize:M  text:"fontsize:M"
+  pos:(10,25) fontsize:L  text:"fontsize:L"
+  pos:(10,7)  fontsize:XL text:"fontsize:XL"

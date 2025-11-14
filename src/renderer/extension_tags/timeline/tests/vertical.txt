@@ -1,0 +1,24 @@
+ImageSize  = width:160 height:550
+PlotArea   = left:50 right:0 bottom:10 top:10
+AlignBars  = justify
+
+DateFormat = yyyy
+Period     = from:1917 till:1991
+TimeAxis   = orientation:vertical
+ScaleMajor = unit:year increment:5 start:1920
+
+# there is no automatic collision detection,
+# so shift texts up or down manually to avoid overlap
+
+Define $dx = 25 # shift text to right side of bar
+
+PlotData=
+    bar:Leaders color:red width:25 mark:(line,white) align:left fontsize:S
+
+    from:start till:1924 shift:($dx,15)   text:Vladimir~Ilyich~[[Special:MyLanguage/Lenin|Lenin]]
+    from:1924  till:1953 shift:($dx,5)    text:[[Special:MyLanguage/Stalin|Josef~Stalin]]
+    from:1953  till:1964 shift:($dx,5)    text:Nikita~[[Special:MyLanguage/Khrushchev|Khrushchev]]
+    from:1964  till:1982 shift:($dx,5)    text:Leonid~[[Special:MyLanguage/Brezhnev|Brezhnev]]
+    from:1982  till:1984 shift:($dx,-12)  text:Yuri~[[Special:MyLanguage/Andropov|Andropov]]
+    from:1984  till:1985 shift:($dx,4)    text:Konstantin~[[Special:MyLanguage/Chernenko|Chernenko]] fontsize:XS
+    from:1985  till:end  shift:($dx,10)   text:Mikhail~[[Special:MyLanguage/Gorbachev|Gorbachev]]

@@ -377,6 +377,15 @@
     margin-top: 4rem;
 }
 
+.wiki-rs-timeline {
+    font-family: var(--sans);
+}
+
+.wiki-rs-timeline-main-axis,
+.wiki-rs-timeline-cross-axis {
+    font-variant-numeric: lining-nums;
+}
+
 abbr {
     cursor: help;
     text-decoration: underline dotted;
@@ -830,13 +839,15 @@ th {
             }
         }
 
-        .legend-color {
-            border-color: var(--legend-border);
-            line-height: var(--legend-lh);
-            min-width: var(--legend-wh);
-            height: var(--legend-wh);
-            vertical-align: var(--legend-valign);
-        }
+    }
+
+    /* Used in 'Canada' and 'McDonnell Douglas MD-11' */
+    .legend-color {
+        border-color: var(--legend-border);
+        line-height: var(--legend-lh);
+        min-width: var(--legend-wh);
+        height: var(--legend-wh);
+        vertical-align: var(--legend-valign);
     }
 
     /*************************/

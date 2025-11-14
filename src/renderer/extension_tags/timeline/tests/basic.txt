@@ -1,0 +1,28 @@
+ImageSize  = width:200 height:120
+PlotArea   = left:20 right:10 top:40 bottom:20
+TimeAxis   = orientation:horizontal
+AlignBars  = justify
+Colors =
+  id:gray1 value:gray(0.3)
+  id:gray2 value:gray(0.5)
+  id:gray3 value:gray(0.7)
+  id:barbg value:rgb(0.95, 0.2, 0.6)
+Period     = from:0 till:10
+ScaleMajor = unit:year increment:1 start:2 gridcolor:barbg
+BackgroundColors = bars:barbg
+
+PlotData =
+  bar:X color:gray1 width:15
+  from:start till:2
+  bar:Y color:gray2
+  from:start till:5
+  bar:Z color:gray3
+  from:start till:end
+
+LineData =
+  layer:front
+  at:1                         color:yellow
+  at:2                         color:orange  layer:back
+  at:4  frompos:50 tillpos:105 color:green
+  from:5 till:8 atpos:50       color:red
+  points:(100,20)(170,105)     color:blue    width:3

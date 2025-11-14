@@ -7,6 +7,7 @@ use crate::{
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
+use axum::http::Uri;
 use either::Either;
 use std::borrow::Cow;
 
@@ -134,32 +135,7 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     sp: &StackFrame<'_>,
     link: &LinkKind<'_>,
 ) -> Result {
-    let href = match link {
-        LinkKind::External(url) => {
-            // TODO: Hack together some URL parsing good enough that there is an
-            // actual way to check that the origin is the same
-            if url.starts_with('/') {
-                html_escape::encode_double_quoted_attribute(url).to_string()
-            } else {
-                format!(
-                    "{}/external/{}",
-                    state.statics.base_uri.path(),
-                    html_escape::encode_double_quoted_attribute(url)
-                )
-            }
-        }
-        LinkKind::Internal(title) => {
-            if title.text().is_empty() {
-                format!("#{}", anchor_encode(title.fragment()))
-            } else {
-                format!(
-                    "{}/article/{}",
-                    state.statics.base_uri.path(),
-                    title.partial_url()
-                )
-            }
-        }
-    };
+    let href = link.to_string(&state.statics.base_uri);
 
     render_runtime(out, state, sp, |source| {
         token!(
@@ -196,6 +172,35 @@ pub(super) enum LinkKind<'a> {
     External(Cow<'a, str>),
     /// An internal link.
     Internal(Title),
+}
+
+impl LinkKind<'_> {
+    /// Converts the link to a URI-encoded string suitable for use in an HTML
+    /// `href` attribute.
+    pub fn to_string(&self, base_uri: &Uri) -> String {
+        match self {
+            LinkKind::External(url) => {
+                // TODO: Hack together some URL parsing good enough that there is an
+                // actual way to check that the origin is the same
+                if url.starts_with('/') {
+                    html_escape::encode_double_quoted_attribute(url).to_string()
+                } else {
+                    format!(
+                        "{}/external/{}",
+                        base_uri.path(),
+                        html_escape::encode_double_quoted_attribute(url)
+                    )
+                }
+            }
+            LinkKind::Internal(title) => {
+                if title.text().is_empty() {
+                    format!("#{}", anchor_encode(title.fragment()))
+                } else {
+                    format!("{}/article/{}", base_uri.path(), title.partial_url())
+                }
+            }
+        }
+    }
 }
 
 /// Serialises values which are structured like

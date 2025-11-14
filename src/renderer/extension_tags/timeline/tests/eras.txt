@@ -1,0 +1,104 @@
+ImageSize = width:800 height:100
+PlotArea  = left:65 right:15 bottom:20 top:5
+AlignBars = late
+
+Colors =
+  id:phanerozoic value:rgb(0.435,0.85,0.866)
+  id:cenozoic value:rgb(0.949,0.976,0.113)
+  id:quaternary value:rgb(0.976,0.976,0.498)
+  id:neogene value:rgb(1,0.901,0.098)
+  id:paleogene value:rgb(0.992,0.603,0.321)
+  id:mesozoic value:rgb(0.403,0.772,0.792)
+  id:cretaceous value:rgb(0.498,0.776,0.306)
+  id:jurassic value:rgb(0.203,0.698,0.788)
+  id:triassic value:rgb(0.505,0.168,0.572)
+  id:paleozoic value:rgb(0.6,0.752,0.552)
+  id:permian value:rgb(0.941,0.25,0.156)
+  id:carboniferous value:rgb(0.403,0.647,0.6)
+  id:devonian value:rgb(0.796,0.549,0.215)
+  id:silurian value:rgb(0.702,0.882,0.713)
+  id:ordovician value:rgb(0,0.572,0.439)
+  id:cambrian value:rgb(0.496,0.627,0.337)
+  id:proterozoic value:rgb(0.968,0.207,0.388)
+  id:neoproterozoic value:rgb(0.996,0.701,0.258)
+  id:ediacaran value:rgb(0.996,0.85,0.415)
+  id:cryogenian value:rgb(0.996,0.8,0.36)
+  id:tonian value:rgb(0.996,0.75,0.305)
+  id:mesoproterozoic value:rgb(0.996,0.705,0.384)
+  id:stenian value:rgb(0.996,0.85,0.604)
+  id:ectasian value:rgb(0.996,0.8,0.541)
+  id:calymmian value:rgb(0.996,0.75,0.478)
+  id:paleoproterozoic value:rgb(0.968,0.263,0.44)
+  id:statherian value:rgb(0.968,0.459,0.655)
+  id:orosirian value:rgb(0.968,0.408,0.596)
+  id:rhyacian value:rgb(0.968,0.357,0.537)
+  id:siderian value:rgb(0.968,0.306,0.478)
+  id:archean value:rgb(0.996,0.157,0.498)
+  id:neoarchean value:rgb(0.976,0.608,0.757)
+  id:mesoarchean value:rgb(0.968,0.408,0.662)
+  id:paleoarchean value:rgb(0.96,0.266,0.624)
+  id:eoarchean value:rgb(0.902,0.114,0.549)
+  id:hadean value:rgb(0.717,0,0.494)
+  id:black value:black
+  id:white value:white
+
+Period     = from:-4567 till:0
+TimeAxis   = orientation:horizontal
+ScaleMajor = unit:year increment:500 start:-4500
+ScaleMinor = unit:year increment:100 start:-4500
+
+Define $markred = text:"*" textcolor:red shift:(0,3) fontsize:10
+
+PlotData=
+  align:center textcolor:black fontsize:8 mark:(line,black) width:25 shift:(0,-5)
+
+  bar:eon
+
+  at:       0 align:right $markred
+  at:    -542 align:left  $markred shift:(2,3)
+  from:  -542 till:    0  text:[[Special:MyLanguage/Phanerozoic|Phanerozoic]] color:phanerozoic
+  from: -2500 till: -542  text:[[Special:MyLanguage/Proterozoic|Proterozoic]] color:proterozoic
+  from: -4000 till: -2500 text:[[Special:MyLanguage/Archean|Archean]] color:archean
+  from: start till: -4000 text:[[Special:MyLanguage/Hadean|Hadean]] color:hadean
+
+  bar:era
+
+  from: -65.5 till: 0     text:[[Special:MyLanguage/Cenozoic|C]] color:cenozoic
+  from: -251  till: -65.5 text:[[Special:MyLanguage/Mesozoic|Meso]] color:mesozoic
+  from: -542  till: -251  text:[[Special:MyLanguage/Paleozoic|Paleozoic]] color:paleozoic
+  from: -1000 till: -542  text:[[Special:MyLanguage/Neoproterozoic|Neoproterozoic]] color:neoproterozoic
+  from: -1600 till: -1000 text:[[Special:MyLanguage/Mesoproterozoic|Mesoproterozoic]] color:mesoproterozoic
+  from: -2500 till: -1600 text:[[Special:MyLanguage/Paleoproterozoic|Paleoproterozoic]] color:paleoproterozoic
+  from: -2800 till: -2500 text:[[Special:MyLanguage/Neoarchean|Neoarch]] color:neoarchean
+  from: -3200 till: -2800 text:[[Special:MyLanguage/Mesoarchean|Mesoarch]] color:mesoarchean
+  from: -3600 till: -3200 text:[[Special:MyLanguage/Paleoarchean|Paleoarch]] color:paleoarchean
+  from: -4000 till: -3600 text:[[Special:MyLanguage/Eoarchean|Eoarchean]] color:eoarchean
+  from: start till: -4000 color:white
+
+  bar:period
+
+  fontsize:6
+  from: -2.6 till: 0        color:quaternary
+  from: -23.03 till: -2.6   color:neogene
+  from: -65.5 till: -23.03  color:paleogene
+  from: -145.5 till: -65.5  color:cretaceous
+  from: -199.6 till: -145.5 color:jurassic
+  from: -251 till: -199.6   color:triassic
+  from: -299 till: -251     color:permian
+  from: -359.2 till: -299   color:carboniferous
+  from: -416 till: -359.2   color:devonian
+  from: -443.7 till: -416   color:silurian
+  from: -488.3 till: -443.7 color:ordovician
+  from: -542 till: -488.3   color:cambrian
+
+  from: -635  till: -542  text:[[Special:MyLanguage/Ediacaran|Ed.]] color:ediacaran
+  from: -850  till: -635  text:[[Special:MyLanguage/Cryogenian|Cryo]] color:cryogenian
+  from: -1000 till: -850  text:[[Special:MyLanguage/Tonian|Tonian]] color:tonian
+  from: -1200 till: -1000 text:[[Special:MyLanguage/Stenian|Stenian]] color:stenian
+  from: -1400 till: -1200 text:[[Special:MyLanguage/Ectasian|Ectasian]] color:ectasian
+  from: -1600 till: -1400 text:[[Special:MyLanguage/Calymmian|Calymm]] color:calymmian
+  from: -1800 till: -1600 text:[[Special:MyLanguage/Statherian|Stather]] color:statherian
+  from: -2050 till: -1800 text:[[Special:MyLanguage/Orosirian|Orosirian]] color:orosirian
+  from: -2300 till: -2050 text:[[Special:MyLanguage/Rhyacian|Rhyacian]] color:rhyacian
+  from: -2500 till: -2300 text:[[Special:MyLanguage/Siderian|Siderian]] color:siderian
+  from: start till: -2500 color:white

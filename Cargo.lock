@@ -1147,7 +1147,21 @@ checksum = "f288457ad3607c08953ca5604229ebb03878a0b4491d8f545d547281c2b3e0c5"
 dependencies = [
  "bytes",
  "futures-core",
+ "pin-project-lite",
+ "rxml_proc",
  "rxml_validation",
+ "tokio",
+]
+
+[[package]]
+name = "rxml_proc"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d46a2e263a1beb8b39e69bffee9f2395f479cc02472c247af00e065006970ca7"
+dependencies = [
+ "quote",
+ "rxml_validation",
+ "syn",
 ]
 
 [[package]]
@@ -1787,6 +1801,7 @@ dependencies = [
  "r2d2",
  "rayon",
  "regex",
+ "rxml",
  "sailfish",
  "schnellru",
  "serde",

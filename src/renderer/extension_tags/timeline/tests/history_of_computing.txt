@@ -1,0 +1,682 @@
+Preset    = TimeHorizontal_AutoPlaceBars_UnitYear
+ImageSize = width:1600 barincrement:17
+PlotArea  = left:15 right:20 bottom:30
+
+Colors =
+  id:canvas  value:rgb(0.97,0.97,0.97)
+  id:grida   value:gray(0.7)
+  id:gridb   value:gray(0.88)
+  id:black   value:rgb(0,0,0)
+  id:section value:rgb(0.8,0.8,0)
+  id:mark1   value:rgb(0.7,0,0)
+  id:years   value:gray(0.5)
+
+BackgroundColors = canvas:canvas
+
+# {{CURRENTYEAR}}
+Period     = from:1940 till:2030
+ScaleMajor = grid:grida unit:year increment:10 start:1940
+ScaleMinor = grid:gridb unit:year increment:1 start:1940
+AlignBars  = justify
+
+BarData=
+
+  bar:title
+# bar:periods
+  bar:dummy0 # empty bar functions as separator
+  bar:section1
+  barset:quotes
+  bar:dummy1
+  bar:section2
+  barset:open_problems
+  bar:dummy2
+  bar:section3
+  barset:first_use
+  bar:dummy3
+  bar:section4
+  barset:hardware_systems
+  bar:dummy4
+  bar:section5
+  barset:operating_systems
+  bar:dummy5
+  bar:section6
+  barset:sys_dev_software
+  bar:dummy6
+  bar:section7
+  barset:applications
+  bar:dummy7
+
+# explanation: attribute 'barset' instead of 'bar' means consecutive data lines are automatically placed on new bar
+#              data lines are lines containing at: or from: & till: attributes
+#              'barset:break' means 'reset barcounter' = next line will be placed at first bar in barset
+#              'barset:skip'  means 'increment barcounter' = skip one bar for next data line (to allow extra space
+#                                                                             for text containing line break = ~)
+
+PlotData =
+
+  mark:(line,black)
+  width:16
+  fontsize:S
+
+# bar:periods
+# from:1964 till:1972 text:"3rd Generation" width:16"
+
+# at:1975 text"[[Microsoft]] founded"
+# at:1976 text"[[Apple Computer]] founded"
+# at:1983 text"[[Borland]] founded"
+
+
+  fontsize:M
+  width:16
+  color:section
+  mark:(line,section)
+  shift:(5,-6)
+
+  bar:title    from:start till:end text:"History of Computing" fontsize:XL anchor:middle align:center width:25 color:canvas mark:(line,canvas)
+  bar:section1 from:start till:end text:"Predictions and concepts"
+  bar:section2 from:start till:end text:"Open problems/(Competitions)"
+  bar:section3 from:start till:end text:"First use/(Inventions)"
+  bar:section4 from:start till:end text:"Hardware Systems/(Processors)"
+  bar:section5 from:start till:end text:"Operating Systems"
+  bar:section6 from:start till:end text:"Programming Languages"
+  bar:section7 from:start till:end text:"New Application Areas"
+
+  shift:(5,-5)
+  fontsize:M
+  mark:(line,mark1)
+
+# quotations and predictions
+
+  width:8
+  barset:quotes
+  at:1949 text:"'Computers in the future may weigh no more than 1.5 tons.' —Popular Mechanics"
+  at:1950 text:"'We'll have to think up bigger problems if we want to keep them busy.' —Howard Aiken"
+  at:1965 text:"[[Moore's law]]: processor complexity will double every year - revised in 1975: complexity will double every two years. —Gordon E. Moore"
+  at:1968 text:"No computer will be able to beat David Levy at chess in the next 10 years~ - [[David Levy (chess player)|David Levy]]"
+  barset:skip
+  at:1970 text:"[[Relational database]] —Edgar Codd"
+  at:1970 text:"'In from three to eight years we will have a machine with the general intelligence of an average human being.' —Marvin Minsky"
+  at:1977 text:"'There is no reason anyone would want a computer in their home.' —Ken Olson, Chairman DEC"
+  barset:break
+  at:1995 text:"'The Internet will suffer a catastrophic collapse~  sometime during 1996.' —Bob Metcalfe, Ethernet inventor"
+  barset:skip
+
+# open problems / (competitions)
+
+  barset:open_problems
+  at:1950 text:"[[Turing Test]] —Alan Turing"
+  barset:break
+  at:1970 text:"([[North American Computer Chess Championship]])"
+  at:1971 text:"[[P versus NP problem]]"
+  at:1981 text:"[[Quantum Computer]] Richard Feynmann"
+  barset:break
+  at:1989 text:"([[International Olympiad in Informatics]])"
+  at:1992 text:"(TPC-C)"
+  at:1996 text:"([[CADE ATP System Competition]])"
+  at:1998 text:"([[ICFP Programming Contest]])"
+  at:2001 text:"([[TopCoder]])"
+  at:2003 text:"([[Google Code Jam]])"
+  at:2004 text:"([[DARPA Grand Challenge]])"
+  barset:break
+  at:2005 text:"([[POPLmark challenge]])"
+  at:2006 text:"([[Hutter Prize]])"
+
+# first use / (inventions)
+
+  fontsize:M
+  barset:first_use
+  shift:(5,-5)
+  at:1940 text:"[[teletype]]"
+  at:1946 text:"([[trackball]])"
+  at:1946 text:"[[Williams tube|electrostatic memory]]"
+  at:1947 text:"([[transistor]])"
+  at:1948 text:"[[RAM|random access memory]]"
+  at:1948 text:"[[magnetic drum]]"
+  at:1949 text:"[[index registers|registers]]"
+  at:1953 text:"[[magnetic core memory]]"
+  at:1956 text:"[[hard disk]]"
+  at:1957 text:"[[dot matrix printer]]"
+  at:1958 text:"[[integrated circuit]]"
+  at:1959 text:"([[time-sharing]])"
+  at:1959 text:"[[garbage collection (computer science)|garbage collection]]"
+  barset:break
+  at:1962 text:"[[spooling]]"
+  at:1962 text:"[[interrupts]]"
+  at:1962 text:"[[virtual memory]]"
+  at:1962 text:"[[paging]]"
+  at:1963 text:"[[computer mouse|mouse]]"
+  at:1964 text:"([[packet switching]])"
+  at:1965 text:"[[fuzzy logic]]"
+  at:1969 text:"[[RS-232]]"
+  at:1969 text:"[[ARPANET]]"
+  at:1969 text:"[[NPL network]]"
+
+  barset:break
+  at:1970 text:"[[dynamic RAM]]"
+  at:1971 text:"[[floppy disk]]"
+  at:1971 text:"[[microprocessor]]~(4004)"
+  barset:skip
+  at:1972 text:"[[game console]]~([[Magnavox Odyssey]])"
+  barset:skip
+  at:1973 text:"[[ethernet]]"
+  at:1973 text:"[[touchscreen]]"
+  at:1974 text:"[[TCP/IP]]"
+  at:1975 text:"[[single-board computer]]"
+  at:1976 text:"[[laser printer]]"
+  at:1976 text:"[[supercomputer]]"
+  at:1979 text:"[[compact disk]]"
+  at:1979 text:"[[VMEbus]]"
+  barset:break
+  at:1981 text:"[[Industry Standard Architecture|ISA]] bus"
+  at:1981 text:"[[Color Graphics Adapter|CGA]] video card"
+  at:1981 text:"[[Hayes Smartmodem|Smartmodem]]"
+  at:1982 text:"[[MIDI]]"
+  at:1982 text:"[[RISC]] CPU"
+  at:1982 text:"portable PC"
+  at:1982 text:"[[Multi-touch|Multi-touch technology]]"
+  at:1983 text:"math~[[coprocessor]]"
+  barset:skip
+  at:1983 text:"PC harddisk"
+  at:1984 text:"[[Domain Name System|DNS]] (Domain~Name Server)"
+  barset:skip
+  at:1984 text:"[[Advanced Technology Attachment|IDE]] interface"
+  at:1985 text:"[[Expanded Memory]]"
+  at:1985 text:"[[Enhanced Graphics Adapter|EGA]] video card"
+  at:1985 text:"[[CD ROM]]"
+  at:1986 text:"[[Parallel ATA|ATA]] interface"
+  at:1986 text:"[[SCSI]] interface"
+  at:1986 text:"[[Personal digital assistant]]"
+  barset:break
+  at:1987 text:"massive parallel computing~([[Connection Machine]])"
+  barset:skip
+  at:1987 text:"[[VGA]] video card"
+  at:1987 text:"[[sound card]] for PC (AD-LIB)"
+  at:1988 text:"optical chip"
+  at:1988 text:"[[Extended Industry Standard Architecture|EISA]] bus"
+  at:1990 text:"[[SVGA]] video card,~[[VESA]] driver"
+  barset:skip
+  at:1991 text:"[[PCMCIA]]"
+  at:1992 text:"[[CD-i]]"
+  at:1993 text:"[[Conventional PCI|PCI]] bus"
+  at:1994 text:"[[Smartphone]]"
+  at:1994 text:"[[DNA computing]]"
+  at:1994 text:"[[Beowulf (computing)|Beowulf]] cluster"
+  at:1995 text:"[[IEEE 1394 interface|Firewire]]"
+  at:1995 text:"[[USB]]"
+  at:1995 text:"[[DVD-ROM]]"
+  at:1997 text:"[[Accelerated Graphics Port|AGP]]"
+  at:1998 text:"[[Asymmetric Digital Subscriber Line|ADSL]]"
+  barset:break
+  at:2001 text:"[[Blade server|Blade servers]]"
+  at:2003 text:"[[Serial ATA]]"
+  at:2004 text:"[[PCI Express]]"
+  at:2004 text:"[[Onion routing]]~([[Tor (anonymity network)|Tor]])"
+  barset:break
+  at:2009 text:"[[Cryptocurrency]]"
+  at:2013 text:"[[Docker (software)|Docker]]"
+
+# Hardware systems and processors
+
+  barset:hardware_systems
+  at:1940 text:"Model I~Relay Calculator"
+  barset:skip
+  at:1941 text:"[[Atanasoff–Berry Computer]]"
+  at:1941 text:"[[Z3 (computer)|Z3]]"
+  at:1943 text:"[[Harvard Mark I]]"
+  at:1943 text:"Relay Interpolator"
+  at:1943 text:"[[Colossus computer|Colossus]]"
+  at:1946 text:"[[ENIAC]]"
+  at:1948 text:"[[IBM SSEC]]"
+  at:1948 text:"[[Small-Scale Experimental Machine|Manchester SSEM]]"
+  at:1949 text:"[[Manchester Mark 1]]"
+  at:1951 text:"[[Ferranti Mark 1]]~first commercial computer"
+  barset:skip
+  at:1951 text:"[[LEO (computer)|LEO I]]~first business computer"
+  barset:skip
+  at:1951 text:"[[UNIVAC I]]"
+  at:1951 text:"[[Whirlwind (computer)|Whirlwind]]"
+  at:1952 text:"[[UNIVAC 1101]]"
+  at:1952 text:"[[IBM 701]]"
+  barset:break
+  at:1953 text:"[[Strela computer|Strela]]"
+  at:1954 text:"[[IBM 650]]"
+  at:1954 text:"[[IBM 704]]"
+  at:1955 text:"[[Harwell CADET]]"
+  at:1956 text:"[[IBM 305 RAMAC]]"
+  at:1957 text:"[[IBM 608]]"
+  at:1958 text:"[[UNIVAC II]]"
+  at:1958 text:"[[AN/FSQ-7]]~largest computers ever built"
+  barset:skip
+  at:1959 text:"[[IBM 1401]]"
+  at:1960 text:"[[PDP-1|DEC PDP-1]]"
+  at:1960 text:"[[CDC 1604]]"
+  at:1961 text:"[[IBM 7030 Stretch]]"
+  at:1962 text:"[[ATLAS computer|ATLAS]]"
+  at:1962 text:"[[ReserVec]]"
+  at:1963 text:"[[PDP-6|DEC PDP-6]]"
+  at:1964 text:"[[IBM 360]]"
+  at:1964 text:"[[PDP-8|DEC PDP-8]]"
+  barset:break
+  at:1965 text:"[[CDC 6600]]~first supercomputer"
+  barset:skip
+  at:1966 text:"[[BESM|BESM-6]]"
+  at:1968 text:"[[PDP-10|DEC PDP-10]]"
+  at:1970 text:"[[Datapoint 2200]]"
+  at:1970 text:"[[PDP-11|DEC PDP-11]]"
+  at:1971 text:"electronic~calculator TI"
+  barset:skip
+  at:1971 text:"([[Intel 4004|4004]])"
+  at:1972 text:"scientific~calculator HP"
+  barset:skip
+  at:1972 text:"([[Intel 8008|8008]])"
+  at:1972 text:"first 32-bit~ supermini"
+  barset:skip
+  at:1974 text:"([[Intel 8080|8080]])"
+  at:1974 text:"([[Motorola 6800|MC 6800]])"
+  barset:break
+  at:1975 text:"[[Altair 8800]]~first personal~computer"
+  barset:skip
+  barset:skip
+  at:1976 text:"([[Zilog Z80|Z80]])"
+  at:1976 text:"([[MOS Technologies 6502|6502]])"
+  at:1976 text:"[[Cray-1]]"
+  at:1976 text:"[[Apple I]]"
+  at:1977 text:"[[Commodore PET|PET]]"
+  at:1977 text:"[[VAX-11|DEC VAX-11]]"
+  at:1977 text:"[[Apple II]]"
+  at:1977 text:"[[TRS-80]]"
+  at:1978 text:"([[Intel_8086|8086]])"
+  at:1979 text:"([[Motorola 68000|MC68000]])"
+  barset:break
+  at:1980 text:"[[Commodore VIC-20|VIC-20]]"
+  at:1980 text:"[[ZX80]]"
+  at:1980 text:"[[Apple III]]"
+  at:1981 text:"[[8010 Star|8010~Star]]"
+  barset:skip
+  at:1981 text:"[[ZX81]]"
+  at:1981 text:"[[IBM PC]]"
+  at:1982 text:"[[BBC Micro]]"
+  at:1982 text:"[[Commodore 64|C64]]"
+  at:1982 text:"([[Intel_80286|80286]])"
+  at:1982 text:"Compaq~Portable"
+  barset:skip
+  at:1982 text:"[[ZX Spectrum| ~ZX Spectrum]]"
+  barset:skip
+  at:1983 text:"[[Apple IIe]]"
+  at:1983 text:"[[Apple Lisa|Lisa]]"
+  at:1983 text:"[[IBM XT]]"
+  at:1983 text:"[[IBM PCjr]]"
+  barset:break
+  at:1984 text:"[[Apple Macintosh|Macintosh]]"
+  at:1984 text:"LaserJet printer"
+  at:1984 text:"[[IBM AT]]"
+  at:1984 text:"([[MIPS architecture|MIPS R2000]])"
+  at:1985 text:"([[i386|80386 - i386]])"
+  at:1985 text:"[[Atari ST]]"
+  at:1985 text:"[[Commodore Amiga]]"
+  at:1986 text:"[[Amstrad 1512]]"
+  at:1986 text:"([[ARM architecture|ARM2]])"
+  at:1987 text:"[[Acorn Archimedes]]"
+  at:1987 text:"[[Connection Machine]]"
+  at:1987 text:"[[IBM PS/2]]"
+  at:1989 text:"([[i486|80486 - i486]])"
+  barset:break
+  at:1993 text:"([[Pentium_(original)|Pentium - i586]])"
+  at:1993 text:"([[PowerPC_600|PowerPC601]])"
+
+  barset:skip
+  at:1994 text:"[[Power_Macintosh]]"
+  at:1996 text:"([[AMD_K5]])"
+  at:1997 text:"([[List_of_Intel_Pentium_processors|Pentium MMX]])"
+  at:1997 text:"([[AMD_K6]])"
+  at:1997 text:"([[List_of_Intel_Pentium_II_processors|Pentium II]])"
+  at:1998 text:"[[iMac]]"
+  at:1998 text:"([[List_of_Intel_Celeron_processors|Celeron]])"
+  at:1999 text:"([[List_of_Intel_Pentium_III_processors|Pentium III]])"
+  at:1999 text:"([[Athlon|AMD K7 Athlon]])"
+
+  barset:break
+  at:2000 text:"([[Pentium_4]])"
+  at:2001 text:"([[POWER4]]) (dual core)"
+  at:2001 text:"([[Itanium]])"
+  at:2003 text:"([[PowerPC 970|PowerPC G5]])"
+  at:2003 text:"([[Athlon 64|AMD K8 Athlon 64]])"
+  at:2005 text:"([[Pentium_D]])"
+  at:2006 text:"([[Pentium_Dual-Core]])"
+  at:2006 text:"([[Intel_Core_2]])"
+  at:2006 text:"([[Cell (microprocessor)|Cell]])"
+  at:2007 text:"[[Amazon_Kindle]]~e-book reader"
+  barset:skip
+  at:2007 text:"[[IPhone_(1st_generation)|Apple iPhone]]"
+  at:2008 text:"([[Intel_Core|Intel i7]])"
+  at:2009 text:"([[Intel_Core|Intel i5]])"
+  barset:break
+  at:2010 text:"([[Intel_Core|Intel i3]])"
+  at:2010 text:"[[iPad]]"
+  at:2017 text:"([[List_of_AMD_Ryzen_processors|AMD Ryzen]])"
+  at:2019 text:"[[IBM_Q_System_One]]~IBM's first commercial quantum computer"
+  barset:skip
+
+# major or well known operating systems selection based on
+# http://en.wikipedia.org/wiki/Operating_systems_timeline
+
+  barset:operating_systems
+  at:1955 text:"GM Research~  OS for the~  IBM 701"
+  barset:skip
+  barset:skip
+  at:1956 text:"[[GM-NAA I/O]]"
+  at:1958 text:"[[University of Michigan Executive System|UMES]]"
+  at:1959 text:"[[SHARE Operating System|SHARE]]"
+  barset:break
+  at:1960 text:"[[IBSYS]]"
+  at:1961 text:"[[CTSS]]"
+  at:1961 text:"[[Burroughs MCP]]"
+  at:1962 text:"[[General Comprehensive Operating System|GECOS]]"
+  at:1964 text:"[[Dartmouth Time Sharing System|DTSS]]"
+  at:1964 text:"[[TOPS-10]]"
+  at:1965 text:"[[OS/360]]"
+  at:1965 text:"[[Multics]]"
+  at:1967 text:"[[Incompatible Timesharing System|ITS]]"
+  at:1967 text:"[[Michigan Terminal System|MTS]]"
+  at:1967 text:"[[CP/CMS]]"
+  at:1967 text:"[[WAITS]]"
+  at:1969 text:"[[Airline Control Program|ACP]]"
+  at:1969 text:"[[TOPS-20|TENEX/TOPS-20]]"
+  at:1969 text:"[[Unix]]"
+  barset:break
+  at:1970 text:"[[RT-11]]"
+  at:1970 text:"[[RSTS-11]]"
+  at:1972 text:"[[VM/CMS]]"
+  at:1974 text:"[[MVS]]"
+  at:1976 text:"[[CP/M operating system|CP/M]]"
+  at:1978 text:"[[Apple DOS|Apple DOS 3.1]]"
+  at:1978 text:"[[Virtual Memory System|VMS]]"
+  barset:break
+  at:1980 text:"[[OS-9]]"
+  at:1981 text:"[[MS-DOS]]"
+  at:1982 text:"[[SunOS]]"
+  at:1983 text:"[[Apple Lisa|Lisa OS]]"
+  at:1983 text:"[[UNIX System V]]"
+  at:1984 text:"[[Mac OS history|Macintosh OS]]"
+  at:1984 text:"[[GNU|GNU project]]"
+  at:1985 text:"[[AmigaOS]]"
+  at:1985 text:"[[Atari TOS]]"
+  at:1985 text:"[[Windows 1.0]]"
+  at:1986 text:"[[Mach]]"
+  at:1986 text:"[[AIX (operating system)|AIX]]"
+  at:1986 text:"[[Apple IIgs|GS-OS]]"
+  at:1986 text:"[[HP-UX]]"
+  at:1987 text:"[[IRIX]]"
+  at:1987 text:"[[Minix]]"
+  at:1987 text:"[[OS/2]]"
+  at:1987 text:"[[Windows 2.0]]"
+  at:1987 text:"[[RISC OS]]"
+  at:1988 text:"[[OS/400]]"
+  at:1988 text:"[[POSIX]] Standard"
+  at:1989 text:"[[NEXTSTEP|NeXTSTEP]]"
+  at:1989 text:"[[SCO UNIX|SCO Unix]]"
+  barset:break
+  at:1990 text:"[[BeOS]]"
+  at:1990 text:"[[OSF/1]]"
+  at:1991 text:"[[Linux]] kernel"
+  at:1992 text:"[[Solaris Operating Environment|Solaris]]"
+  at:1992 text:"[[Windows 3.1x|Windows 3.1]]"
+  at:1992 text:"[[OS/2|OS/2 2.0]]"
+  at:1992 text:"[[SLS Linux]]"
+  at:1992 text:"[[UnixWare]]"
+  at:1993 text:"[[Windows NT|Windows NT 3.1]]"
+  at:1993 text:"[[Slackware|Slackware Linux]]"
+  at:1993 text:"[[Debian|Debian GNU/Linux]]"
+  at:1994 text:"[[Red Hat Linux]]"
+  at:1995 text:"[[OpenBSD]]"
+  at:1995 text:"[[OS/390]]"
+  at:1995 text:"[[Windows 95]]"
+  at:1996 text:"[[MkLinux]]"
+  at:1996 text:"[[SUSE Linux]]"
+  at:1997 text:"[[Mac OS history|Mac OS 7.6]]"
+  at:1997 text:"[[Symbian]]"
+  at:1998 text:"[[FreeDOS]]"
+  at:1998 text:"[[Windows 98]]"
+  at:1999 text:"[[BlackBerry OS]]"
+  at:1999 text:"[[Mac OS history|Mac OS 8]]"
+  barset:break
+  at:2000 text:"[[Mac OS history|Mac OS 9]]"
+  at:2000 text:"[[Windows Me]]"
+  at:2000 text:"[[Windows 2000]]"
+  at:2001 text:"[[Mac OS X]]"
+  at:2001 text:"[[Windows XP]]"
+  at:2001 text:"[[z/OS]]"
+  at:2002 text:"[[Gentoo Linux]]"
+  at:2003 text:"[[Windows Server 2003]]"
+  at:2003 text:"[[ReactOS]]"
+  at:2004 text:"[[Ubuntu (operating system)|Ubuntu]]"
+  at:2005 text:"[[Windows Server 2003 R2]]"
+  at:2007 text:"[[iOS]]"
+  at:2007 text:"[[Windows Vista]]"
+  at:2007 text:"[[Windows Server 2008]]"
+  at:2008 text:"[[Android (operating system)|Android]]"
+  at:2009 text:"[[Windows 7]]"
+  at:2009 text:"[[Windows Server 2008 R2]]"
+  barset:break
+  at:2011 text:"[[Chrome OS]]"
+  at:2012 text:"[[Windows 8]]"
+  at:2012 text:"[[Windows Server 2012]]"
+  at:2012 text:"[[Qubes OS]]"
+  at:2013 text:"[[Windows Server 2012 R2]]"
+  at:2015 text:"[[Windows 10]]"
+  at:2016 text:"[[Windows Server 2016]]"
+  at:2017 text:"[[ArcaOS]]"
+  at:2018 text:"[[Windows Server 2019]]"
+  barset:break
+  at:2021 text:"[[Windows 11]]"
+  at:2021 text:"[[Windows Server 2022]]"
+
+# major or well known programming languages & dev tools selection based on
+# http://en.wikipedia.org/wiki/Timeline_of_programming_languages
+# generally only first versions are listed
+
+  barset:sys_dev_software
+  at:1945 text:"[[Plankalkül]]~  (Plan Calculus)"
+  barset:skip
+  barset:break
+  at:1952 text:"[[A-0 System|A-0]]"
+  at:1954 text:"[[Mark I Autocode|Mark I]]"
+  at:1957 text:"[[FORTRAN I]]"
+  at:1958 text:"[[ALGOL 58]]"
+  at:1958 text:"[[Lisp (programming language)|LISP]]"
+  at:1959 text:"[[MAD (programming language)|MAD]]"
+  barset:break
+  at:1960 text:"[[COBOL]]"
+  at:1962 text:"[[APL (programming language)|APL]]"
+  at:1962 text:"[[Simula]]"
+  at:1962 text:"[[SNOBOL]]"
+  at:1964 text:"[[BASIC]]"
+  at:1966 text:"[[FORTRAN 66]]"
+  at:1967 text:"[[BCPL]]"
+  at:1968 text:"[[ALGOL 68]]"
+  at:1968 text:"[[Logo (programming language)|Logo]]"
+  at:1969 text:"[[PLI|PL/I]]"
+  at:1969 text:"[[B (programming language)|B]]"
+  barset:break
+  at:1970 text:"[[Pascal (programming language)|Pascal]]"
+  at:1970 text:"[[Forth (programming language)|Forth]]"
+  at:1972 text:"[[Smalltalk]]"
+  at:1972 text:"[[C (programming language)|C]]"
+  at:1972 text:"[[Prolog]]"
+  at:1973 text:"[[ML (programming language)|ML]]"
+  at:1975 text:"[[Scheme (programming language)|Scheme]]"
+  at:1977 text:"[[FORTRAN 77]]"
+  at:1977 text:"[[IDL (programming language)|IDL]]"
+  at:1978 text:"[[VisiCalc]]"
+  at:1978 text:"[[Modula-2]]"
+  at:1978 text:"[[SQL]]"
+  at:1979 text:"[[AWK]]"
+  at:1979 text:"[[Rexx]]"
+  at:1979 text:"[[DBASE|DBASE-II]]"
+  barset:break
+  at:1983 text:"[[Ada (programming language)|Ada]]"
+  at:1983 text:"[[C++]]"
+  at:1983 text:"[[Turbo Pascal]]"
+  at:1984 text:"[[Common Lisp]]"
+  at:1985 text:"[[PARADOX programming language|PARADOX]]"
+  at:1985 text:"[[PostScript]]"
+  at:1985 text:"[[Caml]]"
+  at:1986 text:"[[Eiffel (programming language)|Eiffel]]"
+  at:1986 text:"[[Objective-C]]"
+  at:1987 text:"[[HyperCard|HyperTalk]]"
+  at:1987 text:"[[SQL (programming language)|SQL]]"
+  at:1987 text:"[[Perl]]"
+  at:1987 text:"[[Erlang]]"
+  at:1987 text:"[[Tcl]]"
+  at:1988 text:"[[Mathematica]]"
+  barset:break
+  at:1990 text:"[[Haskell]]"
+  at:1991 text:"[[Python (programming language)|Python]]"
+  at:1991 text:"[[Visual Basic]]"
+  at:1993 text:"[[AppleScript]]"
+  at:1995 text:"[[Delphi (programming language)|Delphi]]"
+  at:1995 text:"[[JavaScript]]"
+  at:1995 text:"[[Java (programming language)|Java]]"
+  at:1995 text:"[[Ruby (programming language)|Ruby]]"
+  at:1996 text:"[[Objective Caml|OCaml]]"
+  at:1997 text:"[[PHP]]"
+  at:1999 text:"[[XSLT]]"
+  barset:break
+  at:2000 text:"[[D (programming language)|D]]"
+  at:2000 text:"[[C Sharp (programming language)|C#]]"
+  at:2000 text:"[[ActionScript]]"
+  at:2003 text:"[[Scala (programming language)|Scala]]"
+  at:2005 text:"[[F Sharp (programming language)|F#]]"
+  at:2006 text:"[[PowerShell]]"
+  at:2007 text:"[[Go (programming language)|Go]]"
+  at:2007 text:"[[Clojure]]"
+  at:2009 text:"[[CoffeeScript]]"
+  barset:break
+  at:2010 text:"[[Rust]]"
+  at:2011 text:"[[C++11]]"
+  at:2011 text:"[[Kotlin]]"
+  at:2012 text:"[[Elixir (programming language)|Elixir]]"
+  at:2012 text:"[[Elm (programming language)|Elm]]"
+  at:2012 text:"[[TypeScript]]"
+  at:2014 text:"[[Swift]]"
+  at:2014 text:"[[C++14]]"
+  at:2015 text:"[[Raku (programming language)|Raku]]"
+  at:2017 text:"[[C++17]]"
+  at:2017 text:"[[Q_Sharp|Q#]] (Quantum computing)"
+  at:2018 text:"[[Fortran 2018]]"
+  at:2019 text:"[[Bosque (programming language)|Bosque]]"
+  barset:break
+  at:2020 text:"[[C++20]]"
+  at:2021 text:"[[Microsoft Power Fx|Power Fx]]"
+
+# New application areas
+
+  barset:applications
+  at:1951 text:"[[CSIRAC|electronic music]]"
+  barset:break
+  at:1960 text:"[[compiler compiler]]"
+  at:1961 text:"[[timesharing]] ([[CTSS]])"
+  at:1962 text:"[[computer reservations system|flight booking]]"
+  at:1962 text:"[[Spacewar (video game)|computer game]]"
+  at:1965 text:"[[Bulletin board system|bulletin board]]"
+  at:1965 text:"[[CDC 6600|super computing]]"
+  at:1967 text:"[[Proof assistant]]"
+  at:1968 text:"[[The Mother of All Demos|interactive computing]]"
+  at:1968 text:"[[NLS (computer system)|networking]]"
+  barset:break
+  at:1970 text:"flight data processor"
+  at:1971 text:"[[Non-linear video editing]]"
+  at:1972 text:"[[Pong|arcade video game]]"
+  at:1974 text:"[[email]] ([[IBM OfficeVision#Earlier PROFS, DISOSS and Office/36|IBM OFS]])"
+  at:1977 text:"[[VisiCalc|spreadsheet]]"
+  at:1977 text:"[[CATS (trading system)|electronic stock market]]"
+  at:1979 text:"[[Usenet]]"
+  barset:break
+  at:1981 text:"[[Port Island Line|Fully automated mass transit]]"
+  at:1984 text:"[[WYSIWYG]] word~processing"
+  barset:skip
+  at:1989 text:"[[World Wide Web]]"
+  barset:break
+  at:1993 text:"[[Web search engine]]"
+  at:1995 text:"[[wiki|wikis]]"
+  at:1997 text:"[[blog|blogs]]"
+  at:1997 text:"[[IEEE 802.11|wireless networking]]"
+  at:1997 text:"[[Video hosting service|online video]]"
+
+# extra years
+
+  mark:(line,grid1)
+  bar:dummy1
+  shift:(2,-8)
+  fontsize:XS
+  textcolor:years
+  at:1940 text:40
+  at:1950 text:50
+  at:1960 text:60
+  at:1970 text:70
+  at:1980 text:80
+  at:1990 text:90
+  at:2010 text:10
+  at:2020 text:20
+  shift:(-10,-8)
+  at:2000 text:2000
+  bar:dummy2
+  shift:(2,-8)
+  at:1940 text:40
+  at:1950 text:50
+  at:1960 text:60
+  at:1970 text:70
+  at:1980 text:80
+  at:1990 text:90
+  at:2010 text:10
+  at:2020 text:20
+  shift:(-10,-8)
+  at:2000 text:2000
+  bar:dummy3
+  shift:(2,-8)
+  at:1940 text:40
+  at:1950 text:50
+  at:1960 text:60
+  at:1970 text:70
+  at:1980 text:80
+  at:1990 text:90
+  at:2010 text:10
+  at:2020 text:20
+  shift:(-10,-8)
+  at:2000 text:2000
+  bar:dummy4
+  shift:(2,-8)
+  at:1940 text:40
+  at:1950 text:50
+  at:1960 text:60
+  at:1970 text:70
+  at:1980 text:80
+  at:1990 text:90
+  at:2010 text:10
+  at:2020 text:20
+  shift:(-10,-8)
+  at:2000 text:2000
+  bar:dummy5
+  shift:(2,-8)
+  at:1940 text:40
+  at:1950 text:50
+  at:1960 text:60
+  at:1970 text:70
+  at:1980 text:80
+  at:1990 text:90
+  at:2010 text:10
+  at:2020 text:20
+  shift:(-10,-8)
+  at:2000 text:2000
+  bar:dummy6
+  shift:(2,-8)
+  at:1940 text:40
+  at:1950 text:50
+  at:1960 text:60
+  at:1970 text:70
+  at:1980 text:80
+  at:1990 text:90
+  at:2010 text:10
+  at:2020 text:20
+  shift:(-10,-8)
+  at:2000 text:2000

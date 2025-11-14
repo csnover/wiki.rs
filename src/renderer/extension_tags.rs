@@ -3,6 +3,8 @@
 // Clippy: Methods are implementing an interface which is invisible to clippy.
 #![allow(clippy::unnecessary_wraps)]
 
+mod timeline;
+
 use super::{
     Error, Result, State, WriteSurrogate,
     document::Document,
@@ -522,6 +524,21 @@ fn template_data(
     Ok(())
 }
 
+/// The `<timeline>` extension tag.
+/// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:EasyTimeline>
+fn timeline(
+    out: &mut dyn WriteSurrogate,
+    state: &mut State<'_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
+    if let Some(body) = arguments.body {
+        let result = timeline::timeline_to_svg(body, &state.statics.base_uri)
+            .map_err(|err| Error::Extension(Box::new(err)))?;
+        write!(out, "<figure>{result}</figure>")?;
+    }
+    Ok(())
+}
+
 /// Collected template style data.
 #[derive(Debug, Default)]
 pub struct Styles {
@@ -599,6 +616,7 @@ static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
     "syntaxhighlight" => syntax_highlight,
     "templatedata" => template_data,
     "templatestyles" => template_styles,
+    "timeline" => timeline,
 };
 
 /// Renders an extension tag.

@@ -1,0 +1,30 @@
+ImageSize  = width:400 height:120
+PlotArea   = left:20 right:10 top:10 bottom:20
+TimeAxis   = orientation:horizontal
+AlignBars  = early
+DateFormat = dd/mm/yyyy
+Colors =
+  id:gray1 value:gray(0.3)
+  id:gray2 value:gray(0.5)
+  id:gray3 value:gray(0.7)
+  id:lol value:rgb(0.9, 0.2,0.5)
+BackgroundColors = bars:lol
+Period     = from:01/01/1900 till:01/01/1904
+ScaleMajor = unit:month increment:1 start:01/03/1900
+ScaleMinor = unit:day increment:14 start:01/01/1902
+
+PlotData =
+  bar:X color:gray1 width:15
+  from:start till:01/01/1901
+  bar:Y color:gray2
+  from:start till:01/01/1902
+  bar:Z color:gray3
+  from:start till:01/01/1903
+
+LineData =
+  layer:front
+  at:01/01/1900                         color:yellow
+  at:01/01/1901                         color:orange  layer:back
+  at:01/01/1902  frompos:50 tillpos:105 color:green
+  from:01/06/1902 till:01/06/1903 atpos:50       color:red
+  points:(100,20)(170,105)     color:blue    width:3
