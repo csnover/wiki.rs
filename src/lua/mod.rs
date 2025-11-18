@@ -12,11 +12,15 @@ use core::ops::ControlFlow;
 use gc_arena::{Rootable, metrics::Pacing};
 use lualib::{LanguageLibrary, LuaEngine, TitleLibrary, UriLibrary};
 use piccolo::{
-    Executor, ExecutorMode, ExternError, Fuel, Function, Lua, StashedClosure, StashedString,
-    StashedTable, TypeError, thread::BadExecutorMode,
+    Executor, ExecutorMode, ExternError, Fuel, Function, Lua, RuntimeError, StashedClosure,
+    StashedString, StashedTable, TypeError, thread::BadExecutorMode,
 };
 use prelude::*;
-use std::{pin::Pin, sync::Arc};
+use std::{
+    pin::Pin,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 mod lualib;
 mod prelude;
@@ -152,11 +156,7 @@ pub(super) fn run_vm(
                 Ok(ctx.stash(Executor::start(ctx, make_env, Value::Nil)))
             })?;
 
-            state
-                .statics
-                .vm
-                .finish(&ex)
-                .map_err(piccolo::RuntimeError::from)?;
+            state.statics.vm.finish(&ex).map_err(RuntimeError::from)?;
 
             state.statics.vm.gc_metrics().set_pacing(
                 Pacing::default()
@@ -234,8 +234,9 @@ pub(super) fn run_vm(
         ))
     })?;
 
+    let start = Instant::now();
     let result = 'outer: loop {
-        const FUEL_PER_GC: i32 = 4096;
+        const FUEL_PER_GC: i32 = 16384;
 
         loop {
             let mut fuel = Fuel::with(FUEL_PER_GC);
@@ -246,14 +247,21 @@ pub(super) fn run_vm(
             {
                 Ok(true) => break,
                 Ok(false) => {
-                    if state.statics.vm.total_memory() > 1_024 * 1_048_576 {
-                        break 'outer Err(piccolo::RuntimeError::new(anyhow::anyhow!(
+                    if state.statics.vm.total_memory() > 128 * 1_048_576 {
+                        break 'outer Err(RuntimeError::new(anyhow::anyhow!(
                             "memory limit exceeded"
                         ))
                         .into());
                     }
+
+                    if start.elapsed() > Duration::new(5, 0) {
+                        break 'outer Err(RuntimeError::new(anyhow::anyhow!(
+                            "time limit exceeded"
+                        ))
+                        .into());
+                    }
                 }
-                Err(err) => break 'outer Err(piccolo::RuntimeError::new(err).into()),
+                Err(err) => break 'outer Err(RuntimeError::new(err).into()),
             }
         }
 
