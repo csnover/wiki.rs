@@ -677,6 +677,10 @@ th {
     /* Common classes */
     /******************/
 
+    .selflink {
+        font-weight: var(--bold);
+    }
+
     .monospaced {
         font-family: var(--mono);
     }

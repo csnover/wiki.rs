@@ -116,7 +116,21 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     trail: Option<&str>,
     title: Title,
 ) -> Result<(), Error> {
-    render_start_link(out, state, sp, &LinkKind::Internal(title))?;
+    if sp.root().name.key() == title.key() {
+        render_runtime(out, state, sp, |source| {
+            token!(
+                source,
+                Token::StartTag {
+                    name: token!(source, Span { "a" }),
+                    attributes: token![source, [ "class" => "mw-selflink selflink" ]].into(),
+                    self_closing: false
+                }
+            )
+        })?;
+    } else {
+        render_start_link(out, state, sp, &LinkKind::Internal(title))?;
+    }
+
     if content.is_empty() {
         TrimLink::new(out).adopt_tokens(state, sp, target)?;
     } else {
