@@ -853,14 +853,19 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///           ^^^^^^^^^^^^ ^^^^^^^^^^^^
     /// ```
     rule generic_newline_attribute(ctx: &Context) -> Spanned<Argument>
-    = spanned(<
-      space_or_newline_or_solidus()*
-      name:attribute_name(ctx, <generic_attribute_name_piece(ctx)>)
-      space_or_newline()*
-      !inline_breaks(ctx)
-      value:generic_attribute_value(ctx)?
-      { make_attribute(name, value) }
+      // Keeping the space outside of the span makes it possible to serialise
+      // essential whitespace more uniformly by adopting all content between
+      // attributes, instead of having a range in the attribute span that is not
+      // actually associated with anything in the attribute.
+    = space_or_newline_or_solidus()*
+      t:spanned(<
+        name:attribute_name(ctx, <generic_attribute_name_piece(ctx)>)
+        space_or_newline()*
+        !inline_breaks(ctx)
+        value:generic_attribute_value(ctx)?
+        { make_attribute(name, value) }
     >)
+    { t }
 
     /// Any tag attribute name which may contain directives.
     ///
@@ -923,13 +928,18 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///    ^^^^^^^^^^^^ ^^^^^^^^^^^^
     /// ```
     rule table_attribute(ctx: &Context) -> Spanned<Argument>
-    = spanned(<
-      space()*
-      name:attribute_name(ctx, <table_attribute_name_piece(ctx)>)
-      space()*
-      value:table_attribute_value(ctx)?
+      // Keeping the space outside of the span makes it possible to serialise
+      // essential whitespace more uniformly by adopting all content between
+      // attributes, instead of having a range in the attribute span that is not
+      // actually associated with anything in the attribute.
+    = space()*
+      t:spanned(<
+        name:attribute_name(ctx, <table_attribute_name_piece(ctx)>)
+        space()*
+        value:table_attribute_value(ctx)?
       { make_attribute(name, value) }
     >)
+    { t }
 
     // The old parser's Sanitizer::removeHTMLtags explodes on < so that it can't
     // be found anywhere in xmlish tags.  This is a divergence from html5 tokenizing

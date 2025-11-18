@@ -354,7 +354,7 @@ pub fn call_template<W: WriteSurrogate + ?Sized>(
 
         let root = state.statics.parser.parse_no_expansion(&partial)?;
         let sp = sp.clone_with_source(FileMap::new(&partial));
-        // eprintln!("{partial}\n\n{:#?}", inspect(&sp.source, &root.root));
+        // eprintln!("{partial}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &root.root));
         out.adopt_output(state, &sp, &root)?;
     }
 
