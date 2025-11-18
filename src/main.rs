@@ -224,10 +224,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let renderer = r2d2::Builder::new()
-        .min_idle(Some(1))
         .max_size(1)
         .test_on_check_out(false)
         .max_lifetime(None)
+        .idle_timeout(None)
         .build_unchecked(RenderManager::new(&base_uri, &database));
     let state = AppState::new(WikiState {
         base_uri,
