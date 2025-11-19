@@ -1,7 +1,7 @@
 //! Types and functions for communicating with article renderers.
 
 use super::{
-    Error, State, Statics,
+    Error, ExpandMode, ExpandTemplates, State, Statics,
     document::Document,
     globals::{Indicators, Outline},
     resolve_redirects,
@@ -125,6 +125,15 @@ fn render(
         strip_markers: <_>::default(),
         timing: <_>::default(),
     };
+
+    // TODO: Rewrite the PEG so that it does the expansions instead of
+    // doing this awful double-parsing.
+    let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
+    preprocessor.adopt_output(&mut state, &sp, &root)?;
+    let source = preprocessor.finish();
+    let sp = sp.clone_with_source(FileMap::new(&source));
+    let root = state.statics.parser.parse_no_expansion(&sp.source)?;
+
     let mut renderer = Document::new(false);
     renderer.adopt_output(&mut state, &sp, &root)?;
     Ok(renderer.finish(state))

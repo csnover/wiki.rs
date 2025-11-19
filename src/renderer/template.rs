@@ -348,7 +348,7 @@ pub fn call_template<W: WriteSurrogate + ?Sized>(
         // necessary, and makes extension tags very hard to deal with because
         // they must be able to emit tags which are not serialisable in Wikitext
         // (`<math>`, etc.).
-        let mut evaluator = ExpandTemplates::new(ExpandMode::Strip);
+        let mut evaluator = ExpandTemplates::new(ExpandMode::Include);
         evaluator.adopt_output(state, &sp, &root)?;
         let partial = evaluator.finish();
 
