@@ -282,7 +282,10 @@ impl Document {
             matches!(tag, "code" | "kbd" | "pre" | "samp" | "var")
         }
 
-        assert!(!text.contains(MARKER_PREFIX), "strip marker got into text");
+        assert!(
+            self.fragment || !text.contains(MARKER_PREFIX),
+            "strip marker got into text"
+        );
         self.expect_graf()?;
 
         let in_attr = matches!(self.stack.last(), Some(Node::Attribute));

@@ -23,7 +23,11 @@ use crate::{
     },
 };
 use core::{fmt::Write as _, ops::Range};
-use std::collections::{HashMap, HashSet};
+use regex::{Regex, RegexBuilder};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::LazyLock,
+};
 
 /// A helper struct for passing arguments required by all extension tags.
 struct ExtensionTag<'args, 'call, 'sp> {
@@ -175,39 +179,54 @@ fn no_wiki(
     })
 }
 
+// TODO: Nested strip markers do not work correctly.
 /// The `<pre>` extension tag.
 fn pre(
     out: &mut dyn WriteSurrogate,
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
+    static STRIP_NOWIKI: LazyLock<Regex> = LazyLock::new(|| {
+        RegexBuilder::new("<nowiki>(.*?)</nowiki>")
+            .case_insensitive(true)
+            .build()
+            .unwrap()
+    });
+
+    let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
+    // '"' must be unescaped for strip markers;
+    // '&' must be unescaped for entities
+    let body = strtr(&body, &[(">", "&gt;"), ("<", "&lt;")]);
+
     let sp = arguments.sp;
     render_runtime_list(out, state, sp, |state, source| {
-        token![source, [
-            Token::StartTag {
-                name: token!(source, Span { "pre" }),
-                attributes: {
-                    // TODO: This is supposed to strip markers and use a
-                    // whitelist of valid attribute names.
-                    arguments.iter()
-                        .map(|kv| tok_arg(
-                            source,
-                            kv.name(state, sp).unwrap().unwrap(),
-                            kv.value(state, sp).unwrap()
-                        ))
-                        .collect::<Vec<_>>()
+        token![
+            source,
+            [
+                Token::StartTag {
+                    name: token!(source, Span { "pre" }),
+                    attributes: {
+                        // TODO: This is supposed to strip markers and use a
+                        // whitelist of valid attribute names.
+                        arguments
+                            .iter()
+                            .map(|kv| {
+                                tok_arg(
+                                    source,
+                                    kv.name(state, sp).unwrap().unwrap(),
+                                    kv.value(state, sp).unwrap(),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    },
+                    self_closing: false,
                 },
-                self_closing: false,
-            },
-            // '"' must be unescaped for strip markers;
-            // '&' must be unescaped for entities
-            // TODO: This is also supposed to replace `<nowiki>(.*)</nowiki>` by
-            // `$1`
-            Token::Text { strtr(arguments.body(), &[(">", "&gt;"), ("<", "&lt;")]) },
-            Token::EndTag {
-                name: token!(source, Span { "pre" })
-            }
-        ]]
+                Token::Text { body },
+                Token::EndTag {
+                    name: token!(source, Span { "pre" })
+                }
+            ]
+        ]
         .into()
     })
 }
