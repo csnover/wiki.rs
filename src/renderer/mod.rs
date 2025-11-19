@@ -1,123 +1,145 @@
 //! Article rendering types and functions.
 //!
-//! Wikitext can only be parsed correctly by an algorithm that operates as-if
-//! this sequence of steps is run in order (probably, this description is based
-//! mostly on black box analysis with some review of MediaWiki source code):
+//! Correct parsing of Wikitext documents requires out-of-band configuration
+//! data:
 //!
-//! 1. Preprocess annotation tags. Annotation tags which are not balanced are
-//!    treated as plain text. (TODO: Expand on how to do this, if it is ever
-//!    necessary.)
+//! * Annotation XML tag names
+//! * Extension XML tag names
+//! * Double-underscore magic word names
+//! * Redirect keyword names
+//! * Language conversion enabled flag
+//! * Supported URI schemes
+//! * Registered variable names and case sensitivities
+//! * Registered parser function names
+//! * Namespace names and case rule
+//! * Magic links flags
+//! * Link trail regular expression
 //!
-//! 2. Preprocess extension tags by extracting each tag and its body (if any) as
-//!    raw text and inserting a “strip marker” in its place in the source text.
-//!    Unbalanced extension tags shall be treated as plain text.
+//! When processing a Wikitext document, the smallest atom is a Wikitext token,
+//! but that the smallest atom that a template can produce is a *character*.
+//! This means that a Wikitext document can only be parsed correctly by an
+//! algorithm that operates as-if this sequence of steps is run in order
+//! (probably, this description is based mostly on black box analysis with some
+//! review of MediaWiki source code):
 //!
-//!    ※ A strip marker is a character sequence that is unlikely to appear in
-//!    a Wikitext document which can be used to recover the original content by
-//!    scanning the source text again later. Strip markers are visible to Lua
-//!    scripts and parser functions they may be stripped by those things, so the
-//!    actual expansion of an extension tag shall not occur until later.
+//! <style>.wiki-rs-step-list {
+//!   ol ol { list-style-type: lower-alpha; }
+//!   ol ol ol { list-style-type: lower-roman; }
+//! }
+//! </style>
+//! <div class="wiki-rs-step-list">
 //!
-//!    The list of possible extension tags is installation-specific.
+//! 1. Process annotation XML tags:
 //!
-//! 3. Process inclusion control tags (`<noinclude>`, etc.) by this sequence of
-//!    steps:
+//!    1. If an annotation start tag is not self-closing and has no balancing
+//!       end tag, treat it as plain text.
+//!    2. TODO: Expand on how to do this, if it is ever necessary.
 //!
-//!    1. Scan the entire document for any `<onlyinclude>` not inside a
-//!       `<nowiki>` tag. If found, treat all content outside of `<onlyinclude>`
-//!       as-if it were wrapped in `<noinclude>`.
-//!    2. For each inclusion control tag not inside a `<nowiki>` tag, delete the
-//!       tag. If the tag does not match the current processing mode, and the
-//!       tag has a balancing close tag, also delete all the text between the
-//!       opening and closing tag.
+//! 2. Process extension XML tags:
 //!
-//!    Unbalanced `</onlyinclude>` tags are treated as plain text; all other
-//!    unbalanced close tags are treated as-if they were written as self-closing
-//!    tags. Unbalanced open tags are treated as-if they were closed at the end
-//!    of the file.
+//!    1. If an extension start tag is not self-closing and has no balancing end
+//!       tag, treat it as plain text.
+//!    2. Record and store the original byte ranges of the extension tag. Some
+//!       extension tag functions require this data.
+//!    3. Extract and store the body of the tag, if any, as plain text. Some
+//!       extension tag functions require this data.
+//!    4. Replace the extension tag in the source text with a “strip marker”.
+//!       Because the strip marker is exposed to Lua scripts and parser
+//!       functions, it MUST be a text sequence starting with ``\x7f'"`UNIQ-``
+//!       and ending with ``-QINU`"'\x7f``. The sequence MUST uniquely identify
+//!       this extension tag within the *entire* document. Because strip markers
+//!       may be deleted during template expansion, the extension tag function
+//!       SHOULD not be invoked until the extension tag is recovered from the
+//!       strip marker in the final processing step.
 //!
-//!    Inclusion control tags can cut across Wikitext expressions so it is not
-//!    possible to convert a Wikitext document into tree of Wikitext expressions
-//!    with inclusion control tags as branch nodes.
+//! 3. Process inclusion control pseudo-XML tags (`<noinclude>`,
+//!    `<onlyinclude>`, and `<includeonly>`):
 //!
-//!    After this step, any string that looks like an inclusion control tag
-//!    shall be deleted(?).
+//!    1. Scan the entire document for any `<onlyinclude>` tag not inside a
+//!       `<nowiki>`[^1] tag. If found, treat all content outside of
+//!       `<onlyinclude>` tags as-if it were wrapped by `<noinclude>`.
+//!    2. For each start or end inclusion control tag:
 //!
-//! 4. Template expressions are expanded recursively. Steps 1–3 are performed on
-//!    the template sp, then the result of the template expansion is
-//!    interpolated into the source document as-if the plain text of the
-//!    expanded template had existed at that position in the source text
-//!    before parsing ever began.
+//!       If the tag is inside a `<nowiki>`[^1] tag or it is an unbalanced
+//!       `</includeonly>` tag, treat it as plain text. Otherwise, delete the
+//!       tag.
 //!
-//!    As with inclusion control tags, templates can cut across Wikitext
-//!    expressions (this happens frequently with tables), so it is not possible
-//!    to convert a Wikitext document into a correct tree if templates are not
-//!    expanded.
+//!       If the tag is a start tag, also perform these steps:
 //!
-//!    A template expression with a valid but non-existent target shall expand
-//!    into the Wikitext expression `[[:Template:Name]]`. An invalid template
-//!    expression shall be treated as plain text. A template parameter
-//!    expression with no matching argument and no default value shall be
-//!    treated as plain text.
+//!       1. If there is no explicit end tag, and the tag is not self-closing,
+//!          treat the end of the file as the end tag.
+//!       2. If the tag does not match the current processing mode, delete the
+//!          text between the start and the end tags.
 //!
-//!    After this step, any string that looks like a template expression shall
-//!    be treated as plain text.
+//!    [^1]: Because `<nowiki>` is an extension tag, this exclusion should
+//!          happen implicitly by running step 2 first.
 //!
-//! 5. Scan the complete preprocessed source text for any strip markers or
-//!    extension tags. Interpolated the output of those extension tags into the
-//!    source text using the same as-if rule used for template expansions.
+//! 4. Recursively expand template expressions:
 //!
-//!    After this step, any string that looks like an strip marker or extension
-//!    tag shall be treated as plain text(?).
+//!    Conceptually, the result of a template expansion should be as-if the
+//!    plain text of the *fully expanded* template already existed in the
+//!    root document’s source text before parsing ever began.[^2]
 //!
-//! 6. The Wikitext document is now finally “complete” and can be converted into
-//!    a tree. All other Wikitext expressions are processed at this step.
+//!    If the expression is a template parameter, interpolate into the source
+//!    text:
 //!
-//!    HTML entities shall be decoded to UTF-8, then the HTML control characters
-//!    `['<'| '>'|'&'|'"']` shall be entity-encoded, unless the character forms
-//!    part of a syntactically valid HTML5 tag and the tag name is in the
-//!    allowlist, in which case the control character shall be emitted as-is.
+//!       1. The expansion of the matching argument from the parent; otherwise
+//!       2. The expansion of the default value from the parameter; otherwise
+//!       3. The template parameter expression itself, as plain text.
 //!
-//! The theory of operation of *this* renderer is to consider that the final
-//! output stage of a Wikitext renderer should operate as-if there were never
-//! any templates at all, and so tokens generated within template expansions can
-//! simply be sent directly up to the root as they are produced:
+//!    If the expression is a template, interpolate into the source text:
 //!
-//! ```text
-//!                 ┌───────┬────────┬─────┐
-//!                 │ text  │ entity │ ... │
-//!         ┌───────┼╌╌╌↓╌╌╌┼╌╌╌╌↓╌╌╌┼╌╌↓╌╌┤
-//!         │ <tag> │   ↓ {{ template }}↓  │
-//! ┌───────┼╌╌╌↓╌╌╌┼╌╌╌↓╌╌╌┼╌╌╌╌↓╌╌╌┼╌╌↓╌╌┼──────┬────────┬─────┐
-//! │ <tag> │   ↓   ┆   ↓ {{ template }}↓  │ text │ </tag> │ ... │
-//! └───────┴───────┴───────┴────↓───┴─────┴──────┴────────┴─────┘
-//!                          Document
-//! ```
+//!    1. If the expression is prefixed by `subst:` or `safesubst:`, and the
+//!       parser is not in save mode[^2], remove the prefix from the expression;
+//!       then
+//!    2. If the expression has no arguments, and it matches a variable name,
+//!       the variable’s value; otherwise
+//!    3. TODO: Change the parser’s configuration settings based on special
+//!       symbols `msgnw`, `msg`, and `raw.`; then
+//!    4. If the target-part of the expression contains a `:`, and the part
+//!       before the `:` matches a parser function, and calling the parser
+//!       function succeeds, the result of the parser function; otherwise
+//!    5. If the target-part of the expression is a valid and existing template,
+//!       the result of expanding the template; otherwise
+//!    6. If the target-part of the expression is a valid but non-existing
+//!       template, the Wikitext expression `[[:Template:<target>]]`; otherwise
+//!    7. The template expression itself, as plain text.
 //!
-//! The obvious and fundamental flaw in this approach is that it expects that
-//! the smallest atom is a token, whereas in templates the smallest atom is
-//! actually a character. This means that templates sometimes need to accumulate
-//! into a string before they can be tokenised correctly. The assumption is that
-//! because Parsoid uses this same kind of model that no Wikitext will be
-//! totally broken by this approach (though, given that Parsoid is *still* under
-//! active development, maybe some questioning of the soundness of this line of
-//! thought is warranted).
+//!    [^2]: Save mode, and therefore the other `subst` rules, are out of scope
+//!          for this project.
 //!
-//! The most sound approach would be to expand templates while the PEG runs,
-//! replacing the templates in the original source text with the output of the
-//! expansion as the parser encounters them. The major downsides to *that*
-//! approach are that it would cause the same template source to be parsed many
-//! times instead of once (though having to re-parse the *result* of a lot of
-//! template expansions either way raises a question of how much this actually
-//! matters); it would require a custom [`peg::Parse`] implementation with
-//! interior mutability; it would require passing the mutable global state
-//! *into* the parser in a way which does not break; it would be impossible to
-//! abort processing on error because [`peg`] does not currently have a way to
-//! emit “fatal” errors. If it turns out that this absolutely *has* to be the
-//! way that things work to render all articles correctly, there is an old
-//! aborted attempt at this in another branch somewhere, which ran off the rails
-//! at the point where template parameter default values had to be spliced into
-//! overlapping memory.
+//! 5. The Wikitext document is now “complete” and can be converted into a
+//!    syntax tree and/or emitted as HTML.
+//!
+//!    Conversions from Wikitext tokens to HTML look like this:
+//!
+//!    * Template token: Emit as plain text.
+//!    * Wikitext heading, link, list, table, language conversion, or magic
+//!      link: convert to the corresponding HTML and emit the result.
+//!    * Wikitext text style: Accumulate all text styles until an end-of-line
+//!      token, then run the balancing algorithm to recover apostrophes, then
+//!      emit as HTML. The end-of-line token also implicitly closes any unclosed
+//!      text style tags.
+//!    * Strip marker or extension tag: emit the result of calling the
+//!      corresponding extension tag function. (TODO: It might be the case that
+//!      some as-yet unseen extension tag *requires* emitting Wikitext character
+//!      strings rather doing its own Wikitext conversions to HTML, in which
+//!      case this actually has to occur as a separate step. It is definitely
+//!      the case that extension tags are allowed to emit non-whitelisted HTML,
+//!      so it can’t be the case that they must *always* emit valid Wikitext.)
+//!    * Whitelisted HTML tag: parse using the special Wikitext HTML attribute
+//!      error correction algorithm[^3] and emit as HTML.
+//!    * A valid HTML entity[^4] other than `&amp;` `&lt;` `&gt;` and `&quot;`:
+//!      Decode the entity and emit the decoded value.
+//!    * A character `['<'|'>'|'&'|'"']`: entity-encode the character and emit
+//!      the entity-encoded value.
+//!
+//!    [^3]: In Wikitext, `/>` and `>` are treated as terminators for any quoted
+//!          attribute value, which is not true in HTML5.
+//!
+//!    [^4]: Wikitext uses the standard HTML5 list of entities, plus two special
+//!          entities `"&רלמ;"` and `"&رلم;"` which decode to RLM (U+200F).
+//! </div>
 
 use crate::{
     LoadMode,
