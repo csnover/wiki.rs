@@ -1762,7 +1762,7 @@ th {
             font-size: 1rem !important;
         }
 
-        td[colspan] > span:first-child {
+        td[colspan] > span:first-child:not(.reference) {
             border: 1px solid var(--legend-border);
             color: transparent !important;
             display: inline-block;
