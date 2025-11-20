@@ -25,7 +25,7 @@ impl Categories {
         base_path: &str,
     ) -> Result<(), fmt::Error> {
         if !self.0.is_empty() {
-            f.write_str(r#"<ul class="categories">"#)?;
+            f.write_str(r#"<ul class="wiki-rs-categories">"#)?;
             for category in self.0 {
                 let target = category.trim_start_matches(':');
                 let name = target.trim_start_matches("Category:");

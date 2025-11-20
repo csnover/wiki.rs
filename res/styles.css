@@ -562,36 +562,6 @@ th {
     }
 }
 
-/* TODO: :where() is supposed to have zero specificity, but it is adding 0,0,1
-   specificity? So double-classing it is, because this rule should win. */
-.categories.categories {
-    border-top: .25rem solid currentColor;
-    font-family: var(--sans);
-    font-size: 95%;
-    font-variant-numeric: normal;
-    font-weight: 350;
-    list-style: none;
-    padding: .5rem 0;
-    margin-top: 4rem;
-
-    &::before {
-        content: 'in: ';
-        font: italic 600 1em var(--serif);
-    }
-
-    > * {
-        display: inline;
-    }
-
-    > * + * {
-        margin-top: 0;
-
-        &::before {
-            content: ' / ';
-        }
-    }
-}
-
 /* overrides for garbage <templatestyle> injections */
 .mw-parser-output {
     --background-color-base: transparent;
@@ -632,6 +602,34 @@ th {
     > [class] /* Template:Mbox, etc. override flow when they should not */
     {
         margin-top: var(--box-margin);
+    }
+
+    .wiki-rs-categories {
+        border-top: .25rem solid currentColor;
+        font-family: var(--sans);
+        font-size: 95%;
+        font-variant-numeric: normal;
+        font-weight: 350;
+        list-style: none;
+        padding: .5rem 0;
+        margin-top: 4rem;
+
+        &::before {
+            content: 'in: ';
+            font: italic 600 1em var(--serif);
+        }
+
+        > * {
+            display: inline;
+        }
+
+        > * + * {
+            margin-top: 0;
+
+            &::before {
+                content: ' / ';
+            }
+        }
     }
 
     blockquote, dd, li, p {

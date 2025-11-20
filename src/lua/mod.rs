@@ -234,6 +234,8 @@ pub(super) fn run_vm(
         ))
     })?;
 
+    // TODO: This time limit should probably exclude time spent loading from the
+    // database.
     let start = Instant::now();
     let result = 'outer: loop {
         const FUEL_PER_GC: i32 = 16384;
