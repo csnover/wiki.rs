@@ -677,6 +677,19 @@ th {
     /* Common classes */
     /******************/
 
+    .redirectText,
+    .mw-redirectedfrom {
+        font-family: var(--sans);
+
+        &::before {
+            content: '⮎ ';
+        }
+    }
+
+    .mw-redirectedfrom::before {
+        content: '⤷ ';
+    }
+
     .selflink {
         font-weight: var(--bold);
     }

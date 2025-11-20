@@ -342,9 +342,9 @@ pub fn resolve_redirects(
     mut article: Arc<Article>,
 ) -> Result<Arc<Article>, Error> {
     // “Loop to fetch the article, with up to 2 redirects”
-    for attempt in 0..2 {
+    for _ in 0..2 {
         if let Some(target) = &article.redirect {
-            log::trace!("Redirection #{} to {target}", attempt + 1);
+            // log::trace!("Redirection #{} to {target}", attempt + 1);
             article = db.get(target)?;
         } else {
             break;

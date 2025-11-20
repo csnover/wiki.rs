@@ -559,7 +559,7 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "worldwind://",
         "xmpp:",
     },
-    redirect_magic_words: phf::phf_set! { "redirect" },
+    redirect_magic_words: phf::phf_set! { "#redirect" },
     magic_links: MagicLinks {
         isbn: false,
         pmid: false,

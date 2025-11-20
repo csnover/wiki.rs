@@ -11,6 +11,7 @@
         <% /* wiki.rs styles come second for last-rule-wins equal specificity
               resolution */ %>
         <link rel="stylesheet" href="<%= base_path %>/styles.css">
+        <link rel="canonical" href="<%= base_path %>/article/<%= canonical %>">
     </head>
     <body class="wiki-rs-body">
         <div class="wiki-rs-nav">
@@ -25,6 +26,11 @@
             <h1><%= title %></h1>
             <%- output.indicators | disp %>
         </div>
-        <article class="wiki-rs-content mw-parser-output"><%- output.content %></article>
+        <article class="wiki-rs-content mw-parser-output">
+            <% if title != canonical { %>
+                <p class="mw-redirectedfrom">Redirected from <a href="<%= base_path %>/article/<%= title %>?redirect=no"><%= title %></a></p>
+            <% } %>
+            <%- output.content %>
+        </article>
     </body>
 </html>

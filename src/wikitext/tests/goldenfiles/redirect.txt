@@ -1,16 +1,12 @@
 [
-    ListItem @ 1:1..26 {
-        bullets: "#",
-        content: [
-            "REDIRECT ",
-            Link @ 1:11..26 {
-                target: [
-                    "Hello world",
-                ],
-                content: [],
-                trail: None,
-            },
-        ],
+    Redirect @ 1:1..26 {
+        link: Link @ 1:11..26 {
+            target: [
+                "Hello world",
+            ],
+            content: [],
+            trail: None,
+        },
     },
     \n,
     \n,

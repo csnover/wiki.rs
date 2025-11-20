@@ -76,24 +76,52 @@ impl IntoResponse for Error {
     }
 }
 
+/// The actions supported *by wiki.rs* for an article page.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArticleAction {
+    /// View.
+    View,
+    /// Render. Treated the same as [`View`](ArticleAction::View).
+    Tree,
+}
+
 /// Query options for `/article`.
 #[derive(serde::Deserialize)]
 pub struct ArticleQuery {
+    /// The page action.
+    ///
+    /// This is defined, but not actually used, because most actions are not
+    /// relevant to wiki.rs, but templates will still generate links using other
+    /// actions, and *something* should happen in that case (which currently
+    /// is just returning an error page that the action is invalid).
+    #[serde(rename(deserialize = "action"))]
+    _action: Option<ArticleAction>,
+
     /// The load strategy.
     mode: Option<LoadMode>,
+
+    /// Controls automatic redirection in the view action.
+    redirect: Option<String>,
 }
 
 /// The article page route handler.
 pub async fn article(
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Query(ArticleQuery { mode: load_mode }): Query<ArticleQuery>,
+    Query(ArticleQuery {
+        _action,
+        mode: load_mode,
+        redirect,
+    }): Query<ArticleQuery>,
 ) -> Result<impl IntoResponse, Error> {
     #[derive(TemplateSimple)]
     #[template(path = "article.html")]
     struct ArticleTemplate<'a> {
         /// The base path for URLs.
         base_path: &'a str,
+        /// The canonical URL of the article.
+        canonical: &'a str,
         /// The title of the article.
         title: &'a str,
         /// The Wikitext renderer output.
@@ -113,29 +141,27 @@ pub async fn article(
     };
 
     let article = state.database.get(&name)?;
-    if let Some(redirect) = &article.redirect {
-        return Ok((
-            StatusCode::FOUND,
-            [(header::LOCATION, format!("/article/{redirect}"))],
-        )
-            .into_response());
-    }
-
+    let redirect = redirect.as_deref() != Some("no");
+    let canonical = if redirect && let Some(title) = &article.redirect {
+        title
+    } else {
+        &name
+    };
     let time = Instant::now();
-
     let load_mode = load_mode.unwrap_or(state.load_mode);
 
     let (tx, rx) = mpsc::channel();
     state
         .renderer
         .get()?
-        .send((Arc::clone(&article), load_mode, tx))?;
+        .send((Arc::clone(&article), load_mode, redirect, tx))?;
     let output = rx.recv()??;
 
     log::trace!("Rendered article in {:.2?}", time.elapsed());
 
     ArticleTemplate {
         base_path: state.base_uri.path(),
+        canonical,
         title: &article.title,
         output: &output,
         site: state.database.name(),

@@ -23,7 +23,7 @@ use schnellru::LruMap;
 use std::sync::{Arc, mpsc};
 
 /// The input format for a renderer channel message.
-pub type In = (Arc<Article>, LoadMode, mpsc::Sender<Out>);
+pub type In = (Arc<Article>, LoadMode, bool, mpsc::Sender<Out>);
 
 /// The output format for a renderer channel message.
 pub type Out = Result<RenderOutput, Error>;
@@ -70,8 +70,8 @@ impl r2d2::ManageConnection for RenderManager {
                 template_cache: LruMap::new(ByMemoryUsage::new(32 * 1024 * 1024)),
             };
 
-            for (article, load_mode, tx) in rx {
-                let output = render(&mut statics, &article, load_mode);
+            for (article, load_mode, redirect, tx) in rx {
+                let output = render(&mut statics, &article, load_mode, redirect);
                 let _ = tx.send(output);
             }
         });
@@ -106,8 +106,14 @@ fn render(
     statics: &mut Statics,
     article: &Arc<Article>,
     load_mode: LoadMode,
+    redirect: bool,
 ) -> Result<RenderOutput, Error> {
-    let article = resolve_redirects(&statics.db, Arc::clone(article))?;
+    let article = Arc::clone(article);
+    let article = if redirect {
+        resolve_redirects(&statics.db, article)?
+    } else {
+        article
+    };
 
     let sp = StackFrame::new(
         Title::new(&article.title, None),

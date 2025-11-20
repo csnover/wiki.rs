@@ -11,7 +11,7 @@ use super::{
 use crate::{
     renderer::emitters::{ListEmitter, ListKind, TextStyleEmitter},
     wikitext::{
-        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+        AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
         MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
     },
 };
@@ -720,14 +720,24 @@ impl Surrogate<Error> for Document {
 
     fn adopt_redirect(
         &mut self,
-        _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
         _span: Span,
-        _target: &[Spanned<Token>],
-        _content: &[Spanned<Argument>],
-        _trail: Option<Spanned<&str>>,
+        target: &[Spanned<Token>],
+        content: &[Spanned<Argument>],
+        trail: Option<Spanned<&str>>,
     ) -> Result {
-        panic!("seeing a redirect should be impossible; was there too much redirection?");
+        let source = &mut String::new();
+        let attributes = token! { source, [ "class" => "redirectText" ] };
+        self.start_tag(
+            state,
+            &sp.clone_with_source(FileMap::new(source)),
+            "p",
+            &attributes,
+        )?;
+        tags::render_wikilink(self, state, sp, target, content, trail.map(|v| &**v))?;
+        self.end_tag("p")?;
+        Ok(())
     }
 
     fn adopt_start_annotation(

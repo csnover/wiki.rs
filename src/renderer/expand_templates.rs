@@ -366,13 +366,14 @@ impl Surrogate<Error> for ExpandTemplates {
     fn adopt_redirect(
         &mut self,
         _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
+        sp: &StackFrame<'_>,
+        span: Span,
         _target: &[Spanned<Token>],
         _content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,
     ) -> Result {
-        todo!("redirect detected")
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
     }
 
     fn adopt_start_annotation(
