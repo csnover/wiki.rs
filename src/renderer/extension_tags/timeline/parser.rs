@@ -11,7 +11,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use core::ops::Range;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Expands variables in the input text.
 ///
@@ -65,7 +65,11 @@ pub(super) fn parse(mut expanded: &str) -> Result<Timeline<'_>> {
 /// A timeline series identifier.
 pub(super) type BarId<'input> = &'input str;
 /// A collection of timeline series.
-type Bars<'input> = HashMap<String, Bar<'input>>;
+///
+/// This is a `BTreeMap` simply because `HashMap` has randomness which causes
+/// iteration order to be inconsistent, which causes outputs to be different,
+/// which breaks tests.
+type Bars<'input> = BTreeMap<String, Bar<'input>>;
 /// A map from timeline series set ID to index range.
 type BarSets = HashMap<String, Range<usize>>;
 /// A collection of colours.

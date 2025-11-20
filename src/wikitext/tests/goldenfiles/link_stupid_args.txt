@@ -1,0 +1,19 @@
+[
+    Link @ 1:1..19 {
+        target: [
+            "Link",
+        ],
+        content: [
+            {
+                Some(
+                    [
+                        "link ",
+                    ],
+                ): [
+                    "lol",
+                ],
+            },
+        ],
+        trail: None,
+    },
+]

@@ -1,0 +1,28 @@
+[
+    Heading @ 1:1..62 {
+        level: HeadingLevel(
+            2,
+        ),
+        content: [
+            StartTag @ 1:3..38 {
+                name: "span",
+                attributes: [
+                    {
+                        Some(
+                            [
+                                "id",
+                            ],
+                        ): [
+                            "Alternate Section Title",
+                        ],
+                    },
+                ],
+                self_closing: false,
+            },
+            EndTag @ 1:38..45 {
+                name: "span",
+            },
+            "Section heading",
+        ],
+    },
+]

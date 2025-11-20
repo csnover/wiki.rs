@@ -1,0 +1,9 @@
+[
+    Link @ 1:1..18 {
+        target: [
+            "Hello & world",
+        ],
+        content: [],
+        trail: None,
+    },
+]

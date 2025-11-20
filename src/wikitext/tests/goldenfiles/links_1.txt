@@ -1,0 +1,57 @@
+[
+    Link @ 1:1..14 {
+        target: [
+            "Main Page",
+        ],
+        content: [],
+        trail: None,
+    },
+    \n,
+    \n,
+    Link @ 3:1..18 {
+        target: [
+            "Help:Contents",
+        ],
+        content: [],
+        trail: None,
+    },
+    \n,
+    \n,
+    Link @ 5:1..42 {
+        target: [
+            "Extension:DynamicPageList (Wikimedia)",
+        ],
+        content: [],
+        trail: None,
+    },
+    \n,
+    \n,
+    Link @ 7:1..42 {
+        target: [
+            "Help:Editing pages#Preview",
+        ],
+        content: [
+            {
+                None: [
+                    "previewing",
+                ],
+            },
+        ],
+        trail: None,
+    },
+    \n,
+    \n,
+    Link @ 9:1..29 {
+        target: [
+            "#See also",
+        ],
+        content: [
+            {
+                None: [
+                    "different text",
+                ],
+            },
+        ],
+        trail: None,
+    },
+]

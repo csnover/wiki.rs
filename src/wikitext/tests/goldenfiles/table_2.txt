@@ -1,0 +1,125 @@
+[
+    TableStart @ 1:1..41 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "class",
+                    ],
+                ): [
+                    "wikitable",
+                ],
+            },
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "margin:auto",
+                ],
+            },
+        ],
+    },
+    \n,
+    TableCaption @ 2:1..16 {
+        attributes: [],
+        content: [
+            " Caption text",
+        ],
+    },
+    \n,
+    TableRow @ 3:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableHeading @ 4:1..15 {
+        attributes: [],
+        content: [
+            " Header text ",
+        ],
+    },
+    TableHeading @ 4:15..30 {
+        attributes: [],
+        content: [
+            " Header text ",
+        ],
+    },
+    TableHeading @ 4:30..44 {
+        attributes: [],
+        content: [
+            " Header text",
+        ],
+    },
+    \n,
+    TableRow @ 5:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 6:1..11 {
+        attributes: [],
+        content: [
+            " Example ",
+        ],
+    },
+    TableData @ 6:11..22 {
+        attributes: [],
+        content: [
+            " Example ",
+        ],
+    },
+    TableData @ 6:22..7:1 {
+        attributes: [],
+        content: [
+            " Example",
+            \n,
+        ],
+    },
+    TableRow @ 7:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 8:1..11 {
+        attributes: [],
+        content: [
+            " Example ",
+        ],
+    },
+    TableData @ 8:11..22 {
+        attributes: [],
+        content: [
+            " Example ",
+        ],
+    },
+    TableData @ 8:22..9:1 {
+        attributes: [],
+        content: [
+            " Example",
+            \n,
+        ],
+    },
+    TableRow @ 9:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 10:1..11 {
+        attributes: [],
+        content: [
+            " Example ",
+        ],
+    },
+    TableData @ 10:11..22 {
+        attributes: [],
+        content: [
+            " Example ",
+        ],
+    },
+    TableData @ 10:22..11:1 {
+        attributes: [],
+        content: [
+            " Example",
+            \n,
+        ],
+    },
+    TableEnd @ 11:1..3,
+]

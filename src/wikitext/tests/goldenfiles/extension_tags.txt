@@ -1,0 +1,14 @@
+[
+    Extension @ 1:1..7 {
+        name: "ref",
+        attributes: [],
+        content: None,
+    },
+    Extension @ 1:7..19 {
+        name: "ref",
+        attributes: [],
+        content: Some(
+            "a",
+        ),
+    },
+]

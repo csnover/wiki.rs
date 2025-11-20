@@ -1,0 +1,128 @@
+[
+    TableStart @ 1:1..21 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "class",
+                    ],
+                ): [
+                    "wikitable",
+                ],
+            },
+        ],
+    },
+    \n,
+    TableCaption @ 2:1..68 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "caption-side:bottom; color:#e76700;",
+                ],
+            },
+        ],
+        content: [
+            (italic) @ 2:48..50,
+            "Food complements",
+            (italic) @ 2:66..68,
+        ],
+    },
+    \n,
+    TableRow @ 3:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableHeading @ 4:1..31 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "color:green",
+                ],
+            },
+        ],
+        content: [
+            " Fruits",
+        ],
+    },
+    \n,
+    TableHeading @ 5:1..27 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "color:red",
+                ],
+            },
+        ],
+        content: [
+            " Fats",
+        ],
+    },
+    \n,
+    TableRow @ 6:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 7:1..8:1 {
+        attributes: [],
+        content: [
+            "Orange",
+            \n,
+        ],
+    },
+    TableData @ 8:1..9:1 {
+        attributes: [],
+        content: [
+            "Butter",
+            \n,
+        ],
+    },
+    TableRow @ 9:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 10:1..11:1 {
+        attributes: [],
+        content: [
+            "Pear",
+            \n,
+        ],
+    },
+    TableData @ 11:1..12:1 {
+        attributes: [],
+        content: [
+            "Pie",
+            \n,
+        ],
+    },
+    TableRow @ 12:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 13:1..14:1 {
+        attributes: [],
+        content: [
+            "Apple",
+            \n,
+        ],
+    },
+    TableData @ 14:1..15:1 {
+        attributes: [],
+        content: [
+            "Ice cream",
+            \n,
+        ],
+    },
+    TableEnd @ 15:1..3,
+]

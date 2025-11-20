@@ -1,192 +1,88 @@
 use super::*;
 
-#[test]
-fn new_line_in_table_data() {
-    run_test("{|\n|B\nC||d\n|}");
-    panic!();
+macro_rules! run_extras_tests {
+    ($($name:ident => $input:expr),* $(,)?) => {
+        $(#[test]
+        fn $name() {
+            run_test_for_goldenfile(stringify!($name), $input);
+        })*
+    }
 }
 
-#[test]
-fn include() {
-    run_test(
-        "<noinclude>hello</noinclude><onlyinclude>hello</onlyinclude><includeonly>did i just typo before?</includeonly>",
-    );
-    panic!();
-}
+// TODO: These extra tests are basically just things that were broken during the
+// initial implementation of the parser, and *hopefully* once the test suite
+// taken from Parsoid is fully hooked up with expected outputs from *our* parser
+// these can just go away
+run_extras_tests! {
+    arg_whitespace => "{{a | b = http://www.example.com/ | c = d}}",
+    autolink_1 => "https://mediawiki.org\nhttps://mediawiki.org\npre http://example.com post\n<nowiki>https://mediawiki.org</nowiki>",
+    autolink_2 => "<code>http://</code> or <code>https://</code> or http:// or https://",
+    autolink_3 => "https://mediawiki.org.\n(https://mediawiki.org)\nhttps://mediawiki.org/a(b).\n",
+    // TODO: Need to override config, these magic links are disabled by default
+    autolink_4 => "ISBN 0-7475-3269-9 or ISBN 000000000x or ISBN 0-9&nbsp;9999-2222 or ISBN 978-00000-00000 or (invalid:) ISBN 938-00000-00000\nPMID 1923.23232\nRFC 42",
+    balance => "'''b'''bi'' i\nn '''ii'' n\nn '''ii'' n",
+    balance_2 => " '''b''' n'''i''n",
+    balance_3 => "nn'''ib''' b'''i''n",
+    extension_tags => "<ref/><ref>a</ref>",
+    ext_broken => "<ref><!-- oops</ref>",
+    heading_1 => r#"==<span id="Alternate Section Title"></span>Section heading=="#,
+    image_1 => "[[File:filename.extension|alt=a|caption]]",
+    include => "<noinclude>hello</noinclude><onlyinclude>hello</onlyinclude><includeonly>did i just typo before?</includeonly>",
+    include_2 => "<includeonly>{{a}}</includeonly><noinclude>{{b}}</noinclude>",
+    link_ampersand => "[[Hello & world]]",
+    link_args => "[[Link|a|b=c|d=e=f]]mazing",
+    link_stupid_args => "[[Link|link =lol]]",
+    link_trail => "[[Yes]]yes [[No]]!!",
+    link_with_kv_in_args => "{{a|[[b|alt=]]}}",
+    links_1 => "[[Main Page]]
 
-#[test]
-fn tag_extlink() {
-    run_test(
-        "[<span>[//localhost:3000/Template%3ADate%20and%20time%20templates?action=edit edit]</span>]",
-    );
-    panic!();
-}
+[[Help:Contents]]
 
-#[test]
-fn extension_tags() {
-    run_test("<ref/><ref>a</ref>");
-    panic!();
-}
+[[Extension:DynamicPageList (Wikimedia)]]
 
-#[test]
-fn balance() {
-    run_test("'''b'''bi'' i\nn '''ii'' n\nn '''ii'' n");
-    panic!();
-}
+[[Help:Editing pages#Preview|previewing]]
 
-#[test]
-fn balance_2() {
-    run_test(" '''b''' n'''i''n");
-    panic!();
-}
+[[#See also|different text]]",
+    links_2 => "[[Help]]s
 
-#[test]
-fn balance_3() {
-    run_test("nn'''ib''' b'''i''n");
-    panic!();
-}
+[[Help]]<nowiki />ful advice",
+    links_3 => "[https://mediawiki.org MediaWiki]
 
-#[test]
-fn link_ampersand() {
-    run_test("[[Hello & world]]");
-    panic!();
-}
+[https://mediawiki.org]
 
-#[test]
-fn pathological() {
-    run_test(&"{".repeat(30));
-    run_test(&"!".repeat(30));
-    run_test(&"[".repeat(30));
-    run_test(&"-{".repeat(30));
-    run_test(&"{|".repeat(30));
-    run_test(&"<ref>".repeat(30));
-    panic!();
-}
+[//en.wikipedia.org Wikipedia]
 
-#[test]
-fn include_2() {
-    run_test("<includeonly>{{a}}</includeonly><noinclude>{{b}}</noinclude>");
-    panic!();
-}
+[mailto:info@example.org email me]
 
-#[test]
-fn link_with_kv_in_args() {
-    run_test("{{a|[[b|alt=]]}}");
-    panic!();
-}
+[mailto:info@example.org?Subject=URL%20Encoded%20Subject&body=Body%20Text info]
 
-#[test]
-fn arg_whitespace() {
-    run_test("{{a | b = http://www.example.com/ | c = d}}");
-    panic!();
-}
-
-#[test]
-fn link_trail() {
-    run_test("[[Yes]]yes [[No]]!!");
-    panic!();
-}
-
-#[test]
-fn link_args() {
-    run_test("[[Link|a|b=c|d=e=f]]mazing");
-    panic!();
-}
-
-#[test]
-fn link_stupid_args() {
-    run_test("[[Link|link =lol]]");
-    panic!();
-}
-
-#[test]
-fn tpl_with_autolink() {
-    run_test("{{a|https://example.com|c=d e}}");
-
-    panic!();
-}
-
-#[test]
-fn strip_marker() {
-    run_test(&format!("{MARKER_PREFIX}1{MARKER_SUFFIX}"));
-    panic!();
-}
-
-#[test]
-fn tpl_with_tag() {
-    run_test(r#"{{a|<div k="v"></div>}}"#);
-    panic!()
-}
-
-#[test]
-fn hello_world() {
-    run_test("#REDIRECT [[Hello world]]\n\n----\nText content\nMore text content\n\nThird line\n");
-}
-
-#[test]
-fn list_0() {
-    run_test("* a\n* b\n** c\n*** d\nno more list\n* a\n\n");
-    panic!();
-}
-
-#[test]
-fn list_1() {
-    run_test(
-        "* Lists are easy to do:
+[{{fullurl:{{FULLPAGENAME}}|action=edit}} Edit this page]",
+    list_0 => "* a\n* b\n** c\n*** d\nno more list\n* a\n\n",
+    list_1 => "* Lists are easy to do:
 ** start every line
 * with a star
 ** more stars mean
 *** deeper levels",
-    );
-}
-
-#[test]
-fn list_2() {
-    run_test(
-        "* A newline
+    list_2 => "* A newline
 * in a list
 marks the end of the list.
 Of course
 * you can
 * start again.",
-    );
-}
-
-#[test]
-fn list_3() {
-    run_test(
-        "* You can also
+    list_3 => "* You can also
 ** break lines<br>inside lists<br>like this",
-    );
-}
-
-#[test]
-fn list_4() {
-    run_test(
-        "; Definition lists
+    list_4 => "; Definition lists
 ; term : definition
 ; semicolon plus term
 : colon plus definition",
-    );
-}
-
-#[test]
-fn list_5() {
-    run_test(
-        "; Mixed definition lists
+    list_5 => "; Mixed definition lists
 ; item 1 : definition
 :; sub-item 1 plus term
 :: two colons plus definition
 :; sub-item 2 : colon plus definition
 ; item 2
 : back to the main list",
-    );
-}
-
-#[test]
-fn list_6() {
-    run_test(
-        "* Or create mixed lists
+    list_6 => "* Or create mixed lists
 *# and nest them
 *#* like this
 *#*; definitions
@@ -194,13 +90,7 @@ fn list_6() {
 *#*; apple
 *#*; banana
 *#*: fruits",
-    );
-}
-
-#[test]
-fn list_7() {
-    run_test(
-        "<ol>
+    list_7 => "<ol>
   <li>list item A1
     <ol>
       <li>list item B1</li>
@@ -209,23 +99,11 @@ fn list_7() {
   </li>
   <li>list item A2</li>
 </ol>",
-    );
-}
-
-#[test]
-fn ext_broken() {
-    run_test("<ref><!-- oops</ref>");
-}
-
-#[test]
-fn table() {
-    run_test("{| hello\n|good || bye || friend\n |}\n");
-}
-
-#[test]
-fn table_2() {
-    run_test(
-        r#"{| class="wikitable" style="margin:auto"
+    new_line_in_table_data => "{|\n|B\nC||d\n|}",
+    redirect => "#REDIRECT [[Hello world]]\n\n----\nText content\nMore text content\n\nThird line\n",
+    strip_marker => &format!("{MARKER_PREFIX}1{MARKER_SUFFIX}"),
+    table_1 => "{| hello\n|good || bye || friend\n |}\n",
+    table_2 => r#"{| class="wikitable" style="margin:auto"
 |+ Caption text
 |-
 ! Header text !! Header text !! Header text
@@ -236,28 +114,10 @@ fn table_2() {
 |-
 | Example || Example || Example
 |}"#,
-    );
-}
-
-#[test]
-fn table_3() {
-    run_test("{|\n|Orange\n|Apple\n|-\n|Bread\n|Pie\n|-\n|Butter\n|Ice cream\n|}\n");
-}
-
-#[test]
-fn table_4() {
-    run_test("{|\n|Orange\n|}\n");
-}
-
-#[test]
-fn table_5() {
-    run_test("{|\n! A !! B !! C\n|}\n");
-}
-#[test]
-
-fn table_6() {
-    run_test(
-        r#"{| class="wikitable"
+    table_3 => "{|\n|Orange\n|Apple\n|-\n|Bread\n|Pie\n|-\n|Butter\n|Ice cream\n|}\n",
+    table_4 => "{|\n|Orange\n|}\n",
+    table_5 => "{|\n! A !! B !! C\n|}\n",
+    table_6 => r#"{| class="wikitable"
 !colspan="6"|Shopping List
 |-
 |rowspan="2"|Bread & Butter
@@ -271,19 +131,8 @@ fn table_6() {
 |Butter
 |Yogurt
 |}"#,
-    );
-}
-
-#[test]
-fn table_7() {
-    run_test("{| class=\"a\"\n!colspan=\"6\"|A\n|-\n|rowspan=\"2\"|B\n|}");
-    panic!();
-}
-
-#[test]
-fn table_8() {
-    run_test(
-        r#"<div class="noresize">
+    table_7 => "{| class=\"a\"\n!colspan=\"6\"|A\n|-\n|rowspan=\"2\"|B\n|}",
+    table_8 => r#"<div class="noresize">
 {| class="wikitable"
 ! colspan="6" |Shopping List
 |-
@@ -299,37 +148,7 @@ fn table_8() {
 | Yogurt
 |}
 </div>"#,
-    );
-}
-
-#[test]
-fn table_partial() {
-    run_test(
-        r#"{| class="wikitable"
-| Orange
-| Apple
-| style="text-align:right;" | 12,333.00
-|-"#,
-    );
-}
-
-#[test]
-fn table_multi_cell_attr() {
-    run_test(
-        r#"{| class="wikitable"
-| Orange || Apple     || style="text-align:right;" | 12,333.00
-|-
-| Bread || Pie       || style="text-align:right;" | 500.00
-|-
-| Butter || Ice cream || style="text-align:right;" | 1.00
-|}"#,
-    );
-}
-
-#[test]
-fn table_caption() {
-    run_test(
-        r#"{| class="wikitable"
+    table_caption => r#"{| class="wikitable"
 |+ style="caption-side:bottom; color:#e76700;"|''Food complements''
 |-
 ! style="color:green" | Fruits
@@ -344,105 +163,30 @@ fn table_caption() {
 |Apple
 |Ice cream
 |}"#,
-    );
-}
-
-#[test]
-fn table_span() {
-    run_test(
-        r#"{| class="wikitable" style="width: 85%;"
+    table_html => r#"{| valign="top"
+|-
+|<ul><ol start="125"><li>a</li><li>bb</li><li>ccc</li></ol></ul>
+|<ul><ol start="128"><li>ddd</li><li>ee</li><li>f</li></ol></ul>
+|}"#,
+    table_multi_cell_attr => r#"{| class="wikitable"
+| Orange || Apple     || style="text-align:right;" | 12,333.00
+|-
+| Bread || Pie       || style="text-align:right;" | 500.00
+|-
+| Butter || Ice cream || style="text-align:right;" | 1.00
+|}"#,
+    table_partial => r#"{| class="wikitable"
+| Orange
+| Apple
+| style="text-align:right;" | 12,333.00
+|-"#,
+    table_span => r#"{| class="wikitable" style="width: 85%;"
 | colspan="2" | This column width is 85% of the screen width
 |-
 | style="width: 30%"| '''This column is 30% counted from 85% of the screen width'''
 | style="width: 70%"| '''This column is 70% counted from 85% of the screen width'''
 |}"#,
-    );
-}
-
-#[test]
-fn table_html() {
-    run_test(
-        r#"{| valign="top"
-|-
-|<ul><ol start="125"><li>a</li><li>bb</li><li>ccc</li></ol></ul>
-|<ul><ol start="128"><li>ddd</li><li>ee</li><li>f</li></ol></ul>
-|}"#,
-    );
-}
-
-#[test]
-fn links_1() {
-    run_test(
-        "[[Main Page]]
-
-[[Help:Contents]]
-
-[[Extension:DynamicPageList (Wikimedia)]]
-
-[[Help:Editing pages#Preview|previewing]]
-
-[[#See also|different text]]",
-    );
-}
-
-#[test]
-fn links_2() {
-    run_test(
-        "[[Help]]s
-
-[[Help]]<nowiki />ful advice",
-    );
-}
-
-#[test]
-fn links_3() {
-    run_test(
-        "[https://mediawiki.org MediaWiki]
-
-[https://mediawiki.org]
-
-[//en.wikipedia.org Wikipedia]
-
-[mailto:info@example.org email me]
-
-[mailto:info@example.org?Subject=URL%20Encoded%20Subject&body=Body%20Text info]
-
-[{{fullurl:{{FULLPAGENAME}}|action=edit}} Edit this page]",
-    );
-}
-
-#[test]
-fn autolink_1() {
-    run_test(
-        "https://mediawiki.org\nhttps://mediawiki.org\npre http://example.com post\n<nowiki>https://mediawiki.org</nowiki>",
-    );
-}
-
-#[test]
-fn autolink_2() {
-    run_test("<code>http://</code> or <code>https://</code> or http:// or https://");
-    panic!();
-}
-
-#[test]
-fn autolink_3() {
-    run_test("https://mediawiki.org.\n(https://mediawiki.org)\nhttps://mediawiki.org/a(b).\n");
-}
-
-// TODO: Need to override config
-#[test]
-fn autolink_4() {
-    run_test(
-        "ISBN 0-7475-3269-9 or ISBN 000000000x or ISBN 0-9&nbsp;9999-2222 or ISBN 978-00000-00000 or (invalid:) ISBN 938-00000-00000\nPMID 1923.23232\nRFC 42",
-    );
-}
-
-#[test]
-fn heading_1() {
-    run_test(r#"==<span id="Alternate Section Title"></span>Section heading=="#);
-}
-
-#[test]
-fn image_1() {
-    run_test("[[File:filename.extension|alt=a|caption]]");
+    tag_extlink => "[<span>[//localhost:3000/Template%3ADate%20and%20time%20templates?action=edit edit]</span>]",
+    tpl_with_autolink => "{{a|https://example.com|c=d e}}",
+    tpl_with_tag => r#"{{a|<div k="v"></div>}}"#
 }

@@ -1,0 +1,22 @@
+[
+    StartTag @ 1:1..7 {
+        name: "code",
+        attributes: [],
+        self_closing: false,
+    },
+    "http://",
+    EndTag @ 1:14..21 {
+        name: "code",
+    },
+    " or ",
+    StartTag @ 1:25..31 {
+        name: "code",
+        attributes: [],
+        self_closing: false,
+    },
+    "https://",
+    EndTag @ 1:39..46 {
+        name: "code",
+    },
+    " or http:// or https://",
+]

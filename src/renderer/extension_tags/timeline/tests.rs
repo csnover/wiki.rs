@@ -1,53 +1,38 @@
 use super::timeline_to_svg as render;
 use axum::http::Uri;
 
+const BASE_DIR: &str = "./src/renderer/extension_tags/timeline/tests";
+
+macro_rules! run_tests {
+    ($($name:ident),* $(,)?) => {
+        $(#[test]
+        fn $name() {
+            run_test(
+                stringify!($name),
+                include_str!(concat!("./tests/", stringify!($name), ".txt"))
+            );
+        })*
+    }
+}
+
 #[track_caller]
-fn run_test(input: &str) {
-    let svg = render(input, &Uri::from_static("http://example.com")).unwrap();
-    panic!("{svg}");
+fn run_test(test_name: &str, input: &str) {
+    use std::io::Write as _;
+
+    let mut mint = goldenfile::Mint::new(format!("{BASE_DIR}/goldenfiles"));
+    let mut file = mint.new_goldenfile(format!("{test_name}.svg")).unwrap();
+    let result = render(input, &Uri::from_static("http://example.com")).unwrap();
+    let _ = writeln!(file, "{result}");
 }
 
-#[test]
-fn basic() {
-    run_test(include_str!("./tests/basic.txt"));
-}
-
-#[test]
-fn eras() {
-    run_test(include_str!("./tests/eras.txt"));
-}
-
-#[test]
-fn font_sizes() {
-    run_test(include_str!("./tests/font_sizes.txt"));
-}
-
-#[test]
-fn fractional_major_scale() {
-    run_test(include_str!("./tests/fractional_major_scale.txt"));
-}
-
-#[test]
-fn history_of_computing() {
-    run_test(include_str!("./tests/history_of_computing.txt"));
-}
-
-#[test]
-fn mcdonnell_douglas_md_11() {
-    run_test(include_str!("./tests/mcdonnell_douglas_md_11.txt"));
-}
-
-#[test]
-fn tabs() {
-    run_test(include_str!("./tests/tabs.txt"));
-}
-
-#[test]
-fn vertical() {
-    run_test(include_str!("./tests/vertical.txt"));
-}
-
-#[test]
-fn wikimedia_growth() {
-    run_test(include_str!("./tests/wikimedia_growth.txt"));
+run_tests! {
+    basic,
+    eras,
+    font_sizes,
+    fractional_major_scale,
+    history_of_computing,
+    mcdonnell_douglas_md_11,
+    tabs,
+    vertical,
+    wikimedia_growth,
 }

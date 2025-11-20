@@ -1,0 +1,32 @@
+[
+    ListItem @ 1:1..2:1 {
+        bullets: ";",
+        content: [
+            " Definition lists",
+        ],
+    },
+    ListItem @ 2:1..8 {
+        bullets: ";",
+        content: [
+            " term ",
+        ],
+    },
+    ListItem @ 2:8..3:1 {
+        bullets: ":",
+        content: [
+            " definition",
+        ],
+    },
+    ListItem @ 3:1..4:1 {
+        bullets: ";",
+        content: [
+            " semicolon plus term",
+        ],
+    },
+    ListItem @ 4:1..24 {
+        bullets: ":",
+        content: [
+            " colon plus definition",
+        ],
+    },
+]

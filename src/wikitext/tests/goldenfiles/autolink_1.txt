@@ -1,0 +1,32 @@
+[
+    Autolink @ 1:1..22 {
+        target: [
+            "https://mediawiki.org",
+        ],
+        content: [],
+    },
+    \n,
+    Autolink @ 2:1..22 {
+        target: [
+            "https://mediawiki.org",
+        ],
+        content: [],
+    },
+    \n,
+    "pre ",
+    Autolink @ 3:5..23 {
+        target: [
+            "http://example.com",
+        ],
+        content: [],
+    },
+    " post",
+    \n,
+    Extension @ 4:1..39 {
+        name: "nowiki",
+        attributes: [],
+        content: Some(
+            "https://mediawiki.org",
+        ),
+    },
+]

@@ -8,7 +8,7 @@ use std::{fs::File, io::Read, path::Path};
 mod extras;
 mod test_parser;
 
-const BASE_DIR: &str = "./src/wikitext/tests/parser";
+const BASE_DIR: &str = "./src/wikitext/tests";
 
 test_from_file! {
     annotation_parser_tests => "annotationParserTests",
@@ -88,14 +88,24 @@ fn run_tests_from_file(config: &Configuration, path: impl AsRef<Path>) {
 }
 
 #[track_caller]
-fn run_test(input: &str) {
-    run_test_with_config(&CONFIG, input);
+fn run_test(input: &str) -> Output {
+    run_test_with_config(&CONFIG, input)
 }
 
 #[track_caller]
-fn run_test_with_config(config: &Configuration, input: &str) {
-    let result = Parser::new(config).parse(input, false).unwrap();
-    eprintln!(
+fn run_test_with_config(config: &Configuration, input: &str) -> Output {
+    Parser::new(config).parse(input, false).unwrap()
+}
+
+#[track_caller]
+fn run_test_for_goldenfile(test_name: &str, input: &str) {
+    use std::io::Write as _;
+
+    let mut mint = goldenfile::Mint::new(format!("{BASE_DIR}/goldenfiles"));
+    let mut file = mint.new_goldenfile(format!("{test_name}.txt")).unwrap();
+    let result = run_test(input);
+    let _ = writeln!(
+        file,
         "{:#?}",
         inspectors::inspect(&FileMap::new(input), &result.root)
     );
@@ -105,8 +115,8 @@ macro_rules! test_from_file {
     ($($ident:ident => $path:literal),* $(,)?) => {
         $(#[test]
         fn $ident() {
-            run_tests_from_file(&CONFIG, format!("{BASE_DIR}/{}.txt", $path));
-            panic!();
+            run_tests_from_file(&CONFIG, format!("{BASE_DIR}/parser/{}.txt", $path));
+            todo!("check expected result");
         })*
     }
 }

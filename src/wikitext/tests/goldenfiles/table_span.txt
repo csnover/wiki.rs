@@ -1,0 +1,87 @@
+[
+    TableStart @ 1:1..41 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "class",
+                    ],
+                ): [
+                    "wikitable",
+                ],
+            },
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "width: 85%;",
+                ],
+            },
+        ],
+    },
+    \n,
+    TableData @ 2:1..3:1 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "colspan",
+                    ],
+                ): [
+                    "2",
+                ],
+            },
+        ],
+        content: [
+            " This column width is 85% of the screen width",
+            \n,
+        ],
+    },
+    TableRow @ 3:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 4:1..5:1 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "width: 30%",
+                ],
+            },
+        ],
+        content: [
+            " ",
+            (bold) @ 4:23..26,
+            "This column is 30% counted from 85% of the screen width",
+            (bold) @ 4:81..84,
+            \n,
+        ],
+    },
+    TableData @ 5:1..6:1 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "width: 70%",
+                ],
+            },
+        ],
+        content: [
+            " ",
+            (bold) @ 5:23..26,
+            "This column is 70% counted from 85% of the screen width",
+            (bold) @ 5:81..84,
+            \n,
+        ],
+    },
+    TableEnd @ 6:1..3,
+]

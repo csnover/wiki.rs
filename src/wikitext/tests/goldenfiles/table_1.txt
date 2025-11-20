@@ -1,0 +1,35 @@
+[
+    TableStart @ 1:1..9 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "hello",
+                    ],
+                ): [],
+            },
+        ],
+    },
+    \n,
+    TableData @ 2:1..7 {
+        attributes: [],
+        content: [
+            "good ",
+        ],
+    },
+    TableData @ 2:7..14 {
+        attributes: [],
+        content: [
+            " bye ",
+        ],
+    },
+    TableData @ 2:14..3:1 {
+        attributes: [],
+        content: [
+            " friend",
+            \n,
+        ],
+    },
+    TableEnd @ 3:2..4,
+    \n,
+]

@@ -1,0 +1,70 @@
+[
+    StartTag @ 1:1..5 {
+        name: "ol",
+        attributes: [],
+        self_closing: false,
+    },
+    \n,
+    "  ",
+    StartTag @ 2:3..7 {
+        name: "li",
+        attributes: [],
+        self_closing: false,
+    },
+    "list item A1",
+    \n,
+    "    ",
+    StartTag @ 3:5..9 {
+        name: "ol",
+        attributes: [],
+        self_closing: false,
+    },
+    \n,
+    "      ",
+    StartTag @ 4:7..11 {
+        name: "li",
+        attributes: [],
+        self_closing: false,
+    },
+    "list item B1",
+    EndTag @ 4:23..28 {
+        name: "li",
+    },
+    \n,
+    "      ",
+    StartTag @ 5:7..11 {
+        name: "li",
+        attributes: [],
+        self_closing: false,
+    },
+    "list item B2",
+    EndTag @ 5:23..28 {
+        name: "li",
+    },
+    \n,
+    "    ",
+    EndTag @ 6:5..10 {
+        name: "ol",
+    },
+    "continuing list item A1",
+    \n,
+    "  ",
+    EndTag @ 7:3..8 {
+        name: "li",
+    },
+    \n,
+    "  ",
+    StartTag @ 8:3..7 {
+        name: "li",
+        attributes: [],
+        self_closing: false,
+    },
+    "list item A2",
+    EndTag @ 8:19..24 {
+        name: "li",
+    },
+    \n,
+    EndTag @ 9:1..6 {
+        name: "ol",
+    },
+]

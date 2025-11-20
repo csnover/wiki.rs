@@ -1,0 +1,16 @@
+[
+    TableStart @ 1:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 2:1..4:1 {
+        attributes: [],
+        content: [
+            "B",
+            \n,
+            "C||d",
+            \n,
+        ],
+    },
+    TableEnd @ 4:1..3,
+]

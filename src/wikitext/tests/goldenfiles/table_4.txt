@@ -1,0 +1,15 @@
+[
+    TableStart @ 1:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 2:1..3:1 {
+        attributes: [],
+        content: [
+            "Orange",
+            \n,
+        ],
+    },
+    TableEnd @ 3:1..3,
+    \n,
+]

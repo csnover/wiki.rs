@@ -1,0 +1,50 @@
+[
+    TableStart @ 1:1..21 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "class",
+                    ],
+                ): [
+                    "wikitable",
+                ],
+            },
+        ],
+    },
+    \n,
+    TableData @ 2:1..3:1 {
+        attributes: [],
+        content: [
+            " Orange",
+            \n,
+        ],
+    },
+    TableData @ 3:1..4:1 {
+        attributes: [],
+        content: [
+            " Apple",
+            \n,
+        ],
+    },
+    TableData @ 4:1..5:1 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "style",
+                    ],
+                ): [
+                    "text-align:right;",
+                ],
+            },
+        ],
+        content: [
+            " 12,333.00",
+            \n,
+        ],
+    },
+    TableRow @ 5:1..3 {
+        attributes: [],
+    },
+]

@@ -1,0 +1,155 @@
+[
+    StartTag @ 1:1..23 {
+        name: "div",
+        attributes: [
+            {
+                Some(
+                    [
+                        "class",
+                    ],
+                ): [
+                    "noresize",
+                ],
+            },
+        ],
+        self_closing: false,
+    },
+    \n,
+    TableStart @ 2:1..21 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "class",
+                    ],
+                ): [
+                    "wikitable",
+                ],
+            },
+        ],
+    },
+    \n,
+    TableHeading @ 3:1..29 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "colspan",
+                    ],
+                ): [
+                    "6",
+                ],
+            },
+        ],
+        content: [
+            "Shopping List",
+        ],
+    },
+    \n,
+    TableRow @ 4:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 5:1..6:1 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "rowspan",
+                    ],
+                ): [
+                    "2",
+                ],
+            },
+        ],
+        content: [
+            "Areallyreallyreallyreallylongstringwillcauseyourtableto",
+            \n,
+        ],
+    },
+    TableData @ 6:1..7:1 {
+        attributes: [],
+        content: [
+            " Pie",
+            \n,
+        ],
+    },
+    TableData @ 7:1..8:1 {
+        attributes: [],
+        content: [
+            " Buns",
+            \n,
+        ],
+    },
+    TableData @ 8:1..9:1 {
+        attributes: [],
+        content: [
+            " Danish",
+            \n,
+        ],
+    },
+    TableData @ 9:1..10:1 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "colspan",
+                    ],
+                ): [
+                    "2",
+                ],
+            },
+        ],
+        content: [
+            "Croissantsmaycausetexttoincreasethesizeofyourcolumnsoitbreaksoutofthecontent area if you do not wrap the table with noresize.",
+            \n,
+        ],
+    },
+    TableRow @ 10:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 11:1..12:1 {
+        attributes: [],
+        content: [
+            " Cheese",
+            \n,
+        ],
+    },
+    TableData @ 12:1..13:1 {
+        attributes: [
+            {
+                Some(
+                    [
+                        "colspan",
+                    ],
+                ): [
+                    "2",
+                ],
+            },
+        ],
+        content: [
+            "Ice cream",
+            \n,
+        ],
+    },
+    TableData @ 13:1..14:1 {
+        attributes: [],
+        content: [
+            " Butter",
+            \n,
+        ],
+    },
+    TableData @ 14:1..15:1 {
+        attributes: [],
+        content: [
+            " Yogurt",
+            \n,
+        ],
+    },
+    TableEnd @ 15:1..3,
+    \n,
+    EndTag @ 16:1..7 {
+        name: "div",
+    },
+]

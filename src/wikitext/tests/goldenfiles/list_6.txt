@@ -1,0 +1,50 @@
+[
+    ListItem @ 1:1..2:1 {
+        bullets: "*",
+        content: [
+            " Or create mixed lists",
+        ],
+    },
+    ListItem @ 2:1..3:1 {
+        bullets: "*#",
+        content: [
+            " and nest them",
+        ],
+    },
+    ListItem @ 3:1..4:1 {
+        bullets: "*#*",
+        content: [
+            " like this",
+        ],
+    },
+    ListItem @ 4:1..5:1 {
+        bullets: "*#*;",
+        content: [
+            " definitions",
+        ],
+    },
+    ListItem @ 5:1..6:1 {
+        bullets: "*#*:",
+        content: [
+            " work:",
+        ],
+    },
+    ListItem @ 6:1..7:1 {
+        bullets: "*#*;",
+        content: [
+            " apple",
+        ],
+    },
+    ListItem @ 7:1..8:1 {
+        bullets: "*#*;",
+        content: [
+            " banana",
+        ],
+    },
+    ListItem @ 8:1..12 {
+        bullets: "*#*:",
+        content: [
+            " fruits",
+        ],
+    },
+]

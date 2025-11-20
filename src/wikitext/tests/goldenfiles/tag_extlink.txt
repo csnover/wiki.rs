@@ -1,0 +1,20 @@
+[
+    "[",
+    StartTag @ 1:2..8 {
+        name: "span",
+        attributes: [],
+        self_closing: false,
+    },
+    ExternalLink @ 1:8..84 {
+        target: [
+            "//localhost:3000/Template%3ADate%20and%20time%20templates?action=edit",
+        ],
+        content: [
+            "edit",
+        ],
+    },
+    EndTag @ 1:84..91 {
+        name: "span",
+    },
+    "]",
+]

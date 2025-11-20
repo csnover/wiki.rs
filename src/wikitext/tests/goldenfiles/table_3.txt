@@ -1,0 +1,58 @@
+[
+    TableStart @ 1:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 2:1..3:1 {
+        attributes: [],
+        content: [
+            "Orange",
+            \n,
+        ],
+    },
+    TableData @ 3:1..4:1 {
+        attributes: [],
+        content: [
+            "Apple",
+            \n,
+        ],
+    },
+    TableRow @ 4:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 5:1..6:1 {
+        attributes: [],
+        content: [
+            "Bread",
+            \n,
+        ],
+    },
+    TableData @ 6:1..7:1 {
+        attributes: [],
+        content: [
+            "Pie",
+            \n,
+        ],
+    },
+    TableRow @ 7:1..3 {
+        attributes: [],
+    },
+    \n,
+    TableData @ 8:1..9:1 {
+        attributes: [],
+        content: [
+            "Butter",
+            \n,
+        ],
+    },
+    TableData @ 9:1..10:1 {
+        attributes: [],
+        content: [
+            "Ice cream",
+            \n,
+        ],
+    },
+    TableEnd @ 10:1..3,
+    \n,
+]

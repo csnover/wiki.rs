@@ -1,0 +1,79 @@
+[
+    ExternalLink @ 1:1..34 {
+        target: [
+            "https://mediawiki.org",
+        ],
+        content: [
+            "MediaWiki",
+        ],
+    },
+    \n,
+    \n,
+    ExternalLink @ 3:1..24 {
+        target: [
+            "https://mediawiki.org",
+        ],
+        content: [],
+    },
+    \n,
+    \n,
+    ExternalLink @ 5:1..31 {
+        target: [
+            "//en.wikipedia.org",
+        ],
+        content: [
+            "Wikipedia",
+        ],
+    },
+    \n,
+    \n,
+    ExternalLink @ 7:1..35 {
+        target: [
+            "mailto:info@example.org",
+        ],
+        content: [
+            "email me",
+        ],
+    },
+    \n,
+    \n,
+    ExternalLink @ 9:1..80 {
+        target: [
+            "mailto:info@example.org?Subject=URL%20Encoded%20Subject&body=Body%20Text",
+        ],
+        content: [
+            "info",
+        ],
+    },
+    \n,
+    \n,
+    ExternalLink @ 11:1..58 {
+        target: [
+            Template @ 11:2..42 {
+                target: [
+                    "fullurl:",
+                    Template @ 11:12..28 {
+                        target: [
+                            "FULLPAGENAME",
+                        ],
+                        parameters: [],
+                    },
+                ],
+                parameters: [
+                    {
+                        Some(
+                            [
+                                "action",
+                            ],
+                        ): [
+                            "edit",
+                        ],
+                    },
+                ],
+            },
+        ],
+        content: [
+            "Edit this page",
+        ],
+    },
+]

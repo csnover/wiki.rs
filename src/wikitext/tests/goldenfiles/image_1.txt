@@ -1,0 +1,24 @@
+[
+    Link @ 1:1..42 {
+        target: [
+            "File:filename.extension",
+        ],
+        content: [
+            {
+                Some(
+                    [
+                        "alt",
+                    ],
+                ): [
+                    "a",
+                ],
+            },
+            {
+                None: [
+                    "caption",
+                ],
+            },
+        ],
+        trail: None,
+    },
+]

@@ -1,0 +1,28 @@
+[
+    ListItem @ 1:1..26 {
+        bullets: "#",
+        content: [
+            "REDIRECT ",
+            Link @ 1:11..26 {
+                target: [
+                    "Hello world",
+                ],
+                content: [],
+                trail: None,
+            },
+        ],
+    },
+    \n,
+    \n,
+    HorizontalRule @ 3:1..5 {
+        line_content: false,
+    },
+    \n,
+    "Text content",
+    \n,
+    "More text content",
+    \n,
+    \n,
+    "Third line",
+    \n,
+]

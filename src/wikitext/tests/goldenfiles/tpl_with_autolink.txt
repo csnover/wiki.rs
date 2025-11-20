@@ -1,0 +1,28 @@
+[
+    Template @ 1:1..32 {
+        target: [
+            "a",
+        ],
+        parameters: [
+            {
+                None: [
+                    Autolink @ 1:5..24 {
+                        target: [
+                            "https://example.com",
+                        ],
+                        content: [],
+                    },
+                ],
+            },
+            {
+                Some(
+                    [
+                        "c",
+                    ],
+                ): [
+                    "d e",
+                ],
+            },
+        ],
+    },
+]

@@ -1,0 +1,28 @@
+[
+    Template @ 1:1..17 {
+        target: [
+            "a",
+        ],
+        parameters: [
+            {
+                None: [
+                    Link @ 1:5..15 {
+                        target: [
+                            "b",
+                        ],
+                        content: [
+                            {
+                                Some(
+                                    [
+                                        "alt",
+                                    ],
+                                ): [],
+                            },
+                        ],
+                        trail: None,
+                    },
+                ],
+            },
+        ],
+    },
+]

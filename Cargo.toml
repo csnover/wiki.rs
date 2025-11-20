@@ -56,6 +56,9 @@ syntax-highlighting = ["dep:syntect"]
 regex = "1"
 tzdb_data = "0.2"
 
+[dev-dependencies]
+goldenfile = "1.9"
+
 [profile.dev-fast]
 inherits = "dev"
 opt-level = 3

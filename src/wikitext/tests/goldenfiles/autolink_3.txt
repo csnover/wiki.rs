@@ -1,0 +1,27 @@
+[
+    Autolink @ 1:1..22 {
+        target: [
+            "https://mediawiki.org",
+        ],
+        content: [],
+    },
+    ".",
+    \n,
+    "(",
+    Autolink @ 2:2..23 {
+        target: [
+            "https://mediawiki.org",
+        ],
+        content: [],
+    },
+    ")",
+    \n,
+    Autolink @ 3:1..27 {
+        target: [
+            "https://mediawiki.org/a(b)",
+        ],
+        content: [],
+    },
+    ".",
+    \n,
+]

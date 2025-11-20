@@ -1,0 +1,31 @@
+[
+    ListItem @ 1:1..2:1 {
+        bullets: "*",
+        content: [
+            " A newline",
+        ],
+    },
+    ListItem @ 2:1..12 {
+        bullets: "*",
+        content: [
+            " in a list",
+        ],
+    },
+    \n,
+    "marks the end of the list.",
+    \n,
+    "Of course",
+    \n,
+    ListItem @ 5:1..6:1 {
+        bullets: "*",
+        content: [
+            " you can",
+        ],
+    },
+    ListItem @ 6:1..15 {
+        bullets: "*",
+        content: [
+            " start again.",
+        ],
+    },
+]
