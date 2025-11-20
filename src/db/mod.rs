@@ -197,7 +197,7 @@ enum Hack {
     Scalpel(&'static [(&'static str, &'static str)]),
 }
 
-///A fix for 'Module:Citation/CS1'.
+/// A fix for 'Module:Citation/CS1'.
 ///
 /// This module, instead of using this crazy thing called “function parameters”
 /// to ensure functions calls are side-effect-free, instead decides to use
@@ -225,6 +225,35 @@ static MODULE_FOOTNOTE_ANCHOR_ID_LIST: Hack = Hack::Scalpel(&[(
     r#"argument = argument:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1");"#,
     "",
 )]);
+
+/// A fix for 'Module:Hatnote list'.
+///
+/// This module asks for the current page name immediately when it is loaded,
+/// then never checks again, so will show wrong title text when it is used more
+/// than once during a session.
+// TODO: Probably, this sort of pattern will show up frequently enough that it
+// might just be necessary to eat the performance of reinvoking module closures
+// every time a new page loads. A set of taint flags might work to limit the
+// performance-killing blast radius, where the host Lua interface is monitored
+// for any calls that occur during module initialisation that would require
+// invalidation, and only those modules which are tainted get reinvoked. A
+// different option would be to start returning userdata objects with
+// `__tostring` metafunctions that update their internal state, but this would
+// almost certainly require hacking the VM to cloak such objects, since the
+// appearance of a userdata type is pretty much guaranteed to break all the type
+// checks in the MW modules.
+static MODULE_HATNOTE_LIST: Hack = Hack::Scalpel(&[
+    ("	title = mw.title.getCurrentTitle().text,\n", ""),
+    (
+        "options = options or {}",
+        concat!(
+            "options = options or {}\n",
+            "if options.title == nil then\n",
+            "    options.title = mw.title.getCurrentTitle().text\n",
+            "end"
+        ),
+    ),
+]);
 
 /// A fix for 'Module:TNT'.
 ///
@@ -289,6 +318,7 @@ static HACKS: &[(&str, &Hack)] = &[
         "Module:Footnotes/anchor id list",
         &MODULE_FOOTNOTE_ANCHOR_ID_LIST,
     ),
+    ("Module:Hatnote list", &MODULE_HATNOTE_LIST),
     ("Module:TNT", &MODULE_TNT),
     ("Module:Wikidata", &MODULE_WIKIDATA),
 ];
