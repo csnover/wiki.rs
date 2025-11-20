@@ -151,7 +151,7 @@ impl Database<'_> {
             .iter()
             .find_map(|(hack_title, hack)| (*hack_title == title).then_some(*hack));
 
-        if let Some(&Hack::Sledgehammer(body)) = hack {
+        if let Some(&Hack::Lobotomy(body)) = hack {
             log::warn!("Replacing {title} from hacks");
             return Ok(Article {
                 id: 0xdead_beef,
@@ -178,7 +178,7 @@ impl Database<'_> {
                 let mut article = self.articles.get_article(entry);
                 log::trace!("Extracted article in {:.2?}", time.elapsed());
 
-                if let (Ok(article), Some(Hack::Scalpel(hacks))) = (article.as_mut(), hack) {
+                if let (Ok(article), Some(Hack::HorsePills(hacks))) = (article.as_mut(), hack) {
                     log::info!("Modifying {title} using hacks");
                     article.body = strtr(&article.body, hacks).into_owned();
                 }
@@ -191,10 +191,10 @@ impl Database<'_> {
 /// Sometimes, modules will not work. Sometimes, we can fix that with
 /// medication.
 enum Hack {
-    /// Replace the whole thing with a new thing.
-    Sledgehammer(&'static str),
     /// Replace bits of a thing with new things.
-    Scalpel(&'static [(&'static str, &'static str)]),
+    HorsePills(&'static [(&'static str, &'static str)]),
+    /// Replace the whole thing with a new thing.
+    Lobotomy(&'static str),
 }
 
 /// A fix for 'Module:Citation/CS1'.
@@ -210,7 +210,7 @@ enum Hack {
 ///
 /// Because the `z` table is *shared* across modules, it is not good enough to
 /// do a deep clone. Instead, all its values have to be emptied out.
-static MODULE_CITATION_CS1: Hack = Hack::Scalpel(&[(
+static MODULE_CITATION_CS1: Hack = Hack::HorsePills(&[(
     "z = utilities.z;",
     "z = utilities.z;\nfor k, v in pairs(z) do\nz[k] = {}\nend",
 )]);
@@ -221,7 +221,7 @@ static MODULE_CITATION_CS1: Hack = Hack::Scalpel(&[(
 /// Lua patterns and thus escapes replacement strings in a way that causes them
 /// to contain escapements which are correct for a pattern but illegal in a
 /// replacement.
-static MODULE_FOOTNOTE_ANCHOR_ID_LIST: Hack = Hack::Scalpel(&[(
+static MODULE_FOOTNOTE_ANCHOR_ID_LIST: Hack = Hack::HorsePills(&[(
     r#"argument = argument:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1");"#,
     "",
 )]);
@@ -242,7 +242,7 @@ static MODULE_FOOTNOTE_ANCHOR_ID_LIST: Hack = Hack::Scalpel(&[(
 // almost certainly require hacking the VM to cloak such objects, since the
 // appearance of a userdata type is pretty much guaranteed to break all the type
 // checks in the MW modules.
-static MODULE_HATNOTE_LIST: Hack = Hack::Scalpel(&[
+static MODULE_HATNOTE_LIST: Hack = Hack::HorsePills(&[
     ("	title = mw.title.getCurrentTitle().text,\n", ""),
     (
         "options = options or {}",
@@ -264,7 +264,7 @@ static MODULE_HATNOTE_LIST: Hack = Hack::Scalpel(&[
 /// metatable on data returned by `mw.ext.data.get`. Returning an error also
 /// does not work because not everything uses pcall with a fallback path. So
 /// just override the whole thing with a script that does nothing.
-static MODULE_TNT: Hack = Hack::Sledgehammer(
+static MODULE_TNT: Hack = Hack::Lobotomy(
     r"
 local p = {}
 function p.msg(frame)
@@ -308,7 +308,7 @@ return p
 ///
 /// This module contains an invalid string which does not lex in a
 /// Lua 5.4-conforming engine.
-static MODULE_WIKIDATA: Hack = Hack::Scalpel(&[(r#""^\-?%d+""#, r#""^-?%d+""#)]);
+static MODULE_WIKIDATA: Hack = Hack::HorsePills(&[(r#""^\-?%d+""#, r#""^-?%d+""#)]);
 
 /// All the sad hacks that are required to successfully load modules in a Lua
 /// engine which is not the modified Lua 5.1 engine used by Scribunto.
