@@ -8,6 +8,7 @@ use crate::{
     wikitext::{FileMap, Parser, inspect},
 };
 use axum::{
+    Form,
     extract::{Path, Query, RawQuery, State},
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Response},
@@ -150,12 +151,13 @@ pub async fn article(
     let time = Instant::now();
     let load_mode = load_mode.unwrap_or(state.load_mode);
 
-    let (tx, rx) = mpsc::channel();
-    state
-        .renderer
-        .get()?
-        .send((Arc::clone(&article), load_mode, redirect, tx))?;
-    let output = rx.recv()??;
+    let command = renderer::Command::Article {
+        article: Arc::clone(&article),
+        load_mode,
+        redirect,
+    };
+
+    let output = call_renderer(&state, command)?;
 
     log::trace!("Rendered article in {:.2?}", time.elapsed());
 
@@ -170,6 +172,29 @@ pub async fn article(
     .map(Html::from)
     .map(IntoResponse::into_response)
     .map_err(Into::into)
+}
+
+/// The ad-hoc Wikitext expression evaluator, initial page.
+pub async fn eval_get(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
+    raw_source(state.base_uri.path(), "", "html", Some("")).map(IntoResponse::into_response)
+}
+
+/// Form options for `/eval`.
+#[derive(serde::Deserialize)]
+pub struct EvalBody {
+    /// The Wikitext to evaluate.
+    code: String,
+}
+
+/// The ad-hoc Wikitext expression evaluator.
+pub async fn eval_post(
+    State(state): State<AppState>,
+    Form(EvalBody { code }): Form<EvalBody>,
+) -> Result<impl IntoResponse, Error> {
+    let command = renderer::Command::Eval(code.clone());
+    let output = call_renderer(&state, command)?;
+    raw_source(state.base_uri.path(), &output.content, "html", Some(&code))
+        .map(IntoResponse::into_response)
 }
 
 /// The external link page route handler.
@@ -387,7 +412,7 @@ pub async fn source(
 
     match mode {
         None | Some(SourceMode::Raw) => {
-            raw_source(state.base_uri.path(), &article.body, &article.model)
+            raw_source(state.base_uri.path(), &article.body, &article.model, None)
                 .map(IntoResponse::into_response)
         }
         Some(SourceMode::Tree) => {
@@ -400,13 +425,29 @@ pub async fn source(
     }
 }
 
+/// Calls to the renderer thread using the given command.
+fn call_renderer(
+    state: &crate::WikiState,
+    command: renderer::Command,
+) -> Result<RenderOutput, Error> {
+    let (tx, rx) = mpsc::channel();
+    state.renderer.get()?.send(renderer::In { command, tx })?;
+    let output = rx.recv()??;
+    Ok(output)
+}
+
 /// Renders source code for the given data model into HTML.
 // Clippy: This syntax highlighting library sucks and should be replaced by a
 // better one anyway, whenever this breaks. There seems to be no non-deprecated
 // API for this.
 #[allow(deprecated)]
 #[cfg(feature = "syntax-highlighting")]
-fn raw_source(base_path: &str, source: &str, model: &str) -> Result<Html<String>, Error> {
+fn raw_source(
+    base_path: &str,
+    source: &str,
+    model: &str,
+    code: Option<&str>,
+) -> Result<Html<String>, Error> {
     use syntect::{
         highlighting::ThemeSet,
         html::{ClassStyle, css_for_theme_with_class_style, line_tokens_to_classed_spans},
@@ -422,6 +463,8 @@ fn raw_source(base_path: &str, source: &str, model: &str) -> Result<Html<String>
     {
         /// The base path for URLs.
         base_path: &'a str,
+        /// The original source text.
+        code: Option<&'a str>,
         /// The page CSS.
         css: String,
         /// The lines of source code.
@@ -500,6 +543,7 @@ fn raw_source(base_path: &str, source: &str, model: &str) -> Result<Html<String>
 
     RawSource {
         base_path,
+        code,
         css,
         lines,
     }
@@ -510,7 +554,12 @@ fn raw_source(base_path: &str, source: &str, model: &str) -> Result<Html<String>
 
 /// Renders source code for the given data model into HTML.
 #[cfg(not(feature = "syntax-highlighting"))]
-pub fn raw_source(_: &str, source: &str, _: &str) -> Result<impl IntoResponse, Error> {
+pub fn raw_source(
+    _: &str,
+    source: &str,
+    _: &str,
+    _: Option<&str>,
+) -> Result<impl IntoResponse, Error> {
     Ok(source.to_string())
 }
 

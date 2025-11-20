@@ -21,9 +21,30 @@ use crate::{
 use axum::http::Uri;
 use schnellru::LruMap;
 use std::sync::{Arc, mpsc};
+use time::UtcDateTime;
+
+/// A renderer channel message command.
+pub enum Command {
+    /// Render an article.
+    Article {
+        /// The article to render.
+        article: Arc<Article>,
+        /// The load mode to use when rendering the article.
+        load_mode: LoadMode,
+        /// If true, follow the article’s redirect before rendering.
+        redirect: bool,
+    },
+    /// Render some arbitrary Wikitext.
+    Eval(String),
+}
 
 /// The input format for a renderer channel message.
-pub type In = (Arc<Article>, LoadMode, bool, mpsc::Sender<Out>);
+pub struct In {
+    /// The renderer command.
+    pub command: Command,
+    /// The return channel.
+    pub tx: mpsc::Sender<Out>,
+}
 
 /// The output format for a renderer channel message.
 pub type Out = Result<RenderOutput, Error>;
@@ -70,8 +91,15 @@ impl r2d2::ManageConnection for RenderManager {
                 template_cache: LruMap::new(ByMemoryUsage::new(32 * 1024 * 1024)),
             };
 
-            for (article, load_mode, redirect, tx) in rx {
-                let output = render(&mut statics, &article, load_mode, redirect);
+            for In { command, tx } in rx {
+                let output = match command {
+                    Command::Article {
+                        article,
+                        load_mode,
+                        redirect,
+                    } => render_article(&mut statics, &article, load_mode, redirect),
+                    Command::Eval(source) => render_string(&mut statics, &source),
+                };
                 let _ = tx.send(output);
             }
         });
@@ -101,8 +129,8 @@ pub struct RenderOutput {
     pub styles: String,
 }
 
-/// Main renderer entrypoint.
-fn render(
+/// Main renderer entrypoint for articles.
+fn render_article(
     statics: &mut Statics,
     article: &Arc<Article>,
     load_mode: LoadMode,
@@ -120,9 +148,26 @@ fn render(
         FileMap::new(&article.body),
     );
 
+    render(statics, load_mode, article.date, &sp)
+}
+
+/// Main renderer entrypoint for eval.
+fn render_string(statics: &mut Statics, source: &str) -> Result<RenderOutput, Error> {
+    let sp = StackFrame::new(Title::new("<eval>", None), FileMap::new(source));
+
+    render(statics, LoadMode::Module, UtcDateTime::now(), &sp)
+}
+
+/// Main renderer entrypoint.
+fn render(
+    statics: &mut Statics,
+    load_mode: LoadMode,
+    date: UtcDateTime,
+    sp: &StackFrame<'_>,
+) -> Result<RenderOutput, Error> {
     let root = statics.parser.parse(&sp.source, false)?;
 
-    reset_vm(&mut statics.vm, &article)?;
+    reset_vm(&mut statics.vm, &sp.name, date)?;
 
     let mut state = State {
         globals: <_>::default(),
@@ -135,7 +180,7 @@ fn render(
     // TODO: Rewrite the PEG so that it does the expansions instead of
     // doing this awful double-parsing.
     let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
-    preprocessor.adopt_output(&mut state, &sp, &root)?;
+    preprocessor.adopt_output(&mut state, sp, &root)?;
     let source = preprocessor.finish();
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;

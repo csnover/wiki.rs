@@ -21,6 +21,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use time::UtcDateTime;
 
 mod lualib;
 mod prelude;
@@ -126,13 +127,13 @@ pub(super) fn new_vm(
 }
 
 /// Resets the Lua VM for the given `article`.
-pub(super) fn reset_vm(vm: &mut Lua, article: &Article) -> Result<(), ExternError> {
+pub(super) fn reset_vm(vm: &mut Lua, title: &Title, date: UtcDateTime) -> Result<(), ExternError> {
     vm.try_enter(|ctx| {
         let mw_title = ctx.singleton::<Rootable![TitleLibrary]>();
-        mw_title.set_title(ctx, &Title::new(&article.title, None))?;
+        mw_title.set_title(ctx, title)?;
 
         let mw_language = ctx.singleton::<Rootable![LanguageLibrary]>();
-        mw_language.set_date(article.date);
+        mw_language.set_date(date);
 
         Ok(())
     })

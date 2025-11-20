@@ -238,6 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/article/{*name}", get(pages::article))
+        .route("/eval", get(pages::eval_get).post(pages::eval_post))
         .route("/external/{*target}", get(pages::external))
         .route("/fonts/{*font}", get(pages::fonts))
         .route("/images/{*image}", get(pages::images))

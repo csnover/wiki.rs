@@ -105,6 +105,11 @@ life choices which led you to this moment of debugging a random Wikitext reader.
 When debugging, use the `dev-fast` profile (unless you want to sit there all day
 waiting for a slow unoptimised bz2 decompressor): `cargo run --profile dev-fast`
 
+### Ad-hoc evaluation
+
+Visit `/eval` to type arbitrary Wikitext into the mystery box. It will reveal to
+you profound secrets about the origin of the universe. Or maybe bugs. Who knows?
+
 ### Source inspection
 
 Visit `/source/{Article name}[?mode={mode}][&include]` to view the raw source of

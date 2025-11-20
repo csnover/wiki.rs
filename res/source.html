@@ -33,6 +33,44 @@
                 }
             }
 
+            button {
+                all: unset;
+                align-self: end;
+                background-color: var(--border-fg);
+                border: 1px outset;
+                color: var(--fg);
+                cursor: pointer;
+                font-family: var(--sans);
+                outline: initial;
+                padding: 0 .5em;
+                user-select: none;
+
+                &:active {
+                    background-color: lch(from var(--border-fg) calc(l - 20) c h);
+                    border-style: inset;
+                }
+            }
+
+            form {
+                border-top: thick solid;
+                bottom: 0;
+                display: flex;
+                left: 0;
+                padding: .5em;
+                position: fixed;
+                right: 0;
+            }
+
+            textarea {
+                background: inherit;
+                border: none;
+                color: inherit;
+                font-family: var(--mono);
+                flex: 1;
+                min-height: 8lh;
+                resize: none;
+            }
+
             <%= crate::pages::filter::css(&css) %>
         </style>
     </head>
@@ -49,5 +87,11 @@
                 </tr>
             <% } %>
         </table>
+        <% if let Some(code) = code { %>
+            <form method="post">
+                <textarea name="code" autofocus autocorrect="off" autocomplete="off" placeholder="Wikitext goes here, to increase and/or reduce confusion"><%= code %></textarea>
+                <button><%- if time::UtcDateTime::now().second() & 1 == 1 { "Pray" } else { "Weep" } %></button>
+            </form>
+        <% } %>
     </body>
 </html>

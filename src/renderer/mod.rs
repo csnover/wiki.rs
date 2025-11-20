@@ -153,7 +153,7 @@ use crate::{
 use axum::http::Uri;
 use core::fmt;
 pub use expand_templates::{ExpandMode, ExpandTemplates};
-pub use manager::{In, RenderManager as Manager, RenderOutput};
+pub use manager::{Command, In, RenderManager as Manager, RenderOutput};
 pub use parser_fns::call_parser_fn;
 use piccolo::Lua;
 use schnellru::LruMap;
