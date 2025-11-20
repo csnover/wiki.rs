@@ -40,6 +40,7 @@
     --bold: 650;
     --border-th: #999;
     --box-margin: 1rem;
+    --footer-margin: calc(var(--box-margin) * 4);
     --fg: black;
     --figure-margin: calc(var(--box-margin) * 2);
     --highlight: rebeccapurple;
@@ -606,13 +607,14 @@ th {
 
     .wiki-rs-categories {
         border-top: .25rem solid currentColor;
+        clear: both;
         font-family: var(--sans);
         font-size: 95%;
         font-variant-numeric: normal;
         font-weight: 350;
         list-style: none;
         padding: .5rem 0;
-        margin-top: 4rem;
+        margin-top: var(--footer-margin);
 
         &::before {
             content: 'in: ';
@@ -709,7 +711,7 @@ th {
     .wikitable,
     .tracklist, /* 'Template:Track listing' */
     .us-census-pop, /* 'Template:US Census population' */
-    [data-wiki-rs*=template-historical-populations] /* 'Template:Historical populations' */
+    [data-wiki-rs~=template-historical-populations] /* 'Template:Historical populations' */
     {
         border: 0;
         border-bottom: thin solid var(--border-fg);
@@ -759,7 +761,7 @@ th {
 
         &.floatright,
         &.us-census-pop-right, /* 'Template:US Census population' */
-        &[data-wiki-rs*=template-historical-populations] /* 'Template:Historical populations' */
+        &[data-wiki-rs~=template-historical-populations] /* 'Template:Historical populations' */
         {
             max-width: 50cqw;
             width: auto;
@@ -918,6 +920,11 @@ th {
         &.sidebar {
             font-size: inherit;
             max-width: 18rem;
+
+            /* !important: 'Template:History of Ryukyu' */
+            .infobox[style*="width:100%"] {
+                width: 100% !important;
+            }
         }
 
         td, th {
@@ -927,9 +934,6 @@ th {
 
         th {
             font-stretch: 80%;
-            /* TODO: This is partially because justified text alignment is
-               specified too broadly and gets inherited */
-            text-align: start;
         }
 
         .infobox-above,
@@ -944,7 +948,7 @@ th {
             line-height: 1.2;
 
             /* !important: 'Minnesota' */
-            [style*="font-size"] {
+            [style*=font-size] {
                 font-size: inherit !important;
             }
         }
@@ -1053,7 +1057,7 @@ th {
             /* TODO: This is a reapplication of a rule that already exists
                due to specificity conflicts */
             .infobox-label {
-                padding-right: 0.3rem;
+                padding-right: .3rem;
             }
 
             .infobox-header {
@@ -1069,6 +1073,7 @@ th {
         .infobox-label {
             padding-right: .3rem;
             line-height: 1.2;
+            text-align: start;
             /* keep first baseline alignment w/ reduced line height */
             transform: translateY(.185em);
 
@@ -1083,7 +1088,7 @@ th {
         /* .ib-company .infobox-data changes the line height,
            so does .ib-settlement */
         .infobox-data {
-            line-height: 1rlh;
+            line-height: unset;
         }
 
         .infobox-image {
@@ -1130,6 +1135,13 @@ th {
 
         * + .plainlist {
             margin-top: 0;
+        }
+
+        /* 'United States Civil Administration of the Ryukyu Islands' */
+        .ib-country-names {
+            font-stretch: normal;
+            margin-top: calc(var(--box-margin) * .25);
+            padding-top: 0;
         }
     }
 
@@ -1275,7 +1287,8 @@ th {
 
     /* extra specificity to override `.navbox + .navbox-styles + .navbox` */
     * + .navbox.navbox.navbox {
-        margin-top: 4rem;
+        clear: both;
+        margin-top: var(--footer-margin);
     }
 
     /*******************/
@@ -1321,7 +1334,7 @@ th {
 
     .portal-bar, .sister-bar {
         font-family: var(--sans);
-        margin-top: 4rem;
+        margin-top: var(--footer-margin);
     }
     .portal-bar-bordered, .sister-bar {
         background-color: transparent;
@@ -1693,7 +1706,7 @@ th {
             line-height: 1.2;
         }
 
-        th[style*="border-right"] {
+        th[style*=border-right] {
             border-right-width: .5ch !important;
         }
 
@@ -1727,7 +1740,7 @@ th {
     /**************************/
 
     /* .infobox is for extra specificity */
-    [data-wiki-rs*=template-climate-chart].infobox {
+    [data-wiki-rs~=template-climate-chart].infobox {
         border: none !important;
         font-variant-numeric: lining-nums;
         margin-bottom: var(--figure-margin) !important;
@@ -1799,7 +1812,7 @@ th {
     /* Template:Weather box */
     /************************/
 
-    [data-wiki-rs*=template-weather-box] {
+    [data-wiki-rs~=template-weather-box] {
         .wikitable {
             border-bottom: none;
             width: calc(100% + var(--table-padding-inline) * 2) !important;
@@ -1895,7 +1908,7 @@ th {
     /***********************************/
     /* Template:Historical populations */
     /***********************************/
-    [data-wiki-rs*=template-historical-populations] {
+    [data-wiki-rs~=template-historical-populations] {
         border-bottom: none;
 
         margin-right: calc(var(--table-padding-inline) * -1) !important;
