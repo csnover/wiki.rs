@@ -45,6 +45,7 @@ pub struct Document {
     /// [`Self::adopt_output`], and because expanded templates get erased (due
     /// to reparsing) before they make it to `Document` this will not tag blocks
     /// that were inside nested templates.
+    // TODO: This is not really doing anything any more.
     tag_blocks: Vec<(usize, String)>,
     /// The [`TextStyle`] emitter.
     text_style_emitter: TextStyleEmitter,

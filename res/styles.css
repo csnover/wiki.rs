@@ -709,7 +709,7 @@ th {
     .wikitable,
     .tracklist, /* 'Template:Track listing' */
     .us-census-pop, /* 'Template:US Census population' */
-    [data-wiki-rs=template-historical-populations] /* 'Template:Historical populations' */
+    [data-wiki-rs*=template-historical-populations] /* 'Template:Historical populations' */
     {
         border: 0;
         border-bottom: thin solid var(--border-fg);
@@ -759,7 +759,7 @@ th {
 
         &.floatright,
         &.us-census-pop-right, /* 'Template:US Census population' */
-        &[data-wiki-rs=template-historical-populations] /* 'Template:Historical populations' */
+        &[data-wiki-rs*=template-historical-populations] /* 'Template:Historical populations' */
         {
             max-width: 50cqw;
             width: auto;
@@ -1727,7 +1727,7 @@ th {
     /**************************/
 
     /* .infobox is for extra specificity */
-    [data-wiki-rs=template-climate-chart].infobox {
+    [data-wiki-rs*=template-climate-chart].infobox {
         border: none !important;
         font-variant-numeric: lining-nums;
         margin-bottom: var(--figure-margin) !important;
@@ -1799,11 +1799,7 @@ th {
     /* Template:Weather box */
     /************************/
 
-    /* TODO: Multiple matches because ExpandTemplates is not marking child
-       templates itself (but it needs to, because not every instance of a thing
-       has a matching template expansion at the root )-:) */
-    [data-wiki-rs$="weather-box"],
-    [data-wiki-rs$="weatherbox"] {
+    [data-wiki-rs*=template-weather-box] {
         .wikitable {
             border-bottom: none;
             width: calc(100% + var(--table-padding-inline) * 2) !important;
@@ -1899,7 +1895,7 @@ th {
     /***********************************/
     /* Template:Historical populations */
     /***********************************/
-    [data-wiki-rs=template-historical-populations] {
+    [data-wiki-rs*=template-historical-populations] {
         border-bottom: none;
 
         margin-right: calc(var(--table-padding-inline) * -1) !important;

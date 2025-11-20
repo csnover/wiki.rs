@@ -18,7 +18,8 @@ use crate::{
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
-use std::{borrow::Cow, pin::pin, rc::Rc, time::Instant};
+use regex::Regex;
+use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
 
 /// Calls a Lua function.
 pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
@@ -341,6 +342,14 @@ pub fn call_template<W: WriteSurrogate + ?Sized>(
     );
 
     {
+        // TODO: This is related to `tag_blocks`. Do this, except without this
+        // disgusting hack, by making `FileMap` more like `codemap` again: all
+        // code lives in a flat address space and `Document` can tag
+        // *everything* properly by looking up what files correspond to the span
+        // currently being processed.
+        static DISGUSTING_HACK: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"^\s*<[^\s/>]+(?: data-wiki-rs="([^"]+)")?"#).unwrap());
+
         // At least 'Template:Color' builds HTML elements in pieces in a way
         // where it is impossible to parse them correctly before template
         // expansion is completed, which is very annoying because it requires
@@ -350,7 +359,33 @@ pub fn call_template<W: WriteSurrogate + ?Sized>(
         // (`<math>`, etc.).
         let mut evaluator = ExpandTemplates::new(ExpandMode::Include);
         evaluator.adopt_output(state, &sp, &root)?;
-        let partial = evaluator.finish();
+        let mut partial = evaluator.finish();
+
+        if sp.parent.is_some()
+            && let Some(hax) = DISGUSTING_HACK.captures(&partial)
+        {
+            let class_name = sp
+                .name
+                .key()
+                .to_ascii_lowercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
+
+            let (prefix, extra, suffix) = if let Some(existing) = hax.get(1) {
+                (
+                    existing.start(),
+                    format!("{} {class_name}", existing.as_str()),
+                    existing.end(),
+                )
+            } else {
+                (
+                    hax.get_match().end(),
+                    format!(r#" data-wiki-rs="{class_name}""#),
+                    hax.get_match().end(),
+                )
+            };
+
+            partial = String::from(&partial[..prefix]) + &extra + &partial[suffix..];
+        }
 
         let root = state.statics.parser.parse_no_expansion(&partial)?;
         let sp = sp.clone_with_source(FileMap::new(&partial));
