@@ -527,8 +527,11 @@ mod string {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let (Some(value), Some(len)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
-            let len = len.trim_ascii().parse::<usize>().unwrap_or(0);
+        if let (Some(value), Some(len)) = (
+            arguments.eval(state, 0)?.map(trim),
+            arguments.eval(state, 1)?.map(trim),
+        ) {
+            let len = len.parse::<usize>().unwrap_or(0);
             if value.len() < len {
                 let pad = arguments.eval(state, 2)?.map_or(Cow::Borrowed("0"), trim);
                 // log::trace!("padleft({value}, {len}, {pad})");
