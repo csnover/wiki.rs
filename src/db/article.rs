@@ -75,16 +75,20 @@ pub(super) struct ArticleDatabase {
 impl ArticleDatabase {
     /// Opens a raw `multistream.xml.bz2` file using memory mapping.
     pub(super) fn from_file(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let file = File::open(path)?;
-        let data = unsafe { Mmap::map(&file)? };
+        let path = path.as_ref();
+        let file = File::open(path).map_err(|err| Error::Io(err, path.into()))?;
+        // SAFETY: This data is only ever used immutably.
+        let data = unsafe { Mmap::map(&file).map_err(|err| Error::Io(err, path.into()))? };
+
+        // Maybe someone decompressed the file, or mixed up the index and
+        // database files.
+        if &data[0..2] != b"BZ" || &data[4..10] != b"\x31\x41\x59\x26\x53\x59" {
+            return Err(Error::Format(path.into()));
+        }
 
         let metadata = Self::database_info(&data)?;
 
-        Ok(Self {
-            // SAFETY: This data is only ever used immutably.
-            data: unsafe { Mmap::map(&file)? },
-            metadata,
-        })
+        Ok(Self { data, metadata })
     }
 
     /// Gets the article at the given index.
@@ -98,7 +102,7 @@ impl ArticleDatabase {
 
         match article {
             Some(article) => Self::parse_article(article),
-            None => Err(Error::ArticleNotFound),
+            None => Err(Error::NotFound),
         }
     }
 
@@ -115,7 +119,7 @@ impl ArticleDatabase {
 
         let mut decoded = Vec::from(br#"<pages xmlns="">"#);
         let mut reader = DecoderReader::new(bzip_data);
-        io::copy(&mut reader, &mut decoded)?;
+        io::copy(&mut reader, &mut decoded).map_err(Error::Decompression)?;
         decoded.extend(b"</pages>");
         Ok(String::from_utf8(decoded)?)
     }
@@ -131,7 +135,8 @@ impl ArticleDatabase {
         let mut decoded = BufReader::new(DecoderReader::new(data))
             .bytes()
             .take(OOPS_PROTECTION)
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Error::Decompression)?;
 
         if decoded.len() == OOPS_PROTECTION {
             return Err(Error::NotMultistream);
@@ -141,7 +146,7 @@ impl ArticleDatabase {
 
         let root = String::from_utf8(decoded)?
             .parse::<Element>()
-            .map_err(|_| Error::MissingSiteinfo)?;
+            .map_err(|_| Error::Siteinfo)?;
         let root_ns = root.ns();
 
         let siteinfo = try_get_child_ns(&root, "siteinfo", &root_ns)?;
@@ -154,15 +159,13 @@ impl ArticleDatabase {
             .map(|ns| {
                 let key = ns
                     .attr("key")
-                    .ok_or(Error::MissingProperty("key".into()))?
+                    .ok_or(Error::XmlProperty("key".into()))?
                     .parse::<i32>()?;
-                let case = ns
-                    .attr("case")
-                    .ok_or(Error::MissingProperty("case".into()))?;
+                let case = ns.attr("case").ok_or(Error::XmlProperty("case".into()))?;
                 let case = match case {
                     "first-letter" => NamespaceCase::FirstLetter,
                     "case-sensitive" => NamespaceCase::CaseSensitive,
-                    _ => return Err(Error::UnknownNamespaceCase(case.into())),
+                    _ => return Err(Error::NamespaceCase(case.into())),
                 };
                 let name = ns.text();
 
@@ -216,5 +219,5 @@ fn try_get_child<'a>(element: &'a Element, name: &str) -> Result<&'a Element, Er
 /// if it does not exist.
 fn try_get_child_ns<'a>(element: &'a Element, name: &str, ns: &str) -> Result<&'a Element, Error> {
     let child = element.get_child(name, ns);
-    child.ok_or_else(|| Error::MissingProperty(name.into()))
+    child.ok_or_else(|| Error::XmlProperty(name.into()))
 }

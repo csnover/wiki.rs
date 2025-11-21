@@ -59,7 +59,7 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
             Error::Database(error) => match error {
-                db::Error::ArticleNotFound => (StatusCode::NOT_FOUND, format!("{error}")),
+                db::Error::NotFound => (StatusCode::NOT_FOUND, format!("{error}")),
                 _ => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             },
             Error::Renderer(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),

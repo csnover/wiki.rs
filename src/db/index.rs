@@ -3,19 +3,22 @@
 use html_escape::encode_double_quoted_attribute;
 use memmap2::Mmap;
 use rayon::prelude::*;
-use std::{fs::File, path::Path, str::FromStr};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
-/// Errors which can occur when reading the dump index.
+/// Errors that may occur when reading the dump index.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    /// The offset column was missing from a line in the `index.txt`.
-    ///
-    /// ```text
-    /// 000000000:00000:TITLE
-    /// ^^^^^^^^^
-    /// ```
-    #[error("missing offset column in index")]
-    MissingOffset,
+    /// The index file appears to be compressed.
+    #[error("{0}: index file must be decompressed before running wiki.rs")]
+    Compressed(PathBuf),
+
+    /// An I/O error occurred reading from the index.
+    #[error("{1}: I/O error: {0}")]
+    Io(std::io::Error, PathBuf),
 
     /// The page ID column was missing from a line in the `index.txt`.
     ///
@@ -24,7 +27,7 @@ pub enum Error {
     ///           ^^^^^
     /// ```
     #[error("missing page ID column in index")]
-    MissingId,
+    PageId,
 
     /// The title column was missing from a line in the `index.txt`.
     ///
@@ -33,15 +36,20 @@ pub enum Error {
     ///                 ^^^^^
     /// ```
     #[error("missing page name column in index")]
-    MissingName,
+    PageName,
+
+    /// The offset column was missing from a line in the `index.txt`.
+    ///
+    /// ```text
+    /// 000000000:00000:TITLE
+    /// ^^^^^^^^^
+    /// ```
+    #[error("missing offset column in index")]
+    PageOffset,
 
     /// The offset or page ID column contained something other than an integer.
     #[error("failed integer conversion: {0}")]
     ParseInt(#[from] core::num::ParseIntError),
-
-    /// An I/O error occurred reading from the index.
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
 }
 
 /// An index entry.
@@ -60,9 +68,9 @@ impl<'a> TryFrom<&'a str> for IndexEntry<'a> {
 
     fn try_from(line: &'a str) -> Result<Self, Self::Error> {
         let mut line = line.splitn(3, ':');
-        let offset = u64::from_str(line.next().ok_or(Error::MissingOffset)?)?;
-        let page_id = u64::from_str(line.next().ok_or(Error::MissingId)?)?;
-        let page_name = line.next().ok_or(Error::MissingName)?;
+        let offset = u64::from_str(line.next().ok_or(Error::PageOffset)?)?;
+        let page_id = u64::from_str(line.next().ok_or(Error::PageId)?)?;
+        let page_name = line.next().ok_or(Error::PageName)?;
 
         Ok(Self {
             offset,
@@ -83,11 +91,25 @@ pub(super) struct Index<'a> {
 impl Index<'_> {
     /// Creates an [`Index`] from the file given by `path`.
     pub(super) fn from_file(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let file = File::open(path)?;
+        let path = path.as_ref();
+
+        let file = File::open(path).map_err(|err| Error::Io(err, path.into()))?;
 
         let (data, entries) = unsafe {
             // SAFETY: This data is only ever used immutably.
-            let data = Mmap::map(&file)?;
+            let data = Mmap::map(&file).map_err(|err| Error::Io(err, path.into()))?;
+
+            // Compressed index is not supported because it would need to either
+            // be decompressed to disk once, or it would need to be decompressed
+            // to memory every time the index is loaded. So it makes more sense
+            // to just get the user to do it themselves, since then they can
+            // control the process, instead of having a slow start-up and then
+            // wondering why they lost a gigabyte of disk space or whatever. The
+            // decompressed index always has ASCII digits at the start of the
+            // file.
+            if data[0..2].iter().any(|b| !b.is_ascii_digit()) {
+                return Err(Error::Compressed(path.into()));
+            }
 
             // SAFETY: Since the deref pointer is kernel allocated memory, it
             // will never move, but the borrow-checker does not understand this

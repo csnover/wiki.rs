@@ -19,56 +19,64 @@ use time::UtcDateTime;
 mod article;
 mod index;
 
-/// Errors which can occur when interacting with the article database.
+/// Errors that may occur when interacting with the article database.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Article was not found.
-    #[error("requested article not found")]
-    ArticleNotFound,
-
-    /// A required property was missing from the XML in the database.
-    #[error("missing property on page: {0}")]
-    MissingProperty(String),
-
-    /// Data from the database was not valid UTF-8.
-    #[error("invalid utf-8: {0}")]
-    InvalidUtf8(#[from] std::string::FromUtf8Error),
-
-    /// An ID from the database was not a valid number.
-    #[error("id error: {0}")]
-    InvalidInt(#[from] std::num::ParseIntError),
-
     /// A time value from the database was not a valid ISO-8601 time string.
     #[error("time error: {0}")]
     Date(#[from] time::error::Parse),
 
-    /// An I/O error ocurred reading from the database.
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    /// An I/O error occurred during decompression.
+    #[error("I/O error during decompression: {0}")]
+    Decompression(std::io::Error),
 
     /// A DOM error occurred when processing the XML in the database.
     #[error("DOM error: {0}")]
     Dom(#[from] minidom::Error),
 
+    /// The database file is in an unexpected format.
+    #[error("{0}: file is not a compressed multistream bz2 file")]
+    Format(std::path::PathBuf),
+
+    /// Data from the database was not valid UTF-8.
+    #[error("invalid utf-8: {0}")]
+    FromUtf8(#[from] std::string::FromUtf8Error),
+
     /// An error occurred within the index reader.
     #[error(transparent)]
     Index(#[from] index::Error),
 
-    /// You are running wiki.rs on a potato.
-    #[error("offset out of range of memory address space: {0}")]
-    TryFrom(#[from] core::num::TryFromIntError),
+    /// An I/O error ocurred reading from the database.
+    #[error("{1}: I/O error: {0}")]
+    Io(std::io::Error, std::path::PathBuf),
 
-    /// Database is from another dimension.
-    #[error("could not read siteinfo from database dump")]
-    MissingSiteinfo,
+    /// Wrong kind of database.
+    #[error("unknown namespace case rule '{0}' in siteinfo")]
+    NamespaceCase(String),
+
+    /// Article was not found.
+    #[error("requested article not found")]
+    NotFound,
 
     /// Wrong kind of database.
     #[error("database is not multi-stream")]
     NotMultistream,
 
-    /// Wrong kind of database.
-    #[error("unknown namespace case rule '{0}' in siteinfo")]
-    UnknownNamespaceCase(String),
+    /// An ID from the database was not a valid number.
+    #[error("id error: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
+
+    /// Database is from another dimension.
+    #[error("could not read siteinfo from database dump")]
+    Siteinfo,
+
+    /// You are running wiki.rs on a potato.
+    #[error("offset out of range of memory address space: {0}")]
+    TryFromInt(#[from] core::num::TryFromIntError),
+
+    /// A required property was missing from the XML in the database.
+    #[error("missing property on page: {0}")]
+    XmlProperty(String),
 }
 
 /// A MediaWiki multistream database reader.
@@ -171,7 +179,7 @@ impl Database<'_> {
         let time = Instant::now();
         self.index
             .find_article(title)
-            .ok_or(Error::ArticleNotFound)
+            .ok_or(Error::NotFound)
             .and_then(|entry| {
                 log::trace!("Located article in {:.2?}", time.elapsed());
                 let time = Instant::now();

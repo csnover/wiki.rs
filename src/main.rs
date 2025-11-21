@@ -109,6 +109,23 @@ impl core::str::FromStr for LoadMode {
     }
 }
 
+/// Errors that may occur when parsing arguments.
+#[derive(Debug, thiserror::Error)]
+enum ArgsError {
+    /// Missing the database argument.
+    #[error("missing multistream.xml.bz2 argument")]
+    Database,
+    /// Extra unknown junk on the command line.
+    #[error("unknown arguments: {}", _0.display())]
+    Extra(std::ffi::OsString),
+    /// Missing the index argument.
+    #[error("missing index.txt argument")]
+    Index,
+    /// Some other parsing error.
+    #[error(transparent)]
+    Pico(#[from] pico_args::Error),
+}
+
 /// Command-line arguments.
 struct Args {
     /// The path to `database.xml.bz2`.
@@ -130,20 +147,20 @@ impl Args {
     fn free_arg(
         args: &mut pico_args::Arguments,
         key: &str,
-        err: &'static str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+        err: ArgsError,
+    ) -> Result<String, ArgsError> {
         if let Some(arg) = args.opt_free_from_str::<String>()? {
             Ok(arg)
         } else if let Ok(arg) = std::env::var(key) {
             Ok(arg)
         } else {
-            Err(err.into())
+            Err(err)
         }
     }
 
     /// Tries to create an [`Args`] from the given command line arguments and
     /// environment variables.
-    fn new() -> Result<Args, Box<dyn std::error::Error>> {
+    fn new() -> Result<Args, ArgsError> {
         let mut args = pico_args::Arguments::from_env();
         let bind = args
             .opt_value_from_str("--bind")?
@@ -151,21 +168,12 @@ impl Args {
         let base_uri = args.opt_value_from_str("--base-uri")?;
         let load_mode = args.opt_value_from_str("--mode")?.unwrap_or_default();
         let _ = args.contains("--");
-        let index_path =
-            Self::free_arg(&mut args, "WIKI_INDEX_FILE", "Missing index file argument")?;
-        let articles_path = Self::free_arg(
-            &mut args,
-            "WIKI_ARTICLE_DB",
-            "Missing article database argument",
-        )?;
+        let index_path = Self::free_arg(&mut args, "WIKI_INDEX_FILE", ArgsError::Index)?;
+        let articles_path = Self::free_arg(&mut args, "WIKI_ARTICLE_DB", ArgsError::Database)?;
 
         let rest = args.finish();
         if !rest.is_empty() {
-            return Err(format!(
-                "Unknown arguments: {}",
-                rest.join(OsStr::new(" ")).display()
-            )
-            .into());
+            return Err(ArgsError::Extra(rest.join(OsStr::new(" "))));
         }
 
         Ok(Self {
@@ -180,14 +188,14 @@ impl Args {
 
 /// Don’t run this. You’ve been warned!
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     let args = match Args::new() {
         Ok(args) => args,
         Err(err) => {
             usage();
-            return Err(err);
+            return Err(err)?;
         }
     };
 
@@ -264,4 +272,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Listening at {}", args.bind);
 
     axum::serve(listener, app).await.map_err(Into::into)
+}
+
+/// Uses the [`Display`](core::fmt::Display) formatter for an error even when
+/// the [`Debug`](core::fmt::Debug) formatter is requested.
+struct DisplayError(Box<dyn std::error::Error>);
+
+impl core::fmt::Debug for DisplayError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl<E: Into<Box<dyn std::error::Error>>> From<E> for DisplayError {
+    fn from(e: E) -> Self {
+        Self(e.into())
+    }
+}
+
+fn main() -> Result<(), DisplayError> {
+    run().map_err(Into::into)
 }
