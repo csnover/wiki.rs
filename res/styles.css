@@ -1568,7 +1568,9 @@ th {
     .thumb {
         font-family: var(--sans);
         /* api.php?meta=siteinfo&siprop=general thumblimits maxes out at 400 */
-        max-width: 400px;
+        /* !important: 'Module:Wide image' defaults non-existing image width to
+           0 (and therefore max-width to 10px) */
+        max-width: 400px !important;
 
         .thumbcaption {
             margin-top: 0;
