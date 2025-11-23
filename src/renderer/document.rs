@@ -125,24 +125,43 @@ impl Document {
         //
         // 1. Any multiple of two sequential newlines break a graf;
         // 2. A newline after a break emits a `<br>` into the new graf;
-        // 3. When a graf is broken, the next element may be a non-graf, so it
+        // 3. If a line breaks immediately after the start of a tag, ignore it
+        //    (the actual rule seems to be more confusing and goes something
+        //    like “if a line containing only phrasing content ends in a newline
+        //    without a closing tag for a block-level element then it should be
+        //    wrapped in a `<p>`” or something bizarre like this);
+        // 4. When a graf is broken, the next element may be a non-graf, so it
         //    should not emit the new tag straight away.
-        if let Some(Node::Graf(graf)) = self.stack.last_mut() {
-            match graf {
-                Graf::Start => {
-                    write!(self.html, "<br>")?;
-                    *graf = Graf::Break;
-                }
-                Graf::Text => *graf = Graf::Break,
-                Graf::Break => {
-                    writeln!(self.html, "</p>")?;
-                    *graf = Graf::AfterBreak;
-                }
-                Graf::AfterBreak => {
-                    write!(self.html, "<p><br>")?;
-                    *graf = Graf::Break;
+        // TODO: 'Template:Infobox company' writes `<td><div/>,<div/></td>` and
+        // expects not to get a graf in the middle (for e.g. `hq_location`).
+        match self.stack.last_mut() {
+            Some(Node::Graf(graf)) => {
+                match graf {
+                    Graf::Start => {
+                        write!(self.html, "<br>")?;
+                        *graf = Graf::Break;
+                    }
+                    Graf::Text => *graf = Graf::Break,
+                    Graf::Break => {
+                        writeln!(self.html, "</p>")?;
+                        *graf = Graf::AfterBreak;
+                    }
+                    Graf::AfterBreak => {
+                        // Technically maybe this is supposed to introduce a
+                        // `<p><br>`, but it seems like everywhere there is a long
+                        // run of whitespace, this results in undesirable output,
+                        // and at least it complicates whatever logic is used to
+                        // make 'Template:TemplateData header' emit only a `<p>`
+                        write!(self.html, "<p>")?;
+                        *graf = Graf::Break;
+                    }
                 }
             }
+            Some(Node::Tag(_, body @ TagBody::Inline)) => {
+                *body = TagBody::Block;
+                self.stack.push(Node::Graf(Graf::AfterBreak));
+            }
+            _ => {}
         }
 
         self.last_char = '\n';
@@ -187,6 +206,8 @@ impl Document {
         } else if self.needs_graf() {
             write!(self.html, "<p>")?;
             self.stack.push(Node::Graf(Graf::Start));
+        } else if let Some(Node::Tag(_, body @ TagBody::Empty)) = self.stack.last_mut() {
+            *body = TagBody::Inline;
         }
 
         Ok(())
@@ -218,12 +239,15 @@ impl Document {
         }
 
         if PHRASING_TAGS.contains(&tag) {
+            if let Some(Node::Tag(_, body)) = self.stack.last_mut() {
+                *body = TagBody::Inline;
+            }
             self.expect_graf()?;
         } else {
-            self.seen_block = true;
-            if let Some(Node::Tag(_, has_content)) = self.stack.last_mut() {
-                *has_content = true;
+            if let Some(Node::Tag(_, body)) = self.stack.last_mut() {
+                *body = TagBody::Block;
             }
+            self.seen_block = true;
         }
 
         write!(self.html, "<{tag}")?;
@@ -259,7 +283,7 @@ impl Document {
 
         self.html.write_char('>')?;
         if !VOID_TAGS.contains(&tag) {
-            self.stack.push(Node::Tag(tag, false));
+            self.stack.push(Node::Tag(tag, TagBody::Empty));
         }
         Ok(())
     }
@@ -359,7 +383,7 @@ impl Document {
         // blocks means a general selector is impossible.
         let parent = self.stack.last();
         (!self.fragment && parent.is_none())
-            || matches!(parent, Some(Node::Tag(tag, true)) if !PHRASING_TAGS.contains(tag))
+            || matches!(parent, Some(Node::Tag(tag, TagBody::Block)) if !PHRASING_TAGS.contains(tag))
     }
 }
 
@@ -836,7 +860,9 @@ impl Surrogate<Error> for Document {
         _span: Span,
         style: TextStyle,
     ) -> Result {
-        self.expect_graf()?;
+        if matches!(self.text_style_emitter, TextStyleEmitter::None) {
+            self.expect_graf()?;
+        }
         self.text_style_emitter.emit(&mut self.html, style)?;
         Ok(())
     }
@@ -941,13 +967,24 @@ impl Surrogate<Error> for Document {
     }
 }
 
+/// HTML tag state.
+#[derive(Debug)]
+enum TagBody {
+    /// The tag is empty.
+    Empty,
+    /// The tag contains inline content.
+    Inline,
+    /// The tag contains block and optionally inline content.
+    Block,
+}
+
 /// An HTML tree node.
 #[derive(Debug)]
 enum Node {
     /// A paragraph.
     Graf(Graf),
     /// An HTML tag.
-    Tag(Cow<'static, str>, bool),
+    Tag(Cow<'static, str>, TagBody),
     /// A run of Wikitext list items.
     List(ListEmitter),
     /// An HTML attribute.
