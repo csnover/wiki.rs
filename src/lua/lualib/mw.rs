@@ -318,14 +318,15 @@ impl LuaEngine {
     /// Creates a fake “child” frame with the given fake `title` and fake
     /// `args`.
     ///
-    /// The purpose of this function is not clear yet since Lua modules can just
-    /// store and communicate information directly.
+    /// This function is, at least, used to perform inter-module calls to
+    /// module functions which expect to receive a frame object. For an example,
+    /// see 'Module:Hatnote inline'.
     fn new_child_frame<'gc>(
         &self,
         ctx: Context<'gc>,
         (frame_id, title, args): (VmString<'gc>, Value<'gc>, Table<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        log::trace!("mw.newChildFrame({frame_id:?}, {title:?}, {args:?})");
+        // log::trace!("mw.newChildFrame({frame_id:?}, {title:?}, {args:?})");
 
         let frame = with_sp(frame_id.to_str()?, self.sp.borrow().as_deref(), |sp| {
             let title = if title.to_bool() {
