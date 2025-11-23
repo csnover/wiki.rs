@@ -126,7 +126,7 @@ pub(super) fn render_parameter<W: WriteSurrogate + ?Sized>(
 
     let key = sp.eval(state, name)?;
 
-    if !sp.expand_raw(out, state, &key)? {
+    if !sp.expand_raw(out, state, key.trim_ascii())? {
         if let Some(default) = default {
             out.adopt_tokens(state, sp, default)?;
         } else {

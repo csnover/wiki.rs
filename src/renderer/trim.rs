@@ -4,6 +4,7 @@ use super::{
     Error, Result, State, WriteSurrogate,
     stack::StackFrame,
     surrogate::{self, Surrogate},
+    template,
 };
 use crate::wikitext::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output,
@@ -387,12 +388,16 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         name: &[Spanned<Token>],
         default: Option<&[Spanned<Token>]>,
     ) -> Result {
-        // TODO: Technically to work correctly this should be inspecting the
-        // *output* of `self.out` but the only way that would be possible would
-        // be to have these functions all return strings and that is yet another
-        // rearchitecting that I am not keen to do now.
-        self.flush(state)?;
-        self.out.adopt_parameter(state, sp, span, name, default)
+        // Expanded non-numeric key values are trimmed by using `Trim`, so this
+        // would create an infinitely expanding monomorphic type
+        template::render_parameter(
+            self as &mut dyn WriteSurrogate,
+            state,
+            sp,
+            span,
+            name,
+            default,
+        )
     }
 
     #[inline]
@@ -570,8 +575,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         target: &[Spanned<Token>],
         arguments: &[Spanned<Argument>],
     ) -> Result {
-        self.flush(state)?;
-        self.out.adopt_template(state, sp, span, target, arguments)
+        template::render_template(self, state, sp, span, target, arguments)
     }
 }
 
@@ -874,12 +878,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for TrimLink<'_, W> {
         name: &[Spanned<Token>],
         default: Option<&[Spanned<Token>]>,
     ) -> Result {
-        // TODO: Technically to work correctly this should be inspecting the
-        // *output* of `self.out` but the only way that would be possible would
-        // be to have these functions all return strings and that is yet another
-        // rearchitecting that I am not keen to do now.
-        self.emitted = true;
-        self.out.adopt_parameter(state, sp, span, name, default)
+        template::render_parameter(self, state, sp, span, name, default)
     }
 
     #[inline]
@@ -1057,7 +1056,6 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for TrimLink<'_, W> {
         target: &[Spanned<Token>],
         arguments: &[Spanned<Argument>],
     ) -> Result {
-        self.emitted = true;
-        self.out.adopt_template(state, sp, span, target, arguments)
+        template::render_template(self, state, sp, span, target, arguments)
     }
 }
