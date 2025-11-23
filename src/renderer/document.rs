@@ -564,7 +564,7 @@ impl Surrogate<Error> for Document {
                 }
             )
         })?;
-        self.adopt_tokens(state, sp, content)?;
+        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
         self.end_tag(level.tag_name())
     }
 
