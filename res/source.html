@@ -34,6 +34,10 @@
                 code {
                     white-space: pre-wrap;
                 }
+
+                &:has(+ form) {
+                    margin-bottom: var(--bottom-panel);
+                }
             }
 
             button {
@@ -80,13 +84,24 @@
             }
 
             .boopables {
+                font-family: var(--sans);
                 justify-content: end;
 
+                > * + * {
+                    margin-top: .5em;
+                }
+
                 > :first-child {
-                    line-height: 1.2;
-                    margin-left: 1.2em;
-                    margin-bottom: .5em;
-                    text-indent: -1.2em;
+                    > * {
+                        line-height: 1.2;
+                        margin-left: 1.2em;
+                        text-indent: -1.2em;
+
+                        + * {
+                            margin-top: .25em;
+                            margin-left: 2.4em;
+                        }
+                    }
                 }
             }
 
@@ -95,6 +110,7 @@
                 border: none;
                 color: inherit;
                 font-family: var(--mono);
+                font-size: 1em;
                 resize: none;
 
                 + textarea {
@@ -104,12 +120,15 @@
                 }
             }
 
-            label:has(input) {
+            label {
                 cursor: pointer;
             }
 
-            table:has(+ form) {
-                margin-bottom: var(--bottom-panel);
+            div:has(> label > [name=tree]:not(:checked)) + div {
+                cursor: default;
+                opacity: .7;
+                pointer-events: none;
+                user-select: none;
             }
 
             <%= crate::pages::filter::css(&css) %>
@@ -135,7 +154,10 @@
                     <textarea name="args" autocorrect="off" autocomplete="off" placeholder="Optional template arguments, in the usual k=v|1=b|2|3 format"><%= form.args %></textarea>
                 </div>
                 <div class="boopables">
-                    <div><label><input name="tree" value="true" type="checkbox"<% if form.tree == Some(true) { %> checked<% } %>> Show PP<br>tree (hehe)</label></div>
+                    <div>
+                        <div><label><input name="tree" value="true" type="checkbox"<% if form.tree == Some(true) { %> checked<% } %>> Show PP<br>tree (hehe)</label></div>
+                        <div><label><input name="markers" value="true" type="checkbox"<% if form.markers == Some(true) { %> checked<% } %>> Unstrip<br>markers</label></div>
+                    </div>
                     <button><%- if time::UtcDateTime::now().second() & 1 == 1 { "Pray" } else { "Weep" } %></button>
                 </div>
             </form>

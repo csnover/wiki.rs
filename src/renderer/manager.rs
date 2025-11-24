@@ -40,6 +40,8 @@ pub enum Command {
         args: String,
         /// The Wikitext.
         code: String,
+        /// If true, append marker content to the output.
+        markers: bool,
         /// If true, return just the final parse tree instead of the rendering.
         tree: bool,
     },
@@ -105,9 +107,12 @@ impl r2d2::ManageConnection for RenderManager {
                         load_mode,
                         redirect,
                     } => render_article(&mut statics, &article, load_mode, redirect),
-                    Command::Eval { args, code, tree } => {
-                        render_string(&mut statics, &code, &args, tree)
-                    }
+                    Command::Eval {
+                        args,
+                        code,
+                        markers,
+                        tree,
+                    } => render_string(&mut statics, &code, &args, tree, markers),
                 };
                 let _ = tx.send(output);
             }
@@ -157,7 +162,7 @@ fn render_article(
         FileMap::new(&article.body),
     );
 
-    render(statics, load_mode, article.date, &sp, false)
+    render(statics, load_mode, article.date, &sp, false, false)
 }
 
 /// Main renderer entrypoint for eval.
@@ -166,12 +171,20 @@ fn render_string(
     source: &str,
     args: &str,
     tree: bool,
+    markers: bool,
 ) -> Result<RenderOutput, Error> {
     let kvs = statics.parser.debug_parse_args(args)?;
     let kvs = kvs.iter().map(super::Kv::Argument).collect::<Vec<_>>();
     let sp = StackFrame::new(Title::new("<args>", None), FileMap::new(args));
     let sp = sp.chain(Title::new("<eval>", None), FileMap::new(source), &kvs)?;
-    render(statics, LoadMode::Module, UtcDateTime::now(), &sp, tree)
+    render(
+        statics,
+        LoadMode::Module,
+        UtcDateTime::now(),
+        &sp,
+        tree,
+        markers,
+    )
 }
 
 /// Main renderer entrypoint.
@@ -181,6 +194,7 @@ fn render(
     date: UtcDateTime,
     sp: &StackFrame<'_>,
     only_preprocess: bool,
+    markers: bool,
 ) -> Result<RenderOutput, Error> {
     let root = statics.parser.parse(&sp.source, false)?;
 
@@ -204,8 +218,16 @@ fn render(
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
 
     if only_preprocess {
+        let mut content = format!("{:#?}", inspect(&sp.source, &root.root));
+        if markers {
+            for (index, marker) in state.strip_markers.0.iter().enumerate() {
+                use core::fmt::Write as _;
+                write!(content, "\n\n=== Marker {index} ===\n\n{marker}\n")?;
+            }
+        }
+
         Ok(RenderOutput {
-            content: format!("{:#?}", inspect(&sp.source, &root.root)),
+            content,
             indicators: <_>::default(),
             outline: <_>::default(),
             styles: <_>::default(),

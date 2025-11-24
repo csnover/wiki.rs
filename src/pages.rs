@@ -187,6 +187,8 @@ pub struct EvalForm {
     args: String,
     /// The Wikitext to evaluate.
     code: String,
+    /// If `Some(true)`, also show the contents of strip markers.
+    markers: Option<bool>,
     /// If `Some(true)`, show the parse tree instead of the rendered output.
     tree: Option<bool>,
 }
@@ -199,6 +201,7 @@ pub async fn eval_post(
     let command = renderer::Command::Eval {
         args: body.args.clone(),
         code: body.code.clone(),
+        markers: body.markers == Some(true),
         tree: body.tree == Some(true),
     };
     let output = call_renderer(&state, command)?;
@@ -472,10 +475,10 @@ fn raw_source(
     {
         /// The base path for URLs.
         base_path: &'a str,
-        /// The original source text.
-        form: Option<EvalForm>,
         /// The page CSS.
         css: String,
+        /// The original source text.
+        form: Option<EvalForm>,
         /// The lines of source code.
         lines: I,
     }
