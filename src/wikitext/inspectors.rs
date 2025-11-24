@@ -65,7 +65,7 @@ where
 }
 
 /// A debug formatter for [`Argument`].
-pub struct ArgumentInspector<'a>(&'a FileMap<'a>, &'a Argument);
+pub struct ArgumentInspector<'a>(&'a FileMap<'a>, &'a Spanned<Argument>);
 
 impl<'a> TInspector<'a> for ArgumentInspector<'a> {
     type Inspectee = Spanned<Argument>;
@@ -77,6 +77,7 @@ impl<'a> TInspector<'a> for ArgumentInspector<'a> {
 
 impl fmt::Debug for ArgumentInspector<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&(span_name("Argument", self.0, self.1) + " "))?;
         f.debug_map()
             .entry(
                 &self
