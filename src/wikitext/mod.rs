@@ -104,6 +104,11 @@ impl<'a> Parser<'a> {
             root,
         })
     }
+
+    /// Parses a template argument list, for debugging purposes.
+    pub fn debug_parse_args(&self, args: &str) -> Result<Vec<Spanned<Argument>>, Error> {
+        parser::wikitext::debug_template_args(args, self, &<_>::default())
+    }
 }
 
 /// A template argument or XML-like tag attribute.

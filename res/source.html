@@ -7,7 +7,10 @@
         <title>wiki.rs</title>
         <link rel="stylesheet" href="<%= base_path %>/styles.css">
         <style>
-            :root { padding: 1rem; }
+            :root {
+                --bottom-panel: 8rlh;
+                padding: 1rem;
+            }
 
             table {
                 align-items: baseline;
@@ -55,10 +58,36 @@
                 border-top: thick solid;
                 bottom: 0;
                 display: flex;
+                height: var(--bottom-panel);
                 left: 0;
                 padding: .5em;
                 position: fixed;
                 right: 0;
+            }
+
+            .inputs,
+            .boopables {
+                display: flex;
+                flex-direction: column;
+
+                > :first-child {
+                    flex: 1;
+                }
+            }
+
+            .inputs {
+                flex: 1;
+            }
+
+            .boopables {
+                justify-content: end;
+
+                > :first-child {
+                    line-height: 1.2;
+                    margin-left: 1.2em;
+                    margin-bottom: .5em;
+                    text-indent: -1.2em;
+                }
             }
 
             textarea {
@@ -66,9 +95,21 @@
                 border: none;
                 color: inherit;
                 font-family: var(--mono);
-                flex: 1;
-                min-height: 8lh;
                 resize: none;
+
+                + textarea {
+                    border-top: thin solid var(--border-fg);
+                    min-height: calc(var(--bottom-panel) * .25);
+                    padding-top: .5em;
+                }
+            }
+
+            label:has(input) {
+                cursor: pointer;
+            }
+
+            table:has(+ form) {
+                margin-bottom: var(--bottom-panel);
             }
 
             <%= crate::pages::filter::css(&css) %>
@@ -87,10 +128,16 @@
                 </tr>
             <% } %>
         </table>
-        <% if let Some(code) = code { %>
-            <form method="post">
-                <textarea name="code" autofocus autocorrect="off" autocomplete="off" placeholder="Wikitext goes here, to increase and/or reduce confusion"><%= code %></textarea>
-                <button><%- if time::UtcDateTime::now().second() & 1 == 1 { "Pray" } else { "Weep" } %></button>
+        <% if let Some(form) = form { %>
+            <form method="post" class="syntect-code">
+                <div class="inputs">
+                    <textarea name="code" autofocus autocorrect="off" autocomplete="off" placeholder="Wikitext goes here, to increase and/or reduce confusion"><%= form.code %></textarea>
+                    <textarea name="args" autocorrect="off" autocomplete="off" placeholder="Optional template arguments, in the usual k=v|1=b|2|3 format"><%= form.args %></textarea>
+                </div>
+                <div class="boopables">
+                    <div><label><input name="tree" value="true" type="checkbox"<% if form.tree == Some(true) { %> checked<% } %>> Show PP<br>tree (hehe)</label></div>
+                    <button><%- if time::UtcDateTime::now().second() & 1 == 1 { "Pray" } else { "Weep" } %></button>
+                </div>
             </form>
         <% } %>
     </body>

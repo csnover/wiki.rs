@@ -176,24 +176,33 @@ pub async fn article(
 
 /// The ad-hoc Wikitext expression evaluator, initial page.
 pub async fn eval_get(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
-    raw_source(state.base_uri.path(), "", "html", Some("")).map(IntoResponse::into_response)
+    raw_source(state.base_uri.path(), "", "html", Some(<_>::default()))
+        .map(IntoResponse::into_response)
 }
 
 /// Form options for `/eval`.
-#[derive(serde::Deserialize)]
-pub struct EvalBody {
+#[derive(Default, serde::Deserialize)]
+pub struct EvalForm {
+    /// Arguments to set in the environment for parameter replacements.
+    args: String,
     /// The Wikitext to evaluate.
     code: String,
+    /// If `Some(true)`, show the parse tree instead of the rendered output.
+    tree: Option<bool>,
 }
 
 /// The ad-hoc Wikitext expression evaluator.
 pub async fn eval_post(
     State(state): State<AppState>,
-    Form(EvalBody { code }): Form<EvalBody>,
+    Form(body): Form<EvalForm>,
 ) -> Result<impl IntoResponse, Error> {
-    let command = renderer::Command::Eval(code.clone());
+    let command = renderer::Command::Eval {
+        args: body.args.clone(),
+        code: body.code.clone(),
+        tree: body.tree == Some(true),
+    };
     let output = call_renderer(&state, command)?;
-    raw_source(state.base_uri.path(), &output.content, "html", Some(&code))
+    raw_source(state.base_uri.path(), &output.content, "html", Some(body))
         .map(IntoResponse::into_response)
 }
 
@@ -446,7 +455,7 @@ fn raw_source(
     base_path: &str,
     source: &str,
     model: &str,
-    code: Option<&str>,
+    form: Option<EvalForm>,
 ) -> Result<Html<String>, Error> {
     use syntect::{
         highlighting::ThemeSet,
@@ -464,7 +473,7 @@ fn raw_source(
         /// The base path for URLs.
         base_path: &'a str,
         /// The original source text.
-        code: Option<&'a str>,
+        form: Option<EvalForm>,
         /// The page CSS.
         css: String,
         /// The lines of source code.
@@ -543,8 +552,8 @@ fn raw_source(
 
     RawSource {
         base_path,
-        code,
         css,
+        form,
         lines,
     }
     .render_once()
@@ -558,7 +567,7 @@ pub fn raw_source(
     _: &str,
     source: &str,
     _: &str,
-    _: Option<&str>,
+    _: Option<EvalForm>,
 ) -> Result<impl IntoResponse, Error> {
     Ok(source.to_string())
 }

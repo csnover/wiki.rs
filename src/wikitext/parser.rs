@@ -1613,6 +1613,12 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     >)
     { t }
 
+    /// A minimal parser for template arguments. Used for debugging.
+    pub rule debug_template_args() -> Vec<Spanned<Argument>>
+    = ctx:({ Context::default().with_prod_kind(Some(ProdKind::Template)) })
+      t:(template_arg_empty() / template_arg(&ctx)) ** (nl_comment_space()* "|")
+    { t }
+
     /// An empty template argument.
     ///
     /// ```wikitext

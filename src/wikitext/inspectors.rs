@@ -7,11 +7,35 @@ use crate::wikitext::{
 use core::fmt::{self, Write as _};
 
 /// Returns a debug inspector for a token list using the given source code.
-pub fn inspect<'a>(
-    input: &'a FileMap<'a>,
-    tree: &'a [Spanned<Token>],
-) -> VInspector<'a, TokenInspector<'a>> {
-    VInspector::<TokenInspector<'a>>(input, tree)
+pub fn inspect<'a, T>(input: &'a FileMap<'a>, tree: &'a [T]) -> VInspector<'a, T::Inspector<'a>>
+where
+    T: Inspectable,
+    T::Inspector<'a>: TInspector<'a, Inspectee = T>,
+{
+    VInspector::<'a, T::Inspector<'a>>(input, tree)
+}
+
+/// An inspectable type.
+pub trait Inspectable {
+    /// The default inspector for the type.
+    type Inspector<'a>: TInspector<'a>;
+}
+
+/// Convenience macro for defining inspectable types.
+macro_rules! inspectable {
+    ($($ty:ty => $by:ident),*, $(,)?) => {
+        $(impl Inspectable for Spanned<$ty> {
+            type Inspector<'a> = $by<'a>;
+        })*
+    }
+}
+
+inspectable! {
+    AnnoAttribute => AnnoAttrInspector,
+    Argument => ArgumentInspector,
+    LangFlags => LangFlagsInspector,
+    LangVariant => LangVariantInspector,
+    Token => TokenInspector,
 }
 
 /// A trait for debug formatting of various parser items.
@@ -41,7 +65,7 @@ where
 }
 
 /// A debug formatter for [`Argument`].
-struct ArgumentInspector<'a>(&'a FileMap<'a>, &'a Argument);
+pub struct ArgumentInspector<'a>(&'a FileMap<'a>, &'a Argument);
 
 impl<'a> TInspector<'a> for ArgumentInspector<'a> {
     type Inspectee = Spanned<Argument>;
@@ -66,7 +90,7 @@ impl fmt::Debug for ArgumentInspector<'_> {
 }
 
 /// A debug formatter for [`AnnoAttribute`].
-struct AnnoAttrInspector<'a>(&'a FileMap<'a>, &'a AnnoAttribute);
+pub struct AnnoAttrInspector<'a>(&'a FileMap<'a>, &'a AnnoAttribute);
 
 impl<'a> TInspector<'a> for AnnoAttrInspector<'a> {
     type Inspectee = Spanned<AnnoAttribute>;
@@ -91,7 +115,7 @@ impl fmt::Debug for AnnoAttrInspector<'_> {
 }
 
 /// A debug formatter for [`LangFlags`].
-struct LangFlagsInspector<'a>(&'a FileMap<'a>, &'a LangFlags);
+pub struct LangFlagsInspector<'a>(&'a FileMap<'a>, &'a LangFlags);
 
 impl<'a> TInspector<'a> for LangFlagsInspector<'a> {
     type Inspectee = Spanned<LangFlags>;
@@ -115,7 +139,7 @@ impl fmt::Debug for LangFlagsInspector<'_> {
 }
 
 /// A debug formatter for [`LangVariant`].
-struct LangVariantInspector<'a>(&'a FileMap<'a>, &'a LangVariant);
+pub struct LangVariantInspector<'a>(&'a FileMap<'a>, &'a LangVariant);
 
 impl<'a> TInspector<'a> for LangVariantInspector<'a> {
     type Inspectee = Spanned<LangVariant>;

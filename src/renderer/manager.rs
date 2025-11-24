@@ -16,7 +16,7 @@ use crate::{
     lua::{new_vm, reset_vm},
     php::DateTime,
     title::Title,
-    wikitext::{FileMap, Parser},
+    wikitext::{FileMap, Parser, inspect},
 };
 use axum::http::Uri;
 use schnellru::LruMap;
@@ -35,7 +35,14 @@ pub enum Command {
         redirect: bool,
     },
     /// Render some arbitrary Wikitext.
-    Eval(String),
+    Eval {
+        /// Arguments for parameters in the Wikitext.
+        args: String,
+        /// The Wikitext.
+        code: String,
+        /// If true, return just the final parse tree instead of the rendering.
+        tree: bool,
+    },
 }
 
 /// The input format for a renderer channel message.
@@ -98,7 +105,9 @@ impl r2d2::ManageConnection for RenderManager {
                         load_mode,
                         redirect,
                     } => render_article(&mut statics, &article, load_mode, redirect),
-                    Command::Eval(source) => render_string(&mut statics, &source),
+                    Command::Eval { args, code, tree } => {
+                        render_string(&mut statics, &code, &args, tree)
+                    }
                 };
                 let _ = tx.send(output);
             }
@@ -148,14 +157,21 @@ fn render_article(
         FileMap::new(&article.body),
     );
 
-    render(statics, load_mode, article.date, &sp)
+    render(statics, load_mode, article.date, &sp, false)
 }
 
 /// Main renderer entrypoint for eval.
-fn render_string(statics: &mut Statics, source: &str) -> Result<RenderOutput, Error> {
-    let sp = StackFrame::new(Title::new("<eval>", None), FileMap::new(source));
-
-    render(statics, LoadMode::Module, UtcDateTime::now(), &sp)
+fn render_string(
+    statics: &mut Statics,
+    source: &str,
+    args: &str,
+    tree: bool,
+) -> Result<RenderOutput, Error> {
+    let kvs = statics.parser.debug_parse_args(args)?;
+    let kvs = kvs.iter().map(super::Kv::Argument).collect::<Vec<_>>();
+    let sp = StackFrame::new(Title::new("<args>", None), FileMap::new(args));
+    let sp = sp.chain(Title::new("<eval>", None), FileMap::new(source), &kvs)?;
+    render(statics, LoadMode::Module, UtcDateTime::now(), &sp, tree)
 }
 
 /// Main renderer entrypoint.
@@ -164,6 +180,7 @@ fn render(
     load_mode: LoadMode,
     date: UtcDateTime,
     sp: &StackFrame<'_>,
+    only_preprocess: bool,
 ) -> Result<RenderOutput, Error> {
     let root = statics.parser.parse(&sp.source, false)?;
 
@@ -182,10 +199,20 @@ fn render(
     let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
     preprocessor.adopt_output(&mut state, sp, &root)?;
     let source = preprocessor.finish();
+
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
 
-    let mut renderer = Document::new(false);
-    renderer.adopt_output(&mut state, &sp, &root)?;
-    Ok(renderer.finish(state))
+    if only_preprocess {
+        Ok(RenderOutput {
+            content: format!("{:#?}", inspect(&sp.source, &root.root)),
+            indicators: <_>::default(),
+            outline: <_>::default(),
+            styles: <_>::default(),
+        })
+    } else {
+        let mut renderer = Document::new(false);
+        renderer.adopt_output(&mut state, &sp, &root)?;
+        Ok(renderer.finish(state))
+    }
 }
