@@ -532,8 +532,21 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     token,
                     Spanned { node: Token::Comment { .. }, .. }
                 )
+            }).map(|comment| {
+                (comment, attribute.node.content.is_empty())
             })
         });
+
+        let comment = comment.map(|(comment, is_empty)| {
+            // If the comment was the only thing in the attribute, it was not
+            // actually an attribute. 'Template:Markup/row' triggers this in
+            // non-include mode
+            if is_empty {
+                t.node.pop();
+            }
+            comment
+        });
+
         let t = t.map_node(|attributes| Token::TableStart { attributes });
         if let Some(comment) = comment {
             vec![t, comment]
@@ -860,9 +873,14 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     = space_or_newline_or_solidus()*
       t:spanned(<
         name:attribute_name(ctx, <generic_attribute_name_piece(ctx)>)
-        space_or_newline()*
-        !inline_breaks(ctx)
-        value:generic_attribute_value(ctx)?
+        // For the same reason of serialisation, space should only be included
+        // if there is actually a value
+        value:(
+          space_or_newline()*
+          !inline_breaks(ctx)
+          t:generic_attribute_value(ctx)
+          { t }
+        )?
         { make_attribute(name, value) }
     >)
     { t }
@@ -935,8 +953,9 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     = space()*
       t:spanned(<
         name:attribute_name(ctx, <table_attribute_name_piece(ctx)>)
-        space()*
-        value:table_attribute_value(ctx)?
+        // For the same reason of serialisation, space should only be included
+        // if there is actually a value
+        value:(space()* t:table_attribute_value(ctx) { t })?
       { make_attribute(name, value) }
     >)
     { t }
