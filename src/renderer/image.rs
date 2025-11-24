@@ -208,7 +208,7 @@ pub(crate) fn render_image<W: WriteSurrogate + ?Sized>(
     let options = image_options(state, sp, title, arguments)?;
 
     if options.caption.is_some() {
-        tags::render_runtime(out, state, sp, |source| {
+        tags::render_runtime(out, state, sp, |_, source| {
             token!(
                 source,
                 Token::StartTag {
@@ -230,7 +230,7 @@ pub(crate) fn render_image<W: WriteSurrogate + ?Sized>(
         tags::render_start_link(out, state, sp, link)?;
     }
 
-    tags::render_runtime(out, state, sp, |source| {
+    tags::render_runtime(out, state, sp, |_, source| {
         token!(
             source,
             Token::StartTag {
@@ -258,7 +258,7 @@ pub(crate) fn render_image<W: WriteSurrogate + ?Sized>(
     }
 
     if let Some(body) = options.caption {
-        tags::render_runtime(out, state, sp, |source| {
+        tags::render_runtime(out, state, sp, |_, source| {
             token!(
                 source,
                 Token::StartTag {

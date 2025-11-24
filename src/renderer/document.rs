@@ -9,6 +9,7 @@ use super::{
     trim::Trim,
 };
 use crate::{
+    php::strtr,
     renderer::emitters::{ListEmitter, ListKind, TextStyleEmitter},
     wikitext::{
         AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
@@ -538,6 +539,7 @@ impl Surrogate<Error> for Document {
             name,
             &attributes,
             content,
+            false,
         )?;
         Ok(())
     }
@@ -578,7 +580,7 @@ impl Surrogate<Error> for Document {
             .outline
             .push(&sp.source, span, level, content)?;
 
-        tags::render_runtime(self, state, sp, |source| {
+        tags::render_runtime(self, state, sp, |_, source| {
             token!(
                 source,
                 Token::StartTag {
@@ -826,6 +828,11 @@ impl Surrogate<Error> for Document {
         };
 
         match tag {
+            // TODO: This should go through `text_run`, except not re-encoding
+            // other valid HTML entities.
+            StripMarker::NoWiki(text) => {
+                self.html += &strtr(text, &[("<", "&lt;"), (">", "&gt;")]);
+            }
             StripMarker::Inline(text) => {
                 self.html += text;
             }

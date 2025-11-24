@@ -238,6 +238,7 @@ mod ext {
                 &name.trim_ascii().to_ascii_lowercase(),
                 &arguments.arguments[2..],
                 Some(&body),
+                true,
             )?;
         }
         Ok(())

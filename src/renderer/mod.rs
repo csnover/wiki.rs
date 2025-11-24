@@ -148,17 +148,17 @@ use crate::{
     lua::VmCacheEntry,
     php::DateTime,
     renderer::lru_limiter::OutputSizeCalculator,
-    wikitext::{LineCol, Output, Parser},
+    wikitext::{LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, Parser},
 };
 use axum::http::Uri;
-use core::fmt;
+use core::fmt::{self, Write as _};
 pub use expand_templates::{ExpandMode, ExpandTemplates};
 pub use manager::{Command, In, RenderManager as Manager, RenderOutput};
 pub use parser_fns::call_parser_fn;
 use piccolo::Lua;
 use schnellru::LruMap;
 pub use stack::{Kv, StackFrame};
-use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 pub use surrogate::Surrogate;
 use tags::LinkKind;
 pub use template::call_template;
@@ -285,12 +285,122 @@ pub struct Statics {
     pub vm_cache: LruMap<ArticleId, VmCacheEntry, ByMemoryUsage<VmCacheEntry>>,
 }
 
+/// A list of stripped extension tags.
+#[derive(Default)]
+pub struct StripMarkers(Vec<StripMarker>);
+
+impl StripMarkers {
+    /// Gets the strip marker with the given index.
+    fn get(&self, index: usize) -> Option<&StripMarker> {
+        self.0.get(index)
+    }
+
+    /// Invokes callback `f` for each strip marker in the given text.
+    ///
+    /// The callback should return `Some(string)` if it wants to replace the
+    /// marker, or `None` if it wants the marker to be kept as-is in the text.
+    #[inline]
+    pub fn for_each_marker<'a, F>(&self, body: &'a str, mut f: F) -> Cow<'a, str>
+    where
+        F: FnMut(&StripMarker) -> Option<String>,
+    {
+        Self::for_each_marker_index(body, |index| f(&self.0[index]))
+    }
+
+    /// Invokes callback `f` for each strip marker index in the given text.
+    ///
+    /// The callback should return `Some(string)` if it wants to replace the
+    /// marker, or `None` if it wants the marker to be kept as-is in the text.
+    fn for_each_marker_index<F>(body: &str, mut f: F) -> Cow<'_, str>
+    where
+        F: FnMut(usize) -> Option<String>,
+    {
+        let mut out = String::new();
+        let mut flushed = 0;
+        while let Some(start) = body[flushed..].find(MARKER_PREFIX)
+            && let start = flushed + start + MARKER_PREFIX.len()
+            && let Some(end) = body[start..].find(MARKER_SUFFIX)
+        {
+            let end = start + end;
+            let index = body[start..end].parse::<usize>().unwrap();
+            if let Some(replacement) = f(index) {
+                out += &body[..flushed];
+                out += &replacement;
+                flushed = end + MARKER_SUFFIX.len();
+            }
+        }
+
+        if flushed == 0 {
+            Cow::Borrowed(body)
+        } else {
+            out += &body[flushed..];
+            Cow::Owned(out)
+        }
+    }
+
+    /// Removes all strip markers from the given text.
+    #[inline]
+    pub fn kill(body: &str) -> Cow<'_, str> {
+        Self::for_each_marker_index(body, |_| Some(String::new()))
+    }
+
+    /// Pushes a new strip marker to the list, emitting the marker to the given
+    /// `out` string.
+    fn push(&mut self, out: &mut String, marker: StripMarker) {
+        let _ = write!(out, "{MARKER_PREFIX}{}{MARKER_SUFFIX}", self.0.len());
+        self.0.push(marker);
+    }
+
+    /// Recursively replaces all strip markers in the given string with their
+    /// original contents.
+    fn unstrip<'a>(&self, body: &'a str) -> Cow<'a, str> {
+        let mut out = String::new();
+        let mut flushed = 0;
+        while let Some(start) = body[flushed..].find(MARKER_PREFIX)
+            && let start = flushed + start + MARKER_PREFIX.len()
+            && let Some(end) = body[start..].find(MARKER_SUFFIX)
+        {
+            let end = start + end;
+            out += &body[..flushed];
+            let index = body[start..end].parse::<usize>().unwrap();
+            out += &self.unstrip(self.0.get(index).unwrap());
+            flushed = end + MARKER_SUFFIX.len();
+        }
+
+        if flushed == 0 {
+            Cow::Borrowed(body)
+        } else {
+            out += &body[flushed..];
+            Cow::Owned(out)
+        }
+    }
+}
+
 /// A strip marker.
-enum StripMarker {
+#[derive(Debug)]
+pub enum StripMarker {
     /// A strip marker containing block-level elements.
     Block(String),
     /// A strip marker containing only phrasing content.
     Inline(String),
+    /// A strip marker containing only phrasing content from a `<nowiki>` tag.
+    NoWiki(String),
+}
+
+impl fmt::Display for StripMarker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self)
+    }
+}
+
+impl core::ops::Deref for StripMarker {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            StripMarker::Block(s) | StripMarker::Inline(s) | StripMarker::NoWiki(s) => s,
+        }
+    }
 }
 
 /// Renderer state that is shared across stack frames.
@@ -302,9 +412,7 @@ pub struct State<'s> {
     /// Thread static global variables.
     pub statics: &'s mut Statics,
     /// Stripped extension tag substitutions.
-    // TODO: Store as Rc or something so these do not need to be cloned? Which
-    // is faster?
-    strip_markers: Vec<StripMarker>,
+    pub strip_markers: StripMarkers,
     /// Page performance timing data.
     timing: HashMap<String, (usize, Duration)>,
 }

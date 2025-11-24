@@ -2,7 +2,7 @@
 //! container.
 
 use super::{
-    Error, Kv, Result, State, extension_tags,
+    Error, Kv, Result, State, StripMarker, extension_tags,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags, template,
@@ -10,8 +10,8 @@ use super::{
 use crate::{
     renderer::document::Document,
     wikitext::{
-        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant,
-        MARKER_PREFIX, MARKER_SUFFIX, Output, Span, Spanned, TextStyle, Token,
+        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
+        Spanned, TextStyle, Token,
     },
 };
 use core::{
@@ -207,23 +207,23 @@ impl Surrogate<Error> for ExpandTemplates {
     ) -> Result {
         // TODO: Collecting into a `Vec<Kv>` first wastes time.
         let attributes = attributes.iter().map(Kv::Argument).collect::<Vec<_>>();
-        let mut out = Document::new(true);
-        extension_tags::render_extension_tag(
-            &mut out,
-            state,
-            sp,
-            Some(span),
-            name,
-            &attributes,
-            content,
-        )?;
-        let content = out.finish_fragment();
-        write!(
-            self.out,
-            "{MARKER_PREFIX}{}{MARKER_SUFFIX}",
-            state.strip_markers.len()
-        )?;
-        state.strip_markers.push(content);
+        let content = if name == "nowiki" {
+            StripMarker::NoWiki(content.unwrap_or_default().to_string())
+        } else {
+            let mut out = Document::new(true);
+            extension_tags::render_extension_tag(
+                &mut out,
+                state,
+                sp,
+                Some(span),
+                name,
+                &attributes,
+                content,
+                false,
+            )?;
+            out.finish_fragment()
+        };
+        state.strip_markers.push(&mut self.out, content);
         Ok(())
     }
 
@@ -413,9 +413,9 @@ impl Surrogate<Error> for ExpandTemplates {
     fn adopt_strip_marker(
         &mut self,
         _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
-        marker: usize,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _marker: usize,
     ) -> Result {
         // Once an extension tag has been stripped once, there is not much
         // reason to reintroduce its content prior to the final output. At best
@@ -424,7 +424,7 @@ impl Surrogate<Error> for ExpandTemplates {
         // `ExpandTemplates` gets shoved back into a parser some time later and
         // content is not tagged to avoid e.g. content which had been in
         // `<nowiki>` getting parsed as Wikitext the second time.
-        write!(self.out, "{MARKER_PREFIX}{marker}{MARKER_SUFFIX}")?;
+        self.out.write_str(&sp.source[span.into_range()])?;
         Ok(())
     }
 

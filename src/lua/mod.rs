@@ -84,8 +84,29 @@ enum HostCall {
         frame_id: StashedString,
         text: StashedString,
     },
+    /// A call to [`unstrip`](lualib::mw_text::TextLibrary::unstrip) or
+    /// [`unstrip_no_wiki`](lualib::mw_text::TextLibrary::unstrip_no_wiki).
+    Unstrip {
+        text: StashedString,
+        mode: UnstripMode,
+    },
 }
 
+/// The mode to use when restoring strip markers.
+#[derive(Clone, Copy)]
+enum UnstripMode {
+    /// Restore the original text of `<nowiki>` markers and retain other strip
+    /// markers.
+    OrigText,
+    /// Restore the escaped text of `<nowiki>` markers and retain other strip
+    /// markers.
+    UnstripNoWiki,
+    /// Restore the original text of `<nowiki>` markers and remove all other
+    /// strip markers.
+    Unstrip,
+}
+
+/// Creates a new standalone Lua VM.
 pub(super) fn new_vm_core() -> Result<Lua, ExternError> {
     let mut vm = Lua::core();
 

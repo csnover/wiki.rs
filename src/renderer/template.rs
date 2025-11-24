@@ -435,7 +435,7 @@ pub(super) fn render_fallback<W: WriteSurrogate + ?Sized>(
     // TODO: This actually needs to be an extension tag strip marker since
     // templates can be in any arbitrary position, including inside attributes,
     // so this results in an invalid tree.
-    render_runtime(out, state, sp, |source| {
+    render_runtime(out, state, sp, |_, source| {
         token!(
             source,
             Token::ExternalLink {

@@ -445,6 +445,9 @@ pub(crate) fn run_host_call(
         HostCall::Preprocess { frame_id, text } => {
             preprocess(state, sp, frame_id, text).map(Into::into)
         }
+        HostCall::Unstrip { text, mode } => {
+            super::mw_text::unstrip(state, text, *mode).map(Into::into)
+        }
     }
 }
 

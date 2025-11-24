@@ -117,7 +117,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     title: Title,
 ) -> Result<(), Error> {
     if sp.root().name.key() == title.key() {
-        render_runtime(out, state, sp, |source| {
+        render_runtime(out, state, sp, |_, source| {
             token!(
                 source,
                 Token::StartTag {
@@ -151,7 +151,7 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
 ) -> Result {
     let href = link.to_string(&state.statics.base_uri);
 
-    render_runtime(out, state, sp, |source| {
+    render_runtime(out, state, sp, |_, source| {
         token!(
             source,
             Token::StartTag {
@@ -169,7 +169,7 @@ pub(super) fn render_end_link<W: WriteSurrogate + ?Sized>(
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
 ) -> Result {
-    render_runtime(out, state, sp, |source| {
+    render_runtime(out, state, sp, |_, source| {
         token!(
             source,
             Token::EndTag {
@@ -266,7 +266,7 @@ pub(super) fn render_start_tag<W: WriteSurrogate + ?Sized>(
 /// Renders a runtime-generated token.
 pub(super) fn render_runtime<
     W: WriteSurrogate + ?Sized,
-    F: FnOnce(&mut String) -> Spanned<Token>,
+    F: FnOnce(&mut State<'_>, &mut String) -> Spanned<Token>,
 >(
     out: &mut W,
     state: &mut State<'_>,
@@ -274,7 +274,7 @@ pub(super) fn render_runtime<
     f: F,
 ) -> Result {
     let source = &mut String::new();
-    let token = f(source);
+    let token = f(state, source);
     out.adopt_token(state, &sp.clone_with_source(FileMap::new(source)), &token)
 }
 

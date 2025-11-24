@@ -8,10 +8,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use crate::wikitext::{MARKER_PREFIX, MARKER_SUFFIX};
-use piccolo::StashedTable;
-use regex::bytes::{Regex, RegexBuilder};
-use std::{borrow::Cow, cell::RefCell, sync::LazyLock};
+use crate::{
+    lua::{HostCall, UnstripMode},
+    php::strtr,
+    renderer::{State, StripMarker, StripMarkers},
+};
+use piccolo::{ExternError, Stack, StashedString, StashedTable, UserData};
+use std::{borrow::Cow, cell::RefCell};
 
 /// The text support library.
 #[derive(gc_arena::Collect, Default)]
@@ -67,59 +70,65 @@ impl TextLibrary {
         ctx: Context<'gc>,
         text: VmString<'gc>,
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        static RE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(&format!("{MARKER_PREFIX}([^\x7f<>&'\"]+){MARKER_SUFFIX}")).unwrap()
-        });
-
-        Ok(match RE.replace_all(text.as_bytes(), b"") {
+        Ok(match StripMarkers::kill(text.to_str()?) {
             Cow::Borrowed(_) => text,
-            Cow::Owned(text) => ctx.intern(&text),
+            Cow::Owned(text) => ctx.intern(text.as_bytes()),
         })
     }
 
-    /// Replaces strip markers inside `<nowiki>` tags with their original text?
+    /// Replaces stripped `<nowiki>` tags with their original text and removes
+    /// all other strip markers.
     fn unstrip<'gc>(
         &self,
         ctx: Context<'gc>,
-        text: VmString<'gc>,
-    ) -> Result<VmString<'gc>, VmError<'gc>> {
-        // log::warn!("stub: mw.text.unstrip({s:?})");
-        // stripState.killMarkers(stripState.unstripNoWiki(text))
-        self.kill_markers(ctx, self.unstrip_no_wiki(ctx, (text, Some(true)))?)
+        mut stack: Stack<'gc, '_>,
+    ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
+        let text = stack.consume::<VmString<'gc>>(ctx)?;
+        // log::trace!("mw.text.unstrip({text:?})");
+        stack.replace(
+            ctx,
+            UserData::new_static(
+                &ctx,
+                HostCall::Unstrip {
+                    text: ctx.stash(text),
+                    mode: UnstripMode::Unstrip,
+                },
+            ),
+        );
+        Ok(CallbackReturn::Yield {
+            to_thread: None,
+            then: None,
+        })
     }
 
-    /// Replaces strip markers inside `<nowiki>` tags with their original text
-    /// and removes the tags?
+    /// Replaces stripped `<nowiki>` tags with their original text and retains
+    /// other strip markers, optionally escaping the returned `<nowiki>` text.
     fn unstrip_no_wiki<'gc>(
         &self,
         ctx: Context<'gc>,
-        (text, get_orig_text_when_preprocessing): (VmString<'gc>, Option<bool>),
-    ) -> Result<VmString<'gc>, VmError<'gc>> {
-        // log::warn!("stub: mw.text.unstripNoWiki({s:?}, {get_orig_text_when_preprocessing:?})");
-
-        if get_orig_text_when_preprocessing == Some(true) {
-            // stripState.unstripNoWiki(s)
-            Ok(text)
-        } else {
-            static RE: LazyLock<Regex> = LazyLock::new(|| {
-                RegexBuilder::new("</?nowiki[^>]*>")
-                    .case_insensitive(true)
-                    .build()
-                    .unwrap()
-            });
-            // stripState.replaceNoWikis(|s| {
-            //     let s = RE.replace_all(s, "");
-            //     if s.is_empty() {
-            //         ""
-            //     } else {
-            //         CoreTagHooks::nowiki(s, [], parser)[0]
-            //     }
-            // })
-            Ok(match RE.replace_all(text.as_bytes(), b"") {
-                Cow::Borrowed(_) => text,
-                Cow::Owned(text) => ctx.intern(&text),
-            })
-        }
+        mut stack: Stack<'gc, '_>,
+    ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
+        let (text, get_orig_text_when_preprocessing) =
+            stack.consume::<(VmString<'gc>, Option<bool>)>(ctx)?;
+        log::trace!("mw.text.unstripNoWiki({text:?}, {get_orig_text_when_preprocessing:?})");
+        stack.replace(
+            ctx,
+            UserData::new_static(
+                &ctx,
+                HostCall::Unstrip {
+                    text: ctx.stash(text),
+                    mode: if get_orig_text_when_preprocessing == Some(true) {
+                        UnstripMode::OrigText
+                    } else {
+                        UnstripMode::UnstripNoWiki
+                    },
+                },
+            ),
+        );
+        Ok(CallbackReturn::Yield {
+            to_thread: None,
+            then: None,
+        })
     }
 }
 
@@ -135,8 +144,8 @@ impl MwInterface for TextLibrary {
             jsonDecode = json_decode,
             jsonEncode = json_encode,
             killMarkers = kill_markers,
-            unstrip = unstrip,
-            unstripNoWiki = unstrip_no_wiki,
+            ~unstrip = unstrip,
+            ~unstripNoWiki = unstrip_no_wiki,
         }
     }
 
@@ -150,4 +159,72 @@ impl MwInterface for TextLibrary {
             nowiki_protocols = Table::new(&ctx),
         })
     }
+}
+
+/// Replaces `<nowiki>` markers in the given `text`, optionally in an encoded
+/// form, and optionally removing other markers.
+///
+/// This runs outside of the Lua VM to avoid having to wrap `StripMarkers` in
+/// `Rc<RefCell>`.
+pub(super) fn unstrip(
+    state: &mut State<'_>,
+    text: &StashedString,
+    mode: UnstripMode,
+) -> Result<StashedString, ExternError> {
+    state.statics.vm.try_enter(|ctx| {
+        let text = ctx.fetch(text);
+
+        let result = match mode {
+            UnstripMode::OrigText => {
+                state
+                    .strip_markers
+                    .for_each_marker(text.to_str()?, |marker| {
+                        if let StripMarker::NoWiki(text) = marker {
+                            Some(text.clone())
+                        } else {
+                            None
+                        }
+                    })
+            }
+            UnstripMode::UnstripNoWiki => {
+                state
+                    .strip_markers
+                    .for_each_marker(text.to_str()?, |marker| {
+                        if let StripMarker::NoWiki(text) = marker {
+                            // TODO: This is supposed to be a call to the
+                            // `<nowiki>` extension tag; this should be doing
+                            // the equivalent thing, but is it?
+                            Some(
+                                strtr(
+                                    text,
+                                    &[
+                                        ("-{", "-&#123;"),
+                                        ("}-", "&#125;-"),
+                                        ("<", "&lt;"),
+                                        (">", "&gt;"),
+                                    ],
+                                )
+                                .to_string(),
+                            )
+                        } else {
+                            None
+                        }
+                    })
+            }
+            UnstripMode::Unstrip => state
+                .strip_markers
+                .for_each_marker(text.to_str()?, |marker| {
+                    Some(if let StripMarker::NoWiki(text) = marker {
+                        text.clone()
+                    } else {
+                        String::new()
+                    })
+                }),
+        };
+
+        Ok(ctx.stash(match result {
+            Cow::Borrowed(_) => text,
+            Cow::Owned(text) => ctx.intern(text.as_bytes()),
+        }))
+    })
 }
