@@ -10,17 +10,23 @@ pub fn gmatch_next<'gc, B: BackingType + ?Sized + 'gc>(
     ctx: Context<'gc>,
     s: VmString<'gc>,
     pattern: VmString<'gc>,
-    at: usize,
-) -> Result<(usize, Table<'gc>), VmError<'gc>> {
+    mut at: usize,
+    last_next: Option<usize>,
+) -> Result<Option<(usize, Table<'gc>)>, VmError<'gc>> {
     let s = B::from_value(ctx, Value::String(s))?;
     let pattern = B::from_value(ctx, Value::String(pattern))?;
-    Ok(
-        if let Some(MatchRanges {
-            full_match,
-            captures,
-        }) = find_first_match(s, pattern, at, false)?
+    Ok(loop {
+        if at <= s.len()
+            && let Some(MatchRanges {
+                full_match,
+                captures,
+            }) = find_first_match(s, pattern, at, false)?
         {
-            let at = full_match.end;
+            let end = full_match.end;
+            if last_next == Some(end) {
+                at += 1;
+                continue;
+            }
             let result = Table::new(&ctx);
             if captures.is_empty() {
                 result.set(ctx, 1, ctx.intern(&s.as_bytes()[full_match]))?;
@@ -29,9 +35,8 @@ pub fn gmatch_next<'gc, B: BackingType + ?Sized + 'gc>(
                     result.set(ctx, i64::try_from(index + 1)?, capture.into_value(ctx, s))?;
                 }
             }
-            (at + 1, result)
-        } else {
-            (at, Table::new(&ctx))
-        },
-    )
+            break Some((end, result));
+        }
+        break None;
+    })
 }

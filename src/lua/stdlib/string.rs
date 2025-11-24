@@ -57,18 +57,23 @@ pub fn load_string(ctx: Context<'_>) -> Result<(), TypeError> {
                 stack.consume::<(VmString<'_>, VmString<'_>, Option<i64>)>(ctx)?;
 
             let pos = Cell::new(calculate_start_index(s.as_bytes(), init));
+            let last_next = Cell::new(None);
             let s = ctx.stash(s);
             let pattern = ctx.stash(pattern);
             let func = Callback::from_fn(&ctx, move |ctx, _, mut stack| {
                 let s = ctx.fetch(&s);
                 let pattern = ctx.fetch(&pattern);
                 stack.clear();
-                if pos.get() <= usize::try_from(s.len())? {
-                    let (next, captures) = gmatch_next::<[u8]>(ctx, s, pattern, pos.get())?;
+                if let Some((next, captures)) =
+                    gmatch_next::<[u8]>(ctx, s, pattern, pos.get(), last_next.get())?
+                {
                     pos.set(next);
+                    last_next.set(Some(next));
                     for (_, v) in captures {
                         stack.into_back(ctx, v);
                     }
+                } else {
+                    stack.push_back(Value::Nil);
                 }
                 Ok(CallbackReturn::Return)
             });

@@ -11,7 +11,8 @@ use super::prelude::*;
 use crate::lua::stdlib::{
     calculate_start_count, find_lua, gmatch_next, gsub::gsub_lua, match_lua, sub_lua,
 };
-use piccolo::Stack;
+use piccolo::{Stack, UserData};
+use std::cell::Cell;
 use unicode_normalization::UnicodeNormalization as _;
 
 #[cfg(test)]
@@ -167,13 +168,19 @@ impl UstringLibrary {
     fn gmatch_callback<'gc>(
         &self,
         ctx: Context<'gc>,
-        (s, pattern, _, at): (VmString<'gc>, VmString<'gc>, Value<'gc>, i64),
+        (s, pattern, last_next, at): (VmString<'gc>, VmString<'gc>, UserData<'gc>, i64),
     ) -> Result<(i64, Table<'gc>), VmError<'gc>> {
-        // The Lua side of this function does not conform to Lua standards and
-        // instead uses a 0-index
-        let at = usize::try_from(at)?;
-        let (at, result) = gmatch_next::<str>(ctx, s, pattern, at)?;
-        Ok((at.try_into()?, result))
+        // The Lua side of this function is non-conformant: it uses a 0-index,
+        // and the terminal case is an empty table instead of Nil
+        let last_next = last_next.downcast_static::<Cell<Option<usize>>>()?;
+        if let Some((next, result)) =
+            gmatch_next::<str>(ctx, s, pattern, at.try_into()?, last_next.get())?
+        {
+            last_next.set(Some(next));
+            Ok((next.try_into()?, result))
+        } else {
+            Ok((at, Table::new(&ctx)))
+        }
     }
 
     /// The initialiser for a gmatch pseudo-iterator.
@@ -181,10 +188,13 @@ impl UstringLibrary {
         &self,
         ctx: Context<'gc>,
         (s, pattern): (VmString<'gc>, VmString<'gc>),
-    ) -> Result<(VmString<'gc>, Value<'gc>), VmError<'gc>> {
+    ) -> Result<(VmString<'gc>, UserData<'gc>), VmError<'gc>> {
         check_string("gmatch", ctx, s)?;
         check_pattern("gmatch", ctx, pattern)?;
-        Ok((pattern, Value::Nil))
+        Ok((
+            pattern,
+            UserData::new_static(&ctx, Cell::new(None::<usize>)),
+        ))
     }
 
     /// Finds and replaces matching patterns within a string.
