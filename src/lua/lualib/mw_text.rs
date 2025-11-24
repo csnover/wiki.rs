@@ -9,24 +9,32 @@
 
 use super::prelude::*;
 use crate::wikitext::{MARKER_PREFIX, MARKER_SUFFIX};
+use piccolo::StashedTable;
 use regex::bytes::{Regex, RegexBuilder};
-use std::{borrow::Cow, sync::LazyLock};
+use std::{borrow::Cow, cell::RefCell, sync::LazyLock};
 
 /// The text support library.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub(super) struct TextLibrary;
+pub struct TextLibrary {
+    /// Cached HTML entity translation table.
+    entity_table: RefCell<Option<StashedTable>>,
+}
 
 impl TextLibrary {
     /// Returns a translation table for converting HTML entities to character
     /// literals.
-    // TODO: Cache this!
     fn get_entity_table<'gc>(&self, ctx: Context<'gc>, (): ()) -> Result<Table<'gc>, VmError<'gc>> {
         // log::trace!("stub: mw_text.getEntityTable()");
-        let table = Table::new(&ctx);
-        for (name, value) in html_escape::NAMED_ENTITIES {
-            table.set(ctx, format!("&{};", name.escape_ascii()), value)?;
+        if self.entity_table.borrow().is_none() {
+            let table = Table::new(&ctx);
+            for (name, value) in html_escape::NAMED_ENTITIES {
+                table.set(ctx, format!("&{};", name.escape_ascii()), value)?;
+            }
+            *self.entity_table.borrow_mut() = Some(ctx.stash(table));
         }
+
+        let table = ctx.fetch(self.entity_table.borrow().as_ref().unwrap());
         Ok(table)
     }
 
