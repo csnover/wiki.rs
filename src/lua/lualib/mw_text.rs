@@ -110,7 +110,7 @@ impl TextLibrary {
     ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
         let (text, get_orig_text_when_preprocessing) =
             stack.consume::<(VmString<'gc>, Option<bool>)>(ctx)?;
-        log::trace!("mw.text.unstripNoWiki({text:?}, {get_orig_text_when_preprocessing:?})");
+        // log::trace!("mw.text.unstripNoWiki({text:?}, {get_orig_text_when_preprocessing:?})");
         stack.replace(
             ctx,
             UserData::new_static(
