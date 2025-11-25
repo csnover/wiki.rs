@@ -271,7 +271,7 @@ mod lua {
             use_simple: bool,
         ) -> bool {
             let mut abs = value.abs();
-            let mut exp = abs.log10().floor() as i32;
+            let mut exp = abs.log10().floor().max(0.0) as i32;
             let mut exp_width = Some(if exp < 100 && exp > -100 { 4 } else { 5 });
             let precision = self.precision.unwrap_or(6);
             let precision = if use_simple {
@@ -286,7 +286,7 @@ mod lua {
                 let factor = 10.0_f64.powf(f64::from(prec - 1 - exp));
                 let fixed = (abs * factor).round();
                 abs = fixed / factor;
-                exp = abs.log10().floor() as i32;
+                exp = abs.log10().floor().max(0.0) as i32;
 
                 u8::try_from(if prec > exp && exp >= -4 {
                     exp_width = None;
