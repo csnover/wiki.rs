@@ -244,6 +244,19 @@ mod ext {
         Ok(())
     }
 
+    /// `{{#coordinates: latitude | longitude [| primary][| GeoHack parameters][| extra parameters] }}`
+    pub fn geodata_coordinates(
+        _: &mut dyn WriteSurrogate,
+        _: &mut State<'_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        // This normally converts and validates coordinates, then stashes them
+        // in “a database”. But we have no database, so unless this is the data
+        // which 'Module:Mapframe|wikidataCoords' tries and fails to find, there
+        // is no point in doing anything with this. TODO: Is it?
+        Ok(())
+    }
+
     /// `{{#invoke: module | function [| argument [= value] ...] }}`
     pub fn invoke(
         out: &mut dyn WriteSurrogate,
@@ -1109,6 +1122,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "#ifexpr" => cond::if_expr,
     "#switch" => cond::switch,
 
+    "#coordinates" => ext::geodata_coordinates,
     "#property" => ext::wikibase_property,
     "#tag" => ext::extension_tag,
     "tag" => ext::extension_tag,
