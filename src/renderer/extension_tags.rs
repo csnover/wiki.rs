@@ -627,6 +627,24 @@ fn syntax_highlight(
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
+    static SS: LazyLock<syntect::parsing::SyntaxSet> = LazyLock::new(|| {
+        let mut ss = syntect::parsing::SyntaxSet::load_defaults_newlines().into_builder();
+        ss.add(
+            syntect::parsing::SyntaxDefinition::load_from_str(
+                include_str!("../../res/MediawikiNG.sublime-syntax"),
+                true,
+                Some("wikitext"),
+            )
+            .unwrap(),
+        );
+        ss.build()
+    });
+
+    static THEME: LazyLock<syntect::highlighting::Theme> = LazyLock::new(|| {
+        let themes = syntect::highlighting::ThemeSet::load_defaults();
+        themes.themes.get("InspiredGitHub").unwrap().clone()
+    });
+
     let tag = if arguments.get(state, "inline")?.is_some() {
         "code"
     } else {
@@ -637,21 +655,18 @@ fn syntax_highlight(
         .get(state, "lang")?
         .unwrap_or(Cow::Borrowed("txt"));
 
-    let ss = syntect::parsing::SyntaxSet::load_defaults_newlines();
-    let themes = syntect::highlighting::ThemeSet::load_defaults();
-    let theme = themes.themes.get("InspiredGitHub").unwrap();
-    let syntax = ss
+    let syntax = SS
         .find_syntax_by_token(&lang)
-        .unwrap_or(ss.find_syntax_plain_text());
+        .unwrap_or(SS.find_syntax_plain_text());
 
     let body = state.strip_markers.unstrip(arguments.body());
     let body = body.trim_start_matches('\n').trim_ascii_end();
 
-    let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
+    let mut highlighter = syntect::easy::HighlightLines::new(syntax, &THEME);
     let mut text = String::new();
     for line in syntect::util::LinesWithEndings::from(body) {
         let regions = highlighter
-            .highlight_line(line, &ss)
+            .highlight_line(line, &SS)
             .map_err(|err| Error::Extension(Box::new(err)))?;
         syntect::html::append_highlighted_html_for_styled_line(
             &regions[..],

@@ -463,7 +463,7 @@ fn raw_source(
     use syntect::{
         highlighting::ThemeSet,
         html::{ClassStyle, css_for_theme_with_class_style, line_tokens_to_classed_spans},
-        parsing::{ParseState, SCOPE_REPO, Scope, ScopeStack, SyntaxSet},
+        parsing::{ParseState, SCOPE_REPO, Scope, ScopeStack, SyntaxDefinition, SyntaxSet},
         util::LinesWithEndings,
     };
 
@@ -508,11 +508,23 @@ fn raw_source(
         }
     }
 
-    let ss = SyntaxSet::load_defaults_newlines();
+    let mut ss = SyntaxSet::load_defaults_newlines().into_builder();
+    ss.add(
+        SyntaxDefinition::load_from_str(
+            include_str!("../res/MediawikiNG.sublime-syntax"),
+            true,
+            Some("wikitext"),
+        )
+        .unwrap(),
+    );
+    let ss = ss.build();
+
     let syntax = if model == "Scribunto" {
         ss.find_syntax_by_name("Lua")
-    } else {
+    } else if model == "html" {
         ss.find_syntax_by_name("HTML")
+    } else {
+        ss.find_syntax_by_extension("mediawiki")
     }
     .unwrap_or(ss.find_syntax_plain_text());
 
