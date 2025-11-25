@@ -336,10 +336,16 @@ impl Surrogate<Error> for ExpandTemplates {
     fn adopt_new_line(
         &mut self,
         _state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        span: Span,
+        _sp: &StackFrame<'_>,
+        _span: Span,
     ) -> Result {
-        self.out.write_str(&sp.source[span.into_range()])?;
+        // `Token::NewLine` is usually just a newline character, but it can also
+        // be an empty line consisting of only whitespace *and comments*, the
+        // latter of which must not be included in most output. (It would be OK
+        // in `ExpandMode::Normal` but I think we are just going all-in on not
+        // ever outputting comments because there’s not much reason to do it,
+        // but it creates lots of headaches.)
+        self.out.write_char('\n')?;
         Ok(())
     }
 
