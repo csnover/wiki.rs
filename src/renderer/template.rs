@@ -6,7 +6,6 @@ use super::{
     parser_fns::call_parser_fn,
     resolve_redirects,
     stack::{KeyCacheKvs, Kv, StackFrame},
-    surrogate::Surrogate as _,
     tags::{render_runtime, render_runtime_list},
 };
 use crate::{
@@ -16,7 +15,9 @@ use crate::{
     lua::run_vm,
     renderer::{WriteSurrogate, expand_templates::ExpandTemplates},
     title::{Namespace, Title},
-    wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
+    wikitext::{
+        Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token, builder::token,
+    },
 };
 use regex::Regex;
 use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
@@ -191,9 +192,18 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
     // magic words from the callee and then to change some options before
     // continuing.
 
+    // At least 'Template:Color' builds HTML elements in pieces in a way
+    // where it is impossible to parse them correctly before template
+    // expansion is completed, which is very annoying because it requires
+    // this buffering and double-parsing where it would not otherwise be
+    // necessary, and makes extension tags very hard to deal with because
+    // they must be able to emit tags which are not serialisable in Wikitext
+    // (`<math>`, etc.).
+    let mut evaluator = ExpandTemplates::new(ExpandMode::Include);
+
     if use_function_hook {
         // It is important to actually not pass a zeroth argument is there is
-        // not one
+        // not one because this changes the behaviour of variable get/set
         let first =
             has_colon.then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
 
@@ -202,20 +212,79 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
             .chain(arguments.iter().map(Kv::Argument))
             .collect::<Vec<_>>();
 
-        call_parser_fn(out, state, sp, Some(bounds), &callee_lower, &arguments)
+        call_parser_fn(
+            &mut evaluator,
+            state,
+            sp,
+            Some(bounds),
+            &callee_lower,
+            &arguments,
+        )?;
     } else {
         let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
 
         let callee = sp.eval(state, target)?;
         call_template(
-            out,
+            &mut evaluator,
             state,
             sp,
             &Kv::Partial(target.iter().collect()),
             callee.trim_ascii(),
             &arguments,
-        )
+        )?;
     }
+
+    let mut partial = evaluator.finish();
+
+    // “T2529: if the template begins with a table or block-level
+    //  element, it should be treated as beginning a new line.
+    //  This behavior is somewhat controversial.”
+    if partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*']) {
+        partial.insert(0, '\n');
+    }
+
+    // TODO: This is related to `tag_blocks`. Do this, except without this
+    // disgusting hack, by making `FileMap` more like `codemap` again: all
+    // code lives in a flat address space and `Document` can tag
+    // *everything* properly by looking up what files correspond to the span
+    // currently being processed.
+    {
+        static DISGUSTING_HACK: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(&format!(
+                r#"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*<[\w-]+(?: data-wiki-rs="([^"]+)")?"#
+            ))
+            .unwrap()
+        });
+
+        if !use_function_hook && let Some(hax) = DISGUSTING_HACK.captures(&partial) {
+            // TODO: This should account for redirections.
+            let class_name = Title::new(&callee, Namespace::find_by_id(Namespace::TEMPLATE))
+                .key()
+                .to_ascii_lowercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
+
+            let (prefix, extra, suffix) = if let Some(existing) = hax.get(1) {
+                (
+                    existing.start(),
+                    format!("{} {class_name}", existing.as_str()),
+                    existing.end(),
+                )
+            } else {
+                (
+                    hax.get_match().end(),
+                    format!(r#" data-wiki-rs="{class_name}""#),
+                    hax.get_match().end(),
+                )
+            };
+
+            partial = String::from(&partial[..prefix]) + &extra + &partial[suffix..];
+        }
+    }
+
+    let root = state.statics.parser.parse_no_expansion(&partial)?;
+    let sp = sp.clone_with_source(FileMap::new(&partial));
+    // eprintln!("{partial}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &root.root));
+    out.adopt_output(state, &sp, &root)
 }
 
 /// Template target information.
@@ -341,57 +410,7 @@ pub fn call_template<W: WriteSurrogate + ?Sized>(
             .unwrap(),
     );
 
-    {
-        // TODO: This is related to `tag_blocks`. Do this, except without this
-        // disgusting hack, by making `FileMap` more like `codemap` again: all
-        // code lives in a flat address space and `Document` can tag
-        // *everything* properly by looking up what files correspond to the span
-        // currently being processed.
-        static DISGUSTING_HACK: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r#"^\s*<[^\s/>]+(?: data-wiki-rs="([^"]+)")?"#).unwrap());
-
-        // At least 'Template:Color' builds HTML elements in pieces in a way
-        // where it is impossible to parse them correctly before template
-        // expansion is completed, which is very annoying because it requires
-        // this buffering and double-parsing where it would not otherwise be
-        // necessary, and makes extension tags very hard to deal with because
-        // they must be able to emit tags which are not serialisable in Wikitext
-        // (`<math>`, etc.).
-        let mut evaluator = ExpandTemplates::new(ExpandMode::Include);
-        evaluator.adopt_output(state, &sp, &root)?;
-        let mut partial = evaluator.finish();
-
-        if sp.parent.is_some()
-            && let Some(hax) = DISGUSTING_HACK.captures(&partial)
-        {
-            let class_name = sp
-                .name
-                .key()
-                .to_ascii_lowercase()
-                .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
-
-            let (prefix, extra, suffix) = if let Some(existing) = hax.get(1) {
-                (
-                    existing.start(),
-                    format!("{} {class_name}", existing.as_str()),
-                    existing.end(),
-                )
-            } else {
-                (
-                    hax.get_match().end(),
-                    format!(r#" data-wiki-rs="{class_name}""#),
-                    hax.get_match().end(),
-                )
-            };
-
-            partial = String::from(&partial[..prefix]) + &extra + &partial[suffix..];
-        }
-
-        let root = state.statics.parser.parse_no_expansion(&partial)?;
-        let sp = sp.clone_with_source(FileMap::new(&partial));
-        // eprintln!("{partial}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &root.root));
-        out.adopt_output(state, &sp, &root)?;
-    }
+    out.adopt_output(state, &sp, &root)?;
 
     state
         .timing

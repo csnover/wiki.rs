@@ -28,10 +28,6 @@ pub enum ExpandMode {
     Normal,
     /// Expand templates in include mode. This mode is used by templates.
     Include,
-    /// Expand templates, but defer processing extension tags by converting them
-    /// to strip markers. This mode is used any time an extension tag may be in
-    /// a position where it might not make it to the root document output.
-    Strip,
 }
 
 /// Performs partial evaluation of a Wikitext string, extracting extension tags
@@ -537,7 +533,7 @@ impl Surrogate<Error> for ExpandTemplates {
     ) -> Result {
         if should_skip(
             token,
-            matches!(self.mode, ExpandMode::Include | ExpandMode::Strip),
+            matches!(self.mode, ExpandMode::Include),
             self.inclusion_mode.last(),
         ) {
             return Ok(());

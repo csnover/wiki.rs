@@ -484,7 +484,7 @@ fn call_parser_function(
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
-        let mut expand = ExpandTemplates::new(ExpandMode::Strip);
+        let mut expand = ExpandTemplates::new(ExpandMode::Include);
         call_parser_fn(&mut expand, state, sp, None, &callee, &args)?;
         let result = expand.finish();
         Ok(state
@@ -512,7 +512,7 @@ fn expand_template(
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
-        let mut expand = ExpandTemplates::new(ExpandMode::Strip);
+        let mut expand = ExpandTemplates::new(ExpandMode::Include);
         call_template(
             &mut expand,
             state,
@@ -618,7 +618,7 @@ fn preprocess(
         let source = FileMap::new(&text);
         let root = state.statics.parser.parse(&source, true)?;
         let sp = sp.clone_with_source(source);
-        let mut expand = ExpandTemplates::new(ExpandMode::Strip);
+        let mut expand = ExpandTemplates::new(ExpandMode::Include);
         expand.adopt_output(state, &sp, &root)?;
         let result = expand.finish();
         Ok(state
