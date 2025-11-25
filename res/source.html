@@ -13,21 +13,27 @@
             }
 
             table {
-                align-items: baseline;
-                display: grid;
-                grid-template-columns: min-content min-content auto;
-                gap: 0 0.5rem;
-
-                tbody, tr {
-                    display: contents;
-                }
+                width: 100%;
 
                 td {
                     vertical-align: top;
-                    &:first-child, &:nth-child(2) {
+
+                    &:first-child,
+                    &:nth-child(2) {
                         font-family: var(--sans);
                         font-variant-numeric: tabular-nums;
                         user-select: none;
+                        white-space: nowrap;
+                        width: 0;
+                    }
+
+                    + td {
+                        padding-left: .5em;
+                    }
+
+                    &:last-child {
+                        word-break: break-word;
+                        word-wrap: break-word;
                     }
                 }
 
