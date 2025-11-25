@@ -354,6 +354,7 @@ pub async fn search(
         site: &'a str,
     }
 
+    let plain = regex::escape(&query) == query;
     let query = regex::RegexBuilder::new(&query)
         .case_insensitive(true)
         .build()
@@ -370,7 +371,30 @@ pub async fn search(
         .take_any(100_000)
         .collect::<Vec<&str>>();
     log::trace!("Found {} matches in {:.2?}", results.len(), time.elapsed());
-    results.par_sort_unstable();
+
+    if plain {
+        fn starts_with(a: unicase::UniCase<&str>, b: unicase::UniCase<&str>) -> bool {
+            b.get(0..a.len())
+                .is_some_and(|b| a == unicase::UniCase::new(b))
+        }
+
+        let query = unicase::UniCase::new(query.as_str());
+        results.par_sort_unstable_by(|a, b| {
+            let a = unicase::UniCase::new(*a);
+            let b = unicase::UniCase::new(*b);
+            match (starts_with(query, a), starts_with(query, b)) {
+                (true, false) => core::cmp::Ordering::Less,
+                (false, true) => core::cmp::Ordering::Greater,
+                (_, _) => a.cmp(&b),
+            }
+        });
+    } else {
+        results.par_sort_unstable_by(|a, b| {
+            let a = unicase::UniCase::new(*a);
+            let b = unicase::UniCase::new(*b);
+            a.cmp(&b)
+        });
+    }
     log::trace!("Sorted results in {:.2?}", time.elapsed());
 
     let per_page = per_page.map_or(500, usize::from);

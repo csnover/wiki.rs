@@ -1931,6 +1931,7 @@ dependencies = [
  "tower-http",
  "tz-rs",
  "tzdb_data",
+ "unicase",
  "unicode-general-category",
  "unicode-normalization",
 ]
