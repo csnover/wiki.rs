@@ -243,27 +243,31 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
         partial.insert(0, '\n');
     }
 
-    // TODO: This is related to `tag_blocks`. Do this, except without this
-    // disgusting hack, by making `FileMap` more like `codemap` again: all
-    // code lives in a flat address space and `Document` can tag
-    // *everything* properly by looking up what files correspond to the span
-    // currently being processed.
+    // Many templates do not provide adequate (or any) hooks for overriding
+    // styles. (See styles.css; everything using `[data-wiki-rs]` is a template
+    // with missing or inadequate hooks of its own).
+    // TODO: This is related to `tag_blocks` (grep Git history). Do this, except
+    // more like how `tag_blocks` worked, no disgusting hacks.
     {
         static DISGUSTING_HACK: LazyLock<Regex> = LazyLock::new(|| {
             Regex::new(&format!(
-                r#"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*<[\w-]+(?: data-wiki-rs="([^"]+)")?"#
+                r#"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*<([\w-]+)(?: data-wiki-rs="([^"]+)")?"#
             ))
             .unwrap()
         });
 
-        if !use_function_hook && let Some(hax) = DISGUSTING_HACK.captures(&partial) {
+        if !use_function_hook
+            && let Some(hax) = DISGUSTING_HACK.captures(&partial)
+            && let tag_name = hax.get(1).unwrap().as_str()
+            && crate::wikitext::HTML5_TAGS.contains(&tag_name.to_ascii_lowercase())
+         {
             // TODO: This should account for redirections.
             let class_name = Title::new(&callee, Namespace::find_by_id(Namespace::TEMPLATE))
                 .key()
                 .to_ascii_lowercase()
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
 
-            let (prefix, extra, suffix) = if let Some(existing) = hax.get(1) {
+            let (prefix, extra, suffix) = if let Some(existing) = hax.get(2) {
                 (
                     existing.start(),
                     format!("{} {class_name}", existing.as_str()),
