@@ -107,13 +107,18 @@ impl fmt::Write for ExpandTemplates {
 impl Surrogate<Error> for ExpandTemplates {
     fn adopt_autolink(
         &mut self,
-        _state: &mut State<'_>,
+        state: &mut State<'_>,
         sp: &StackFrame<'_>,
         span: Span,
-        _target: &[Spanned<Token>],
-        _content: &[Spanned<Token>],
+        target: &[Spanned<Token>],
+        content: &[Spanned<Token>],
     ) -> Result {
-        self.out.write_str(&sp.source[span.into_range()])?;
+        let (prefix, suffix) = calc_prefix_suffix(span, target, content);
+        self.out.write_str(&sp.source[prefix])?;
+        self.adopt_tokens(state, sp, target)?;
+        self.write_delimiter(sp, target, content)?;
+        self.adopt_tokens(state, sp, content)?;
+        self.out.write_str(&sp.source[suffix])?;
         Ok(())
     }
 
