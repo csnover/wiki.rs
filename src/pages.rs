@@ -34,11 +34,9 @@ pub enum Error {
     #[error(transparent)]
     Template(#[from] sailfish::RenderError),
     /// A source code viewer syntax highlighter error.
-    #[cfg(feature = "syntax-highlighting")]
     #[error(transparent)]
     Source(#[from] syntect::Error),
     /// A source code viewer syntax string formatting error.
-    #[cfg(feature = "syntax-highlighting")]
     #[error(transparent)]
     Fmt(#[from] core::fmt::Error),
     /// A renderer thread message transmission error.
@@ -64,9 +62,7 @@ impl IntoResponse for Error {
             },
             Error::Renderer(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::Template(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            #[cfg(feature = "syntax-highlighting")]
             Error::Source(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            #[cfg(feature = "syntax-highlighting")]
             Error::Fmt(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::RenderTx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::RenderRx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
@@ -477,7 +473,6 @@ fn call_renderer(
 // better one anyway, whenever this breaks. There seems to be no non-deprecated
 // API for this.
 #[allow(deprecated)]
-#[cfg(feature = "syntax-highlighting")]
 fn raw_source(
     base_path: &str,
     source: &str,
@@ -598,17 +593,6 @@ fn raw_source(
     .render_once()
     .map(Html::from)
     .map_err(Into::into)
-}
-
-/// Renders source code for the given data model into HTML.
-#[cfg(not(feature = "syntax-highlighting"))]
-pub fn raw_source(
-    _: &str,
-    source: &str,
-    _: &str,
-    _: Option<EvalForm>,
-) -> Result<impl IntoResponse, Error> {
-    Ok(source.to_string())
 }
 
 /// The CSS resource route handler.

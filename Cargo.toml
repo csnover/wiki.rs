@@ -2,7 +2,8 @@
 name = "wiki-rs"
 description = "A high-performance offline reader of multistream MediaWiki dumps."
 license = "MIT AND GPL-2.0-or-later"
-version = "2.0.0"
+# year.month.release-in-month
+version = "2025.11.1"
 edition = "2024"
 
 [dependencies]
@@ -37,7 +38,7 @@ schnellru = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde-transcode = "1"
-syntect = { version = "5.3", optional = true, default-features = false, features = ["default-syntaxes", "default-themes", "html", "parsing", "regex-fancy", "yaml-load"] }
+syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "html", "parsing", "regex-fancy", "yaml-load"] }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
 tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread"] }
@@ -49,9 +50,8 @@ unicode-general-category = "1.1"
 unicode-normalization = "0.1"
 
 [features]
-default = ["debug-styles", "syntax-highlighting"]
+default = ["debug-styles"]
 debug-styles = []
-syntax-highlighting = ["dep:syntect"]
 
 [build-dependencies]
 regex = "1"

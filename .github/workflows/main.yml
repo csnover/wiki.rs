@@ -1,0 +1,68 @@
+name: Release
+
+permissions:
+  attestations: write
+  contents: write
+  id-token: write
+
+on:
+  push:
+    tags:
+      - v[0-9]+.*
+
+jobs:
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+      - name: Check versions
+        run: |
+          tag_name=${GITHUB_REF#refs/tags/}
+          v=$(grep -m 1 "^version" Cargo.toml|sed -e "s|version = \"\(.*\)\"|\1|")
+          if ! echo $tag_name|grep -q $v; then
+             echo "Mistmatch of the version:"
+             echo "Cargo.toml says $v while the tag is $tag_name"
+             exit 2
+          fi
+      - name: Create GitHub release
+        uses: taiki-e/create-gh-release-action@26b80501670402f1999aff4b934e1574ef2d3705
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    name: Upload assets
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: universal-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+      - name: Compile and bundle
+        uses: taiki-e/upload-rust-binary-action@3962470d6e7f1993108411bc3f75a135ec67fc8c
+        id: build
+        with:
+          archive: $bin-$tag-$target
+          bin: wiki-rs
+          checksum: sha512
+          include: LICENSE,README.md
+          leading-dir: true
+          no-default-features: true
+          target: ${{ matrix.target }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tar: none
+          tar-xz: unix
+          zip: windows
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-checksums: ${{ steps.build.outputs.sha512 }}
