@@ -4,7 +4,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="content-security-policy" content="img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
-        <title><%= title %> — <%= site %></title>
+        <title><%= canonical %> — <%= site %></title>
         <style>.mw-parser-output {
             <%= crate::pages::filter::css(&output.styles) %>
         }</style>
@@ -23,7 +23,7 @@
             <nav class="wiki-rs-toc"><%- output.outline | disp %></nav>
         </div>
         <div class="wiki-rs-title">
-            <h1><%= title %></h1>
+            <h1><%= canonical %></h1>
             <%- output.indicators | disp %>
         </div>
         <article class="wiki-rs-content mw-parser-output">
