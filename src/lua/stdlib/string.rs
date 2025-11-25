@@ -173,7 +173,18 @@ fn calculate_start_index<B: engine::BackingType + ?Sized>(s: &B, init: Option<i6
     match init {
         Some(init @ 1..) => {
             let init = usize::try_from(init - 1).unwrap();
-            s.char_indices().nth(init).map_or(init, |(pos, _)| pos)
+            s.char_indices().nth(init).map_or_else(
+                || {
+                    // When `B = str`, `init` cannot be used directly because it is
+                    // a character count, but this is calculating a byte index.
+                    // Also, because Lua treats end-of-string different from
+                    // beyond-end-of-string in some cases, it is necessary to make
+                    // the result be *at least* `s.len()`, but more if `init` was
+                    // actually already beyond-end-of-string.
+                    s.len() + init - s.chars().count()
+                },
+                |(pos, _)| pos,
+            )
         }
         Some(init @ ..=-1) => {
             let init = (init + 1).unsigned_abs().try_into().unwrap();
