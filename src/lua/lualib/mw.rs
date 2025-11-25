@@ -591,7 +591,7 @@ fn get_expanded_argument(
             state
                 .statics
                 .vm
-                .enter(|ctx| ctx.stash(Value::String(ctx.intern(value.trim_ascii().as_bytes()))))
+                .enter(|ctx| ctx.stash(Value::String(ctx.intern(value.as_bytes()))))
         } else {
             state.statics.vm.enter(|ctx| ctx.stash(Value::Nil))
         })
