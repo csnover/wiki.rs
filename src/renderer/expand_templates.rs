@@ -323,7 +323,13 @@ impl Surrogate<Error> for ExpandTemplates {
         let (prefix, suffix) = calc_prefix_suffix(span, content, content);
         self.write_str(&sp.source[prefix])?;
         self.adopt_tokens(state, sp, content)?;
-        self.write_str(&sp.source[suffix])?;
+        // Any non-whitespace in the list item suffix should be ignored since it
+        // could be an `include_limits` trailer or other detritus that the
+        // parser picked up and discarded in `inlineline`. Retaining whitespace
+        // is still required to make sure that list items actually terminate.
+        // TODO: Though, probably not quite this much whitespace. Really there
+        // just needs to be a newline.
+        self.write_str(sp.source[suffix].trim_matches(|c: char| !c.is_ascii_whitespace()))?;
         Ok(())
     }
 
