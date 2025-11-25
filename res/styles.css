@@ -1945,4 +1945,51 @@ th {
             margin-top: 0;
         }
     }
+
+    /***************************/
+    /* Template:Largest cities */
+    /***************************/
+    [data-wiki-rs~=template-largest-cities] {
+        > table {
+            border-inline: none !important;
+            border-color: var(--border-fg) !important;
+            border-top: 3px solid currentColor !important;
+            font-size: 1em !important;
+            font-variant-numeric: tabular-nums;
+            margin-inline: calc(var(--table-padding-inline) * -1) !important;
+            width: calc(100% + var(--table-padding-inline) * 2) !important;
+        }
+
+        th {
+            border-bottom: thin solid var(--border-fg);
+
+            > * + * {
+                margin-top: 0;
+            }
+
+            span[style*=font-size] {
+                font-stretch: var(--sidebar-stretch);
+            }
+        }
+
+        tr:nth-child(2n + 1) td:not([rowspan]) {
+            background-color: var(--shade-bg);
+        }
+
+        td {
+            padding: .25em;
+
+            &:has(+ .largestCities-cell-background) {
+                padding-right: 1em;
+            }
+
+            &:not([rowspan]) + .largestCities-cell-background {
+                border-left: thin solid var(--border-fg);
+            }
+        }
+    }
+
+    .largestCities-cell-background {
+        background-color: transparent;
+    }
 }
