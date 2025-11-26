@@ -248,7 +248,7 @@ impl Title {
             if let Some(ns) = Namespace::find_by_name(lhs.trim_end()) {
                 (Some(ns), rhs.trim_start())
             } else {
-                (None, &*text)
+                (ns, &*text)
             }
         });
         let ns = ns.unwrap_or_else(Namespace::main);
