@@ -260,7 +260,7 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
             && let Some(hax) = DISGUSTING_HACK.captures(&partial)
             && let tag_name = hax.get(1).unwrap().as_str()
             && crate::wikitext::HTML5_TAGS.contains(&tag_name.to_ascii_lowercase())
-         {
+        {
             // TODO: This should account for redirections.
             let class_name = Title::new(&callee, Namespace::find_by_id(Namespace::TEMPLATE))
                 .key()

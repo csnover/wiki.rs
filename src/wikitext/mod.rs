@@ -2,7 +2,7 @@
 
 use crate::php::strtr;
 pub use codemap::{FileMap, Span, Spanned};
-pub use config::{Configuration, ConfigurationSource, MagicLinks, HTML5_TAGS};
+pub use config::{Configuration, ConfigurationSource, HTML5_TAGS, MagicLinks};
 pub use inspectors::inspect;
 pub use peg::str::LineCol;
 use regex::Regex;
