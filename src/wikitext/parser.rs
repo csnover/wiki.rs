@@ -3080,6 +3080,7 @@ fn find_end_tag(input: &str, tag_name: &str) -> Option<(usize, usize)> {
 
             if c == '<'
                 && let Some((next, _)) = iter.next_if(|(_, c)| *c == '/')
+                && input.is_char_boundary(next + 1 + tag_name.len())
                 && input[next + 1..next + 1 + tag_name.len()].eq_ignore_ascii_case(tag_name)
             {
                 start = Some(pos);
