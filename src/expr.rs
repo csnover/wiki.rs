@@ -530,8 +530,15 @@ fn do_operation(op: Token, stack: &mut ArrayVec<f64, MAX_STACK_SIZE>) -> Result<
         Token::Round => {
             if let (Some(digits), Some(value)) = (stack.pop(), stack.pop()) {
                 let digits = digits as u32;
-                let y = f64::from(10_i32.pow(digits));
-                stack.push((value * y).round() / y);
+                // “Rounding to a very large number leads to infinity. Hence,
+                // the original value without the infinity is given as the
+                // answer.”
+                if let Some(y) = 10_i32.checked_pow(digits) {
+                    let y = f64::from(y);
+                    stack.push((value * y).round() / y);
+                } else {
+                    stack.push(value);
+                }
             } else {
                 return Err(Error::MissingOperand(names(op)));
             }
@@ -927,5 +934,6 @@ mod tests {
         assert_eq!(do_expression("1.9.2 > 1.10.9"), Ok(Some(1.0)));
         assert_eq!(do_expression("1 <> 2"), Ok(Some(1.0)));
         assert_eq!(do_expression("((-1) * 1e10)"), Ok(Some(-10_000_000_000.0)));
+        assert_eq!(do_expression("10 round 100"), Ok(Some(10.0)));
     }
 }
