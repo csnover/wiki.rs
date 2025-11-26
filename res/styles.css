@@ -1162,6 +1162,31 @@ th {
             margin-top: calc(var(--box-margin) * .25);
             padding-top: 0;
         }
+
+        /* 'Turkey (bird)' */
+        &.biota {
+            th {
+                background: transparent !important;
+            }
+
+            > tbody > :first-child > th {
+                &::first-line {
+                    font-stretch: var(--sidebar-stretch);
+                }
+
+                > br {
+                    display: none;
+                }
+
+                [style*="font-size: 85%"] {
+                    font-size: 1em !important;
+                }
+            }
+
+            td:first-child:not(:last-child) {
+                font-stretch: var(--side-table-stretch);
+            }
+        }
     }
 
 
@@ -2134,5 +2159,29 @@ th {
 
     .largestCities-cell-background {
         background-color: transparent;
+    }
+
+    /******************************/
+    /* Template:Phanerozoic 220px */
+    /******************************/
+    [data-wiki-rs~=template-phanerozoic-220px] {
+        /* TODO: This is part of the losing battle of having universal top
+           margin on block-level items inside all containers */
+        * {
+            background: transparent !important;
+            font-stretch: 50%;
+            margin-top: 0;
+            padding: 0 !important;
+        }
+
+        > * + [data-wiki-rs~=template-fossil-range-bar] {
+            border-left: thin dotted var(--fg);
+        }
+
+        :any-link {
+            display: block;
+            font-weight: normal;
+            line-height: 100%;
+        }
     }
 }
