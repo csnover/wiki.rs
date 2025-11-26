@@ -61,8 +61,13 @@ impl MessageLibrary {
         if let Ok(keys) = data.get::<_, Table<'gc>>(ctx, "keys")
             && let Ok(first) = keys.get::<_, VmString<'gc>>(ctx, 1)
         {
-            let hack = match first.to_str()? {
-                "comma-separator" => Some(", "),
+            let hack = match first.to_str()?.to_ascii_lowercase().as_str() {
+                "and" => Some("&#32;and"),
+                "comma-separator" => Some(",&#32;"),
+                "colon-separator" => Some(":"),
+                "dot-separator" => Some("&nbsp;<b>·</b>&#32;"),
+                "parentheses" => Some("($1)"),
+                "word-separator" => Some("&#32;"),
                 _ => None,
             };
 
