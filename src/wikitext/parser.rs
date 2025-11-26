@@ -3364,7 +3364,7 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
         } else if !token.is_table_part()
             && let Some(Spanned {
                 span,
-                node: Token::TableData { content, .. },
+                node: Token::TableData { content, .. } | Token::TableHeading { content, .. },
                 ..
             }) = v.last_mut()
         {
