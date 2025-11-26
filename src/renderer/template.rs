@@ -249,9 +249,15 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
     // TODO: This is related to `tag_blocks` (grep Git history). Do this, except
     // more like how `tag_blocks` worked, no disgusting hacks.
     {
+        // The hack in MW that is used to detect errors from random HTML-ish
+        // strings expects to see `<{tag} class="error"`. So, the disgusting
+        // hack *here* has to make sure to not cause *that* hack to break by
+        // injecting the attribute in the most convenient place. Unfortunately,
+        // only one of these hacks can ever be replaced by something less stupid
+        // later.
         static DISGUSTING_HACK: LazyLock<Regex> = LazyLock::new(|| {
             Regex::new(&format!(
-                r#"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*<([\w-]+)(?: data-wiki-rs="([^"]+)")?"#
+                r#"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*<([\w-]+)[^>]*?(?: data-wiki-rs="([^"]+)")?>"#
             ))
             .unwrap()
         });
@@ -275,9 +281,9 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
                 )
             } else {
                 (
-                    hax.get_match().end(),
+                    hax.get_match().end() - 1,
                     format!(r#" data-wiki-rs="{class_name}""#),
-                    hax.get_match().end(),
+                    hax.get_match().end() - 1,
                 )
             };
 

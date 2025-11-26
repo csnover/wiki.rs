@@ -147,7 +147,7 @@ mod cond {
         let expr = arguments.eval(state, 0)?;
         // 'Template:Date' sends garbage values to `#ifexpr` without an
         // `#iferror` guard to capture the errors.
-        match expr::do_expression(expr.as_deref().unwrap_or_default()) {
+        match on_error_resume_next(expr::do_expression(expr.as_deref().unwrap_or_default())) {
             Ok(result) => {
                 // log::trace!("#ifexpr: {expr:?} = {result:?}");
                 let value = arguments.get_raw(1 + usize::from(result.unwrap_or(0.0) == 0.0));
