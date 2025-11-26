@@ -1982,7 +1982,9 @@ th {
 
     /***********************************/
     /* Template:Historical populations */
+    /* Template:US Census population   */
     /***********************************/
+    .us-census-pop,
     [data-wiki-rs~=template-historical-populations] {
         border-bottom: none;
 
