@@ -32,6 +32,10 @@
 
 :root {
     --aside-max: 30vw;
+    /* You think you can use a repeating-linear-gradient, but then you discover
+       that browsers render a pixel horror instead of something beautiful */
+    --bar-fill: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>') 0 0/4px 4px;
+    --bar-fill-alt: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="0" y2="4" /><line x1="2" x2="6" y1="-2" y2="2" /><line x1="-2" x2="2" y1="2" y2="6" /></g></svg>') 0 0/4px 4px;
     --bg: white;
     --body-bottom: 2rem;
     --body-left: 4rem;
@@ -278,6 +282,10 @@
         list-style: none;
         padding-left: 0;
         margin-left: 1rem;
+
+        > * + * {
+            margin-top: calc(var(--box-margin) * .25);
+        }
     }
 
     & > ul {
@@ -488,45 +496,8 @@ h6 {
     font-stretch: 120%;
 }
 
-ol, ul, dl {
-    padding-left: var(--ol-gutter);
-
-    > * + * {
-        margin-top: calc(var(--box-margin) * .25);
-
-        .plainlist & {
-            margin-top: 0;
-        }
-    }
-}
-
-:is(ol, ul):not([class]) > * {
-    padding-left: .1rem;
-
-    .plainlist &,
-    /* TODO: Too many templates rely on list items having no padding, like
-       navbar-brackets from 'Template:Navbar' */
-    &[class] {
-        padding-left: 0;
-    }
-}
-
-ul {
-    padding-left: 1rem;
-}
-
-dl {
-    padding-left: 0;
-}
-
 dt {
     font-family: var(--sans);
-}
-
-/* Because this element is extremely heavily abused as a mechanism for indenting
-   content, we have little choice but to also do that */
-dd {
-    margin-left: 1rem;
 }
 
 th {
@@ -572,6 +543,7 @@ th {
     --border-color-base: var(--border-fg);
     --box-tag: transparent linear-gradient(135deg, var(--fg) var(--tag-size), transparent var(--tag-size)) 0%/calc(var(--tag-size) * 2) no-repeat;
     --color-base: #000;
+    --side-table-stretch: 80%;
     --table-padding-block: .1rem;
     --table-padding-inline: .5rem;
     --tag-size: .4rem;
@@ -603,6 +575,47 @@ th {
     > [class] /* Template:Mbox, etc. override flow when they should not */
     {
         margin-top: var(--box-margin);
+    }
+
+    ol, ul, dl {
+        padding-left: var(--ol-gutter);
+
+        > * + * {
+            margin-top: calc(var(--box-margin) * .25);
+
+            .plainlist & {
+                margin-top: 0;
+            }
+
+            > :is(ol, ul, dl) {
+                margin-top: calc(var(--box-margin) * .25);
+            }
+        }
+    }
+
+    :is(ol, ul):not([class]) > * {
+        padding-left: .1rem;
+
+        .plainlist &,
+        /* TODO: Too many templates rely on list items having no padding, like
+        navbar-brackets from 'Template:Navbar' */
+        &[class] {
+            padding-left: 0;
+        }
+    }
+
+    ul {
+        padding-left: 1rem;
+    }
+
+    dl {
+        padding-left: 0;
+    }
+
+    /* Because this element is extremely heavily abused as a mechanism for indenting
+    content, we have little choice but to also do that */
+    dd {
+        margin-left: 1rem;
     }
 
     .wiki-rs-categories {
@@ -706,6 +719,12 @@ th {
 
     .nowrap {
         white-space: nowrap;
+    }
+
+    /* 'Template:Time Persons of the Year' puts `.wrap` inside `.nowrap`, which
+       is a load-bearing pattern for not breaking layout. */
+    .wrap {
+        white-space: normal;
     }
 
     .wikitable,
@@ -933,7 +952,7 @@ th {
         }
 
         th {
-            font-stretch: 80%;
+            font-stretch: var(--side-table-stretch);
         }
 
         .infobox-above,
@@ -1713,7 +1732,7 @@ th {
         }
 
         td {
-            font-stretch: 80%;
+            font-stretch: var(--side-table-stretch);
         }
     }
 
@@ -1743,6 +1762,8 @@ th {
 
     /* .infobox is for extra specificity */
     [data-wiki-rs~=template-climate-chart].infobox {
+        --heat-gradient: linear-gradient(to bottom, red 20%, blue 80%);
+
         border: none !important;
         font-variant-numeric: lining-nums;
         margin-bottom: var(--figure-margin) !important;
@@ -1762,13 +1783,52 @@ th {
 
         /* axis display, part 2 */
         tr:has(> td > [style*="position:relative"]) {
-            background: transparent url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><circle cx="1" cy="1" r=".5" fill="%23999" /></svg>') repeat-x 0 calc(50% + .5em);
+            background: #fff url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><circle cx="1" cy="1" r=".5" fill="%23999" /></svg>')  repeat-x 0 calc(50% + .5em);
+            position: relative;
 
+            &::before {
+                background-image: var(--heat-gradient);
+                content: '';
+                bottom: 1.5em;
+                left: 0;
+                mix-blend-mode: screen;
+                pointer-events: none;
+                position: absolute;
+                right: 0;
+                top: 0;
+                z-index: 1;
+            }
+        }
+
+        [data-wiki-rs~=template-climate-chart-celsius-column],
+        [data-wiki-rs~=template-climate-chart-celsius-column-i],
+        [data-wiki-rs~=template-climate-chart-fahrenheit-column],
+        [data-wiki-rs~=template-climate-chart-fahrenheit-column-i] {
             /* improve legibility of labels on the axis */
             span {
-                background-color: var(--bg);
+                background-color: #fff;
+                color: #000 !important;
                 padding-inline: .15em;
                 margin-inline: -.15em;
+
+                &[style*="font-size\:70%"] {
+                    font-size: 80% !important;
+                    font-stretch: var(--side-table-stretch);
+                }
+            }
+
+            /* the actual temperature and precipitation bars */
+            div[style*="background\:#e44"],
+            div[style*="background\:#ace"] {
+                background: var(--bar-fill) !important;
+                border: thin solid #000;
+                /* to stop unscaled giant precipitation interfering with the
+                   title link */
+                pointer-events: none;
+            }
+
+            div[style*="background\:#ace"] {
+                background: var(--bar-fill-alt) !important;
             }
         }
 
@@ -1777,6 +1837,7 @@ th {
             font-size: 1rem !important;
         }
 
+        /* legend swatches */
         td[colspan] > span:first-child:not(.reference) {
             border: 1px solid var(--legend-border);
             color: transparent !important;
@@ -1785,6 +1846,18 @@ th {
             height: var(--legend-wh);
             vertical-align: var(--legend-valign);
             width: var(--legend-wh);
+
+            &[style*="red"],
+            &[style*="#aaccee"] {
+                color: transparent !important;
+                background: var(--heat-gradient), var(--bar-fill), #fff !important;
+                background-blend-mode: screen, normal, normal;
+            }
+
+            &[style*="#aaccee"] {
+                color: transparent !important;
+                background: var(--heat-gradient), var(--bar-fill-alt), #fff !important;
+            }
         }
 
         .infobox {
@@ -1917,17 +1990,85 @@ th {
         margin-bottom: var(--figure-margin) !important;
         margin-left: var(--figure-margin) !important;
 
+        caption {
+            border-bottom: thin solid var(--border-th);
+            font-stretch: var(--side-table-stretch);
+            padding: 0 !important;
+        }
+
         th, td {
+            font-family: var(--sans);
+            font-stretch: var(--side-table-stretch);
             padding: var(--table-padding-block) var(--table-padding-inline) !important;
         }
 
         tr:last-child:last-child {
             background-color: transparent;
 
-             > * {
+            > * {
                 border-top-color: var(--border-fg) !important;
-                font-family: var(--sans);
-             }
+                font-stretch: normal;
+            }
+        }
+    }
+
+    /*********************/
+    /* Template: Bar box */
+    /*********************/
+    .barbox {
+        font-family: var(--sans);
+        font-stretch: var(--side-table-stretch);
+
+        th, td {
+            font-variant-numeric: tabular-nums;
+        }
+
+        tr:nth-child(2) {
+            display: none;
+        }
+
+        tr:first-child,
+        tr:last-child {
+            border-bottom: thin solid var(--border-th);
+        }
+
+        tr:first-child {
+            border-color: var(--fg);
+        }
+
+        > div {
+            background: transparent !important;
+            border: none !important;
+            font-size: 1rem !important;
+        }
+    }
+
+    /*************************/
+    /* Template: Bar percent */
+    /*************************/
+    [data-wiki-rs~=template-bar-percent] {
+        &:nth-child(2n) {
+            background-color: var(--shade-bg);
+        }
+
+        > td:first-child {
+            min-width: 0 !important;
+        }
+
+        > td:nth-child(2) {
+            border-left: thin solid var(--fg) !important;
+            border-right: none !important;
+            min-width: 100px;
+            width: auto !important;
+
+            > div {
+                background: var(--bar-fill) !important;
+                border: solid black;
+                border-width: thin thin thin 0;
+                display: inline-block;
+                vertical-align: middle;
+                height: 1em;
+            }
         }
     }
 
