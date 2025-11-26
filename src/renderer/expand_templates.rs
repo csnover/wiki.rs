@@ -171,7 +171,7 @@ impl Surrogate<Error> for ExpandTemplates {
     ) -> Result {
         self.inclusion_mode
             .pop_if(|current| *current == mode)
-            .expect("mismatched inclusion control");
+            .expect("include stack corruption");
         Ok(())
     }
 
@@ -358,7 +358,9 @@ impl Surrogate<Error> for ExpandTemplates {
         if output.has_onlyinclude {
             self.inclusion_mode.push(InclusionMode::NoInclude);
             surrogate::adopt_output(self, state, sp, output)?;
-            self.inclusion_mode.pop();
+            self.inclusion_mode
+                .pop_if(|mode| *mode == InclusionMode::NoInclude)
+                .expect("include stack corruption");
         } else {
             surrogate::adopt_output(self, state, sp, output)?;
         }
@@ -543,7 +545,7 @@ impl Surrogate<Error> for ExpandTemplates {
         sp: &StackFrame<'_>,
         token: &Spanned<Token>,
     ) -> Result {
-        if should_skip(
+        if !should_adopt(
             token,
             matches!(self.mode, ExpandMode::Include),
             self.inclusion_mode.last(),
@@ -561,34 +563,27 @@ impl Surrogate<Error> for ExpandTemplates {
 
 /// Determines whether a node should be skipped according to the inclusion
 /// control rules.
-pub(crate) fn should_skip(
+#[inline]
+pub(crate) fn should_adopt(
     token: &Spanned<Token>,
     in_include: bool,
     current: Option<&InclusionMode>,
 ) -> bool {
-    if let Spanned {
-        node: Token::EndInclude(mode),
-        ..
-    } = token
-        && Some(mode) == current
-    {
-        false
-    // TODO: Think harder about what the actual conditions should be
-    } else if let Spanned {
-        node: Token::StartInclude(..),
-        ..
-    } = token
-        && matches!(current, Some(InclusionMode::OnlyInclude))
-    {
-        false
-    } else if in_include {
-        !matches!(
-            current,
-            None | Some(InclusionMode::IncludeOnly | InclusionMode::OnlyInclude)
-        )
-    } else {
-        !matches!(current, None | Some(InclusionMode::NoInclude))
+    if matches!(
+        token,
+        Spanned {
+            node: Token::EndInclude(..) | Token::StartInclude(..),
+            ..
+        }
+    ) {
+        return true;
     }
+
+    let Some(current) = current else {
+        return true;
+    };
+
+    in_include == (*current != InclusionMode::NoInclude)
 }
 
 /// Calculates the ranges for the prefix and suffix in a token which is

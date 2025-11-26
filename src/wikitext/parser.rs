@@ -1237,14 +1237,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                         )
                     {
                         RuleResult::Matched(
-                            pos + end_pos,
+                            pos + content_len,
                             iter::once(tag).chain(inner).collect()
                         )
                     } else {
-                        // TODO: It seems odd that this would read the rest of
-                        // the template in the incomplete context instead of
-                        // taking it out of context and just treating the end of
-                        // file as the end tag position?
                         RuleResult::Matched(pos, vec![tag])
                     }
                 }
