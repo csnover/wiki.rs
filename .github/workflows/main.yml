@@ -37,11 +37,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - name: Linux
+            target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          - target: universal-apple-darwin
+          - name: macOS
+            target: universal-apple-darwin
             os: macos-latest
-          - target: x86_64-pc-windows-msvc
+          - name: Windows
+            target: x86_64-pc-windows-msvc
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
@@ -51,7 +54,7 @@ jobs:
         uses: taiki-e/upload-rust-binary-action@3962470d6e7f1993108411bc3f75a135ec67fc8c
         id: build
         with:
-          archive: $bin-$tag-$target
+          archive: "wiki.rs $tag for ${{ matrix.name }}"
           bin: wiki-rs
           checksum: sha512
           include: LICENSE,README.md
