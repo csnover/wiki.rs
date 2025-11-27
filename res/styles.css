@@ -1470,6 +1470,14 @@ th {
         margin-top: 0;
     }
 
+    .refbegin-hanging-indents > ul {
+        padding-left: 2em;
+        > li {
+            padding-left: 0;
+            text-indent: -2em;
+        }
+    }
+
     /***********************/
     /* Template:Blockquote */
     /***********************/
