@@ -278,7 +278,7 @@ pub(super) fn run_vm(
                         .into());
                     }
 
-                    if start.elapsed() > Duration::new(5, 0) {
+                    if start.elapsed() > Duration::new(10, 0) {
                         break 'outer Err(RuntimeError::new(anyhow::anyhow!(
                             "time limit exceeded"
                         ))
