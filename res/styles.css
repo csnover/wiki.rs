@@ -31,10 +31,10 @@
 }
 
 :root {
-    --aside-max: 30vw;
     /* You think you can use a repeating-linear-gradient, but then you discover
        that browsers render a pixel horror instead of something beautiful */
-    --bar-fill: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>') 0 0/4px 4px;
+    --bar-fill: var(--bar-fill-img) 0 0/4px 4px;
+    --bar-fill-img: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
     --bar-fill-alt: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="0" y2="4" /><line x1="2" x2="6" y1="-2" y2="2" /><line x1="-2" x2="2" y1="2" y2="6" /></g></svg>') 0 0/4px 4px;
     --bg: white;
     --body-bottom: 2rem;
@@ -89,7 +89,7 @@
     border-top: .25rem solid var(--highlight);
     display: grid;
     gap: 0 4rem;
-    grid-template-columns: auto fit-content(33%);
+    grid-template-columns: auto 18rem;
     padding: 4rem var(--body-right) var(--body-bottom) var(--body-left);
 }
 
@@ -295,6 +295,7 @@
 
 .wiki-rs-content {
     container: main-article / inline-size;
+    contain: inline-size layout style paint;
     grid-column: 1;
     grid-row: 2;
     overflow: hidden;
@@ -305,7 +306,7 @@
     margin-right: -2rem;
     margin-left: -4rem;
     padding-left: 4rem;
-    padding-right: 4rem;
+    padding-right: 2rem;
 }
 
 .wiki-rs-bye {
@@ -536,6 +537,9 @@ th {
 
 /* overrides for garbage <templatestyle> injections */
 .mw-parser-output {
+    --aside-gutter-align: translateX(min(0%, calc(var(--aside-max) * -1 + 100%)));
+    --aside-max: calc(100cqw - var(--figure-margin) - var(--max-width));
+    --aside-min: 23rem;
     --background-color-base: transparent;
     --background-color-interactive-subtle: transparent;
     --background-color-neutral: transparent;
@@ -543,6 +547,7 @@ th {
     --border-color-base: var(--border-fg);
     --box-tag: transparent linear-gradient(135deg, var(--fg) var(--tag-size), transparent var(--tag-size)) 0%/calc(var(--tag-size) * 2) no-repeat;
     --color-base: #000;
+    --max-width: 70rem;
     --side-table-stretch: 80%;
     --table-padding-block: .1rem;
     --table-padding-inline: .5rem;
@@ -554,11 +559,13 @@ th {
     --legend-wh: calc(1ex + 2px);
     --legend-valign: baseline;
 
-    contain: inline-size layout style paint;
-
     /**********/
     /* Layout */
     /**********/
+
+    > :where(:not(.navbox, .wiki-rs-categories, .reflist, .refbegin)) {
+        max-width: var(--max-width);
+    }
 
     /*
     The standard `* + *` rule for layout cannot be used because many templates
@@ -780,9 +787,13 @@ th {
 
         &.floatright,
         &.us-census-pop-right, /* 'Template:US Census population' */
-        &[data-wiki-rs~=template-historical-populations] /* 'Template:Historical populations' */
+        &[data-wiki-rs~=template-historical-populations], /* 'Template:Historical populations' */
+        &[style*="float:right"]
         {
             max-width: 50cqw;
+            /* !important: 'Crazy Taxi' */
+            margin-left: var(--figure-margin) !important;
+            margin-bottom: var(--figure-margin) !important;
             width: auto;
         }
     }
@@ -795,6 +806,7 @@ th {
         float: right;
         margin-bottom: var(--figure-margin);
         margin-left: var(--figure-margin);
+        transform: var(--aside-gutter-align);
     }
 
     /* :-((((( */
@@ -851,6 +863,8 @@ th {
             float: right;
             margin-left: var(--figure-margin);
             margin-bottom: var(--figure-margin);
+            min-width: var(--aside-min);
+            transform: var(--aside-gutter-align);
         }
 
         img {
@@ -926,8 +940,10 @@ th {
         float: right;
         font-family: var(--sans);
         margin: 0 0 var(--figure-margin) var(--figure-margin);
-        max-width: 25rem;
+        max-width: var(--aside-max);
+        min-width: var(--aside-min);
         padding: 0;
+        transform: var(--aside-gutter-align);
         /* !important: 'Crazy Taxi' */
         width: auto !important;
 
@@ -1356,6 +1372,7 @@ th {
 
         &.portalright {
             padding-right: 0;
+            transform: var(--aside-gutter-align);
         }
     }
 
@@ -1413,6 +1430,10 @@ th {
         > * + * {
             margin-top: calc(var(--box-margin) * .25);
         }
+    }
+
+    .side-box-right {
+        transform: var(--aside-gutter-align);
     }
 
     /***************************************/
@@ -1711,6 +1732,8 @@ th {
         padding: calc(var(--box-margin) * 2) var(--box-margin) calc(var(--box-margin) * 2) calc(var(--box-margin) * 2);
 
         &.floatright {
+            max-width: var(--aside-max);
+            min-width: var(--aside-min);
             margin: 0 calc(var(--box-margin) * -1) var(--figure-margin) var(--figure-margin);
         }
 
@@ -1742,6 +1765,7 @@ th {
         line-height: inherit;
         margin: 0 calc(var(--box-margin) * -1) var(--figure-margin) var(--figure-margin);
         padding: 0;
+        transform: var(--aside-gutter-align);
         width: auto;
 
         > caption {
