@@ -1891,7 +1891,7 @@ dependencies = [
 
 [[package]]
 name = "wiki-rs"
-version = "2025.11.4"
+version = "2025.11.5-pre"
 dependencies = [
  "anyhow",
  "arc-cell",
