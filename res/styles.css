@@ -1201,10 +1201,10 @@ th {
 
             td:first-child:not(:last-child) {
                 font-stretch: var(--side-table-stretch);
+                font-weight: var(--bold);
             }
         }
     }
-
 
     /*******************/
     /* Template:Navbox */
