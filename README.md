@@ -6,10 +6,10 @@ wiki.rs is a high-performance offline reader of multistream bz2 MediaWiki dumps.
 
 Download a [*multistream* dump], decompress *just* the index.txt file, then run:
 
-`cargo run --release -- [options] <index.txt> <database.xml.bz2>`
+`wiki-rs [options] <index.txt> <database.xml.bz2>`
 
-By default, wiki.rs will start at `localhost:3000`. Use `cargo run -- --help` to
-see additional options.
+wiki.rs will start at `localhost:3000` by default. Run `wiki-rs --help` to see a
+list of all the options you can use with wiki.rs to change how it works for you.
 
 [*multistream* dump]:  https://en.wikipedia.org/wiki/Wikipedia:Database_download
 
@@ -27,7 +27,7 @@ Nerd-snipe someone who is also “not” procrastinating and this what you will 
 
 wiki.rs starts up in under one second (when `index.txt` is on an SSD), loads and
 renders base articles in hundreds of milliseconds[^1], and can search across all
-article titles in a database with tens of millions of records in a few dozen ms.
+article titles in a database with tens of millions of records in about a second.
 
 [^1]: Full page renders with templates and scripts can take more time than this.
       This is partly because not much effort has been spent yet on profiling and
