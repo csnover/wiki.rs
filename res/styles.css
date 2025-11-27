@@ -1163,9 +1163,9 @@ th {
             padding-top: 0;
         }
 
-        /* 'Turkey (bird)' */
+        /* 'Turkey (bird)', 'Cat', etc. */
         &.biota {
-            th {
+            tr, th {
                 background: transparent !important;
             }
 
@@ -2165,17 +2165,32 @@ th {
     /* Template:Phanerozoic 220px */
     /******************************/
     [data-wiki-rs~=template-phanerozoic-220px] {
-        /* TODO: This is part of the losing battle of having universal top
-           margin on block-level items inside all containers */
-        * {
+        font-size: 1em !important;
+
+        > * {
             background: transparent !important;
-            font-stretch: 50%;
-            margin-top: 0;
-            padding: 0 !important;
+        }
+
+        > [name=Range] {
+            pointer-events: none;
+
+            * {
+                font-stretch: normal;
+                font-size: 90% !important;
+                font-weight: bold;
+            }
         }
 
         > * + [data-wiki-rs~=template-fossil-range-bar] {
             border-left: thin dotted var(--fg);
+        }
+
+        * {
+            font-stretch: 50%;
+            /* TODO: This is part of the losing battle of having universal top
+               margin on block-level items inside all containers */
+            margin-top: 0;
+            padding: 0 !important;
         }
 
         :any-link {
