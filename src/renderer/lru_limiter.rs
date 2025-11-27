@@ -66,12 +66,6 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
     fn visit_token(&mut self, token: &'tt Spanned<Token>) -> Result<(), Infallible> {
         self.size += size_of::<Spanned<Token>>();
         match &token.node {
-            Token::Extension { attributes, .. }
-            | Token::StartTag { attributes, .. }
-            | Token::TableRow { attributes }
-            | Token::TableStart { attributes } => {
-                self.visit_arguments(attributes)?;
-            }
             Token::Autolink { target, content } | Token::ExternalLink { target, content } => {
                 self.visit_tokens(target)?;
                 self.visit_tokens(content)?;
@@ -115,20 +109,14 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             Token::StartAnnotation { attributes, .. } => {
                 self.size += size_of_val(attributes.as_slice());
             }
-            Token::TableCaption {
-                attributes,
-                content,
-            }
-            | Token::TableData {
-                attributes,
-                content,
-            }
-            | Token::TableHeading {
-                attributes,
-                content,
-            } => {
+            Token::Extension { attributes, .. }
+            | Token::StartTag { attributes, .. }
+            | Token::TableRow { attributes }
+            | Token::TableStart { attributes }
+            | Token::TableCaption { attributes }
+            | Token::TableData { attributes }
+            | Token::TableHeading { attributes } => {
                 self.visit_arguments(attributes)?;
-                self.visit_tokens(content)?;
             }
             Token::Template { target, arguments } => {
                 self.visit_tokens(target)?;

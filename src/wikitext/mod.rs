@@ -406,15 +406,11 @@ pub enum Token {
     TableCaption {
         /// The caption attributes.
         attributes: Vec<Spanned<Argument>>,
-        /// The caption content.
-        content: Vec<Spanned<Token>>,
     },
     /// A table data cell.
     TableData {
         /// The cell attributes.
         attributes: Vec<Spanned<Argument>>,
-        /// The cell content.
-        content: Vec<Spanned<Token>>,
     },
     /// A table end.
     TableEnd,
@@ -422,8 +418,6 @@ pub enum Token {
     TableHeading {
         /// The heading cell attributes.
         attributes: Vec<Spanned<Argument>>,
-        /// The heading cell content.
-        content: Vec<Spanned<Token>>,
     },
     /// A table row.
     TableRow {
@@ -442,21 +436,6 @@ pub enum Token {
         /// The template arguments.
         arguments: Vec<Spanned<Argument>>,
     },
-}
-
-impl Token {
-    /// Whether this token is part of a table.
-    fn is_table_part(&self) -> bool {
-        matches!(
-            self,
-            Self::TableCaption { .. }
-                | Self::TableData { .. }
-                | Self::TableEnd
-                | Self::TableHeading { .. }
-                | Self::TableRow { .. }
-                | Self::TableStart { .. }
-        )
-    }
 }
 
 /// A conversion error for out-of-range heading levels.

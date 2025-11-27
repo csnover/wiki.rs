@@ -565,7 +565,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     = table_heading_tags(&ctx.with_table_head())
     / t:table_row_tag(ctx) { vec![t] }
     / table_data_tags(ctx)
-    / t:table_caption_tag(ctx) { vec![t] }
+    / table_caption_tag(ctx)
 
     /// A table caption.
     ///
@@ -574,20 +574,22 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///          ^^^^^^^^^^^^^^^
     /// ```
     // FIXME: Not sure if we want to support it, but this should allow columns.
-    rule table_caption_tag(ctx: &Context) -> Spanned<Token>
-    = // avoid recursion via nested_block_in_table
-      &assert(!ctx.table_data_block, "not in table data block")
-      t:spanned(<
-          pipe() "+"
-          attributes:(t:row_syntax_table_attrs(ctx)? { t.unwrap_or(vec![]) })
-          content:nested_block_in_table(&ctx.with_table_caption())* {
-              Token::TableCaption {
-                  attributes,
-                  content: reduce_tree(content.into_iter().flatten())
-              }
-          }
+    rule table_caption_tag(ctx: &Context) -> Vec<Spanned<Token>>
+    = &assert(!ctx.table_data_block, "not in table data block")
+      caption:spanned(<
+        pipe() "+"
+        attributes:(t:row_syntax_table_attrs(ctx)? { t.unwrap_or(vec![]) })
+        { Token::TableCaption { attributes } }
       >)
-    { t }
+      // It is not reasonably possible to encapsulate the table caption content
+      // inside the caption token itself because wikitables can be nested, and
+      // this grammar only parses table *parts*, so it does not have enough
+      // state information to know whether a new table part encountered in
+      // `nested_block_in_table` is a continuation of a child table or a
+      // terminator for the current table part.
+      // avoid recursion via nested_block_in_table
+      content:nested_block_in_table(&ctx.with_table_caption())*
+    { reduce_tree(iter::once(caption).chain(content.into_iter().flatten())) }
 
     /// A table row tag.
     ///
@@ -615,7 +617,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     rule table_heading_tags(ctx: &Context) -> Vec<Spanned<Token>>
     = first:table_heading_tag(ctx, <"!">)
       rest:table_heading_tag(ctx, <("!!" / pipe_pipe()) {}>)*
-    { reduce_tree(iter::once(first).chain(rest)) }
+    { reduce_tree(first.into_iter().chain(rest.into_iter().flatten())) }
 
     /// A single table heading.
     ///
@@ -623,12 +625,20 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// {| k="v" |+ c-k="v" | c |- r-k="v" ! h-k="v" | h !! h2 | d-k="v" | d || d2 |}
     ///                                      ^^^^^^^^^^^    ^^
     /// ```
-    rule table_heading_tag(ctx: &Context, delimiter: rule<()>) -> Spanned<Token>
-    = spanned(<
-      delimiter()
-      start:position!()
-      attributes:(t:row_syntax_table_attrs(ctx)? { t.unwrap_or(vec![]) })
+    rule table_heading_tag(ctx: &Context, delimiter: rule<()>) -> Vec<Spanned<Token>>
+    = heading:spanned(<
+        delimiter()
+        attributes:(t:row_syntax_table_attrs(ctx)? { t.unwrap_or(vec![]) })
+        { Token::TableHeading { attributes } }
+      >)
+      // It is not reasonably possible to encapsulate the table heading content
+      // inside the heading token itself because wikitables can be nested, and
+      // this grammar only parses table *parts*, so it does not have enough
+      // state information to know whether a new table part encountered in
+      // `nested_block_in_table` is a continuation of a child table or a
+      // terminator for the current table part.
       content:(
+          start:position!()
           t:nested_block_in_table(ctx)
           #{|input, pos| {
               // Parsoid did an even dirtier check to avoid matching on newlines
@@ -646,11 +656,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
           }}
           { t }
       )*
-      { Token::TableHeading {
-          attributes,
-          content: reduce_tree(content.into_iter().flatten())
-      } }
-    >)
+    { reduce_tree(iter::once(heading).chain(content.into_iter().flatten())) }
 
     /// Table data tags.
     ///
@@ -663,7 +669,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       &assert(!ctx.table_data_block, "not in table data block")
       first:table_data_tag(ctx, <pipe() !['+'|'-']>)
       rest:table_data_tag(ctx, <pipe_pipe() {}>)*
-    { reduce_tree(iter::once(first).chain(rest)) }
+    { reduce_tree(first.into_iter().chain(rest.into_iter().flatten())) }
 
     /// A single table data tag.
     ///
@@ -671,18 +677,22 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// {| k="v" |+ c-k="v" | c |- r-k="v" ! h-k="v" | h !! h2 | d-k="v" | d || d2 |}
     ///                                                          ^^^^^^^^^^^    ^^
     /// ```
-    rule table_data_tag(ctx: &Context, delimiter: rule<()>) -> Spanned<Token>
-    = spanned(<
-      delimiter()
-      !"}"
-      attributes:(t:row_syntax_table_attrs(ctx)? { t.unwrap_or(vec![]) })
+    rule table_data_tag(ctx: &Context, delimiter: rule<()>) -> Vec<Spanned<Token>>
+    = data:spanned(<
+        delimiter()
+        !"}"
+        attributes:(t:row_syntax_table_attrs(ctx)? { t.unwrap_or(vec![]) })
+        { Token::TableData { attributes } }
+      >)
+      // It is not reasonably possible to encapsulate the table data content
+      // inside the data token itself because wikitables can be nested, and
+      // this grammar only parses table *parts*, so it does not have enough
+      // state information to know whether a new table part encountered in
+      // `nested_block_in_table` is a continuation of a child table or a
+      // terminator for the current table part.
       // use `inline_breaks` to break on `tr`, etc.
       content:nested_block_in_table(ctx)*
-      { Token::TableData {
-          attributes,
-          content: reduce_tree(content.into_iter().flatten())
-      } }
-    >)
+    { reduce_tree(iter::once(data).chain(content.into_iter().flatten())) }
 
     /// Table end tag.
     ///
@@ -3357,24 +3367,6 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
             // still needs to be represented in the list item span to ensure
             // list items can be reserialised properly
             li_span.end = token.span.end;
-        } else if !token.is_table_part()
-            && let Some(Spanned {
-                span,
-                node: Token::TableData { content, .. } | Token::TableHeading { content, .. },
-                ..
-            }) = v.last_mut()
-        {
-            // TODO: The `table_data_tag` (really, `empty_block`) rule
-            // terminates on a blank new line. The documented reason for this is
-            // to avoid treating "||" as a cell separator when it does not
-            // appear on the same line as the "␤|" which started the data block,
-            // but this should be handled by running until a newline with the
-            // `pipe_pipe` delimiter, then continue running until "␤|" or `eof`
-            // with no delimiter. However, this has been confusingly hard to
-            // apply in practice. So, for the moment, tokens that should be
-            // consumed by that rule are reparented here.
-            span.end = token.span.end;
-            content.push(token);
         } else if token.node != Token::Text || !token.span.is_empty() {
             v.push(token);
         }

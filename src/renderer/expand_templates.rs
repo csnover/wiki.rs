@@ -482,9 +482,8 @@ impl Surrogate<Error> for ExpandTemplates {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
-        self.adopt_attributes_content(state, sp, span, attributes, content)
+        self.adopt_attributes_content(state, sp, span, attributes, &[])
     }
 
     fn adopt_table_data(
@@ -493,9 +492,8 @@ impl Surrogate<Error> for ExpandTemplates {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
-        self.adopt_attributes_content(state, sp, span, attributes, content)
+        self.adopt_attributes_content(state, sp, span, attributes, &[])
     }
 
     fn adopt_table_end(
@@ -514,9 +512,8 @@ impl Surrogate<Error> for ExpandTemplates {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
-        self.adopt_attributes_content(state, sp, span, attributes, content)
+        self.adopt_attributes_content(state, sp, span, attributes, &[])
     }
 
     fn adopt_table_row(

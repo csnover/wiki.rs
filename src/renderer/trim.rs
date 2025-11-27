@@ -496,11 +496,9 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
         self.flush(state)?;
-        self.out
-            .adopt_table_caption(state, sp, span, attributes, content)
+        self.out.adopt_table_caption(state, sp, span, attributes)
     }
 
     #[inline]
@@ -510,11 +508,9 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
         self.flush(state)?;
-        self.out
-            .adopt_table_data(state, sp, span, attributes, content)
+        self.out.adopt_table_data(state, sp, span, attributes)
     }
 
     #[inline]
@@ -535,11 +531,9 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
         self.flush(state)?;
-        self.out
-            .adopt_table_heading(state, sp, span, attributes, content)
+        self.out.adopt_table_heading(state, sp, span, attributes)
     }
 
     #[inline]
@@ -977,11 +971,9 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for TrimLink<'_, W> {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
         self.emitted = true;
-        self.out
-            .adopt_table_caption(state, sp, span, attributes, content)
+        self.out.adopt_table_caption(state, sp, span, attributes)
     }
 
     #[inline]
@@ -991,11 +983,9 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for TrimLink<'_, W> {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
         self.emitted = true;
-        self.out
-            .adopt_table_data(state, sp, span, attributes, content)
+        self.out.adopt_table_data(state, sp, span, attributes)
     }
 
     #[inline]
@@ -1016,11 +1006,9 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for TrimLink<'_, W> {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
         self.emitted = true;
-        self.out
-            .adopt_table_heading(state, sp, span, attributes, content)
+        self.out.adopt_table_heading(state, sp, span, attributes)
     }
 
     #[inline]

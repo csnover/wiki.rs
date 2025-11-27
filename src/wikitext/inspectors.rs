@@ -351,49 +351,28 @@ impl fmt::Debug for TokenInspector<'_> {
             Token::StripMarker(marker) => {
                 write!(f, "(marker {marker})")
             }
-            Token::TableCaption {
-                attributes,
-                content,
-            } => f
+            Token::TableCaption { attributes } => f
                 .debug_struct(&span_name("TableCaption", self.0, self.1))
                 .field(
                     "attributes",
                     &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
                 )
-                .field(
-                    "content",
-                    &VInspector::<TokenInspector<'_>>(self.0, content),
-                )
                 .finish(),
-            Token::TableData {
-                attributes,
-                content,
-            } => f
+            Token::TableData { attributes } => f
                 .debug_struct(&span_name("TableData", self.0, self.1))
                 .field(
                     "attributes",
                     &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
                 )
-                .field(
-                    "content",
-                    &VInspector::<TokenInspector<'_>>(self.0, content),
-                )
                 .finish(),
             Token::TableEnd => f
                 .debug_struct(&span_name("TableEnd", self.0, self.1))
                 .finish(),
-            Token::TableHeading {
-                attributes,
-                content,
-            } => f
+            Token::TableHeading { attributes } => f
                 .debug_struct(&span_name("TableHeading", self.0, self.1))
                 .field(
                     "attributes",
                     &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
-                )
-                .field(
-                    "content",
-                    &VInspector::<TokenInspector<'_>>(self.0, content),
                 )
                 .finish(),
             Token::TableRow { attributes } => f

@@ -211,10 +211,17 @@ impl Document {
         // TODO: Avoid ownership
         let tag = Cow::Owned(tag.to_ascii_lowercase());
 
-        // Sometimes, table-row templates get things like 'Template:Tfd'
-        // applied to them. When this happens, allow the browser to foster the
-        // content out of the table. However, also make sure that if a new
-        // table or table row starts that it interacts properly with the table.
+        // Normally, receiving a new start tag should close any tags which cause
+        // it to be in an invalid position in the DOM. This is especially
+        // important for wikitable markup because wikitable children are
+        // implicitly closed by the production of a new wikitable element.
+        // However, there is one case where elements should be allowed to be
+        // placed in an illegal position: when table-row templates get things
+        // like 'Template:Tfd' applied to them, this will try to put non-table
+        // content into the table—but this is actually desirable, because the
+        // browser will automatically foster content in this position out of the
+        // table. So, parenting-close rules are skipped if the last element is a
+        // table or tr.
         if !matches!(
             self.stack.last(),
             Some(node @ Node::Tag(last, _))
@@ -839,9 +846,16 @@ impl Surrogate<Error> for Document {
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
-        self.write_element(state, sp, "caption", attributes, content)
+        if !self
+            .stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+        {
+            self.start_tag(state, sp, "table", &[])?;
+        }
+        self.start_tag(state, sp, "caption", attributes)
     }
 
     fn adopt_table_data(
@@ -850,12 +864,24 @@ impl Surrogate<Error> for Document {
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
-        if !matches!(self.stack.last(), Some(Node::Tag(tag, _)) if tag == "tr") {
+        if !self
+            .stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "tr"))
+        {
+            if !self
+                .stack
+                .iter()
+                .rev()
+                .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+            {
+                self.start_tag(state, sp, "table", &[])?;
+            }
             self.start_tag(state, sp, "tr", &[])?;
         }
-        self.write_element(state, sp, "td", attributes, content)
+        self.start_tag(state, sp, "td", attributes)
     }
 
     fn adopt_table_end(
@@ -873,12 +899,24 @@ impl Surrogate<Error> for Document {
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
     ) -> Result {
-        if !matches!(self.stack.last(), Some(Node::Tag(tag, _)) if tag == "tr") {
+        if !self
+            .stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "tr"))
+        {
+            if !self
+                .stack
+                .iter()
+                .rev()
+                .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+            {
+                self.start_tag(state, sp, "table", &[])?;
+            }
             self.start_tag(state, sp, "tr", &[])?;
         }
-        self.write_element(state, sp, "th", attributes, content)
+        self.start_tag(state, sp, "th", attributes)
     }
 
     fn adopt_table_row(
@@ -888,6 +926,14 @@ impl Surrogate<Error> for Document {
         _span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
+        if !self
+            .stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+        {
+            self.start_tag(state, sp, "table", &[])?;
+        }
         self.start_tag(state, sp, "tr", attributes)
     }
 
@@ -968,6 +1014,8 @@ impl Node {
                     panic!("void tag on element stack")
                 } else if let Some(children) = PARENTS.get(parent) {
                     children.contains(&tag)
+                } else if matches!(parent.as_ref(), "td" | "th" | "caption") {
+                    !matches!(tag, "td" | "th" | "caption")
                 } else if PHRASING_TAGS.contains(parent) {
                     PHRASING_TAGS.contains(tag)
                 } else {

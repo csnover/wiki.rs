@@ -224,22 +224,20 @@ pub trait Visitor<'tt, E> {
     #[inline]
     fn visit_table_caption(
         &mut self,
-        span: Span,
-        attributes: &'tt [Spanned<Argument>],
-        content: &'tt [Spanned<Token>],
+        _span: Span,
+        _attributes: &'tt [Spanned<Argument>],
     ) -> Result<(), E> {
-        visit_table_caption(self, span, attributes, content)
+        Ok(())
     }
 
     /// Visits a [`Token::TableData`].
     #[inline]
     fn visit_table_data(
         &mut self,
-        span: Span,
-        attributes: &'tt [Spanned<Argument>],
-        content: &'tt [Spanned<Token>],
+        _span: Span,
+        _attributes: &'tt [Spanned<Argument>],
     ) -> Result<(), E> {
-        visit_table_data(self, span, attributes, content)
+        Ok(())
     }
 
     /// Visits a [`Token::TableEnd`].
@@ -252,11 +250,10 @@ pub trait Visitor<'tt, E> {
     #[inline]
     fn visit_table_heading(
         &mut self,
-        span: Span,
-        attributes: &'tt [Spanned<Argument>],
-        content: &'tt [Spanned<Token>],
+        _span: Span,
+        _attributes: &'tt [Spanned<Argument>],
     ) -> Result<(), E> {
-        visit_table_heading(self, span, attributes, content)
+        Ok(())
     }
 
     /// Visits a [`Token::TableRow`].
@@ -440,48 +437,6 @@ where
     visit_link(visitor, span, target, content, trail)
 }
 
-/// Default implementation of [`Visitor::visit_table_caption`].
-#[inline]
-pub fn visit_table_caption<'tt, V, E>(
-    visitor: &mut V,
-    _span: Span,
-    _attributes: &'tt [Spanned<Argument>],
-    content: &'tt [Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Visitor<'tt, E> + ?Sized,
-{
-    visitor.visit_tokens(content)
-}
-
-/// Default implementation of [`Visitor::visit_table_data`].
-#[inline]
-pub fn visit_table_data<'tt, V, E>(
-    visitor: &mut V,
-    _span: Span,
-    _attributes: &'tt [Spanned<Argument>],
-    content: &'tt [Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Visitor<'tt, E> + ?Sized,
-{
-    visitor.visit_tokens(content)
-}
-
-/// Default implementation of [`Visitor::visit_table_heading`].
-#[inline]
-pub fn visit_table_heading<'tt, V, E>(
-    visitor: &mut V,
-    _span: Span,
-    _attributes: &'tt [Spanned<Argument>],
-    content: &'tt [Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Visitor<'tt, E> + ?Sized,
-{
-    visitor.visit_tokens(content)
-}
-
 /// Default implementation of [`Visitor::visit_token`].
 // Clippy: Literally impossible to be shorter.
 #[allow(clippy::too_many_lines)]
@@ -590,19 +545,10 @@ where
         Token::StripMarker(marker) => visitor.visit_strip_marker(*marker),
         Token::Text => visitor.visit_text(&visitor.source()[token.span.into_range()]),
         Token::TextStyle(style) => visitor.visit_text_style(token.span, *style),
-        Token::TableCaption {
-            attributes,
-            content,
-        } => visitor.visit_table_caption(token.span, attributes, content),
-        Token::TableData {
-            attributes,
-            content,
-        } => visitor.visit_table_data(token.span, attributes, content),
+        Token::TableCaption { attributes } => visitor.visit_table_caption(token.span, attributes),
+        Token::TableData { attributes } => visitor.visit_table_data(token.span, attributes),
         Token::TableEnd => visitor.visit_table_end(token.span),
-        Token::TableHeading {
-            attributes,
-            content,
-        } => visitor.visit_table_heading(token.span, attributes, content),
+        Token::TableHeading { attributes } => visitor.visit_table_heading(token.span, attributes),
         Token::TableRow { attributes } => visitor.visit_table_row(token.span, attributes),
         Token::TableStart { attributes } => visitor.visit_table_start(token.span, attributes),
         Token::Template { target, arguments } => {

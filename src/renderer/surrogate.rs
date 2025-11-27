@@ -356,26 +356,24 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_caption(
         &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
+        _state: &mut State<'_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _attributes: &[Spanned<Argument>],
     ) -> Result<(), E> {
-        adopt_table_caption(self, state, sp, span, attributes, content)
+        Ok(())
     }
 
     /// Visits a [`Token::TableData`].
     #[inline]
     fn adopt_table_data(
         &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
+        _state: &mut State<'_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _attributes: &[Spanned<Argument>],
     ) -> Result<(), E> {
-        adopt_table_data(self, state, sp, span, attributes, content)
+        Ok(())
     }
 
     /// Visits a [`Token::TableEnd`].
@@ -393,13 +391,12 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_heading(
         &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
+        _state: &mut State<'_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _attributes: &[Spanned<Argument>],
     ) -> Result<(), E> {
-        adopt_table_heading(self, state, sp, span, attributes, content)
+        Ok(())
     }
 
     /// Visits a [`Token::TableRow`].
@@ -618,54 +615,6 @@ where
     adopt_link(surrogate, state, sp, span, target, content, trail)
 }
 
-/// Default implementation of [`Surrogate::adopt_table_caption`].
-#[inline]
-pub fn adopt_table_caption<V, E>(
-    surrogate: &mut V,
-    state: &mut State<'_>,
-    sp: &StackFrame<'_>,
-    _span: Span,
-    _attributes: &[Spanned<Argument>],
-    content: &[Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Surrogate<E> + ?Sized,
-{
-    surrogate.adopt_tokens(state, sp, content)
-}
-
-/// Default implementation of [`Surrogate::adopt_table_data`].
-#[inline]
-pub fn adopt_table_data<V, E>(
-    surrogate: &mut V,
-    state: &mut State<'_>,
-    sp: &StackFrame<'_>,
-    _span: Span,
-    _attributes: &[Spanned<Argument>],
-    content: &[Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Surrogate<E> + ?Sized,
-{
-    surrogate.adopt_tokens(state, sp, content)
-}
-
-/// Default implementation of [`Surrogate::adopt_table_heading`].
-#[inline]
-pub fn adopt_table_heading<V, E>(
-    surrogate: &mut V,
-    state: &mut State<'_>,
-    sp: &StackFrame<'_>,
-    _span: Span,
-    _attributes: &[Spanned<Argument>],
-    content: &[Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Surrogate<E> + ?Sized,
-{
-    surrogate.adopt_tokens(state, sp, content)
-}
-
 /// Default implementation of [`Surrogate::adopt_token`].
 // Clippy: Literally impossible to be shorter.
 #[allow(clippy::too_many_lines)]
@@ -809,19 +758,16 @@ where
             surrogate.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])
         }
         Token::TextStyle(style) => surrogate.adopt_text_style(state, sp, token.span, *style),
-        Token::TableCaption {
-            attributes,
-            content,
-        } => surrogate.adopt_table_caption(state, sp, token.span, attributes, content),
-        Token::TableData {
-            attributes,
-            content,
-        } => surrogate.adopt_table_data(state, sp, token.span, attributes, content),
+        Token::TableCaption { attributes } => {
+            surrogate.adopt_table_caption(state, sp, token.span, attributes)
+        }
+        Token::TableData { attributes } => {
+            surrogate.adopt_table_data(state, sp, token.span, attributes)
+        }
         Token::TableEnd => surrogate.adopt_table_end(state, sp, token.span),
-        Token::TableHeading {
-            attributes,
-            content,
-        } => surrogate.adopt_table_heading(state, sp, token.span, attributes, content),
+        Token::TableHeading { attributes } => {
+            surrogate.adopt_table_heading(state, sp, token.span, attributes)
+        }
         Token::TableRow { attributes } => {
             surrogate.adopt_table_row(state, sp, token.span, attributes)
         }
