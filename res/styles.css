@@ -2231,4 +2231,105 @@ th {
             line-height: 100%;
         }
     }
+
+    /**************************/
+    /* Template:Clade gallery */
+    /**************************/
+    > .clade-gallery.clade-gallery {
+        display: block;
+        font-family: var(--sans);
+        margin-inline: 0;
+
+        * + & {
+            margin-top: var(--box-margin);
+        }
+
+        .main-caption,
+        .main-content {
+            padding: 0;
+        }
+
+        .main-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--box-margin);
+            margin-top: 0;
+
+            > * {
+                flex: 1;
+            }
+        }
+
+        .gallery-element {
+            border: none;
+        }
+
+        .cladogram.cladogram {
+            font-stretch: var(--side-table-stretch);
+            padding: 0;
+        }
+
+        .clade-leaf {
+            &:first-letter {
+                padding-left: .15em;
+            }
+
+            b {
+                font-stretch: normal;
+            }
+
+            img {
+                /* TODO: max-height is just because of no media support to keep
+                   things from being crazy */
+                max-height: 1em;
+                vertical-align: middle;
+            }
+        }
+    }
+
+    /**********************/
+    /* Template:Pie chart */
+    /**********************/
+    .pie-thumb .smooth-pie-container {
+        padding: 0;
+    }
+
+    .smooth-pie,
+    .smooth-pie-legend .l-color {
+        filter: saturate(200%) contrast(200%) brightness(200%) hue-rotate(50deg);
+    }
+    .smooth-pie {
+        /* TODO: Sadly, graf tags cannot be injected after anything that looks
+           like a block. */
+        p { display: none; }
+
+        &,
+        > * {
+            margin-top: 0;
+        }
+
+        &::before {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1;
+            pointer-events: none;
+            content: '';
+            background: var(--bar-fill);
+            border-radius: 50%;
+            mix-blend-mode: overlay;
+        }
+
+        [title] {
+            cursor: help;
+        }
+    }
+
+    .smooth-pie-legend .l-color {
+            background-image: var(--bar-fill-img) !important;
+            background-size: 4px 4px !important;
+            background-blend-mode: overlay;
+    }
 }
