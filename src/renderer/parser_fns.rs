@@ -19,7 +19,7 @@ use crate::{
     expr,
     php::{format_number, fuzzy_cmp, parse_number},
     renderer::WriteSurrogate,
-    title::Namespace,
+    title::{Namespace, Title},
     wikitext::Span,
 };
 use core::{fmt, iter};
@@ -1004,7 +1004,8 @@ mod title {
         // log::trace!("#ifexist: '{value:?}'");
         let exists = arguments
             .eval(state, 0)?
-            .is_some_and(|value| state.statics.db.contains(&value));
+            .map(trim)
+            .is_some_and(|value| state.statics.db.contains(Title::new(&value, None).key()));
         if let Some(arg) = arguments.get_raw(1 + usize::from(!exists)) {
             arg.eval_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
         }
