@@ -2154,7 +2154,7 @@ th {
             font-stretch: var(--side-table-stretch);
         }
 
-        tr:last-child:last-child {
+        tr:last-child:last-child:last-child {
             background-color: transparent;
 
             > * {
@@ -2198,6 +2198,7 @@ th {
 
         table {
             margin-inline: var(--table-margin-inline);
+            width: var(--table-width);
         }
 
         th, td {
