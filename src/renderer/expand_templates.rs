@@ -327,9 +327,11 @@ impl Surrogate<Error> for ExpandTemplates {
         // could be an `include_limits` trailer or other detritus that the
         // parser picked up and discarded in `inlineline`. Retaining whitespace
         // is still required to make sure that list items actually terminate.
-        // TODO: Though, probably not quite this much whitespace. Really there
-        // just needs to be a newline.
-        self.write_str(sp.source[suffix].trim_matches(|c: char| !c.is_ascii_whitespace()))?;
+        let suffix = &sp.source[suffix];
+        let suffix = suffix
+            .rsplit_once(|c: char| !c.is_ascii_whitespace())
+            .map_or(suffix, |(_, suffix)| suffix);
+        self.write_str(suffix)?;
         Ok(())
     }
 
