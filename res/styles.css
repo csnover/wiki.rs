@@ -33,8 +33,9 @@
 :root {
     /* You think you can use a repeating-linear-gradient, but then you discover
        that browsers render a pixel horror instead of something beautiful */
-    --bar-fill: var(--fill-img) 0 0/4px 4px;
-    --bar-fill-alt: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="0" y2="4" /><line x1="2" x2="6" y1="-2" y2="2" /><line x1="-2" x2="2" y1="2" y2="6" /></g></svg>') 0 0/4px 4px;
+    --bar-fill: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
+    --bar-fill-alt: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="0" y2="4" /><line x1="2" x2="6" y1="-2" y2="2" /><line x1="-2" x2="2" y1="2" y2="6" /></g></svg>');
+    --bar-fill-light: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23fff" stroke-width="2"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
     --bg: white;
     --body-bottom: 2rem;
     --body-left: 4rem;
@@ -44,8 +45,6 @@
     --bold: 650;
     --border-th: #999;
     --box-margin: 1rem;
-    --fill-img: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
-    --fill-img-light: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23fff" stroke-width="2"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
     --footer-margin: calc(var(--box-margin) * 4);
     --fg: black;
     --figure-margin: calc(var(--box-margin) * 2);
@@ -970,7 +969,8 @@ th {
         padding: 0;
 
         /* 'Elizabeth II' nests infoboxes */
-        .mw-parser-output > & {
+        /* 'Template:Climate chart' floats to the left too */
+        .mw-parser-output > &:not([style*="float: left"]) {
             max-width: var(--aside-max);
             min-width: var(--aside-min);
             transform: var(--aside-gutter-align);
@@ -1903,7 +1903,7 @@ th {
             background: #fff url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><circle cx="1" cy="1" r=".5" fill="%23999" /></svg>')  repeat-x 0 calc(50% + .5em);
             position: relative;
 
-            &::before {
+            > :first-child::before {
                 background-image: var(--heat-gradient);
                 content: '';
                 bottom: 1.5em;
@@ -2029,6 +2029,11 @@ th {
 
                 &:last-child {
                     padding-inline: var(--table-padding-inline);
+                }
+
+                &[style*="color:"] {
+                    background-image: var(--bar-fill-light) !important;
+                    background-blend-mode: soft-light;
                 }
             }
 
@@ -2517,7 +2522,7 @@ th {
     }
 
     .smooth-pie-legend .l-color {
-        background-image: var(--fill-img) !important;
+        background-image: var(--bar-fill) !important;
         background-size: 4px 4px !important;
         background-blend-mode: overlay;
     }
@@ -2542,7 +2547,7 @@ th {
             }
 
             td[style*=background-color] {
-                background-image: var(--fill-img-light);
+                background-image: var(--bar-fill-light);
                 background-position: 0;
             }
         }
