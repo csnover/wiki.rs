@@ -27,6 +27,8 @@ pub(super) struct Trim<'a, W: WriteSurrogate + ?Sized> {
     sp: &'a StackFrame<'a>,
     /// Whether any tokens have been emitted to [`Self::out`] yet.
     emitted: bool,
+    /// Whether the last token was a newline token.
+    at_new_line: bool,
 }
 
 impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
@@ -38,6 +40,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
             out,
             sp,
             emitted: <_>::default(),
+            at_new_line: true,
         }
     }
 
@@ -45,6 +48,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
     #[inline]
     fn flush(&mut self, state: &mut State<'_>) -> Result {
         self.emitted = true;
+        self.at_new_line = false;
         for last in self.last_ws.drain(..) {
             match last {
                 Stored::Token(last) => {
@@ -146,6 +150,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
 impl<W: WriteSurrogate + ?Sized> fmt::Write for Trim<'_, W> {
     #[inline]
     fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.at_new_line = s.ends_with('\n');
         self.out.write_str(s)
     }
 }
@@ -187,6 +192,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     ) -> Result {
         // MW appears to ignore comments in these positions, presumably
         // to more easily remove any visual whitespace by `trim`
+        self.at_new_line = false;
         Ok(())
     }
 
@@ -198,6 +204,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         span: Span,
         name: &str,
     ) -> Result {
+        self.at_new_line = false;
         self.out.adopt_end_annotation(state, sp, span, name)
     }
 
@@ -209,6 +216,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         span: Span,
         mode: InclusionMode,
     ) -> Result {
+        self.at_new_line = false;
         self.out.adopt_end_include(state, sp, span, mode)
     }
 
@@ -279,6 +287,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         span: Option<Span>,
         text: &str,
     ) -> Result {
+        self.at_new_line = false;
         self.trim_text::<true>(state, sp, span.unwrap_or(Span::new(0, 0)), text)
     }
 
@@ -357,6 +366,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
+        self.at_new_line = true;
         self.store(
             sp,
             Spanned {
@@ -424,6 +434,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         name: &str,
         attributes: &[Spanned<AnnoAttribute>],
     ) -> Result {
+        self.at_new_line = false;
         self.out
             .adopt_start_annotation(state, sp, span, name, attributes)
     }
@@ -436,6 +447,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         span: Span,
         mode: InclusionMode,
     ) -> Result {
+        self.at_new_line = false;
         self.out.adopt_start_include(state, sp, span, mode)
     }
 
@@ -569,7 +581,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         target: &[Spanned<Token>],
         arguments: &[Spanned<Argument>],
     ) -> Result {
-        template::render_template(self, state, sp, span, target, arguments)
+        template::render_template(self, state, sp, span, target, arguments, self.at_new_line)
     }
 }
 
@@ -1044,6 +1056,9 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for TrimLink<'_, W> {
         target: &[Spanned<Token>],
         arguments: &[Spanned<Argument>],
     ) -> Result {
-        template::render_template(self, state, sp, span, target, arguments)
+        // This is only ever used for stripping wikilink text, so is never at
+        // the start of a new line
+        let at_line_start = false;
+        template::render_template(self, state, sp, span, target, arguments, at_line_start)
     }
 }

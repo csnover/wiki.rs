@@ -190,6 +190,7 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
     bounds: Span,
     target: &'tt [Spanned<Token>],
     arguments: &'tt [Spanned<Argument>],
+    line_start: bool,
 ) -> Result {
     // eprintln!("render_template {sp:?} {:?}", inspect(&sp.source, target));
 
@@ -264,7 +265,7 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
     // “T2529: if the template begins with a table or block-level
     //  element, it should be treated as beginning a new line.
     //  This behavior is somewhat controversial.”
-    if partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*']) {
+    if !line_start && (partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*'])) {
         partial.insert(0, '\n');
     }
 

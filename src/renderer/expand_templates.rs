@@ -453,7 +453,15 @@ impl Surrogate<Error> for ExpandTemplates {
         target: &[Spanned<Token>],
         arguments: &[Spanned<Argument>],
     ) -> Result {
-        template::render_template(self, state, sp, span, target, arguments)
+        template::render_template(
+            self,
+            state,
+            sp,
+            span,
+            target,
+            arguments,
+            self.out.is_empty() || self.out.ends_with('\n'),
+        )
     }
 
     fn adopt_text(

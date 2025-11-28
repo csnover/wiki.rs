@@ -46,7 +46,7 @@ impl Document {
             fragment,
             html: <_>::default(),
             in_include: <_>::default(),
-            last_char: ' ',
+            last_char: '\n',
             seen_block: <_>::default(),
             stack: <_>::default(),
             text_style_emitter: <_>::default(),
@@ -955,7 +955,15 @@ impl Surrogate<Error> for Document {
         target: &[Spanned<Token>],
         arguments: &[Spanned<Argument>],
     ) -> Result {
-        template::render_template(self, state, sp, span, target, arguments)
+        template::render_template(
+            self,
+            state,
+            sp,
+            span,
+            target,
+            arguments,
+            self.last_char == '\n',
+        )
     }
 
     fn adopt_token(
