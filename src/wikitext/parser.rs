@@ -806,7 +806,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       start:xmlish_start()
       &assert({
           let (name, _) = start;
-          ctx.tag_kind != Some(TagKind::Html) || HTML5_TAGS.contains(&name)
+          ctx.tag_kind != Some(TagKind::Html) || contains_ignore_case(&HTML5_TAGS, &name)
       }, "xml tag")
 
       // By the time we get to `doTableStuff` in the old parser, we've already
