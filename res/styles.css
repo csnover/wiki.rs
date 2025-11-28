@@ -804,7 +804,9 @@ th {
         &.bar-chart-right,
         &[data-wiki-rs~=template-historical-populations], /* 'Template:Historical populations' */
         &[style*="float:right"],
-        &[style*="float: right"]
+        &[style*="float: right"],
+        &[style*="float:left"],
+        &[style*="float: left"]
         {
             max-width: 50cqw;
             /* !important: 'Crazy Taxi' */
@@ -813,12 +815,36 @@ th {
             transform: var(--aside-gutter-align);
             width: auto;
         }
+
+        /* 'Mount Everest' manually floats a table right after a floated right
+           figure and inevitably sad things happen */
+        &[style*="float:right"],
+        &[style*="float: right"] {
+            clear: right;
+        }
+
+        &[style*="float:left"],
+        &[style*="float: left"]
+        {
+            margin-left: 0 !important;
+            margin-right: var(--figure-margin) !important;
+            transform: translateX(var(--table-margin-inline));
+        }
     }
 
-    .wikitable:is([style*="float:right"], [style*="float: right"]) {
+    /* 'Mount Everest' does float left and clear */
+    .wikitable:is(
+        .floatleft, [style*="float:left"], [style*="float: left"],
+        .floatright, [style*="float:right"], [style*="float: right"]
+    ):where(:not(:has(+ [style*="clear"]))) {
         font-family: var(--sans);
         font-stretch: var(--side-table-stretch);
+        font-size: unset !important;
         font-variant-numeric: tabular-nums;
+
+        caption {
+            font-stretch: normal;
+        }
     }
 
     .floatleft {
@@ -1370,13 +1396,17 @@ th {
             }
         }
 
-        .navbox-title {
-            /* !important: 'Template:New York City'. Caution is required because
-               'Template:Wikipedia policies and guidelines' uses colour
-               differently in a way which is not so bad */
-            &[style*="color\:"],
-            [style*="color\:"] {
-                color: inherit !important;
+        /* !important: 'Template:New York City' and 'Template:Mosques in India'.
+           Caution is required because 'Template:Wikipedia policies and
+           guidelines' uses colour differently in a way which is not so bad */
+        .navbox-title,
+        .navbox-title *,
+        .navbox-abovebelow,
+        .navbox-abovebelow .tmpl-colored-link,
+        .navbox-group,
+        .navbox-group .tmpl-colored-link {
+            &[style*="color\:"] {
+                color: unset !important;
             }
         }
 
