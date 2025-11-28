@@ -817,6 +817,13 @@ th {
         font-variant-numeric: tabular-nums;
     }
 
+    .floatleft {
+        clear: left;
+        float: left;
+        margin-bottom: var(--figure-margin);
+        margin-right: var(--figure-margin);
+    }
+
     .floatright,
     .tright, /* 'Template:Thumb image' */
     .us-census-pop-right /* 'Template:US Census population' */
@@ -875,6 +882,7 @@ th {
             float: left;
             margin-right: var(--figure-margin);
             margin-bottom: var(--figure-margin);
+            min-width: var(--aside-min);
         }
 
         &.mw-halign-right {
@@ -960,8 +968,6 @@ th {
         font-family: var(--sans);
         margin: 0 0 var(--figure-margin) var(--figure-margin);
         padding: 0;
-        /* !important: 'Crazy Taxi' */
-        width: auto !important;
 
         /* 'Elizabeth II' nests infoboxes */
         .mw-parser-output > & {
@@ -1232,6 +1238,19 @@ th {
                 font-stretch: var(--side-table-stretch);
                 font-weight: var(--bold);
             }
+        }
+
+        /* 'Cristiano Ronaldo' */
+        &.ib-youtube {
+            .ib-youtube-above,
+            .ib-youtube-header {
+                color: var(--fg) !important;
+            }
+        }
+
+        &[style*="line-height: 1.2em"],
+        [style*="line-height: 1.2em"] {
+            line-height: unset !important;
         }
     }
 
@@ -1775,10 +1794,15 @@ th {
         border-top: 3px solid currentColor;
         padding: calc(var(--box-margin) * 2) var(--box-margin) calc(var(--box-margin) * 2) calc(var(--box-margin) * 2);
 
-        &.floatright {
+        &.floatright,
+        &.floatleft {
             max-width: var(--aside-max);
             min-width: var(--aside-min);
-            margin: 0 calc(var(--box-margin) * -1) var(--figure-margin) var(--figure-margin);
+            margin: var(--box-margin) calc(var(--box-margin) * -1) var(--figure-margin) var(--figure-margin);
+        }
+
+        &.floatleft {
+            margin-inline: calc(var(--box-margin) * -1) var(--figure-margin);
         }
 
         .left-aligned {
