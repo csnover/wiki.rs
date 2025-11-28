@@ -131,7 +131,32 @@ pub(super) fn render_parameter<W: WriteSurrogate + ?Sized>(
         if let Some(default) = default {
             out.adopt_tokens(state, sp, default)?;
         } else {
-            out.adopt_text(state, sp, span, &sp.source[span.into_range()])?;
+            // This cannot simply adopt the whole text of the parameter as-is
+            // because if the parameter contained inclusion control tags, e.g.
+            // `{{{1<noinclude>|default</noinclude>}}}` then the wrong result
+            // will be emitted.
+            //
+            // If you are here because you saw some attempt (or many, many
+            // attempts) to load a template named like `{{{1}}}`, this could be
+            // *intentional*! Pour a drink and go read
+            // [`crate::db::CacheableArticle`].
+            let fragment = Span::new(span.start, span.start + 3);
+            out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
+            for token in name {
+                out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
+            }
+            if let Some(default) = default {
+                let first = default
+                    .first()
+                    .map_or(span.end - 3, |first| first.span.start);
+                let fragment = Span::new(first - 1, first);
+                out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
+                for token in default {
+                    out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
+                }
+            }
+            let fragment = Span::new(span.end - 3, span.end);
+            out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
         }
     }
 

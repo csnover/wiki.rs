@@ -79,6 +79,17 @@ pub enum Error {
     XmlProperty(String),
 }
 
+/// The cacheable type for an article.
+///
+/// Because modules like 'Module:CountryData' abusively expand templates without
+/// proper parameters, and those templates try to unconditionally use parameters
+/// to load their own child templates, it is necessary to not merely cache just
+/// articles which exist, but also requests to articles which *do not* exist, to
+/// avoid very slow full table scans over and over again for these clearly
+/// intentional (the module calls `string.find(s,"^%{%{ *%{%{%{1")` to decide
+/// that it got what it wanted! FFS!) but bogus requests.
+type CacheableArticle = Option<Arc<Article>>;
+
 /// A MediaWiki multistream database reader.
 pub struct Database<'a> {
     /// The uncompressed text index part of the database.
@@ -86,7 +97,7 @@ pub struct Database<'a> {
     /// The compressed XML part of the database.
     articles: ArticleDatabase,
     /// A decompressed article LRU cache.
-    cache: RwLock<LruMap<String, Arc<Article>, ByMemoryUsage<Arc<Article>>>>,
+    cache: RwLock<LruMap<String, CacheableArticle, ByMemoryUsage<CacheableArticle>>>,
 }
 
 impl Database<'_> {
@@ -127,8 +138,25 @@ impl Database<'_> {
         self.cache
             .write()
             .unwrap()
-            .get_or_insert_fallible(title, || self.fetch_article(title).map(Arc::new))
-            .map(|article| Arc::clone(article.unwrap()))
+            .get_or_insert_fallible(title, || {
+                self.fetch_article(title).map_or_else(
+                    |err| {
+                        if matches!(err, Error::NotFound) {
+                            Ok(None)
+                        } else {
+                            Err(err)
+                        }
+                    },
+                    |article| Ok(Some(Arc::new(article))),
+                )
+            })
+            .and_then(|article| {
+                if let Some(Some(article)) = article {
+                    Ok(Arc::clone(article))
+                } else {
+                    Err(Error::NotFound)
+                }
+            })
     }
 
     /// The site name from the database.

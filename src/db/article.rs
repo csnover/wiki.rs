@@ -37,14 +37,14 @@ pub struct Article {
     pub redirect: Option<String>,
 }
 
-impl ByMemoryUsageCalculator for Arc<Article> {
+impl ByMemoryUsageCalculator for Option<Arc<Article>> {
     type Target = Self;
 
     fn size_of(value: &Self::Target) -> usize {
-        core::mem::size_of::<Arc<Article>>()
-            + core::mem::size_of::<Article>()
-            + value.title.capacity()
-            + value.body.capacity()
+        core::mem::size_of::<Option<Arc<Article>>>()
+            + value.as_ref().map_or(0, |value| {
+                core::mem::size_of::<Article>() + value.title.capacity() + value.body.capacity()
+            })
     }
 }
 
