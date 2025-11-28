@@ -222,13 +222,21 @@ impl Document {
         // browser will automatically foster content in this position out of the
         // table. So, parenting-close rules are skipped if the last element is a
         // table or tr.
-        if !matches!(
+        let close_tags = !matches!(
             self.stack.last(),
             Some(node @ Node::Tag(last, _))
-            if (last == "table" || last == "tr") && *last != tag && !node.can_parent(&tag)
-        ) {
+            if (last == "table" || last == "tr") && *last != tag && !node.can_parent(&tag));
+
+        if close_tags {
             while let Some(e) = self.stack.pop_if(|e| !e.can_parent(&tag)) {
+                // The transition from a wikitable caption directly into a table
+                // cell requires extra recovery gymnastics to avoid walking too
+                // far up the stack. 'Template:Football squad start' does this.
+                let in_caption = matches!(e, Node::Tag(ref name, _) if name == "caption");
                 e.close(&mut self.html)?;
+                if in_caption && matches!(&*tag, "td" | "th") {
+                    self.start_tag(state, sp, "tr", &[])?;
+                }
             }
         }
 
@@ -1028,7 +1036,7 @@ impl Node {
                 } else if let Some(children) = PARENTS.get(parent) {
                     children.contains(&tag)
                 } else if matches!(parent.as_ref(), "td" | "th" | "caption") {
-                    !matches!(tag, "td" | "th" | "caption")
+                    !matches!(tag, "tr" | "td" | "th" | "caption")
                 } else if PHRASING_TAGS.contains(parent) {
                     PHRASING_TAGS.contains(tag)
                 } else {
