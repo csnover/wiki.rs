@@ -265,6 +265,8 @@ impl Document {
         self.html.write_char('>')?;
         if !VOID_TAGS.contains(&tag) {
             self.stack.push(Node::Tag(tag, TagBody::Empty));
+        } else if tag == "br" {
+            self.last_char = '\n';
         }
         Ok(())
     }
@@ -962,6 +964,9 @@ impl Surrogate<Error> for Document {
             span,
             target,
             arguments,
+            // TODO: This is conflating smart quote logical character with
+            // source tokens in a way where in some edge case (e.g. <br>) it
+            // will break
             self.last_char == '\n',
         )
     }
