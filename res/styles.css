@@ -552,10 +552,9 @@ th {
     --max-width: 70rem;
     --side-table-stretch: 80%;
     --table-margin-inline: calc(var(--table-padding-inline) * -1);
-    --table-max-width: calc(var(--max-width) + var(--table-padding-inline) * 2);
     --table-padding-block: .1rem;
     --table-padding-inline: .5rem;
-    --table-width: calc(100% + var(--table-padding-inline) * 2);
+    --table-width: calc(min(100%, var(--max-width)) + var(--table-padding-inline) * 2);
     --tag-size: .4rem;
     --sidebar-stretch: 110%;
 
@@ -568,7 +567,7 @@ th {
     /* Layout */
     /**********/
 
-    > :where(:not(.navbox, .wiki-rs-categories, .reflist, .refbegin, .portal-bar, .sister-bar)) {
+    > :where(:not(.navbox, .wiki-rs-categories, .reflist, .refbegin, .portal-bar, .sister-bar, .wikitable)) {
         max-width: var(--max-width);
     }
 
@@ -804,7 +803,8 @@ th {
         &.us-census-pop-right, /* 'Template:US Census population' */
         &.bar-chart-right,
         &[data-wiki-rs~=template-historical-populations], /* 'Template:Historical populations' */
-        &[style*="float:right"]
+        &[style*="float:right"],
+        &[style*="float: right"]
         {
             max-width: 50cqw;
             /* !important: 'Crazy Taxi' */
@@ -815,11 +815,7 @@ th {
         }
     }
 
-    > .wikitable {
-        max-width: var(--table-max-width);
-    }
-
-    .wikitable[style*="float:right"] {
+    .wikitable:is([style*="float:right"], [style*="float: right"]) {
         font-family: var(--sans);
         font-stretch: var(--side-table-stretch);
         font-variant-numeric: tabular-nums;
@@ -1340,9 +1336,15 @@ th {
             font-family: var(--sans);
         }
 
-        /* TODO: Is this just broken because string replacement is broken? */
+        /* 'Template:Solar system' */
+        .navbox-group[scope=row][style*="text-align"] {
+            text-align: right !important;
+        }
+
         .navbox-columns-table {
-            width: 100%;
+            > tbody > tr > .navbox-list + .navbox-list > .navbox-subgroup {
+                border-left: thin solid var(--border-fg) !important;
+            }
         }
 
         .navbox-abovebelow {
@@ -1363,14 +1365,18 @@ th {
         .navbox-title,
         .navbox-abovebelow,
         .navbox-group {
-            /* !important: 'Template:New York City' */
+            &[style*="box-shadow:"] {
+                box-shadow: none !important;
+            }
+        }
+
+        .navbox-title {
+            /* !important: 'Template:New York City'. Caution is required because
+               'Template:Wikipedia policies and guidelines' uses colour
+               differently in a way which is not so bad */
             &[style*="color\:"],
             [style*="color\:"] {
                 color: inherit !important;
-            }
-
-            &[style*="box-shadow:"] {
-                box-shadow: none !important;
             }
         }
 
@@ -1388,11 +1394,11 @@ th {
                 font-family: var(--sans);
             }
 
-            .navbox-list {
+            .navbox-list:not(.navbox-list-with-group) {
                 border: 0 !important;
             }
 
-            .navbox-list + * {
+            .navbox-list:not(:has(.navbox-subgroup)) + * {
                 padding-left: calc(var(--box-margin) * .25) !important;
             }
         }
@@ -2178,7 +2184,7 @@ th {
     [data-wiki-rs~=template-historical-populations][style*="float:none"] {
         font-size: 1em !important;
         margin-inline: var(--table-margin-inline);
-        max-width: var(--table-max-width);
+        max-width: none;
         width: var(--table-width);
 
         td:not(:first-child) {
