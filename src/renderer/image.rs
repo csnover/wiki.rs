@@ -1,7 +1,7 @@
 //! Code for handling MediaWiki images.
 
 use super::{
-    Error, StackFrame, State, WriteSurrogate,
+    Result, StackFrame, State, WriteSurrogate,
     tags::{self, LinkKind},
 };
 use crate::{
@@ -17,59 +17,99 @@ use crate::{
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use std::{borrow::Cow, collections::HashMap};
 
-/// Options for rendering an image node.
+/// The kind of media.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum MediaKind {
+    /// Beeps and boops.
+    Audio,
+    /// Soul thievery.
+    #[default]
+    Image,
+    /// Witchcraft, sometimes with added beeps and boops.
+    Video,
+}
+
+impl MediaKind {
+    /// The HTML tag associated with this kind of media.
+    #[inline]
+    fn tag_name(self) -> &'static str {
+        match self {
+            MediaKind::Audio => "audio",
+            MediaKind::Image => "img",
+            MediaKind::Video => "video",
+        }
+    }
+}
+
+/// Options for rendering a media node.
 #[derive(Debug, Default)]
 pub(super) struct Options<'a> {
+    /// Horizontal image alignment. One of 'left', 'right', 'center', or 'none'.
+    align: Option<Cow<'a, str>>,
+    /// Arbitrary HTML attributes to apply to the HTML tag.
+    attrs: HashMap<Cow<'a, str>, Cow<'a, str>>,
     /// Render the image with a border??? (lol).
     border: Option<()>,
+    /// The caption for the media. This will be rendered below the image in
+    /// 'thumb' or 'frame' format, and otherwise as a tooltip.
+    caption: Option<&'a [Spanned<Token>]>,
     /// The intended format of the image. One of 'frameless', 'frame', 'framed',
     /// 'thumb', or 'thumbnail'.
     format: Option<Cow<'a, str>>,
-    /// Horizontal image alignment. One of 'left', 'right', 'center', or 'none'.
-    align: Option<Cow<'a, str>>,
-    /// Arbitrary HTML attributes to apply to the `<img>`.
-    attrs: HashMap<Cow<'a, str>, Cow<'a, str>>,
-    /// “Resizes an image to a multiple of the user’s thumbnail size
-    /// preferences”. This will probably never be implemented, but it will be
-    /// recorded.
-    upright: Option<f64>,
+    /// The kind of the media.
+    kind: MediaKind,
+    /// The language to use when rendering an SVG with `<switch>` options
+    /// varying on a `systemLanguage` attribute.
+    lang: Option<Cow<'a, str>>,
     /// The target URL for an image link. This can be either a bare external URL
     /// or a bare article title.
     link: Option<LinkKind<'a>>,
-    /// The page number to extract and render from a DJVU or PDF image.
-    page: Option<i32>,
-    /// The timestamp to extract and render as a still from a video file.
-    thumbtime: Option<Cow<'a, str>>,
-    /// The playback start time for a video… er… image.
-    start: Option<Cow<'a, str>>,
-    /// Whether the audio of an, uh, *image*, should be muted.
-    muted: Option<()>,
     /// Whether the media should be looped continuously when played.
     r#loop: Option<()>,
     /// Whether to use PNG instead of JPEG thumbnails from TIFF files.
     lossy: Option<bool>,
-    /// The language to use when rendering an SVG with `<switch>` options
-    /// varying on a `systemLanguage` attribute.
-    lang: Option<Cow<'a, str>>,
-    /// The caption of the image. This will be rendered below the image in
-    /// 'thumb' or 'frame' format, and otherwise as a tooltip.
-    caption: Option<&'a [Spanned<Token>]>,
+    /// Whether the audio of an, uh, *image*, should be muted.
+    muted: Option<()>,
+    /// The page number to extract and render from a DJVU or PDF image.
+    page: Option<i32>,
+    /// The playback start time for a video… er… image.
+    start: Option<Cow<'a, str>>,
+    /// The timestamp to extract and render as a still from a video file.
+    thumbtime: Option<Cow<'a, str>>,
+    /// “Resizes an image to a multiple of the user’s thumbnail size
+    /// preferences”. This will probably never be implemented, but it will be
+    /// recorded.
+    upright: Option<f64>,
 }
 
-/// Parses [`Options`] from an image node.
+/// Parses [`Options`] from a media node.
 #[allow(clippy::too_many_lines)]
-pub(super) fn image_options<'s>(
+pub(super) fn media_options<'s>(
     state: &mut State<'_>,
     sp: &'s StackFrame<'_>,
     title: Title,
     arguments: &'s [Spanned<Argument>],
-) -> Result<Options<'s>, Error> {
-    let mut options = Options::default();
+) -> Result<Options<'s>> {
+    let mut options = Options {
+        kind: if let Some((_, ext)) = title.key().rsplit_once('.') {
+            // TODO: Get from config. API has siprops "fileextensions".
+            match ext.to_ascii_lowercase().as_str() {
+                "mid" | "ogg" | "oga" | "flac" | "opus" | "wav" | "mp3" | "midi" => {
+                    MediaKind::Audio
+                }
+                "ogv" | "webm" | "mpg" | "mpeg" => MediaKind::Video,
+                _ => MediaKind::Image,
+            }
+        } else {
+            MediaKind::Image
+        },
+        ..Default::default()
+    };
 
     options.attrs.insert(
         "src".into(),
         Cow::Owned(format!(
-            "{}/images/{}",
+            "{}/media/{}",
             state.statics.base_uri.path(),
             utf8_percent_encode(title.text(), NON_ALPHANUMERIC)
         )),
@@ -197,15 +237,15 @@ pub(super) fn image_options<'s>(
     Ok(options)
 }
 
-/// Renders an image node.
-pub(crate) fn render_image<W: WriteSurrogate + ?Sized>(
+/// Renders a media tag.
+pub(crate) fn render_media<W: WriteSurrogate + ?Sized>(
     out: &mut W,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     title: Title,
     arguments: &[Spanned<Argument>],
-) -> Result<(), Error> {
-    let options = image_options(state, sp, title, arguments)?;
+) -> Result {
+    let options = media_options(state, sp, title, arguments)?;
 
     if options.caption.is_some() {
         tags::render_runtime(out, state, sp, |_, source| {
@@ -226,35 +266,13 @@ pub(crate) fn render_image<W: WriteSurrogate + ?Sized>(
         })?;
     }
 
-    if let Some(link) = &options.link {
-        tags::render_start_link(out, state, sp, link)?;
-    }
-
-    tags::render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::StartTag {
-                name: token!(source, Span { "img" }),
-                attributes: {
-                    let mut attrs = options
-                        .attrs
-                        .iter()
-                        .map(|(key, value)| tok_arg(source, key, value))
-                        .collect::<Vec<_>>();
-                    if options.caption.is_none()
-                        && let Some(align) = &options.align
-                    {
-                        attrs.push(tok_arg(source, "align", align));
-                    }
-                    attrs
-                },
-                self_closing: true
-            }
-        )
-    })?;
-
-    if options.link.is_some() {
-        tags::render_end_link(out, state, sp)?;
+    match options.kind {
+        MediaKind::Audio | MediaKind::Video => {
+            render_timed_media(out, state, sp, &options)?;
+        }
+        MediaKind::Image => {
+            render_image(out, state, sp, &options)?;
+        }
     }
 
     if let Some(body) = options.caption {
@@ -288,4 +306,81 @@ pub(crate) fn render_image<W: WriteSurrogate + ?Sized>(
     }
 
     Ok(())
+}
+
+/// Renders an image tag.
+fn render_image<W: WriteSurrogate + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    options: &Options<'_>,
+) -> Result {
+    if let Some(link) = &options.link {
+        tags::render_start_link(out, state, sp, link)?;
+    }
+
+    tags::render_runtime(out, state, sp, |_, source| {
+        token!(
+            source,
+            Token::StartTag {
+                name: token!(source, Span { options.kind.tag_name() }),
+                attributes: {
+                    let mut attrs = options
+                        .attrs
+                        .iter()
+                        .map(|(key, value)| tok_arg(source, key, value))
+                        .collect::<Vec<_>>();
+                    if options.caption.is_none()
+                        && let Some(align) = &options.align
+                    {
+                        attrs.push(tok_arg(source, "align", align));
+                    }
+                    attrs
+                },
+                self_closing: true
+            }
+        )
+    })?;
+
+    if options.link.is_some() {
+        tags::render_end_link(out, state, sp)?;
+    }
+
+    Ok(())
+}
+
+/// Renders an audio or video tag.
+// TODO: This is even more bogus than the image tags; this does not even *use*
+// most of the timed media options.
+fn render_timed_media<W: WriteSurrogate + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    options: &Options<'_>,
+) -> Result {
+    tags::render_runtime_list(out, state, sp, |_, source| {
+        token![
+            source,
+            [
+                Token::StartTag {
+                    name: token!(source, Span { options.kind.tag_name() }),
+                    attributes: {
+                        core::iter::once(tok_arg(source, "controls", ""))
+                            .chain(
+                                options
+                                    .attrs
+                                    .iter()
+                                    .map(|(key, value)| tok_arg(source, key, value)),
+                            )
+                            .collect::<Vec<_>>()
+                    },
+                    self_closing: false
+                },
+                Token::EndTag {
+                    name: token!(source, Span { options.kind.tag_name() })
+                }
+            ]
+        ]
+        .into()
+    })
 }

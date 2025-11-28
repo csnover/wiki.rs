@@ -589,6 +589,15 @@ th {
         margin-top: var(--box-margin);
     }
 
+    audio {
+        height: 1rlh;
+        vertical-align: top;
+    }
+
+    audio, video {
+        max-width: 100%;
+    }
+
     ol, ul, dl {
         padding-left: var(--ol-gutter);
 

@@ -88,7 +88,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     let title = Title::new(&target_text, None);
     match title.namespace().id {
         Namespace::FILE => {
-            image::render_image(out, state, sp, title, content)?;
+            image::render_media(out, state, sp, title, content)?;
             if let Some(trail) = trail {
                 write!(out, "{trail}")?;
             }

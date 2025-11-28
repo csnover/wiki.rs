@@ -281,8 +281,8 @@ pub async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
     }
 }
 
-/// The image resource route handler.
-pub async fn images(Path(_): Path<String>) -> impl IntoResponse {
+/// The media resource route handler.
+pub async fn media(Path(_): Path<String>) -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "image/svg+xml")],
         include_str!("../res/placeholder.svg"),

@@ -249,7 +249,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .route("/eval", get(pages::eval_get).post(pages::eval_post))
         .route("/external/{*target}", get(pages::external))
         .route("/fonts/{*font}", get(pages::fonts))
-        .route("/images/{*image}", get(pages::images))
+        .route("/media/{*image}", get(pages::media))
         .route("/search", get(pages::search))
         .route("/source/{*name}", get(pages::source));
 
