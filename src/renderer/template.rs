@@ -256,16 +256,20 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
         // only one of these hacks can ever be replaced by something less stupid
         // later.
         static DISGUSTING_HACK: LazyLock<Regex> = LazyLock::new(|| {
+            const HTML_TAG: &str = r#"<([\w-]+)[^>]*?(?: data-wiki-rs="([^"]+)")?>"#;
+            const WIKI_TABLE: &str = "(\\{\\|)[^\n]*?(?: data-wiki-rs=\"([^\"]+)\")?\n";
+
             Regex::new(&format!(
-                r#"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*<([\w-]+)[^>]*?(?: data-wiki-rs="([^"]+)")?>"#
+                r"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*(?:{HTML_TAG}|{WIKI_TABLE})"
             ))
             .unwrap()
         });
 
         if !use_function_hook
             && let Some(hax) = DISGUSTING_HACK.captures(&partial)
-            && let tag_name = hax.get(1).unwrap().as_str()
-            && crate::wikitext::HTML5_TAGS.contains(&tag_name.to_ascii_lowercase())
+            && hax.get(1).is_none_or(|tag_name| {
+                crate::wikitext::HTML5_TAGS.contains(&tag_name.as_str().to_ascii_lowercase())
+            })
         {
             // TODO: This should account for redirections.
             let class_name = Title::new(&callee, Namespace::find_by_id(Namespace::TEMPLATE))
@@ -273,7 +277,8 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
                 .to_ascii_lowercase()
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
 
-            let (prefix, extra, suffix) = if let Some(existing) = hax.get(2) {
+            let (prefix, extra, suffix) = if let Some(existing) = hax.get(2).or_else(|| hax.get(4))
+            {
                 (
                     existing.start(),
                     format!("{} {class_name}", existing.as_str()),

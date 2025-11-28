@@ -33,17 +33,19 @@
 :root {
     /* You think you can use a repeating-linear-gradient, but then you discover
        that browsers render a pixel horror instead of something beautiful */
-    --bar-fill: var(--bar-fill-img) 0 0/4px 4px;
-    --bar-fill-img: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
+    --bar-fill: var(--fill-img) 0 0/4px 4px;
     --bar-fill-alt: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="0" y2="4" /><line x1="2" x2="6" y1="-2" y2="2" /><line x1="-2" x2="2" y1="2" y2="6" /></g></svg>') 0 0/4px 4px;
     --bg: white;
     --body-bottom: 2rem;
     --body-left: 4rem;
     --body-right: 2rem;
+    --border-clade: #999;
     --border-fg: lightgrey;
     --bold: 650;
     --border-th: #999;
     --box-margin: 1rem;
+    --fill-img: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
+    --fill-img-light: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23fff" stroke-width="2"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
     --footer-margin: calc(var(--box-margin) * 4);
     --fg: black;
     --figure-margin: calc(var(--box-margin) * 2);
@@ -464,6 +466,7 @@ h1 {
 
 h2 {
     border-top: 3px solid currentColor;
+    clear: left;
     font-size: 1.5rem;
     font-stretch: semi-expanded;
     line-height: 1rlh;
@@ -549,8 +552,10 @@ th {
     --color-base: #000;
     --max-width: 70rem;
     --side-table-stretch: 80%;
+    --table-max-width: calc(var(--max-width) + var(--table-padding-inline) * 2);
     --table-padding-block: .1rem;
     --table-padding-inline: .5rem;
+    --table-width: calc(100% + var(--table-padding-inline) * 2);
     --tag-size: .4rem;
     --sidebar-stretch: 110%;
 
@@ -563,7 +568,7 @@ th {
     /* Layout */
     /**********/
 
-    > :where(:not(.navbox, .wiki-rs-categories, .reflist, .refbegin)) {
+    > :where(:not(.navbox, .wiki-rs-categories, .reflist, .refbegin, .portal-bar, .sister-bar)) {
         max-width: var(--max-width);
     }
 
@@ -737,6 +742,7 @@ th {
     .wikitable,
     .tracklist, /* 'Template:Track listing' */
     .us-census-pop, /* 'Template:US Census population' */
+    .bar-chart, /* 'Template:Bar chart' */
     [data-wiki-rs~=template-historical-populations] /* 'Template:Historical populations' */
     {
         border: 0;
@@ -744,7 +750,8 @@ th {
         border-collapse: collapse;
         font-variant-numeric: tabular-nums;
         margin-inline: calc(var(--table-padding-inline) * -1);
-        width: calc(100% + var(--table-padding-inline) * 2);
+        max-width: var(--table-max-width);
+        width: var(--table-width);
 
         tbody > tr:nth-child(2n) {
             background-color: var(--shade-bg);
@@ -787,6 +794,7 @@ th {
 
         &.floatright,
         &.us-census-pop-right, /* 'Template:US Census population' */
+        &.bar-chart-right,
         &[data-wiki-rs~=template-historical-populations], /* 'Template:Historical populations' */
         &[style*="float:right"]
         {
@@ -794,8 +802,15 @@ th {
             /* !important: 'Crazy Taxi' */
             margin-left: var(--figure-margin) !important;
             margin-bottom: var(--figure-margin) !important;
+            transform: var(--aside-gutter-align);
             width: auto;
         }
+    }
+
+    .wikitable[style*="float:right"] {
+        font-family: var(--sans);
+        font-stretch: var(--side-table-stretch);
+        font-variant-numeric: tabular-nums;
     }
 
     .floatright,
@@ -940,12 +955,20 @@ th {
         float: right;
         font-family: var(--sans);
         margin: 0 0 var(--figure-margin) var(--figure-margin);
-        max-width: var(--aside-max);
-        min-width: var(--aside-min);
         padding: 0;
-        transform: var(--aside-gutter-align);
         /* !important: 'Crazy Taxi' */
         width: auto !important;
+
+        /* 'Elizabeth II' nests infoboxes */
+        .mw-parser-output > & {
+            max-width: var(--aside-max);
+            min-width: var(--aside-min);
+            transform: var(--aside-gutter-align);
+        }
+
+        :where(ul) {
+            padding-left: 0;
+        }
 
         * + & {
             /* !important: 'Wikipedia' */
@@ -1072,6 +1095,8 @@ th {
         }
 
         &.ib-country, &.ib-settlement {
+            line-height: unset;
+
             /* !important: 'Canada' */
             .paragraphbreak {
                 margin-top: 0 !important;
@@ -1404,6 +1429,11 @@ th {
         border-bottom: thin solid var(--border-fg);
     }
 
+    :is(.sister-bar, .portal-bar) + :is(.sister-bar, .portal-bar) {
+        border-top: none;
+        margin-top: 0;
+    }
+
     /***************************************/
     /* Template:Side box (portal-adjacent) */
     /***************************************/
@@ -1412,7 +1442,6 @@ th {
         border: 0;
         background: var(--box-tag);
         font-family: var(--sans);
-        max-width: var(--aside-max);
         width: auto;
 
         .side-box-flex > * + * {
@@ -1433,6 +1462,7 @@ th {
     }
 
     .side-box-right {
+        max-width: var(--aside-max);
         transform: var(--aside-gutter-align);
     }
 
@@ -1643,16 +1673,18 @@ th {
         /* api.php?meta=siteinfo&siprop=general thumblimits maxes out at 400 */
         /* !important: 'Module:Wide image' defaults non-existing image width to
            0 (and therefore max-width to 10px) */
-        min-width: 400px;
+        &[style*="max-width\:10px"] {
+            max-width: 400px !important;
+        }
 
         .thumbcaption {
             margin-top: 0;
         }
 
-        .multiimageinner {
+        .multiimageinner[style*="max-width:100px"] {
             /* !important: This module blindly calculates values even if none
                are available, which means it ends up forced to 100px wide */
-            max-width: none !important;
+            max-width: 400px !important;
             width: auto !important;
         }
 
@@ -1945,7 +1977,10 @@ th {
     /************************/
 
     [data-wiki-rs~=template-weather-box] {
-        .wikitable {
+        .wikitable,
+        /* A lot of pages like 'Jakarta' and 'Tromsø' shove an untemplated
+           “climatic data” table right after the weather box */
+        + .wikitable {
             border-bottom: none;
             width: calc(100% + var(--table-padding-inline) * 2) !important;
 
@@ -1985,6 +2020,8 @@ th {
                 background: transparent;
 
                 > * {
+                    /* !important: 'Tromsø' climatic data table */
+                    background: transparent !important;
                     /* hiding the border gap requires using a unit with a known
                     size; `thin` is undefined in CSS */
                     border-top: 1px solid var(--border-fg);
@@ -2035,6 +2072,29 @@ th {
                 }
             }
         }
+
+        /* !important: 'Jakarta' */
+        + .wikitable {
+            margin-inline: calc(var(--table-padding-inline) * -1) !important;
+
+            tr:nth-child(2) > th {
+                border-bottom: 1px solid var(--border-th);
+
+                &:last-child {
+                    position: relative;
+                    &::after {
+                        border-bottom: 1px solid var(--border-th);
+                        bottom: 0;
+                        content: '';
+                        left: 0;
+                        position: absolute;
+                        /* "thin" and "medium" are unspecified in CSS */
+                        width: 12px;
+                        transform: translate(-6px, 1px);
+                    }
+                }
+            }
+        }
     }
 
     /***********************************/
@@ -2044,21 +2104,21 @@ th {
     .us-census-pop,
     [data-wiki-rs~=template-historical-populations] {
         border-bottom: none;
-
-        margin-right: calc(var(--table-padding-inline) * -1) !important;
-        margin-bottom: var(--figure-margin) !important;
-        margin-left: var(--figure-margin) !important;
+        margin: 0 calc(var(--table-padding-inline) * -1) var(--figure-margin) var(--figure-margin) !important;
 
         caption {
             border-bottom: thin solid var(--border-th);
-            font-stretch: var(--side-table-stretch);
             padding: 0 !important;
         }
 
         th, td {
-            font-family: var(--sans);
-            font-stretch: var(--side-table-stretch);
             padding: var(--table-padding-block) var(--table-padding-inline) !important;
+        }
+
+        td {
+            font-family: var(--sans);
+            font-variant-numeric: tabular-nums;
+            font-stretch: var(--side-table-stretch);
         }
 
         tr:last-child:last-child {
@@ -2066,17 +2126,46 @@ th {
 
             > * {
                 border-top-color: var(--border-fg) !important;
+                border-top-width: thin !important;
                 font-stretch: normal;
             }
+        }
+    }
+
+    /* 'Tromsø' */
+    [data-wiki-rs~=template-historical-populations][style*="float:none"] {
+        font-size: 1em !important;
+        margin-inline: calc(var(--table-padding-inline) * -1);
+        max-width: var(--table-max-width);
+        width: var(--table-width);
+
+        td:not(:first-child) {
+            padding-left: calc(var(--table-padding-inline) * .5) !important;
+        }
+
+        td:not(:last-child) {
+            padding-right: calc(var(--table-padding-inline) * .5) !important;
+        }
+    }
+
+    [data-wiki-rs~=template-historical-populations]:where([style*="float:right"], [style*="float:left"]) {
+        caption, th {
+            font-stretch: var(--side-table-stretch);
         }
     }
 
     /*********************/
     /* Template: Bar box */
     /*********************/
+
     .barbox {
         font-family: var(--sans);
         font-stretch: var(--side-table-stretch);
+        overflow-x: visible !important;
+
+        table {
+            margin-inline: calc(var(--table-padding-inline) * -1);
+        }
 
         th, td {
             font-variant-numeric: tabular-nums;
@@ -2093,19 +2182,51 @@ th {
 
         tr:first-child {
             border-color: var(--fg);
+
+            > th {
+                padding-inline: var(--table-padding-inline);
+            }
         }
 
         > div {
             background: transparent !important;
             border: none !important;
+            padding: 0 !important;
             font-size: 1rem !important;
         }
     }
 
     /*************************/
+    /* Template: Bar chart   */
     /* Template: Bar percent */
     /*************************/
-    [data-wiki-rs~=template-bar-percent] {
+
+    .bar-chart {
+        border: none;
+
+        caption {
+            font-family: var(--sans);
+            font-weight: normal;
+            font-stretch: normal;
+        }
+
+        /* TODO: Whitespace parsing error generating graf tags? */
+        p {
+            display: none;
+        }
+    }
+
+    /* THIS TEMPLATE IS INCREDIBLY OBNOXIOUS. */
+    .bar-chart tr:not(:first-child):nth-child(2n):hover {
+        background-color: var(--shade-bg);
+    }
+
+    .bar-chart-right {
+        font-stretch: var(--side-table-stretch);
+    }
+
+    [data-wiki-rs~=template-bar-percent],
+    .bar-chart tr {
         &:nth-child(2n) {
             background-color: var(--shade-bg);
         }
@@ -2118,22 +2239,45 @@ th {
             border-left: thin solid var(--fg) !important;
             border-right: none !important;
             min-width: 100px;
+            padding: 0;
             width: auto !important;
-
-            > div {
-                background: var(--bar-fill) !important;
-                border: solid black;
-                border-width: thin thin thin 0;
-                display: inline-block;
-                vertical-align: middle;
-                height: 1em;
-            }
         }
+
+        > td:last-child {
+            padding-right: var(--table-padding-inline);
+        }
+    }
+
+    [data-wiki-rs~=template-bar-percent] > td > div,
+    .bar-chart-bar-line {
+        background: var(--bar-fill) !important;
+        border: solid black;
+        border-width: thin thin thin 0;
+        display: inline-block;
+        vertical-align: middle;
+        height: 1em;
+    }
+
+    .bar-chart-bar {
+        display: inline-block;
+        white-space: nowrap;
+        width: auto !important;
+    }
+
+    .bar-chart-bar-numbers {
+        background: var(--bg);
+        background-clip: content-box;
+        font-family: var(--sans);
+        font-size: 90%;
+        font-stretch: 110%;
+        position: static;
+        margin-left: 0.15em;
     }
 
     /********************/
     /* Template:S-start */
     /********************/
+
     .succession-box.succession-box {
         border-top: thin solid var(--border-fg);
 
@@ -2149,6 +2293,7 @@ th {
     /***************************/
     /* Template:Largest cities */
     /***************************/
+
     [data-wiki-rs~=template-largest-cities] {
         > table {
             border-inline: none !important;
@@ -2196,6 +2341,7 @@ th {
     /******************************/
     /* Template:Phanerozoic 220px */
     /******************************/
+
     [data-wiki-rs~=template-phanerozoic-220px] {
         font-size: 1em !important;
 
@@ -2225,16 +2371,20 @@ th {
             padding: 0 !important;
         }
 
-        :any-link {
+        a {
             display: block;
-            font-weight: normal;
             line-height: 100%;
+
+            &:any-link {
+                font-weight: normal;
+            }
         }
     }
 
     /**************************/
     /* Template:Clade gallery */
     /**************************/
+
     > .clade-gallery.clade-gallery {
         display: block;
         font-family: var(--sans);
@@ -2269,6 +2419,10 @@ th {
             padding: 0;
         }
 
+        .clade * {
+            border-color: var(--border-clade);
+        }
+
         .clade-leaf {
             &:first-letter {
                 padding-left: .15em;
@@ -2290,6 +2444,7 @@ th {
     /**********************/
     /* Template:Pie chart */
     /**********************/
+
     .pie-thumb .smooth-pie-container {
         padding: 0;
     }
@@ -2328,8 +2483,34 @@ th {
     }
 
     .smooth-pie-legend .l-color {
-            background-image: var(--bar-fill-img) !important;
-            background-size: 4px 4px !important;
-            background-blend-mode: overlay;
+        background-image: var(--fill-img) !important;
+        background-size: 4px 4px !important;
+        background-blend-mode: overlay;
+    }
+
+    /***********************/
+    /* Template:Ahnentafel */
+    /***********************/
+
+    [data-wiki-rs~=template-ahnentafel] {
+        font-family: var(--sans);
+
+        > table {
+            border: none !important;
+            font-size: 1em !important;
+        }
+
+        .ahnentafel {
+            font-stretch: var(--side-table-stretch);
+
+            td {
+                border-color: var(--border-th) !important;
+            }
+
+            td[style*=background-color] {
+                background-image: var(--fill-img-light);
+                background-position: 0;
+            }
+        }
     }
 }
