@@ -180,7 +180,7 @@ pub(super) fn unstrip(
                     .strip_markers
                     .for_each_marker(text.to_str()?, |marker| {
                         if let StripMarker::NoWiki(text) = marker {
-                            Some(text.clone())
+                            Some(Cow::Borrowed(text))
                         } else {
                             None
                         }
@@ -194,18 +194,15 @@ pub(super) fn unstrip(
                             // TODO: This is supposed to be a call to the
                             // `<nowiki>` extension tag; this should be doing
                             // the equivalent thing, but is it?
-                            Some(
-                                strtr(
-                                    text,
-                                    &[
-                                        ("-{", "-&#123;"),
-                                        ("}-", "&#125;-"),
-                                        ("<", "&lt;"),
-                                        (">", "&gt;"),
-                                    ],
-                                )
-                                .to_string(),
-                            )
+                            Some(strtr(
+                                text,
+                                &[
+                                    ("-{", "-&#123;"),
+                                    ("}-", "&#125;-"),
+                                    ("<", "&lt;"),
+                                    (">", "&gt;"),
+                                ],
+                            ))
                         } else {
                             None
                         }
@@ -214,11 +211,11 @@ pub(super) fn unstrip(
             UnstripMode::Unstrip => state
                 .strip_markers
                 .for_each_marker(text.to_str()?, |marker| {
-                    Some(if let StripMarker::NoWiki(text) = marker {
-                        text.clone()
+                    Some(Cow::Borrowed(if let StripMarker::NoWiki(text) = marker {
+                        text
                     } else {
-                        String::new()
-                    })
+                        ""
+                    }))
                 }),
         };
 

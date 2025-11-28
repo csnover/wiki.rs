@@ -302,7 +302,7 @@ impl StripMarkers {
     #[inline]
     pub fn for_each_marker<'a, F>(&self, body: &'a str, mut f: F) -> Cow<'a, str>
     where
-        F: FnMut(&StripMarker) -> Option<String>,
+        for<'m> F: FnMut(&'m StripMarker) -> Option<Cow<'m, str>>,
     {
         Self::for_each_marker_index(body, |index| f(&self.0[index]))
     }
@@ -311,9 +311,9 @@ impl StripMarkers {
     ///
     /// The callback should return `Some(string)` if it wants to replace the
     /// marker, or `None` if it wants the marker to be kept as-is in the text.
-    fn for_each_marker_index<F>(body: &str, mut f: F) -> Cow<'_, str>
+    fn for_each_marker_index<'a, F>(body: &str, mut f: F) -> Cow<'_, str>
     where
-        F: FnMut(usize) -> Option<String>,
+        F: FnMut(usize) -> Option<Cow<'a, str>>,
     {
         let mut out = String::new();
         let mut flushed = 0;
@@ -324,7 +324,7 @@ impl StripMarkers {
             let end = start + end;
             let index = body[start..end].parse::<usize>().unwrap();
             if let Some(replacement) = f(index) {
-                out += &body[..flushed];
+                out += &body[flushed..start - MARKER_PREFIX.len()];
                 out += &replacement;
                 flushed = end + MARKER_SUFFIX.len();
             }
@@ -341,7 +341,7 @@ impl StripMarkers {
     /// Removes all strip markers from the given text.
     #[inline]
     pub fn kill(body: &str) -> Cow<'_, str> {
-        Self::for_each_marker_index(body, |_| Some(String::new()))
+        Self::for_each_marker_index(body, |_| Some("".into()))
     }
 
     /// Pushes a new strip marker to the list, emitting the marker to the given
@@ -353,26 +353,9 @@ impl StripMarkers {
 
     /// Recursively replaces all strip markers in the given string with their
     /// original contents.
+    #[inline]
     fn unstrip<'a>(&self, body: &'a str) -> Cow<'a, str> {
-        let mut out = String::new();
-        let mut flushed = 0;
-        while let Some(start) = body[flushed..].find(MARKER_PREFIX)
-            && let start = flushed + start + MARKER_PREFIX.len()
-            && let Some(end) = body[start..].find(MARKER_SUFFIX)
-        {
-            let end = start + end;
-            out += &body[..flushed];
-            let index = body[start..end].parse::<usize>().unwrap();
-            out += &self.unstrip(self.0.get(index).unwrap());
-            flushed = end + MARKER_SUFFIX.len();
-        }
-
-        if flushed == 0 {
-            Cow::Borrowed(body)
-        } else {
-            out += &body[flushed..];
-            Cow::Owned(out)
-        }
+        self.for_each_marker(body, |marker| Some(Cow::Borrowed(marker)))
     }
 }
 
