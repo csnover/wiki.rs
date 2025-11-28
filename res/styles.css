@@ -552,6 +552,7 @@ th {
     --color-base: #000;
     --max-width: 70rem;
     --side-table-stretch: 80%;
+    --table-margin-inline: calc(var(--table-padding-inline) * -1);
     --table-max-width: calc(var(--max-width) + var(--table-padding-inline) * 2);
     --table-padding-block: .1rem;
     --table-padding-inline: .5rem;
@@ -749,8 +750,7 @@ th {
         border-bottom: thin solid var(--border-fg);
         border-collapse: collapse;
         font-variant-numeric: tabular-nums;
-        margin-inline: calc(var(--table-padding-inline) * -1);
-        max-width: var(--table-max-width);
+        margin-inline: var(--table-margin-inline);
         width: var(--table-width);
 
         tbody > tr:nth-child(2n) {
@@ -807,6 +807,10 @@ th {
         }
     }
 
+    > .wikitable {
+        max-width: var(--table-max-width);
+    }
+
     .wikitable[style*="float:right"] {
         font-family: var(--sans);
         font-stretch: var(--side-table-stretch);
@@ -830,7 +834,7 @@ th {
         margin-left: var(--figure-margin);
         > * {
             margin-left: 0 !important;
-            margin-right: calc(var(--table-padding-inline) * -1) !important;
+            margin-right: var(--table-margin-inline) !important;
             width: auto;
         }
     }
@@ -838,7 +842,7 @@ th {
     > .wikitable[style*="border"][style*="margin"], /* 'Toronto' */
     .succession-box /* 'Template:S-start' */
     {
-        margin-inline: calc(var(--table-padding-inline) * -1) !important;
+        margin-inline: var(--table-margin-inline) !important;
 
         * + & {
             margin-top: var(--box-margin) !important;
@@ -933,7 +937,7 @@ th {
         margin-bottom: 0;
         padding-left: 0;
 
-        :is(h2, h3, h4) + &,
+        :is(h2, h3, h4, h5) + &,
         .hatnote + & {
             margin-top: 0;
         }
@@ -2075,7 +2079,7 @@ th {
 
         /* !important: 'Jakarta' */
         + .wikitable {
-            margin-inline: calc(var(--table-padding-inline) * -1) !important;
+            margin-inline: var(--table-margin-inline) !important;
 
             tr:nth-child(2) > th {
                 border-bottom: 1px solid var(--border-th);
@@ -2104,7 +2108,7 @@ th {
     .us-census-pop,
     [data-wiki-rs~=template-historical-populations] {
         border-bottom: none;
-        margin: 0 calc(var(--table-padding-inline) * -1) var(--figure-margin) var(--figure-margin) !important;
+        margin: 0 var(--table-margin-inline) var(--figure-margin) var(--figure-margin) !important;
 
         caption {
             border-bottom: thin solid var(--border-th);
@@ -2135,7 +2139,7 @@ th {
     /* 'Tromsø' */
     [data-wiki-rs~=template-historical-populations][style*="float:none"] {
         font-size: 1em !important;
-        margin-inline: calc(var(--table-padding-inline) * -1);
+        margin-inline: var(--table-margin-inline);
         max-width: var(--table-max-width);
         width: var(--table-width);
 
@@ -2164,7 +2168,7 @@ th {
         overflow-x: visible !important;
 
         table {
-            margin-inline: calc(var(--table-padding-inline) * -1);
+            margin-inline: var(--table-margin-inline);
         }
 
         th, td {
@@ -2281,6 +2285,12 @@ th {
     .succession-box.succession-box {
         border-top: thin solid var(--border-fg);
 
+        .navbox & {
+            border: none;
+            margin: 0 !important;
+            width: 100%;
+        }
+
         * {
             text-align: inherit;
         }
@@ -2301,7 +2311,7 @@ th {
             border-top: 3px solid currentColor !important;
             font-size: 1em !important;
             font-variant-numeric: tabular-nums;
-            margin-inline: calc(var(--table-padding-inline) * -1) !important;
+            margin-inline: var(--table-margin-inline) !important;
             width: calc(100% + var(--table-padding-inline) * 2) !important;
         }
 
