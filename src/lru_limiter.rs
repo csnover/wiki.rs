@@ -1,31 +1,32 @@
 //! A limiter for [`schnellru`] which limits the size of the cache according to
-//! its total size in bytes.
+//! its total size in bytes, including heap allocations.
 
 use core::marker::PhantomData;
 
-/// A trait for implementing generic item size calculations for a
+/// A trait for implementing generic heap size calculations for a
 /// [`ByMemoryUsage`] limiter.
 pub trait ByMemoryUsageCalculator {
     /// The target type to size.
     type Target;
 
-    /// Calculates the size of `value`.
+    /// Calculates the amount of *heap* memory used by `value`.
     fn size_of(value: &Self::Target) -> usize;
 }
 
 /// A limiter for a map which is limited by memory usage.
 #[derive(Copy, Clone, Debug)]
 pub struct ByMemoryUsage<T: ByMemoryUsageCalculator> {
-    /// Current memory usage.
+    /// Current *heap* memory usage.
     heap_size: usize,
-    /// Maximum allowed usage.
+    /// Maximum *total* (heap + map) allowed usage.
     max_bytes: usize,
     /// [`PhantomData`] for the generic item size calculator.
     __: PhantomData<T>,
 }
 
 impl<T: ByMemoryUsageCalculator> ByMemoryUsage<T> {
-    /// Creates a new memory usage limiter with a given limit in bytes.
+    /// Creates a new memory usage limiter with a given *total* memory limit in
+    /// bytes.
     pub const fn new(max_bytes: usize) -> Self {
         Self {
             max_bytes,
@@ -34,7 +35,13 @@ impl<T: ByMemoryUsageCalculator> ByMemoryUsage<T> {
         }
     }
 
-    /// Calculates the size of a token tree.
+    /// Gets the amount of heap memory used, in bytes.
+    #[inline]
+    pub fn heap_usage(&self) -> usize {
+        self.heap_size
+    }
+
+    /// Calculates the amount of *heap* memory used by `value`.
     #[inline]
     fn size_of(value: &T::Target) -> usize {
         T::size_of(value)
@@ -46,8 +53,9 @@ impl<T: ByMemoryUsageCalculator, K> schnellru::Limiter<K, T::Target> for ByMemor
     type LinkType = u32;
 
     #[inline]
-    fn is_over_the_limit(&self, _: usize) -> bool {
-        self.heap_size > self.max_bytes
+    fn is_over_the_limit(&self, length: usize) -> bool {
+        length * (size_of::<Self::KeyToInsert<'_>>() + size_of::<T::Target>()) + self.heap_size
+            > self.max_bytes
     }
 
     #[inline]
@@ -96,7 +104,7 @@ impl<T: ByMemoryUsageCalculator, K> schnellru::Limiter<K, T::Target> for ByMemor
 
     #[inline]
     fn on_grow(&mut self, new_memory_usage: usize) -> bool {
-        new_memory_usage <= self.max_bytes
+        new_memory_usage + self.heap_size <= self.max_bytes
     }
 }
 

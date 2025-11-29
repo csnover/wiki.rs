@@ -3,10 +3,10 @@
 
 use crate::{
     lru_limiter::ByMemoryUsageCalculator,
-    wikitext::{Argument, LangFlags, LangVariant, Output, Span, Spanned, Token, visit::Visitor},
+    wikitext::{Argument, LangFlags, LangVariant, Output, Spanned, Token, visit::Visitor},
 };
 use core::convert::Infallible;
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
 
 /// Calculates the in-memory size of a token tree.
 pub(super) struct OutputSizeCalculator {
@@ -20,7 +20,7 @@ impl ByMemoryUsageCalculator for OutputSizeCalculator {
     fn size_of(value: &Self::Target) -> usize {
         let mut calculator = Self { size: 0 };
         let _ = calculator.visit_output(value);
-        calculator.size + size_of::<Self::Target>()
+        calculator.size
     }
 }
 
@@ -28,7 +28,7 @@ impl OutputSizeCalculator {
     /// Calculates the size of the passed slice of arguments.
     fn visit_arguments(&mut self, arguments: &[Spanned<Argument>]) -> Result<(), Infallible> {
         for argument in arguments {
-            self.size += size_of_val(argument);
+            self.size += vec_size(&argument.content);
             self.visit_tokens(&argument.content)?;
         }
         Ok(())
@@ -37,18 +37,20 @@ impl OutputSizeCalculator {
     /// Calculates the size of the passed slice of language variants.
     fn visit_lang_variants(&mut self, variants: &[Spanned<LangVariant>]) -> Result<(), Infallible> {
         for variant in variants {
-            self.size += size_of_val(variant);
             match &variant.node {
                 LangVariant::Text { text } => {
+                    self.size += vec_size(text);
                     self.visit_tokens(text)?;
                 }
                 LangVariant::OneWay { from, lang, to } => {
+                    self.size += vec_size(from) + size_of_val(lang) + vec_size(to);
                     self.visit_tokens(from)?;
-                    self.size += size_of_val(lang);
+                    self.visit_token(lang)?;
                     self.visit_tokens(to)?;
                 }
                 LangVariant::TwoWay { lang, text } => {
-                    self.size += size_of_val(lang);
+                    self.size += size_of_val(lang) + vec_size(text);
+                    self.visit_token(lang)?;
                     self.visit_tokens(text)?;
                 }
                 LangVariant::Empty => {}
@@ -64,16 +66,17 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
     }
 
     fn visit_token(&mut self, token: &'tt Spanned<Token>) -> Result<(), Infallible> {
-        self.size += size_of::<Spanned<Token>>();
         match &token.node {
             Token::Autolink { target, content } | Token::ExternalLink { target, content } => {
+                self.size += vec_size(target) + vec_size(content);
                 self.visit_tokens(target)?;
                 self.visit_tokens(content)?;
             }
             Token::Generated(text) => {
-                self.size += size_of_val(text) + text.len();
+                self.size += text.capacity();
             }
             Token::Heading { content, .. } | Token::ListItem { content, .. } => {
+                self.size += vec_size(content);
                 self.visit_tokens(content)?;
             }
             Token::LangVariant {
@@ -82,32 +85,37 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
                 if let Some(flags) = flags {
                     match flags {
                         LangFlags::Combined(hash_set) => {
-                            self.size += size_of_val(hash_set) + hash_set.len() * size_of::<Span>();
+                            self.size += hash_set_size(hash_set);
                         }
                         LangFlags::Common(hash_set) => {
-                            self.size += size_of_val(hash_set) + hash_set.len() * size_of::<char>();
+                            self.size += hash_set_size(hash_set);
                         }
                     }
                 }
+                self.size += vec_size(variants);
                 self.visit_lang_variants(variants)?;
             }
             Token::Link {
                 target, content, ..
             } => {
+                self.size += vec_size(target) + vec_size(content);
                 self.visit_tokens(target)?;
                 self.visit_arguments(content)?;
             }
             Token::Parameter { name, default } => {
+                self.size += vec_size(name);
                 self.visit_tokens(name)?;
                 if let Some(default) = default {
+                    self.size += vec_size(default);
                     self.visit_tokens(default)?;
                 }
             }
             Token::Redirect { link } => {
+                self.size += size_of_val(link);
                 self.visit_token(link)?;
             }
             Token::StartAnnotation { attributes, .. } => {
-                self.size += size_of_val(attributes.as_slice());
+                self.size += vec_size(attributes);
             }
             Token::Extension { attributes, .. }
             | Token::StartTag { attributes, .. }
@@ -116,9 +124,11 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             | Token::TableCaption { attributes }
             | Token::TableData { attributes }
             | Token::TableHeading { attributes } => {
+                self.size += vec_size(attributes);
                 self.visit_arguments(attributes)?;
             }
             Token::Template { target, arguments } => {
+                self.size += vec_size(target) + vec_size(arguments);
                 self.visit_tokens(target)?;
                 self.visit_arguments(arguments)?;
             }
@@ -140,7 +150,19 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
     }
 
     fn visit_output(&mut self, output: &'tt Output) -> Result<(), Infallible> {
-        self.size += size_of::<Output>();
+        self.size += vec_size(&output.root);
         self.visit_tokens(&output.root)
     }
+}
+
+/// Returns the total size of the heap allocation of a `HashSet<T>`, including
+/// any wasted space.
+fn hash_set_size<T>(set: &HashSet<T>) -> usize {
+    set.capacity() * size_of::<T>()
+}
+
+/// Returns the total size of the heap allocation of a `Vec<T>`, including any
+/// wasted space.
+fn vec_size<T>(vec: &Vec<T>) -> usize {
+    vec.capacity() * size_of::<T>()
 }

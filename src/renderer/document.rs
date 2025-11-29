@@ -68,11 +68,20 @@ impl Document {
         // Clippy: If memory usage is ever >2**52, something sure happened.
         #[allow(clippy::cast_precision_loss)]
         {
+            let tpl_mem = {
+                let cache = &state.statics.template_cache;
+                cache.limiter().heap_usage() + cache.memory_usage()
+            };
+            let vm_mem = {
+                let cache = &state.statics.vm_cache;
+                cache.limiter().heap_usage() + cache.memory_usage()
+            };
+
             log::debug!(
                 "Caches:\n  Database: {:.2}KiB\n  Template: {:.2}KiB\n  VM: {:.2}KiB",
                 (state.statics.db.cache_size() as f64) / 1024.0,
-                (state.statics.template_cache.memory_usage() as f64) / 1024.0,
-                (state.statics.vm_cache.memory_usage() as f64) / 1024.0,
+                (tpl_mem as f64) / 1024.0,
+                (vm_mem as f64) / 1024.0,
             );
         }
 

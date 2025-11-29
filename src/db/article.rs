@@ -41,10 +41,12 @@ impl ByMemoryUsageCalculator for Option<Arc<Article>> {
     type Target = Self;
 
     fn size_of(value: &Self::Target) -> usize {
-        core::mem::size_of::<Option<Arc<Article>>>()
-            + value.as_ref().map_or(0, |value| {
-                core::mem::size_of::<Article>() + value.title.capacity() + value.body.capacity()
-            })
+        value.as_ref().map_or(0, |value| {
+            value.title.capacity()
+                + value.body.capacity()
+                + value.model.capacity()
+                + value.redirect.as_ref().map_or(0, String::capacity)
+        })
     }
 }
 

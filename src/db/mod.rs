@@ -124,7 +124,8 @@ impl Database<'_> {
 
     /// Returns the current memory usage of the cache, in bytes.
     pub fn cache_size(&self) -> usize {
-        self.cache.read().unwrap().memory_usage()
+        let cache = self.cache.read().unwrap();
+        cache.limiter().heap_usage() + cache.memory_usage()
     }
 
     /// Returns true if the database contains an article with the given title.
