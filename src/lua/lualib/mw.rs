@@ -12,7 +12,7 @@ use crate::{
     db::Database,
     lua::{HostCall, LuaFrame},
     renderer::{
-        ExpandMode, ExpandTemplates, Kv, StackFrame, State, Surrogate, call_parser_fn,
+        CachedValue, ExpandMode, ExpandTemplates, Kv, StackFrame, State, Surrogate, call_parser_fn,
         call_template,
     },
     title::{Namespace, Title},
@@ -164,18 +164,28 @@ impl LuaEngine {
     ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
         let frame_id = stack.consume::<VmString<'_>>(ctx)?;
         // log::trace!("stub: mw.getAllExpandedArguments({frame_id:?})");
-        stack.replace(
-            ctx,
-            UserData::new_static(
-                &ctx,
-                HostCall::GetAllExpandedArguments {
-                    frame_id: ctx.stash(frame_id),
-                },
-            ),
-        );
-        Ok(CallbackReturn::Yield {
-            to_thread: None,
-            then: None,
+
+        let value = with_sp(frame_id.to_str()?, self.sp.borrow().as_deref(), |sp| {
+            Ok(sp.expand_all_cached(ctx))
+        })?;
+
+        Ok(if let Some(value) = value {
+            stack.replace(ctx, value);
+            CallbackReturn::Return
+        } else {
+            stack.replace(
+                ctx,
+                UserData::new_static(
+                    &ctx,
+                    HostCall::GetAllExpandedArguments {
+                        frame_id: ctx.stash(frame_id),
+                    },
+                ),
+            );
+            CallbackReturn::Yield {
+                to_thread: None,
+                then: None,
+            }
         })
     }
 
@@ -187,19 +197,32 @@ impl LuaEngine {
     ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
         let (frame_id, key) = stack.consume::<(VmString<'_>, VmString<'gc>)>(ctx)?;
         // log::trace!("mw.getExpandedArgument({frame_id:?}, {key:?})");
-        stack.replace(
-            ctx,
-            UserData::new_static(
-                &ctx,
-                HostCall::GetExpandedArgument {
-                    frame_id: ctx.stash(frame_id),
-                    key: ctx.stash(key),
-                },
-            ),
-        );
-        Ok(CallbackReturn::Yield {
-            to_thread: None,
-            then: None,
+
+        let value = with_sp(frame_id.to_str()?, self.sp.borrow().as_deref(), |sp| {
+            Ok(match sp.expand_cached(key.to_str()?) {
+                CachedValue::Nil | CachedValue::Unknown => None,
+                CachedValue::Cached(value) => Some(ctx.intern(value.as_bytes())),
+            })
+        })?;
+
+        Ok(if let Some(value) = value {
+            stack.replace(ctx, value);
+            CallbackReturn::Return
+        } else {
+            stack.replace(
+                ctx,
+                UserData::new_static(
+                    &ctx,
+                    HostCall::GetExpandedArgument {
+                        frame_id: ctx.stash(frame_id),
+                        key: ctx.stash(key),
+                    },
+                ),
+            );
+            CallbackReturn::Yield {
+                to_thread: None,
+                then: None,
+            }
         })
     }
 

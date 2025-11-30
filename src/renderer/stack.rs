@@ -12,10 +12,10 @@ use crate::{
 };
 use ::core::slice;
 use core::fmt;
-use piccolo::StashedString;
+use piccolo::{Context, StashedString, Table};
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{Ref, RefCell},
     collections::HashMap,
     pin::{Pin, pin},
     rc::Rc,
@@ -126,6 +126,46 @@ impl<'a> StackFrame<'a> {
         })
     }
 
+    /// Returns all cached arguments for the given Lua context.
+    ///
+    /// This is a performance optimisation.
+    pub fn expand_all_cached<'gc>(&self, ctx: Context<'gc>) -> Option<Table<'gc>> {
+        let values = self.arguments.value_cache.borrow();
+        (values.len() == self.arguments.raw.len()).then(|| {
+            let table = Table::new(&ctx);
+            let keys = self.arguments.key_map.borrow();
+            for (key, index) in &keys.1 {
+                let value = values.get(index).unwrap();
+                if let Ok(key) = key.parse::<i64>() {
+                    table.set(ctx, key, ctx.intern(value.as_bytes())).unwrap();
+                } else {
+                    table
+                        .set(
+                            ctx,
+                            ctx.intern(key.as_bytes()),
+                            ctx.intern(value.trim_ascii().as_bytes()),
+                        )
+                        .unwrap();
+                }
+            }
+            table
+        })
+    }
+
+    /// Returns the cached argument with the given key.
+    pub fn expand_cached(&self, key: &str) -> CachedValue<'_> {
+        match self.arguments.get_cached(key) {
+            CachedValue::Cached(value) => {
+                if is_numeric_arg(key) {
+                    CachedValue::Cached(value)
+                } else {
+                    CachedValue::Cached(Ref::map(value, |value| value.trim_ascii()))
+                }
+            }
+            value => value,
+        }
+    }
+
     /// Returns an iterator over the keys of the frame’s arguments.
     pub fn keys(&self) -> KeyIter<'_> {
         KeyIter {
@@ -145,6 +185,20 @@ impl<'a> StackFrame<'a> {
         }
         sp
     }
+}
+
+/// A cached stack frame parent value.
+///
+/// This is an optimisation to avoid expensive yields in the VM when the shared
+/// state is not needed to actually get the value because nothing needs to be
+/// rendered.
+pub(crate) enum CachedValue<'a> {
+    /// There is no value matching the key.
+    Nil,
+    /// There may be a value matching the key.
+    Unknown,
+    /// There is a cached value, and here it is!
+    Cached(Ref<'a, str>),
 }
 
 /// Iterator over the argument keys in a [`KeyCacheKvs`].
@@ -244,6 +298,24 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
             self.value(state, sp, index)
         } else {
             Ok(None)
+        }
+    }
+
+    /// Returns the cached value part of a k-v pair with the given key.
+    ///
+    /// The returned value will include any leading and trailing whitespace
+    /// present in the original text.
+    fn get_cached(&self, key: &str) -> CachedValue<'_> {
+        let index = self.key_map.borrow().1.get(key).copied();
+        if let Some(index) = index {
+            Ref::filter_map(self.value_cache.borrow(), |cache| {
+                cache.get(&index).map(String::as_str)
+            })
+            .map_or(CachedValue::Unknown, CachedValue::Cached)
+        } else if self.key_map.borrow().1.len() == self.raw.len() {
+            CachedValue::Nil
+        } else {
+            CachedValue::Unknown
         }
     }
 

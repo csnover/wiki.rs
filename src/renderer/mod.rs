@@ -157,7 +157,7 @@ pub(crate) use manager::{Command, In, RenderManager as Manager, RenderOutput};
 pub(crate) use parser_fns::call_parser_fn;
 use piccolo::Lua;
 use schnellru::LruMap;
-pub(crate) use stack::{Kv, StackFrame};
+pub(crate) use stack::{CachedValue, Kv, StackFrame};
 use std::{borrow::Cow, collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 pub(crate) use surrogate::Surrogate;
 use tags::LinkKind;
