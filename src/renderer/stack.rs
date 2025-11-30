@@ -4,11 +4,9 @@ use super::{
     Error, Result, State,
     expand_templates::{ExpandMode, ExpandTemplates},
     surrogate::Surrogate,
-    trim::Trim,
 };
 use crate::{
     lua::LuaFrame,
-    renderer::WriteSurrogate,
     title::Title,
     wikitext::{Argument, FileMap, Span, Spanned, Token},
 };
@@ -20,6 +18,7 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     pin::{Pin, pin},
+    rc::Rc,
 };
 
 /// A template transclusion or module call stack frame.
@@ -84,7 +83,7 @@ impl<'a> StackFrame<'a> {
         Self {
             name,
             source,
-            arguments: KeyCacheKvs::new(self.arguments.raw),
+            arguments: self.arguments.clone(),
             parent: self.parent,
             children: <_>::default(),
         }
@@ -125,28 +124,6 @@ impl<'a> StackFrame<'a> {
         } else {
             None
         })
-    }
-
-    /// Evaluates the argument with the given key.
-    pub fn expand_raw<W: WriteSurrogate + ?Sized>(
-        &self,
-        out: &mut W,
-        state: &mut State<'_>,
-        key: &str,
-    ) -> Result<bool> {
-        if let Some(parent) = &self.parent
-            && let Some(index) = self.arguments.get_index(state, parent, key)?
-        {
-            let value = self.arguments.get_raw(index).expect("key index mismatch");
-            if is_numeric_arg(key) {
-                value.value_into(out, state, parent)?;
-            } else {
-                value.value_into(&mut Trim::new(out, parent), state, parent)?;
-            }
-            Ok(true)
-        } else {
-            Ok(false)
-        }
     }
 
     /// Returns an iterator over the keys of the frame’s arguments.
@@ -217,12 +194,14 @@ impl fmt::Debug for StackFrame<'_> {
 }
 
 /// A list of k-v pairs with a cached key map.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct KeyCacheKvs<'call, 'args> {
     /// A lazily populated key-index map into [`Self::raw`].
-    key_map: RefCell<(usize, HashMap<String, usize>)>,
+    key_map: Rc<RefCell<(usize, HashMap<String, usize>)>>,
     /// The raw arguments passed to the function.
     raw: &'call [Kv<'args>],
+    /// Cached values.
+    value_cache: Rc<RefCell<HashMap<usize, String>>>,
 }
 
 impl<'call, 'args> KeyCacheKvs<'call, 'args> {
@@ -231,6 +210,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
         Self {
             key_map: <_>::default(),
             raw,
+            value_cache: <_>::default(),
         }
     }
 
@@ -373,10 +353,27 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
         sp: &'call StackFrame<'_>,
         index: usize,
     ) -> Result<Option<Cow<'call, str>>> {
-        self.raw
-            .get(index)
-            .map(|arg| arg.value(state, sp))
-            .transpose()
+        if !self.value_cache.borrow().contains_key(&index) {
+            let Some(value) = self
+                .raw
+                .get(index)
+                .map(|arg| arg.value(state, sp))
+                .transpose()?
+            else {
+                return Ok(None);
+            };
+
+            self.value_cache
+                .borrow_mut()
+                .insert(index, value.to_string());
+        }
+
+        // TODO: Do something better that does not require cloning
+        Ok(self
+            .value_cache
+            .borrow()
+            .get(&index)
+            .map(|value| Cow::Owned(value.clone())))
     }
 }
 
@@ -518,66 +515,6 @@ impl Kv<'_> {
         }
     }
 
-    /// Evaluates the argument into a [`WriteSurrogate`].
-    // TODO: Better name
-    pub fn eval_into<W: WriteSurrogate + ?Sized>(
-        &self,
-        out: &mut W,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-    ) -> Result {
-        match self {
-            Kv::Argument(argument) => out.adopt_tokens(state, sp, &argument.content),
-            Kv::Borrowed(value) => out.adopt_generated(state, sp, None, value),
-            Kv::Partial(nodes) => {
-                for node in nodes {
-                    out.adopt_token(state, sp, node)?;
-                }
-                Ok(())
-            }
-            Kv::String(_, value) => {
-                let tree_source = state.statics.vm.try_enter(|ctx| {
-                    let source = ctx.fetch(value).to_str()?;
-                    // TODO: Not sure whether this should expand templates or
-                    // not.
-                    let tree = state.statics.parser.parse(source, sp.parent.is_some())?;
-                    // Optimise the common cases; anything more complex
-                    // might require access to `stack` and so the source
-                    // needs to be copied out of the VM.
-                    if tree.root.is_empty() {
-                        Ok(None)
-                    } else if let [
-                        Spanned {
-                            node: Token::Text,
-                            span,
-                        },
-                    ] = tree.root.as_slice()
-                    {
-                        Ok(Some(either::Left(source[span.into_range()].to_string())))
-                    } else {
-                        Ok(Some(either::Right((tree, source.to_string()))))
-                    }
-                })?;
-
-                match tree_source {
-                    Some(either::Left(text)) => {
-                        out.adopt_generated(state, sp, None, &text)?;
-                    }
-                    Some(either::Right((tree, source))) => {
-                        out.adopt_output(
-                            state,
-                            &sp.clone_with_source(FileMap::new(&source)),
-                            &tree,
-                        )?;
-                    }
-                    None => {}
-                }
-
-                Ok(())
-            }
-        }
-    }
-
     /// Evaluates the name-part of a k-v argument.
     ///
     /// The returned value will include any leading and trailing whitespace
@@ -616,20 +553,6 @@ impl Kv<'_> {
         match self {
             Kv::Argument(argument) => sp.eval(state, argument.value()),
             _ => self.eval(state, sp),
-        }
-    }
-
-    /// Evaluates the value-part of k-v argument into a [`WriteSurrogate`].
-    // TODO: Better name.
-    pub fn value_into<W: WriteSurrogate + ?Sized>(
-        &self,
-        out: &mut W,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-    ) -> Result {
-        match self {
-            Kv::Argument(argument) => out.adopt_tokens(state, sp, argument.value()),
-            _ => self.eval_into(out, state, sp),
         }
     }
 }
@@ -673,6 +596,7 @@ fn debug_backtrace(title: &Title, mut sp: &StackFrame<'_>) {
 }
 
 /// Returns true if the given key is a numeric argument key.
+#[inline]
 fn is_numeric_arg(key: &str) -> bool {
     key.chars().all(|c| c.is_ascii_digit())
 }

@@ -484,9 +484,8 @@ fn call_parser_function(
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
-        let mut expand = ExpandTemplates::new(ExpandMode::Include);
-        call_parser_fn(&mut expand, state, sp, None, &callee, &args)?;
-        let result = expand.finish();
+        let mut result = String::new();
+        call_parser_fn(&mut result, state, sp, None, &callee, &args)?;
         Ok(state
             .statics
             .vm
@@ -512,16 +511,15 @@ fn expand_template(
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
-        let mut expand = ExpandTemplates::new(ExpandMode::Include);
+        let mut result = String::new();
         call_template(
-            &mut expand,
+            &mut result,
             state,
             sp,
             &Kv::Borrowed(&title),
             &title,
             &arguments,
         )?;
-        let result = expand.finish();
         Ok(state
             .statics
             .vm

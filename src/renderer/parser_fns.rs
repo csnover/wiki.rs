@@ -7,28 +7,29 @@
 #![allow(clippy::unnecessary_wraps, clippy::wildcard_imports)]
 
 use super::{
-    Error, Result, State, StripMarkers,
-    extension_tags::render_extension_tag,
+    Error, Result, State, StripMarkers, extension_tags,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     template::{call_module, call_template, is_function_call},
-    trim::Trim,
 };
 use crate::{
     common::{anchor_encode, format_date, make_url, url_encode},
     config::CONFIG,
     expr,
     php::{format_number, fuzzy_cmp, parse_number},
-    renderer::WriteSurrogate,
     title::{Namespace, Title},
     wikitext::Span,
 };
-use core::{fmt, iter};
+use core::{
+    fmt::{self, Write as _},
+    iter,
+};
+use either::Either;
 use html_escape::decode_html_entities;
 use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 
 /// The function signature of a parser function.
-type ParserFn = fn(&mut dyn WriteSurrogate, &mut State<'_>, &IndexedArgs<'_, '_, '_>) -> Result;
+type ParserFn = fn(&mut String, &mut State<'_>, &IndexedArgs<'_, '_, '_>) -> Result;
 
 mod cond {
     //! Flow control parser functions.
@@ -37,7 +38,7 @@ mod cond {
 
     /// `{{#expr: expression}}`
     pub fn expr(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -64,7 +65,7 @@ mod cond {
 
     /// `{{#if: condition | consequent (!condition.trim().is_empty()) | alternate }}`
     pub fn r#if(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -82,8 +83,8 @@ mod cond {
         };
         let index = 1 + usize::from(lhs_is_empty);
         // log::trace!("#if: '{lhs}'? {}", index == 0);
-        if let Some(value) = arguments.get_raw(index) {
-            value.eval_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
+        if let Some(value) = arguments.eval(state, index)?.map(trim) {
+            write!(out, "{value}")?;
         }
 
         Ok(())
@@ -91,7 +92,7 @@ mod cond {
 
     /// `{{#ifeq: lhs | rhs | consequent (lhs == rhs) | alternate }}`
     pub fn if_eq(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -99,8 +100,8 @@ mod cond {
         let rhs = arguments.eval(state, 1)?.map_or("".into(), decode_trim);
         let is_eq = fuzzy_cmp(&lhs, &rhs);
         // log::trace!("#ifeq: '{lhs:?}' == '{rhs:?}'? {is_eq}");
-        if let Some(value) = arguments.get_raw(2 + usize::from(!is_eq)) {
-            value.eval_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
+        if let Some(value) = arguments.eval(state, 2 + usize::from(!is_eq))?.map(trim) {
+            write!(out, "{value}")?;
         }
 
         Ok(())
@@ -108,7 +109,7 @@ mod cond {
 
     /// `{{#iferror: condition | consequent (error) | alternate (no error) }}`
     pub fn if_error(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -127,11 +128,13 @@ mod cond {
         };
 
         if is_error {
-            if let Some(value) = arguments.get_raw(1) {
-                value.eval_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
+            if let Some(value) = arguments.eval(state, 1)?.map(trim) {
+                write!(out, "{value}")?;
             }
-        } else if let Some(value) = arguments.get_raw(2).or_else(|| arguments.get_raw(0)) {
-            value.eval_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
+        } else if let Some(value) = arguments.eval(state, 2)?.map(trim) {
+            write!(out, "{value}")?;
+        } else if let Some(value) = arguments.eval(state, 0)?.map(trim) {
+            write!(out, "{value}")?;
         }
 
         Ok(())
@@ -139,7 +142,7 @@ mod cond {
 
     /// `{{#ifexpr: expression | consequent (expression != 0.0) | alternate }}`
     pub fn if_expr(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -149,9 +152,9 @@ mod cond {
         match on_error_resume_next(expr::do_expression(expr.as_deref().unwrap_or_default())) {
             Ok(result) => {
                 // log::trace!("#ifexpr: {expr:?} = {result:?}");
-                let value = arguments.get_raw(1 + usize::from(result.unwrap_or(0.0) == 0.0));
-                if let Some(value) = value {
-                    value.eval_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
+                let index = 1 + usize::from(result.unwrap_or(0.0) == 0.0);
+                if let Some(value) = arguments.eval(state, index)?.map(trim) {
+                    write!(out, "{value}")?;
                 }
             }
             Err(err) => write!(out, "{err}")?,
@@ -162,7 +165,7 @@ mod cond {
 
     /// `{{#switch: match | case [| case ...] = value | default }}`
     pub fn switch(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -210,7 +213,8 @@ mod cond {
         }
 
         if let Some(consequent) = consequent {
-            consequent.value_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
+            let value = consequent.value(state, arguments.sp).map(trim)?;
+            write!(out, "{value}")?;
         }
 
         Ok(())
@@ -224,28 +228,35 @@ mod ext {
 
     /// `{{#tag: tag_name | content [| attribute [= value] ...] }}`
     pub fn extension_tag(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let (Some(name), Some(body)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
-            render_extension_tag(
-                out,
+            let name = StripMarkers::kill(&name);
+            match extension_tags::render_extension_tag(
                 state,
                 arguments.sp,
                 arguments.span,
                 &name.trim_ascii().to_ascii_lowercase(),
-                &arguments.arguments[2..],
+                &extension_tags::InArgs::ParserFn(&arguments.arguments[2..]),
                 Some(&body),
-                true,
-            )?;
+            )? {
+                Some(Either::Left(marker)) => {
+                    state.strip_markers.push(out, marker);
+                }
+                Some(Either::Right(raw)) => {
+                    write!(out, "{raw}")?;
+                }
+                None => {}
+            }
         }
         Ok(())
     }
 
     /// `{{#coordinates: latitude | longitude [| primary][| GeoHack parameters][| extra parameters] }}`
     pub fn geodata_coordinates(
-        _: &mut dyn WriteSurrogate,
+        _: &mut String,
         _: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -258,7 +269,7 @@ mod ext {
 
     /// `{{#invoke: module | function [| argument [= value] ...] }}`
     pub fn invoke(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -267,7 +278,7 @@ mod ext {
 
     /// `{{#property: name [| from = Qid] }}`
     pub fn wikibase_property(
-        _: &mut dyn WriteSurrogate,
+        _: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -286,34 +297,37 @@ mod page {
 
     /// `{{BASEPAGENAME}}`
     pub fn base_page_name(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        IndexedArgs { sp, span, .. }: &IndexedArgs<'_, '_, '_>,
+        out: &mut String,
+        _: &mut State<'_>,
+        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        out.adopt_generated(state, sp, *span, sp.root().name.base_text())
+        write!(out, "{}", sp.root().name.base_text())?;
+        Ok(())
     }
 
     /// `{{FULLPAGENAME}}`
     pub fn full_page_name(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        IndexedArgs { sp, span, .. }: &IndexedArgs<'_, '_, '_>,
+        out: &mut String,
+        _: &mut State<'_>,
+        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        out.adopt_generated(state, sp, *span, sp.root().name.key())
+        write!(out, "{}", sp.root().name.key())?;
+        Ok(())
     }
 
     /// `{{PAGENAME}}`
     pub fn page_name(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        IndexedArgs { sp, span, .. }: &IndexedArgs<'_, '_, '_>,
+        out: &mut String,
+        _: &mut State<'_>,
+        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        out.adopt_generated(state, sp, *span, sp.root().name.text())
+        write!(out, "{}", sp.root().name.text())?;
+        Ok(())
     }
 
     /// `{{PROTECTIONEXPIRY[: action [| pagename]] }}`
     pub fn protection_expiry(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -325,6 +339,7 @@ mod page {
         //  empty string if it doesn't exist.”
         let exists = arguments
             .eval(state, 1)?
+            .map(trim)
             .is_none_or(|page_name| state.statics.db.contains(&page_name));
         if exists {
             write!(out, "infinity")?;
@@ -334,26 +349,20 @@ mod page {
 
     /// `{{[gettable variable name]}}`
     pub fn page_var(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
-        IndexedArgs {
-            sp, span, callee, ..
-        }: &IndexedArgs<'_, '_, '_>,
+        IndexedArgs { callee, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         // TODO: Technically the value might be a tree
-        if let Some(value) = state.globals.variables.get(*callee).cloned() {
-            out.adopt_generated(state, sp, *span, &value)?;
+        if let Some(value) = state.globals.variables.get(*callee) {
+            write!(out, "{value}")?;
         }
 
         Ok(())
     }
 
     /// `{{REVISIONID}}`
-    pub fn revision_id(
-        out: &mut dyn WriteSurrogate,
-        _: &mut State<'_>,
-        _: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
+    pub fn revision_id(out: &mut String, _: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
         // TODO: For the purposes of debugging, it might be worthwhile to
         // make this a toggle which can be empty string instead, since MW
         // modules will emit more warnings in that case
@@ -363,16 +372,17 @@ mod page {
 
     /// `{{ROOTPAGENAME}}`
     pub fn root_page_name(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        IndexedArgs { sp, span, .. }: &IndexedArgs<'_, '_, '_>,
+        out: &mut String,
+        _: &mut State<'_>,
+        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        out.adopt_generated(state, sp, *span, sp.root().name.root_text())
+        write!(out, "{}", sp.root().name.root_text())?;
+        Ok(())
     }
 
     /// `{{[settable variable name]: value [| option ...]}}`
     pub fn set_page_var(
-        _: &mut dyn WriteSurrogate,
+        _: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -388,11 +398,12 @@ mod page {
 
     /// `{{SUBPAGENAME}}`
     pub fn sub_page_name(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        IndexedArgs { sp, span, .. }: &IndexedArgs<'_, '_, '_>,
+        out: &mut String,
+        _: &mut State<'_>,
+        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        out.adopt_generated(state, sp, *span, sp.root().name.subpage_text())
+        write!(out, "{}", sp.root().name.subpage_text())?;
+        Ok(())
     }
 }
 
@@ -407,33 +418,28 @@ mod site {
     // this to avoid a slight inaccuracy in output
     #[allow(clippy::cast_precision_loss)]
     pub fn number_of_pages(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let no_separators = arguments.eval(state, 0)?.as_deref() == Some("R");
-        out.adopt_generated(
-            state,
-            arguments.sp,
-            arguments.span,
-            &format_number(state.statics.db.len() as f64, no_separators),
-        )
+        write!(
+            out,
+            "{}",
+            format_number(state.statics.db.len() as f64, no_separators)
+        )?;
+        Ok(())
     }
 
     /// `{{PAGESINCATEGORY: category [|flag] }}`
     pub fn pages_in_category(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if !arguments.is_empty() {
             let no_separators = arguments.eval(state, 1)?.is_some_and(|flag| flag == "R");
-            out.adopt_generated(
-                state,
-                arguments.sp,
-                arguments.span,
-                &format_number(1.0, no_separators),
-            )?;
+            write!(out, "{}", format_number(1.0, no_separators))?;
         }
 
         Ok(())
@@ -447,7 +453,7 @@ mod string {
 
     /// `{{anchorencode: text }}`
     pub fn anchor_encode(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -461,7 +467,7 @@ mod string {
 
     /// `{{formatnum: number [|flag] }}`
     pub fn format_number(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -493,12 +499,7 @@ mod string {
             // For now, just DGAF and emit the string as-is if it turns out to
             // have more than just a number in it.
             if let Ok(n) = parse_number(n) {
-                out.adopt_generated(
-                    state,
-                    arguments.sp,
-                    arguments.span,
-                    &super::format_number(n, no_separators),
-                )?;
+                write!(out, "{}", super::format_number(n, no_separators))?;
             } else {
                 write!(out, "{n}")?;
             }
@@ -509,12 +510,12 @@ mod string {
 
     /// `{{int: message name }}`
     pub fn interface_message(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.get_raw(0) {
-            value.eval_into(out, state, arguments.sp)?;
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
+            write!(out, "{value}")?;
         }
         Ok(())
     }
@@ -522,11 +523,11 @@ mod string {
     // TODO: Needs to run by markerSkipCallback.
     /// `{{lc: string }}`
     pub fn lc(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)? {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             write!(out, "{}", value.to_lowercase())?;
         }
         Ok(())
@@ -535,11 +536,11 @@ mod string {
     // TODO: Needs to run by markerSkipCallback.
     /// `{{lcfirst: string }}`
     pub fn lc_first(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)? {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             let mut text = value.chars();
             if let Some(first) = text.next() {
                 write!(out, "{}{}", first.to_lowercase(), text.as_str())?;
@@ -550,7 +551,7 @@ mod string {
 
     /// `{{padleft: string | length [| padding value] }}`
     pub fn pad_left(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -577,7 +578,7 @@ mod string {
 
     /// `{{plural: number [| [number = ] variant ...] }}`
     pub fn plural(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -589,8 +590,8 @@ mod string {
                 .abs();
             // log::trace!("#plural: {value} = {n}");
             let index = usize::from(n != 1);
-            if let Some(consequent) = arguments.get_raw(1 + index) {
-                consequent.eval_into(out, state, arguments.sp)?;
+            if let Some(value) = arguments.eval(state, 1 + index)?.map(trim) {
+                write!(out, "{value}")?;
             }
         }
 
@@ -599,7 +600,7 @@ mod string {
 
     /// `{{#titleparts: title [| len [| start]] }}`
     pub fn title_parts(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -655,7 +656,7 @@ mod string {
     /// `{{uc: string }}`
     // TODO: Needs to run by markerSkipCallback.
     pub fn uc(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -669,7 +670,7 @@ mod string {
     /// `{{ucfirst: string }}`
     // TODO: Needs to run by markerSkipCallback.
     pub fn uc_first(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -685,7 +686,7 @@ mod string {
 
     /// `{{urlencode: string }}`
     pub fn url_encode(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -731,7 +732,7 @@ mod subst {
     /// `{{subst:foo}}` | `{{{{{|subst:}}}bar}}`     | content of bar
     /// `{{subst:foo}}` | `{{{{{|safesubst:}}}bar}}` | content of bar
     pub fn safesubst(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -783,12 +784,12 @@ mod subst {
     /// Since wiki.rs is never in save mode, this will always just emit the
     /// original text.
     pub fn subst(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
+        out: &mut String,
+        _: &mut State<'_>,
         IndexedArgs { sp, span, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(span) = span {
-            out.adopt_text(state, sp, *span, &sp.source[span.into_range()])?;
+            write!(out, "{}", &sp.source[span.into_range()])?;
         }
         Ok(())
     }
@@ -803,7 +804,7 @@ mod time {
 
     /// `{{LOCALTIME}}` or `{{CURRENTTIME}}`
     pub fn clock_time(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -813,28 +814,20 @@ mod time {
     }
 
     /// `{{LOCALDAY}}` or `{{CURRENTDAY}}`
-    pub fn day(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        _: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
+    pub fn day(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
         write!(out, "{}", state.statics.base_time.day())?;
         Ok(())
     }
 
     /// `{{LOCALDAY2}}` or `{{CURRENTDAY2}}`
-    pub fn day_lz(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        _: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
+    pub fn day_lz(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
         write!(out, "{:02}", state.statics.base_time.day())?;
         Ok(())
     }
 
     /// `{{LOCALDAYNAME}}` or `{{CURRENTDAYNAME}}`
     pub fn day_name(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -844,7 +837,7 @@ mod time {
 
     /// `{{LOCALDOW}}` or `{{CURRENTDOW}}`
     pub fn day_of_week(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -857,28 +850,20 @@ mod time {
     }
 
     /// `{{LOCALHOUR}}` or `{{CURRENTHOUR}}`
-    pub fn hour(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        _: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
+    pub fn hour(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
         write!(out, "{:02}", state.statics.base_time.hour())?;
         Ok(())
     }
 
     /// `{{LOCALMONTH1}}` or `{{CURRENTMONTH1}}`
-    pub fn month(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        _: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
+    pub fn month(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
         write!(out, "{}", u8::from(state.statics.base_time.month()))?;
         Ok(())
     }
 
     /// `{{LOCALMONTHABBREV}}` or `{{CURRENTMONTHABBREV}}`
     pub fn month_abbr(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -890,7 +875,7 @@ mod time {
     /// `{{CURRENTMONTH2}}`
     // "localmonth" | "localmonth2" | "currentmonth" | "currentmonth2" => {
     pub fn month_lz(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -901,7 +886,7 @@ mod time {
     /// `{{LOCALMONTHNAME}}` or `{{LOCALMONTHNAMEGEN}}}}` or
     /// `{{CURRENTMONTHNAME}}` or `{{CURRENTMONTHNAMEGEN}}`
     pub fn month_name(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -911,14 +896,15 @@ mod time {
 
     /// `{{#time: format [| time [| language code [| local ]]] }}`
     pub fn time(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(format) = arguments.eval(state, 0)? {
-            let date = arguments.eval(state, 1)?;
+        if let Some(format) = arguments.eval(state, 0)?.map(trim) {
+            let date = arguments.eval(state, 1)?.map(trim);
             let local = arguments
                 .eval(state, 3)?
+                .map(trim)
                 .is_some_and(|local| local.trim_ascii() == "local");
 
             // 'Template:Date' sends garbage values to `#time` without an
@@ -930,7 +916,7 @@ mod time {
                 local,
             )) {
                 Ok(result) => {
-                    out.adopt_generated(state, arguments.sp, arguments.span, &result)?;
+                    write!(out, "{result}")?;
                 }
                 Err(err) => write!(out, "{err}")?,
             }
@@ -940,7 +926,7 @@ mod time {
 
     /// `{{LOCALTIMESTAMP}}` or `{{CURRENTTIMESTAMP}}`
     pub fn timestamp(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -959,21 +945,13 @@ mod time {
     }
 
     /// `{{LOCALWEEK}}` or `{{CURRENTWEEK}}`
-    pub fn week(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        _: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
+    pub fn week(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
         write!(out, "{}", state.statics.base_time.iso_week())?;
         Ok(())
     }
 
     /// `{{LOCALYEAR}}` or `{{CURRENTYEAR}}`
-    pub fn year(
-        out: &mut dyn WriteSurrogate,
-        state: &mut State<'_>,
-        _: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
+    pub fn year(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
         write!(out, "{}", state.statics.base_time.year())?;
         Ok(())
     }
@@ -986,7 +964,7 @@ mod title {
 
     /// `{{fullurl: title [| query string] }}`
     pub fn full_url(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -1003,7 +981,7 @@ mod title {
 
     /// `{{#ifexist: title | consequent (exists) | alternate }}`
     pub fn if_exist(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -1012,8 +990,8 @@ mod title {
             .eval(state, 0)?
             .map(trim)
             .is_some_and(|value| state.statics.db.contains(Title::new(&value, None).key()));
-        if let Some(arg) = arguments.get_raw(1 + usize::from(!exists)) {
-            arg.eval_into(&mut Trim::new(out, arguments.sp), state, arguments.sp)?;
+        if let Some(value) = arguments.eval(state, 1 + usize::from(!exists))?.map(trim) {
+            write!(out, "{value}")?;
         }
 
         Ok(())
@@ -1023,7 +1001,7 @@ mod title {
     /// `{{SUBJECTSPACE[:title] }}` or `{{ARTICLESPACE[:title] }}` or
     /// `{{TALKSPACE[:title] }}`
     pub fn namespace(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -1054,7 +1032,7 @@ mod title {
 
     /// `{{ns: namespace name or id }}`
     pub fn namespace_by_name_or_id(
-        out: &mut dyn WriteSurrogate,
+        out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -1074,7 +1052,7 @@ mod title {
 
     /// `{{#lst:title | section [| replacement text] }}`
     pub fn transclude_except(
-        _: &mut dyn WriteSurrogate,
+        _: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -1088,7 +1066,7 @@ mod title {
 
     /// `{{#lsth:title | section [| replacement text] }}`
     pub fn transclude_heading(
-        _: &mut dyn WriteSurrogate,
+        _: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -1102,7 +1080,7 @@ mod title {
 
     /// `{{#lst:title | section [| end section] }}`
     pub fn transclude_section(
-        _: &mut dyn WriteSurrogate,
+        _: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
@@ -1119,8 +1097,8 @@ mod title {
 static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     // TODO: The Wikitext parser should just immediately convert these
     // trivial functions
-    "!" => |out: &mut dyn WriteSurrogate, _, _| { out.write_char('|')?; Ok(()) },
-    "=" => |out: &mut dyn WriteSurrogate, _, _| { write!(out, "&#61;")?; Ok(()) },
+    "!" => |out: &mut String, _, _| { out.write_char('|')?; Ok(()) },
+    "=" => |out: &mut String, _, _| { write!(out, "&#61;")?; Ok(()) },
 
     "#expr" => cond::expr,
     "#if" => cond::r#if,
@@ -1212,7 +1190,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
 /// Renders a parser function.
 #[allow(clippy::too_many_lines)]
 pub fn call_parser_fn(
-    out: &mut dyn WriteSurrogate,
+    out: &mut String,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     bounds: Option<Span>,

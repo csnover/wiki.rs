@@ -347,6 +347,11 @@ impl StripMarkers {
     /// Pushes a new strip marker to the list, emitting the marker to the given
     /// `out` string.
     fn push(&mut self, out: &mut String, marker: StripMarker) {
+        // TODO: Of course modules rely on the implementation details of the MW
+        // strip markers. 'Module:Infobox' looks for
+        // `<MARKER_PREFIX>templatestyles-%x+<MARKER_SUFFIX>`, which means other
+        // modules probably do nonsense like this too. It doesn’t matter much
+        // in the case of 'Module:Infobox' since it is just moving stuff around.
         let _ = write!(out, "{MARKER_PREFIX}{}{MARKER_SUFFIX}", self.0.len());
         self.0.push(marker);
     }

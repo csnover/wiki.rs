@@ -3,13 +3,12 @@
 use super::{
     Error, Result, State, StripMarker, extension_tags,
     manager::RenderOutput,
-    stack::{Kv, StackFrame},
+    stack::StackFrame,
     surrogate::{self, Surrogate},
-    tags, template,
+    tags,
     trim::Trim,
 };
 use crate::{
-    php::strtr,
     renderer::emitters::{ListEmitter, ListKind, TextStyleEmitter},
     wikitext::{
         AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
@@ -355,20 +354,6 @@ impl Document {
         Ok(())
     }
 
-    /// Writes a complete HTML element.
-    fn write_element(
-        &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        tag: &str,
-        attributes: &[Spanned<Argument>],
-        content: &[Spanned<Token>],
-    ) -> Result {
-        self.start_tag(state, sp, tag, attributes)?;
-        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
-        self.end_tag(tag)
-    }
-
     /// Returns true if a `<p>` needs to be added for text within the given
     /// `parent`.
     fn needs_graf(&self) -> bool {
@@ -384,6 +369,29 @@ impl Document {
         let parent = self.stack.last();
         (!self.fragment && parent.is_none())
             || matches!(parent, Some(Node::Tag(tag, TagBody::Block)) if !PHRASING_TAGS.contains(tag))
+    }
+
+    /// Writes the contents of a strip marker to the output.
+    fn write_strip_marker(&mut self, tag: &StripMarker) -> Result {
+        match tag {
+            StripMarker::NoWiki(text) => {
+                self.text_run(&html_escape::decode_html_entities(text))?;
+            }
+            StripMarker::Inline(text) => {
+                self.html += text;
+            }
+            StripMarker::Block(text) => {
+                // Using "div" is a hack but one which does not really matter
+                // since anything that cannot parent a `<div>` cannot parent any
+                // other block-level element
+                while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
+                    e.close(&mut self.html)?;
+                }
+                self.html += text;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -529,17 +537,25 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
-        let attributes = attributes.iter().map(Kv::Argument).collect::<Vec<_>>();
-        extension_tags::render_extension_tag(
-            self,
+        match extension_tags::render_extension_tag(
             state,
             sp,
             Some(span),
             name,
-            &attributes,
+            &extension_tags::InArgs::Wikitext(attributes),
             content,
-            false,
-        )?;
+        )? {
+            Some(Either::Left(marker)) => {
+                if self.fragment {
+                    state.strip_markers.push(&mut self.html, marker);
+                } else {
+                    self.write_strip_marker(&marker)?;
+                }
+            }
+            Some(Either::Right(_)) => todo!("this should never happen?"),
+            None => {}
+        }
+
         Ok(())
     }
 
@@ -600,7 +616,8 @@ impl Surrogate<Error> for Document {
         _span: Span,
         _line_content: bool,
     ) -> Result {
-        self.write_element(state, sp, "hr", &[], &[])
+        self.start_tag(state, sp, "hr", &[])?;
+        self.end_tag("hr")
     }
 
     fn adopt_lang_variant(
@@ -721,13 +738,13 @@ impl Surrogate<Error> for Document {
 
     fn adopt_parameter(
         &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        name: &[Spanned<Token>],
-        default: Option<&[Spanned<Token>]>,
+        _state: &mut State<'_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _name: &[Spanned<Token>],
+        _default: Option<&[Spanned<Token>]>,
     ) -> Result {
-        template::render_parameter(self, state, sp, span, name, default)
+        panic!("parameters should all be resolved by now");
     }
 
     fn adopt_redirect(
@@ -812,25 +829,7 @@ impl Surrogate<Error> for Document {
             return Err(Error::StripMarker(marker));
         };
 
-        match tag {
-            // TODO: This should go through `text_run`, except not re-encoding
-            // other valid HTML entities.
-            StripMarker::NoWiki(text) => {
-                self.html += &strtr(text, &[("<", "&lt;"), (">", "&gt;")]);
-            }
-            StripMarker::Inline(text) => {
-                self.html += text;
-            }
-            StripMarker::Block(text) => {
-                // Using "div" is a hack but one which does not really matter
-                // since anything that cannot parent a `<div>` cannot parent any
-                // other block-level element
-                while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
-                    e.close(&mut self.html)?;
-                }
-                self.html += text;
-            }
-        }
+        self.write_strip_marker(tag)?;
 
         Ok(())
     }
@@ -968,24 +967,13 @@ impl Surrogate<Error> for Document {
 
     fn adopt_template(
         &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        target: &[Spanned<Token>],
-        arguments: &[Spanned<Argument>],
+        _state: &mut State<'_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _target: &[Spanned<Token>],
+        _arguments: &[Spanned<Argument>],
     ) -> Result {
-        template::render_template(
-            self,
-            state,
-            sp,
-            span,
-            target,
-            arguments,
-            // TODO: This is conflating smart quote logical character with
-            // source tokens in a way where in some edge case (e.g. <br>) it
-            // will break
-            self.last_char == '\n',
-        )
+        panic!("templates should all be resolved by now");
     }
 
     fn adopt_token(

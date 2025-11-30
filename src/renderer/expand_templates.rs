@@ -2,22 +2,20 @@
 //! container.
 
 use super::{
-    Error, Kv, Result, State, StripMarker, extension_tags,
+    Error, Result, State, extension_tags,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags, template,
 };
-use crate::{
-    renderer::document::Document,
-    wikitext::{
-        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
-        Spanned, TextStyle, Token,
-    },
+use crate::wikitext::{
+    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
+    Spanned, TextStyle, Token,
 };
 use core::{
     fmt::{self, Write as _},
     ops::Range,
 };
+use either::Either;
 
 /// Template expansion mode.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -206,25 +204,19 @@ impl Surrogate<Error> for ExpandTemplates {
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
-        // TODO: Collecting into a `Vec<Kv>` first wastes time.
-        let attributes = attributes.iter().map(Kv::Argument).collect::<Vec<_>>();
-        let content = if name == "nowiki" {
-            StripMarker::NoWiki(content.unwrap_or_default().to_string())
-        } else {
-            let mut out = Document::new(true);
-            extension_tags::render_extension_tag(
-                &mut out,
-                state,
-                sp,
-                Some(span),
-                name,
-                &attributes,
-                content,
-                false,
-            )?;
-            out.finish_fragment()
-        };
-        state.strip_markers.push(&mut self.out, content);
+        match extension_tags::render_extension_tag(
+            state,
+            sp,
+            Some(span),
+            name,
+            &extension_tags::InArgs::Wikitext(attributes),
+            content,
+        )? {
+            Some(Either::Left(marker)) => state.strip_markers.push(&mut self.out, marker),
+            Some(Either::Right(raw)) => write!(self.out, "{raw}")?,
+            None => {}
+        }
+
         Ok(())
     }
 
@@ -453,14 +445,15 @@ impl Surrogate<Error> for ExpandTemplates {
         target: &[Spanned<Token>],
         arguments: &[Spanned<Argument>],
     ) -> Result {
+        let line_start = self.out.is_empty() || self.out.ends_with('\n');
         template::render_template(
-            self,
+            &mut self.out,
             state,
             sp,
             span,
             target,
             arguments,
-            self.out.is_empty() || self.out.ends_with('\n'),
+            line_start,
         )
     }
 

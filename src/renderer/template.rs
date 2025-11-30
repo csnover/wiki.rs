@@ -2,29 +2,27 @@
 
 use super::{
     Error, Result, State,
-    expand_templates::ExpandMode,
+    expand_templates::{ExpandMode, ExpandTemplates},
     parser_fns::call_parser_fn,
     resolve_redirects,
     stack::{KeyCacheKvs, Kv, StackFrame},
-    tags::{render_runtime, render_runtime_list},
+    surrogate::Surrogate,
 };
 use crate::{
     LoadMode,
     common::make_url,
     config::CONFIG,
     lua::run_vm,
-    renderer::{WriteSurrogate, expand_templates::ExpandTemplates},
     title::{Namespace, Title},
-    wikitext::{
-        Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token, builder::token,
-    },
+    wikitext::{Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token},
 };
+use core::fmt::{self, Write as _};
 use regex::Regex;
 use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
 
 /// Calls a Lua function.
-pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
-    out: &mut W,
+pub(super) fn call_module(
+    out: &mut String,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     arguments: &KeyCacheKvs<'_, '_>,
@@ -80,10 +78,7 @@ pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
     // any structured error handling.
     match result {
         Ok(result) => {
-            let sp = sp.clone_with_source(FileMap::new(&result));
-            let tree = state.statics.parser.parse_no_expansion(&sp.source)?;
-            // eprintln!("{result}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &tree.root));
-            out.adopt_output(state, &sp, &tree)?;
+            write!(out, "{result}")?;
         }
         Err(err) => {
             let root_error = {
@@ -94,18 +89,7 @@ pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
                 err
             };
             log::error!("{}: {err:#}", sp.name);
-            render_runtime_list(out, state, &sp, |_, source| {
-                token![source, [
-                    Token::StartTag {
-                        name: token!(source, Span { "span" }),
-                        attributes: token![source, [ "class" => "error" ]].into(),
-                        self_closing: false,
-                    },
-                    Token::Text { root_error.to_string() },
-                    Token::EndTag { name: token!(source, Span { "span" }) },
-                ]]
-                .into()
-            })?;
+            write!(out, r#"<span class="error">{root_error}</span>"#)?;
         }
     }
 
@@ -113,8 +97,8 @@ pub(super) fn call_module<W: WriteSurrogate + ?Sized>(
 }
 
 /// Renders a parameter.
-pub(super) fn render_parameter<W: WriteSurrogate + ?Sized>(
-    out: &mut W,
+pub(super) fn render_parameter(
+    out: &mut ExpandTemplates,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     span: Span,
@@ -127,37 +111,37 @@ pub(super) fn render_parameter<W: WriteSurrogate + ?Sized>(
 
     let key = sp.eval(state, name)?;
 
-    if !sp.expand_raw(out, state, key.trim_ascii())? {
+    if let Some(value) = sp.expand(state, key.trim_ascii())? {
+        write!(out, "{value}")?;
+    } else if let Some(default) = default {
+        out.adopt_tokens(state, sp, default)?;
+    } else {
+        // This cannot simply adopt the whole text of the parameter as-is
+        // because if the parameter contained inclusion control tags, e.g.
+        // `{{{1<noinclude>|default</noinclude>}}}` then the wrong result
+        // will be emitted.
+        //
+        // If you are here because you saw some attempt (or many, many
+        // attempts) to load a template named like `{{{1}}}`, this could be
+        // *intentional*! Pour a drink and go read
+        // [`crate::db::CacheableArticle`].
+        let fragment = Span::new(span.start, span.start + 3);
+        out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
+        for token in name {
+            out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
+        }
         if let Some(default) = default {
-            out.adopt_tokens(state, sp, default)?;
-        } else {
-            // This cannot simply adopt the whole text of the parameter as-is
-            // because if the parameter contained inclusion control tags, e.g.
-            // `{{{1<noinclude>|default</noinclude>}}}` then the wrong result
-            // will be emitted.
-            //
-            // If you are here because you saw some attempt (or many, many
-            // attempts) to load a template named like `{{{1}}}`, this could be
-            // *intentional*! Pour a drink and go read
-            // [`crate::db::CacheableArticle`].
-            let fragment = Span::new(span.start, span.start + 3);
+            let first = default
+                .first()
+                .map_or(span.end - 3, |first| first.span.start);
+            let fragment = Span::new(first - 1, first);
             out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
-            for token in name {
+            for token in default {
                 out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
             }
-            if let Some(default) = default {
-                let first = default
-                    .first()
-                    .map_or(span.end - 3, |first| first.span.start);
-                let fragment = Span::new(first - 1, first);
-                out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
-                for token in default {
-                    out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
-                }
-            }
-            let fragment = Span::new(span.end - 3, span.end);
-            out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
         }
+        let fragment = Span::new(span.end - 3, span.end);
+        out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
     }
 
     Ok(())
@@ -183,8 +167,8 @@ pub(super) fn render_parameter<W: WriteSurrogate + ?Sized>(
 ///    stack recursion limits.
 /// 6. Query a database.
 /// 7. Emit as text.
-pub(super) fn render_template<'tt, W: WriteSurrogate>(
-    out: &mut W,
+pub(super) fn render_template<'tt>(
+    out: &mut String,
     state: &mut State<'_>,
     sp: &'tt StackFrame<'_>,
     bounds: Span,
@@ -225,7 +209,7 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
     // necessary, and makes extension tags very hard to deal with because
     // they must be able to emit tags which are not serialisable in Wikitext
     // (`<math>`, etc.).
-    let mut evaluator = ExpandTemplates::new(ExpandMode::Include);
+    let mut partial = String::new();
 
     if use_function_hook {
         // It is important to actually not pass a zeroth argument is there is
@@ -239,7 +223,7 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
             .collect::<Vec<_>>();
 
         call_parser_fn(
-            &mut evaluator,
+            &mut partial,
             state,
             sp,
             Some(bounds),
@@ -251,7 +235,7 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
 
         let callee = sp.eval(state, target)?;
         call_template(
-            &mut evaluator,
+            &mut partial,
             state,
             sp,
             &Kv::Partial(target.iter().collect()),
@@ -259,8 +243,6 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
             &arguments,
         )?;
     }
-
-    let mut partial = evaluator.finish();
 
     // “T2529: if the template begins with a table or block-level
     //  element, it should be treated as beginning a new line.
@@ -322,10 +304,9 @@ pub(super) fn render_template<'tt, W: WriteSurrogate>(
         }
     }
 
-    let root = state.statics.parser.parse_no_expansion(&partial)?;
-    let sp = sp.clone_with_source(FileMap::new(&partial));
-    // eprintln!("{partial}\n\n{:#?}", crate::wikitext::inspect(&sp.source, &root.root));
-    out.adopt_output(state, &sp, &root)
+    write!(out, "{partial}")?;
+
+    Ok(())
 }
 
 /// Template target information.
@@ -396,8 +377,8 @@ fn split_target<'tt>(
 }
 
 /// Transcludes a template.
-pub(crate) fn call_template<W: WriteSurrogate + ?Sized>(
-    out: &mut W,
+pub(crate) fn call_template(
+    out: &mut String,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     target: &Kv<'_>,
@@ -421,11 +402,9 @@ pub(crate) fn call_template<W: WriteSurrogate + ?Sized>(
         // *that* is supposed to fall back to a wikilink to edit the template.
         // Therefore, this is not a totally correct fallback, and more work
         // needs to be done elsewhere.
-        out.write_str("{{")?;
-        target.eval_into(out, state, sp)?;
+        write!(out, "{{{{{}", target.eval(state, sp)?)?;
         for argument in arguments {
-            out.write_str("|")?;
-            argument.eval_into(out, state, sp)?;
+            write!(out, "|{}", argument.eval(state, sp)?)?;
         }
         out.write_str("}}")?;
 
@@ -438,6 +417,7 @@ pub(crate) fn call_template<W: WriteSurrogate + ?Sized>(
     };
 
     let now = Instant::now();
+    let mut expansion = ExpandTemplates::new(ExpandMode::Include);
 
     let sp = sp.chain(callee, FileMap::new(&template.body), arguments)?;
     // For now, just assume that the cache will always be big enough and unwrap
@@ -451,7 +431,9 @@ pub(crate) fn call_template<W: WriteSurrogate + ?Sized>(
             .unwrap(),
     );
 
-    out.adopt_output(state, &sp, &root)?;
+    expansion.adopt_output(state, &sp, &root)?;
+    // TODO: Could just write directly to the out.
+    write!(out, "{}", expansion.finish())?;
 
     state
         .timing
@@ -479,7 +461,7 @@ pub(super) fn is_function_call(empty_arguments: bool, has_colon: bool, callee_lo
 
 /// Handles a template or parameter which is disabled due to the current
 /// [`LoadMode`].
-pub(super) fn render_fallback<W: WriteSurrogate + ?Sized>(
+pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     out: &mut W,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
@@ -492,25 +474,9 @@ pub(super) fn render_fallback<W: WriteSurrogate + ?Sized>(
         false,
     )?;
 
-    // TODO: This actually needs to be an extension tag strip marker since
-    // templates can be in any arbitrary position, including inside attributes,
-    // so this results in an invalid tree.
-    render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::ExternalLink {
-                target: token!(source, [Token::Text { href }]).into(),
-                content: token![source, [
-                    Token::StartTag {
-                        name: token!(source, Span { "span" }),
-                        attributes: token![source, [ "class" => "wiki-rs-incomplete" ]].into(),
-                        self_closing: false,
-                    },
-                    Token::Text { "Run scripts" },
-                    Token::EndTag { name: token!(source, Span { "span" }) }
-                ]]
-                .into()
-            }
-        )
-    })
+    write!(
+        out,
+        r#"[{href} <span class="wiki-rs-incomplete">Run scripts</span>]"#
+    )?;
+    Ok(())
 }

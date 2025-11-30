@@ -1,9 +1,8 @@
 //! Plain HTML rendering functions.
 
-use super::{Error, Result, StackFrame, State, WriteSurrogate, image, trim::TrimLink};
+use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use crate::{
     common::anchor_encode,
-    renderer::Surrogate,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
@@ -132,10 +131,14 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     }
 
     if content.is_empty() {
-        TrimLink::new(out).adopt_tokens(state, sp, target)?;
+        let target = sp.eval(state, target)?;
+        let target = target.trim_start_matches(':');
+        // TODO: This needs to participate in smart quotes.
+        out.write_str(target)?;
     } else {
         render_single_attribute(out, state, sp, content)?;
     }
+    // TODO: This needs to participate in smart quotes.
     if let Some(trail) = trail {
         out.write_str(trail)?;
     }
@@ -197,13 +200,9 @@ impl LinkKind<'_> {
                 // TODO: Hack together some URL parsing good enough that there is an
                 // actual way to check that the origin is the same
                 if url.starts_with('/') {
-                    html_escape::encode_double_quoted_attribute(url).to_string()
+                    url.to_string()
                 } else {
-                    format!(
-                        "{}/external/{}",
-                        base_uri.path(),
-                        html_escape::encode_double_quoted_attribute(url)
-                    )
+                    format!("{}/external/{url}", base_uri.path())
                 }
             }
             LinkKind::Internal(title) => {

@@ -114,7 +114,7 @@
 mod timeline;
 
 use super::{
-    Error, Result, State, WriteSurrogate,
+    Error, ExpandMode, ExpandTemplates, State, StripMarker,
     document::Document,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
@@ -123,20 +123,20 @@ use crate::{
     common::anchor_encode,
     db::Database,
     php::strtr,
-    renderer::tags::render_runtime,
     title::{Namespace, Title},
-    wikitext::{
-        self, FileMap, Output, Span, Token,
-        builder::{tok_arg, token},
-    },
+    wikitext::{self, Argument, FileMap, Output, Span, Spanned, Token},
 };
 use core::{fmt::Write as _, ops::Range};
+use either::Either;
 use regex::{Regex, RegexBuilder};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     sync::LazyLock,
 };
+
+/// The result type for an extension tag function.
+type Result<T = OutputMode, E = Error> = super::Result<T, E>;
 
 /// A helper struct for passing arguments required by all extension tags.
 struct ExtensionTag<'args, 'call, 'sp> {
@@ -164,18 +164,21 @@ impl ExtensionTag<'_, '_, '_> {
     }
 
     /// Evaluates the body of the tag.
-    pub fn eval_body(&self, state: &mut State<'_>) -> Result<String> {
-        // TODO: Do this more intelligently to allow returning `Cow`
+    pub fn eval_body(&self, state: &mut State<'_>) -> Result<StripMarker> {
         let source = FileMap::new(self.body());
-        let tt = state
-            .statics
-            .parser
-            .parse(&source, self.sp.parent.is_some())?;
-        Ok(self
-            .sp
-            .clone_with_source(source)
-            .eval(state, &tt.root)?
-            .to_string())
+        let sp = self.sp.clone_with_source(source);
+        let root = state.statics.parser.parse(&sp.source, false)?;
+
+        let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
+        preprocessor.adopt_output(state, &sp, &root)?;
+        let source = preprocessor.finish();
+
+        let sp = sp.clone_with_source(FileMap::new(&source));
+        let root = state.statics.parser.parse_no_expansion(&sp.source)?;
+
+        let mut out = Document::new(true);
+        out.adopt_output(state, &sp, &root)?;
+        Ok(out.finish_fragment())
     }
 
     /// Returns the body of the tag as a token tree.
@@ -192,11 +195,7 @@ impl ExtensionTag<'_, '_, '_> {
 
 /// The `<math>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Math>
-fn math(
-    out: &mut dyn WriteSurrogate,
-    state: &mut State<'_>,
-    arguments: &ExtensionTag<'_, '_, '_>,
-) -> Result {
+fn math(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
     let latex = arguments.body();
 
     // TODO: Undocumented 'id' attribute
@@ -206,12 +205,12 @@ fn math(
     // * 'block' wraps "{\displaystyle{latex}}"
     // * 'inline' wraps "{\textstyle{latex}}"
     // * 'linebreak' is also an option, wraps "\[{latex}\]"
-    let mode = if let Some(value) = arguments.get(state, "display")?
+    let (output, mode) = if let Some(value) = arguments.get(state, "display")?
         && value == "block"
     {
-        math_core::MathDisplay::Block
+        (OutputMode::Block, math_core::MathDisplay::Block)
     } else {
-        math_core::MathDisplay::Inline
+        (OutputMode::Inline, math_core::MathDisplay::Inline)
     };
 
     match math_core::LatexToMathML::const_default().convert_with_local_counter(latex, mode) {
@@ -227,18 +226,18 @@ fn math(
         }
     }
 
-    Ok(())
+    Ok(output)
 }
 
 /// The `<indicator>` extension tag.
 /// <https://www.mediawiki.org/wiki/Help:Page_status_indicators>
 fn indicator(
-    _: &mut dyn WriteSurrogate,
+    _: &mut String,
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     let Some(name) = arguments.get(state, "name")? else {
-        return Ok(());
+        return Ok(OutputMode::Empty);
     };
 
     let (sp, body) = arguments.parse_body(state)?;
@@ -266,12 +265,12 @@ fn indicator(
         state.globals.indicators.insert(name.to_string(), out.html);
     }
 
-    Ok(())
+    Ok(OutputMode::Empty)
 }
 
 /// The `<nowiki>` extension tag.
 fn no_wiki(
-    out: &mut dyn WriteSurrogate,
+    out: &mut String,
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
@@ -288,22 +287,24 @@ fn no_wiki(
     But until these tags are not eagerly parsed, this will not happen
     */
     let body = state.strip_markers.unstrip(arguments.body());
-    render_runtime(out, state, arguments.sp, |_, source| {
-        token!(source, Token::Text { strtr(&body, &[
-            ("-{", "-&#123;"),
-            ("}-", "&#125;-"),
-            ("<", "&lt;"),
-            (">", "&gt;"),
-        ]) })
-    })
+    write!(
+        out,
+        "{}",
+        strtr(
+            &body,
+            &[
+                ("-{", "-&#123;"),
+                ("}-", "&#125;-"),
+                ("<", "&lt;"),
+                (">", "&gt;"),
+            ]
+        )
+    )?;
+    Ok(OutputMode::Nowiki)
 }
 
 /// The `<pre>` extension tag.
-fn pre(
-    out: &mut dyn WriteSurrogate,
-    state: &mut State<'_>,
-    arguments: &ExtensionTag<'_, '_, '_>,
-) -> Result {
+fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
     // “Backwards-compatibility hack”
     static STRIP_NOWIKI: LazyLock<Regex> = LazyLock::new(|| {
         RegexBuilder::new("<nowiki>(.*?)</nowiki>")
@@ -315,48 +316,34 @@ fn pre(
     let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
     let body = state.strip_markers.unstrip(&body);
 
-    let sp = arguments.sp;
-    render_runtime(out, state, sp, |state, source| {
-        token!(
-            source,
-            Token::StartTag {
-                name: token!(source, Span { "pre" }),
-                attributes: {
-                    // TODO: This is supposed to strip markers and use a
-                    // whitelist of valid attribute names.
-                    arguments
-                        .iter()
-                        .map(|kv| {
-                            tok_arg(source, kv.name(state, sp).unwrap().unwrap(), {
-                                // ha ha murder me
-                                let value = kv.value(state, sp).unwrap();
-                                if arguments.from_parser_fn
-                                    && ((value.starts_with('"') && value.ends_with('"'))
-                                        || (value.starts_with('\'') && value.ends_with('\'')))
-                                {
-                                    value[1..value.len() - 1].to_string().into()
-                                } else {
-                                    value
-                                }
-                            })
-                        })
-                        .collect::<Vec<_>>()
-                },
-                self_closing: false,
-            }
-        )
-    })?;
+    write!(out, "<pre")?;
+    for attribute in arguments.iter() {
+        let value = attribute.value(state, arguments.sp)?;
+        let name = attribute
+            .name(state, arguments.sp)?
+            .unwrap_or(value.clone());
 
-    write!(out, "{}", strtr(&body, &[("<", "&lt;"), (">", "&gt;")]))?;
+        // ha ha kill me
+        let value = if arguments.from_parser_fn
+            && ((value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\'')))
+        {
+            value[1..value.len() - 1].to_string().into()
+        } else {
+            value
+        };
 
-    render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::EndTag {
-                name: token!(source, Span { "pre" })
-            }
-        )
-    })
+        // TODO: This is supposed to strip markers and use a whitelist of valid
+        // attribute names.
+        write!(out, r#" {name}="{}""#, strtr(&value, &[("\"", "&quot;")]))?;
+    }
+
+    write!(
+        out,
+        ">{}</pre>",
+        strtr(&body, &[("<", "&lt;"), (">", "&gt;")])
+    )?;
+    Ok(OutputMode::Block)
 }
 
 /// Stored citation references.
@@ -459,11 +446,7 @@ impl References {
 
 /// The `<ref>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Cite>
-fn r#ref(
-    out: &mut dyn WriteSurrogate,
-    state: &mut State<'_>,
-    arguments: &ExtensionTag<'_, '_, '_>,
-) -> Result {
+fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
     // Due to transclusion it is necessary to render immediately instead of
     // storing the node list for later, since rendering later would require
     // retaining the stack frame too
@@ -479,7 +462,7 @@ fn r#ref(
             .globals
             .references
             .append_named((group, follow.to_string()), &reference);
-        return Ok(());
+        return Ok(OutputMode::Empty);
     }
 
     let id = if let Some(name) = arguments.get(state, "name")? {
@@ -500,25 +483,23 @@ fn r#ref(
         None
     };
 
-    if let Some(id) = id {
-        // TODO: Avoid intermediates.
+    Ok(if let Some(id) = id {
         let anchor = anchor_encode(&format!("cite_ref-{id}"));
-        let source = format!(r#"<span class="reference" id="{anchor}">[[#ref_{id}|{id}]]</span>"#);
-        let references = state.statics.parser.parse_no_expansion(&source)?;
-        out.adopt_output(
-            state,
-            &arguments.sp.clone_with_source(FileMap::new(&source)),
-            &references,
+        let r#ref = anchor_encode(&format!("ref_{id}"));
+        write!(
+            out,
+            r##"<span class="reference" id="{anchor}"><a href="#{ref}">{id}</a></span>"##
         )?;
-    }
-
-    Ok(())
+        OutputMode::Inline
+    } else {
+        OutputMode::Empty
+    })
 }
 
 /// The `<references>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Cite>
 fn references(
-    out: &mut dyn WriteSurrogate,
+    out: &mut String,
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
@@ -541,36 +522,24 @@ fn references(
 
     // TODO: For multiple references to the same name, there should be backrefs
     // to all of them, not just the first one.
-    // TODO: Avoid accumulating before writing. This is needed only because
-    // there is no convenient API for creating trees by hand and the text from
-    // the `<ref>` is still partially Wikitext.
-    let source = if let Some(refs) = state.globals.references.iter_group(&group) {
-        let mut source = String::from(r#"<ol class="references">"#);
-        for (id, text) in refs {
-            if !text.is_empty() {
-                let anchor = anchor_encode(&format!("ref_{id}"));
-                write!(
-                    source,
-                    r#"<li id="{anchor}" class="mw-cite-backlink">[[#cite_ref-{id}|^]] {text}</li>"#
-                )?;
+    Ok(
+        if let Some(refs) = state.globals.references.iter_group(&group) {
+            write!(out, r#"<ol class="references">"#)?;
+            for (id, text) in refs {
+                if !text.is_empty() {
+                    let anchor = anchor_encode(&format!("ref_{id}"));
+                    write!(
+                        out,
+                        r##"<li id="{anchor}" class="mw-cite-backlink"><a href="#cite_ref-{id}">^</a> {text}</li>"##
+                    )?;
+                }
             }
-        }
-        source.write_str("</ol>")?;
-        Some(source)
-    } else {
-        None
-    };
-
-    if let Some(source) = source {
-        let references = state.statics.parser.parse_no_expansion(&source)?;
-        out.adopt_output(
-            state,
-            &arguments.sp.clone_with_source(FileMap::new(&source)),
-            &references,
-        )?;
-    }
-
-    Ok(())
+            write!(out, "</ol>")?;
+            OutputMode::Block
+        } else {
+            OutputMode::Empty
+        },
+    )
 }
 
 /// Stored ranges for labelled section transclusion.
@@ -586,15 +555,11 @@ pub(crate) struct LabelledSections {
 
 /// The `<section>` extension tag.
 /// <https://en.wikipedia.org/wiki/Help:Labeled_section_transclusion>
-fn section(
-    _: &mut dyn WriteSurrogate,
-    state: &mut State<'_>,
-    arguments: &ExtensionTag<'_, '_, '_>,
-) -> Result {
+fn section(_: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
     // `{{#tag: ... }}` may have no bounds if it was invoked from a script for
     // some reason
     let Some(bounds) = arguments.span else {
-        return Ok(());
+        return Ok(OutputMode::Empty);
     };
 
     let begin = arguments.get(state, "begin")?;
@@ -617,13 +582,13 @@ fn section(
         section.end = bounds.start;
     }
 
-    Ok(())
+    Ok(OutputMode::Empty)
 }
 
 /// The `<syntaxhighlight>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Syntaxhighlight>
 fn syntax_highlight(
-    out: &mut dyn WriteSurrogate,
+    out: &mut String,
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
@@ -645,10 +610,10 @@ fn syntax_highlight(
         themes.themes.get("InspiredGitHub").unwrap().clone()
     });
 
-    let tag = if arguments.get(state, "inline")?.is_some() {
-        "code"
+    let (mode, tag) = if arguments.get(state, "inline")?.is_some() {
+        (OutputMode::Inline, "code")
     } else {
-        "pre"
+        (OutputMode::Block, "pre")
     };
 
     let lang = arguments
@@ -662,8 +627,9 @@ fn syntax_highlight(
     let body = state.strip_markers.unstrip(arguments.body());
     let body = body.trim_start_matches('\n').trim_ascii_end();
 
+    write!(out, "<{tag}>")?;
+
     let mut highlighter = syntect::easy::HighlightLines::new(syntax, &THEME);
-    let mut text = String::new();
     for line in syntect::util::LinesWithEndings::from(body) {
         let regions = highlighter
             .highlight_line(line, &SS)
@@ -671,37 +637,19 @@ fn syntax_highlight(
         syntect::html::append_highlighted_html_for_styled_line(
             &regions[..],
             syntect::html::IncludeBackground::No,
-            &mut text,
+            out,
         )
         .map_err(|err| Error::Extension(Box::new(err)))?;
     }
 
-    let sp = arguments.sp;
-    render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::StartTag {
-                name: token!(source, Span { tag }),
-                attributes: vec![],
-                self_closing: false,
-            }
-        )
-    })?;
-    out.write_str(&text)?;
-    render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::EndTag {
-                name: token!(source, Span { tag })
-            }
-        )
-    })
+    write!(out, "</{tag}>")?;
+    Ok(mode)
 }
 
 /// The `<templatedata>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:TemplateData>
 fn template_data(
-    out: &mut dyn WriteSurrogate,
+    out: &mut String,
     _: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
@@ -711,13 +659,13 @@ fn template_data(
     // getting sent again to `<pre>`. Probably, just parsing and emitting the
     // content as a table, as intended, would be a good idea.
     write!(out, "<pre>{}</pre>", arguments.body())?;
-    Ok(())
+    Ok(OutputMode::Block)
 }
 
 /// The `<timeline>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:EasyTimeline>
 fn timeline(
-    out: &mut dyn WriteSurrogate,
+    out: &mut String,
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
@@ -726,7 +674,7 @@ fn timeline(
             .map_err(|err| Error::Extension(Box::new(err)))?;
         write!(out, "<figure>{result}</figure>")?;
     }
-    Ok(())
+    Ok(OutputMode::Block)
 }
 
 /// Collected template style data.
@@ -775,7 +723,7 @@ impl Styles {
 /// The `<templatestyles>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:TemplateStyles>
 fn template_styles(
-    _: &mut dyn WriteSurrogate,
+    _: &mut String,
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
@@ -787,12 +735,11 @@ fn template_styles(
             .styles
             .insert(&state.statics.db, &src, wrapper.as_deref())?;
     }
-    Ok(())
+    Ok(OutputMode::Empty)
 }
 
 /// The signature of an extension tag function.
-type ExtensionTagFn =
-    fn(&mut dyn WriteSurrogate, &mut State<'_>, &ExtensionTag<'_, '_, '_>) -> Result;
+type ExtensionTagFn = fn(&mut String, &mut State<'_>, &ExtensionTag<'_, '_, '_>) -> Result;
 
 /// All supported extension tags.
 static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
@@ -810,31 +757,59 @@ static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
     "timeline" => timeline,
 };
 
+/// The output mode of an extension tag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OutputMode {
+    /// The extension tag outputs one or more block-level elements.
+    Block,
+    /// The extension tag outputs nothing directly.
+    Empty,
+    /// The extension tag outputs one or more phrasing elements.
+    Inline,
+    /// The extension tag outputs plain text.
+    Nowiki,
+    /// The extension tag outputs its unprocessed self.
+    Raw,
+}
+
+/// Incoming extension tag arguments.
+pub(crate) enum InArgs<'a, 'b> {
+    /// The extension tag is invoked from a `#tag`
+    /// [parser function](super::parser_fns).
+    ParserFn(&'a [Kv<'b>]),
+    /// The extension tag is invoked from Wikitext.
+    Wikitext(&'a [Spanned<Argument>]),
+}
+
 /// Renders an extension tag.
-// TODO: There should be a way to reduce the number of arguments here because
-// the `from_parser_fn` and `arguments` fields are mutually related. But not
-// now. Go away Clippy.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn render_extension_tag(
-    out: &mut dyn WriteSurrogate,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     span: Option<Span>,
     callee: &str,
-    arguments: &[Kv<'_>],
+    arguments: &InArgs<'_, '_>,
     body: Option<&str>,
-    from_parser_fn: bool,
-) -> Result {
-    if let Some(extension_tag) = EXTENSION_TAGS.get(callee) {
+) -> Result<Option<Either<StripMarker, String>>> {
+    let (arguments, from_parser_fn) = match arguments {
+        InArgs::ParserFn(kvs) => (Cow::Borrowed(*kvs), true),
+        InArgs::Wikitext(attrs) => {
+            // TODO: Collecting into a `Vec<Kv>` first wastes time.
+            let attrs = attrs.iter().map(Kv::Argument).collect::<Vec<_>>();
+            (Cow::Owned(attrs), false)
+        }
+    };
+
+    let mut out = String::new();
+    let mode = if let Some(extension_tag) = EXTENSION_TAGS.get(callee) {
         if let Some(span) = span {
             extension_tag(
-                out,
+                &mut out,
                 state,
                 &ExtensionTag {
                     arguments: IndexedArgs {
                         sp,
                         callee,
-                        arguments: KeyCacheKvs::new(arguments),
+                        arguments: KeyCacheKvs::new(&arguments),
                         span: Some(span),
                     },
                     body,
@@ -845,14 +820,14 @@ pub(super) fn render_extension_tag(
                 frame: sp.name.to_string() + "$<" + callee + ">",
                 start: sp.source.find_line_col(span.start),
                 err: Box::new(err),
-            })
+            })?
         } else {
             // At least 'Module:Navbox/configuration' invokes the `#tag` parser
             // function and then stores the returned value, expecting that the
             // return value can be cached and reused. So, give it a value that
             // can be cached and reused…
             write!(out, "<{callee}")?;
-            for attr in arguments {
+            for attr in arguments.as_ref() {
                 let value = attr.value(state, sp)?;
                 if let Some(name) = attr.name(state, sp)? {
                     write!(out, " {name}")?;
@@ -870,15 +845,23 @@ pub(super) fn render_extension_tag(
             } else {
                 write!(out, "/>")?;
             }
-            Ok(())
+            OutputMode::Raw
         }
     } else {
         log::warn!("TODO: {callee} tag");
         write!(
             out,
             "&lt;{callee}&gt;{}&lt;/{callee}&gt;",
-            body.unwrap_or("")
+            html_escape::encode_text(&html_escape::decode_html_entities(body.unwrap_or("")))
         )?;
-        Ok(())
-    }
+        OutputMode::Block
+    };
+
+    Ok(match mode {
+        OutputMode::Block => Some(Either::Left(StripMarker::Block(out))),
+        OutputMode::Empty => None,
+        OutputMode::Inline => Some(Either::Left(StripMarker::Inline(out))),
+        OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out))),
+        OutputMode::Raw => Some(Either::Right(out)),
+    })
 }
