@@ -613,6 +613,22 @@ th {
         }
     }
 
+    /* In MediaWiki, these empty elements would get `.mw-empty-elt`. Technically
+       it would hide the display of elements with (1) no attributes and (2) only
+       whitespace, but we’ll do it this way instead until it turns out we can’t.
+       In particular, this hides bogus empty elements caused by list
+       constructions like this:
+
+       ```
+       * {{List-item-generating template}}
+       ```
+
+       (This expands to `* \n* <template content>` due to the T2529 rule.)
+    */
+    :is(li, p, tr):not([class], [style]):empty {
+        display: none;
+    }
+
     :is(ol, ul):not([class]) > * {
         padding-left: .1rem;
 
