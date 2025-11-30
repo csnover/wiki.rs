@@ -200,7 +200,9 @@ pub async fn eval_post(
         markers: body.markers == Some(true),
         tree: body.tree == Some(true),
     };
+    let time = Instant::now();
     let output = call_renderer(&state, command)?;
+    log::trace!("Rendered article in {:.2?}", time.elapsed());
     raw_source(state.base_uri.path(), &output.content, "html", Some(body))
         .map(IntoResponse::into_response)
 }
