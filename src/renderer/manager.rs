@@ -115,6 +115,7 @@ impl r2d2::ManageConnection for RenderManager {
                     } => render_string(&mut statics, &code, &args, tree, markers),
                 };
                 let _ = tx.send(output);
+                statics.vm.gc_collect();
             }
         });
 
