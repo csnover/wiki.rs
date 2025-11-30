@@ -108,6 +108,10 @@ fn link_trail_regex(link_trail: &str) -> Regex {
         panic!("mismatched link_trail regex");
     };
 
+    // This end-anchored capture is on basically all of the link trail regexps,
+    // but it is unused, so get rid of it for performance reasons
+    let pattern = pattern.strip_suffix("(.*)$").unwrap_or(pattern);
+
     RegexBuilder::new(pattern)
         .dot_matches_new_line(flags.contains('s'))
         .case_insensitive(flags.contains('i'))
