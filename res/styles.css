@@ -810,9 +810,17 @@ th {
             vertical-align: bottom;
         }
 
+        /* this crazy nonsense is just trying to make it so that the top row(s)
+           of headings in a table have borders to separate them from the table
+           data, whilst making sure that row headings do not get underlined */
         tr:first-child > th:not([scope=row]),
+        tr:first-child + tr:not(:has(td)) > th,
         th[scope=col] {
             border-bottom: thin solid var(--border-th);
+        }
+
+        tr:first-child + tr:not(:has(td)) {
+            border-top: 0;
         }
 
         &.floatright,
@@ -1412,15 +1420,16 @@ th {
             }
         }
 
-        /* !important: 'Template:New York City' and 'Template:Mosques in India'.
+        /* !important: 'Template:New York City' and 'Template:Mosques in India'
+           and 'Template:Manchester United F.C.'.
            Caution is required because 'Template:Wikipedia policies and
            guidelines' uses colour differently in a way which is not so bad */
         .navbox-title,
         .navbox-title *,
         .navbox-abovebelow,
-        .navbox-abovebelow .tmpl-colored-link,
+        .navbox-abovebelow :any-link *,
         .navbox-group,
-        .navbox-group .tmpl-colored-link {
+        .navbox-group :any-link * {
             &[style*="color\:"] {
                 color: unset !important;
             }
@@ -1455,7 +1464,7 @@ th {
     }
 
     /* extra specificity to override `.navbox + .navbox-styles + .navbox` */
-    * + .navbox.navbox.navbox {
+    > * + .navbox.navbox.navbox {
         clear: both;
         margin-top: var(--footer-margin);
     }
