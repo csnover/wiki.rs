@@ -9,14 +9,13 @@
 
 use super::prelude::*;
 use crate::{
-    common::make_url,
+    common::{make_url, url_encode, url_encode_bytes},
     db::Database,
     title::{Namespace, Title},
 };
 use arc_cell::OptionalArcCell;
 use axum::http::Uri;
 use core::cell::Ref;
-use percent_encoding::{NON_ALPHANUMERIC, percent_encode, utf8_percent_encode};
 use piccolo::StashedTable;
 use std::{
     borrow::Cow,
@@ -398,9 +397,9 @@ fn make_query_string<'gc>(
             out += &make_query_string(ctx, v, Some(&k))?;
         } else if v.is_implicit_string() {
             let v = v.into_string(ctx).unwrap();
-            write!(&mut out, "{}", utf8_percent_encode(&k, NON_ALPHANUMERIC))?;
+            write!(&mut out, "{}", url_encode(&k))?;
             out.push('=');
-            write!(&mut out, "{}", percent_encode(&v, NON_ALPHANUMERIC))?;
+            write!(&mut out, "{}", url_encode_bytes(&v))?;
         }
     }
 

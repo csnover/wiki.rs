@@ -5,6 +5,7 @@ use super::{
     tags::{self, LinkKind},
 };
 use crate::{
+    common::url_encode,
     config::CONFIG,
     title::Title,
     wikitext::{
@@ -14,7 +15,6 @@ use crate::{
         visit::Visitor as _,
     },
 };
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use std::{borrow::Cow, collections::HashMap};
 
 /// The kind of media.
@@ -111,7 +111,7 @@ pub(super) fn media_options<'s>(
         Cow::Owned(format!(
             "{}/media/{}",
             state.statics.base_uri.path(),
-            utf8_percent_encode(title.text(), NON_ALPHANUMERIC)
+            url_encode(title.text())
         )),
     );
 

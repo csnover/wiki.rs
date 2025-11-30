@@ -3,15 +3,35 @@
 //! correspond to PHP nor Lua built-ins).
 
 use crate::{
-    php::{DateTime, DateTimeError, DateTimeParseError, DateTimeZone},
+    php::{DateTime, DateTimeError, DateTimeParseError, DateTimeZone, strtr},
     title::{self, Title},
 };
 use axum::http::Uri;
 use core::fmt::{self, Write as _};
 use html_escape::decode_html_entities;
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use std::borrow::Cow;
 use time::UtcOffset;
+
+/// The alphabet of characters to percent-encode when encoding URLs.
+const ALPHABET: percent_encoding::AsciiSet = percent_encoding::CONTROLS
+    .add(b'%')
+    .add(b'#')
+    .add(b'\'')
+    .add(b'"')
+    .add(b'&')
+    .add(b'<')
+    .add(b'>')
+    .add(b' ');
+
+/// Percent-encodes a URL part.
+pub fn url_encode(input: &str) -> percent_encoding::PercentEncode<'_> {
+    percent_encoding::utf8_percent_encode(input, &ALPHABET)
+}
+
+/// Percent-encodes a URL part.
+pub fn url_encode_bytes(input: &[u8]) -> percent_encoding::PercentEncode<'_> {
+    percent_encoding::percent_encode(input, &ALPHABET)
+}
 
 /// Formats a date according to the given `format` string.
 ///
@@ -60,7 +80,7 @@ pub fn anchor_encode(s: &str) -> String {
     while !id.is_char_boundary(end) {
         end -= 1;
     }
-    utf8_percent_encode(&id[..end], NON_ALPHANUMERIC).to_string()
+    url_encode(&strtr(&id[..end], &[(" ", "_")])).to_string()
 }
 
 /// Creates a URL for the given title using the given protocol, base URI, path,

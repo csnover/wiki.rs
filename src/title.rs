@@ -1,7 +1,8 @@
 //! Types and functions for parsing and formatting MediaWiki title strings.
 
+use crate::common::url_encode;
 use html_escape::decode_html_entities;
-use percent_encoding::{NON_ALPHANUMERIC, PercentEncode, utf8_percent_encode};
+use percent_encoding::PercentEncode;
 use std::{borrow::Cow, fmt::Write as _};
 
 /// The title casing strategy for a namespace.
@@ -319,7 +320,7 @@ impl Title {
     ///       (Namespace%3ATitle%25Sub%25Page)
     /// ```
     pub fn partial_url(&self) -> PercentEncode<'_> {
-        utf8_percent_encode(self.key(), NON_ALPHANUMERIC)
+        url_encode(self.key())
     }
 
     /// The root path of the page.

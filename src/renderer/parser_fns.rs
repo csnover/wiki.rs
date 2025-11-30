@@ -7,14 +7,14 @@
 #![allow(clippy::unnecessary_wraps, clippy::wildcard_imports)]
 
 use super::{
-    Error, Result, State,
+    Error, Result, State, StripMarkers,
     extension_tags::render_extension_tag,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     template::{call_module, call_template, is_function_call},
     trim::Trim,
 };
 use crate::{
-    common::format_date,
+    common::{anchor_encode, format_date, make_url, url_encode},
     config::CONFIG,
     expr,
     php::{format_number, fuzzy_cmp, parse_number},
@@ -24,7 +24,6 @@ use crate::{
 };
 use core::{fmt, iter};
 use html_escape::decode_html_entities;
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 
@@ -446,6 +445,20 @@ mod string {
 
     use super::*;
 
+    /// `{{anchorencode: text }}`
+    pub fn anchor_encode(
+        out: &mut dyn WriteSurrogate,
+        state: &mut State<'_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(text) = arguments.eval(state, 0)?.map(trim) {
+            let text = StripMarkers::kill(&text);
+            write!(out, "{}", super::anchor_encode(&text))?;
+        }
+
+        Ok(())
+    }
+
     /// `{{formatnum: number [|flag] }}`
     pub fn format_number(
         out: &mut dyn WriteSurrogate,
@@ -677,7 +690,7 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)? {
-            write!(out, "{}", utf8_percent_encode(&value, NON_ALPHANUMERIC))?;
+            write!(out, "{}", super::url_encode(&value))?;
         }
         Ok(())
     }
@@ -970,7 +983,6 @@ mod title {
     //! Article title functions.
 
     use super::*;
-    use crate::common::make_url;
 
     /// `{{fullurl: title [| query string] }}`
     pub fn full_url(
@@ -978,17 +990,11 @@ mod title {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)? {
-            out.write_str(&make_url(
-                None,
-                &state.statics.base_uri,
-                &value,
-                None,
-                false,
-            )?)?;
-            if let Some(query) = arguments.get_raw(1) {
-                out.write_char('?')?;
-                query.eval_into(out, state, arguments.sp)?;
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
+            let url = make_url(None, &state.statics.base_uri, &value, None, false)?;
+            write!(out, "{url}")?;
+            if let Some(query) = arguments.eval(state, 1)?.map(trim) {
+                write!(out, "?{query}")?;
             }
         }
 
@@ -1144,6 +1150,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "numberofpages" => site::number_of_pages,
     "pagesincategory" => site::pages_in_category,
 
+    "anchorencode" => string::anchor_encode,
     "formatnum" => string::format_number,
     "int" => string::interface_message,
     "lc" => string::lc,
