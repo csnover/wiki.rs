@@ -64,5 +64,17 @@ goldenfile = "1.9"
 inherits = "dev"
 opt-level = 3
 
+[profile.dev-fast.package.gc-arena]
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev-fast.package.piccolo]
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev-fast.package.piccolo-util]
+debug-assertions = false
+overflow-checks = false
+
 [profile.release]
 lto = "thin"
