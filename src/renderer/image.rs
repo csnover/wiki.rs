@@ -15,6 +15,7 @@ use crate::{
         visit::Visitor as _,
     },
 };
+use core::iter;
 use std::{borrow::Cow, collections::HashMap};
 
 /// The kind of media.
@@ -207,8 +208,14 @@ pub(super) fn media_options<'s>(
                 | "text-bottom" => {
                     options.attrs.insert("valign".into(), value);
                 }
-                "frameless" | "frame" | "framed" | "thumb" | "thumbnail" => {
+                "frameless" | "frame" | "thumb" => {
                     options.format = Some(value);
+                }
+                "framed" => {
+                    options.format = Some("frame".into());
+                }
+                "thumbnail" => {
+                    options.format = Some("thumb".into());
                 }
                 "muted" => {
                     options.muted = Some(());
@@ -223,9 +230,9 @@ pub(super) fn media_options<'s>(
         }
     }
 
-    if !matches!(options.format.as_deref(), Some("thumb" | "frame"))
-        && let Some(caption) = options.caption.take()
-    {
+    if matches!(options.format.as_deref(), Some("thumb" | "frame")) {
+        options.align.get_or_insert("right".into());
+    } else if let Some(caption) = options.caption.take() {
         let mut extractor = TextContent::new(&sp.source, String::new());
         extractor.visit_tokens(caption)?;
         let title = extractor.finish();
@@ -255,8 +262,6 @@ pub(crate) fn render_media<W: WriteSurrogate + ?Sized>(
                     name: token!(source, Span { "figure" }),
                     attributes: if let Some(align) = &options.align {
                         vec![tok_arg(source, "class", format!("mw-halign-{align}"))]
-                    } else if let Some("thumb") = options.format.as_deref() {
-                        vec![tok_arg(source, "class", "mw-halign-right")]
                     } else {
                         vec![]
                     },
@@ -325,17 +330,14 @@ fn render_image<W: WriteSurrogate + ?Sized>(
             Token::StartTag {
                 name: token!(source, Span { options.kind.tag_name() }),
                 attributes: {
-                    let mut attrs = options
-                        .attrs
-                        .iter()
-                        .map(|(key, value)| tok_arg(source, key, value))
-                        .collect::<Vec<_>>();
-                    if options.caption.is_none()
-                        && let Some(align) = &options.align
-                    {
-                        attrs.push(tok_arg(source, "align", align));
-                    }
-                    attrs
+                    alignment(source, options)
+                        .chain(
+                            options
+                                .attrs
+                                .iter()
+                                .map(|(key, value)| tok_arg(source, key, value)),
+                        )
+                        .collect()
                 },
                 self_closing: true
             }
@@ -365,14 +367,14 @@ fn render_timed_media<W: WriteSurrogate + ?Sized>(
                 Token::StartTag {
                     name: token!(source, Span { options.kind.tag_name() }),
                     attributes: {
-                        core::iter::once(tok_arg(source, "controls", ""))
+                        iter::once(tok_arg(source, "controls", ""))
                             .chain(
                                 options
                                     .attrs
                                     .iter()
                                     .map(|(key, value)| tok_arg(source, key, value)),
                             )
-                            .collect::<Vec<_>>()
+                            .collect()
                     },
                     self_closing: false
                 },
@@ -383,4 +385,19 @@ fn render_timed_media<W: WriteSurrogate + ?Sized>(
         ]
         .into()
     })
+}
+
+/// Generates an image tag horizontal alignment attribute iterator.
+fn alignment(
+    source: &mut String,
+    options: &Options<'_>,
+) -> impl Iterator<Item = Spanned<Argument>> + use<> {
+    if options.caption.is_none()
+        && let Some(align) = &options.align
+    {
+        Some(tok_arg(source, "align", align))
+    } else {
+        None
+    }
+    .into_iter()
 }
