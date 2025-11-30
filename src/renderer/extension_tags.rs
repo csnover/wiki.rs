@@ -361,7 +361,7 @@ fn pre(
 
 /// Stored citation references.
 #[derive(Debug, Default)]
-pub struct References {
+pub(crate) struct References {
     /// Bump allocation of reference text.
     text: String,
     /// References in a group. Value is a map of ranges into `text`. For
@@ -578,7 +578,7 @@ fn references(
 /// These are not currently used for anything; Lua modules which perform
 /// transclusion sniff these tags themselves.
 #[derive(Debug, Default)]
-pub struct LabelledSections {
+pub(crate) struct LabelledSections {
     /// A map from an article title to a map of the ranges of labelled sections
     /// within the article.
     titles: HashMap<String, HashMap<String, Range<usize>>>,
@@ -731,7 +731,7 @@ fn timeline(
 
 /// Collected template style data.
 #[derive(Debug, Default)]
-pub struct Styles {
+pub(crate) struct Styles {
     /// The names of the included CSS files.
     sources: HashSet<String>,
     /// The accumulated CSS data.

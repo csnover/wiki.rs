@@ -396,7 +396,7 @@ fn split_target<'tt>(
 }
 
 /// Transcludes a template.
-pub fn call_template<W: WriteSurrogate + ?Sized>(
+pub(crate) fn call_template<W: WriteSurrogate + ?Sized>(
     out: &mut W,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,

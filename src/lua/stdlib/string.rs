@@ -9,11 +9,11 @@ use piccolo::{
     meta_ops::{self, MetaResult},
 };
 
-pub mod engine;
-pub mod find;
+pub(crate) mod engine;
+pub(crate) mod find;
 mod format;
-pub mod gmatch;
-pub mod gsub;
+pub(crate) mod gmatch;
+pub(crate) mod gsub;
 
 /// Loads the string library.
 #[allow(clippy::too_many_lines)]

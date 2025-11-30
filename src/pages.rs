@@ -23,7 +23,7 @@ use std::{
 
 /// All errors that may occur during page rendering.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// An article database error.
     #[error(transparent)]
     Database(#[from] db::Error),
@@ -76,7 +76,7 @@ impl IntoResponse for Error {
 /// The actions supported *by wiki.rs* for an article page.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ArticleAction {
+pub(crate) enum ArticleAction {
     /// View.
     View,
     /// Render. Treated the same as [`View`](ArticleAction::View).
@@ -85,7 +85,7 @@ pub enum ArticleAction {
 
 /// Query options for `/article`.
 #[derive(serde::Deserialize)]
-pub struct ArticleQuery {
+pub(crate) struct ArticleQuery {
     /// The page action.
     ///
     /// This is defined, but not actually used, because most actions are not
@@ -103,7 +103,7 @@ pub struct ArticleQuery {
 }
 
 /// The article page route handler.
-pub async fn article(
+pub(crate) async fn article(
     State(state): State<AppState>,
     Path(name): Path<String>,
     Query(ArticleQuery {
@@ -171,14 +171,14 @@ pub async fn article(
 }
 
 /// The ad-hoc Wikitext expression evaluator, initial page.
-pub async fn eval_get(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
+pub(crate) async fn eval_get(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
     raw_source(state.base_uri.path(), "", "html", Some(<_>::default()))
         .map(IntoResponse::into_response)
 }
 
 /// Form options for `/eval`.
 #[derive(Default, serde::Deserialize)]
-pub struct EvalForm {
+pub(crate) struct EvalForm {
     /// Arguments to set in the environment for parameter replacements.
     args: String,
     /// The Wikitext to evaluate.
@@ -190,7 +190,7 @@ pub struct EvalForm {
 }
 
 /// The ad-hoc Wikitext expression evaluator.
-pub async fn eval_post(
+pub(crate) async fn eval_post(
     State(state): State<AppState>,
     Form(body): Form<EvalForm>,
 ) -> Result<impl IntoResponse, Error> {
@@ -208,7 +208,7 @@ pub async fn eval_post(
 }
 
 /// The external link page route handler.
-pub async fn external(
+pub(crate) async fn external(
     State(state): State<AppState>,
     Path(mut target): Path<String>,
     headers: HeaderMap,
@@ -249,7 +249,7 @@ pub async fn external(
 }
 
 /// The font resource route handler.
-pub async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
+pub(crate) async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
     const FONTS: &[(&str, &[u8])] = &[
         (
             "Archivo.woff2",
@@ -284,7 +284,7 @@ pub async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
 }
 
 /// The media resource route handler.
-pub async fn media(Path(_): Path<String>) -> impl IntoResponse {
+pub(crate) async fn media(Path(_): Path<String>) -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "image/svg+xml")],
         include_str!("../res/placeholder.svg"),
@@ -292,7 +292,7 @@ pub async fn media(Path(_): Path<String>) -> impl IntoResponse {
 }
 
 /// The index page route handler.
-pub async fn index_page(State(state): State<AppState>) -> Result<Html<String>, Error> {
+pub(crate) async fn index_page(State(state): State<AppState>) -> Result<Html<String>, Error> {
     #[derive(TemplateSimple)]
     #[template(path = "index.html")]
     struct Index<'a> {
@@ -313,7 +313,7 @@ pub async fn index_page(State(state): State<AppState>) -> Result<Html<String>, E
 
 /// Query options for `/search`.
 #[derive(serde::Deserialize)]
-pub struct SearchQuery {
+pub(crate) struct SearchQuery {
     /// The search query. This is treated as a regular expression string.
     q: String,
     /// The current page of search results to view.
@@ -323,7 +323,7 @@ pub struct SearchQuery {
 }
 
 /// The search results route handler.
-pub async fn search(
+pub(crate) async fn search(
     State(state): State<AppState>,
     Query(SearchQuery {
         q: query,
@@ -418,7 +418,7 @@ pub async fn search(
 /// The rendering mode for a source page.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum SourceMode {
+pub(crate) enum SourceMode {
     /// Raw text.
     Raw,
     /// Parser tree.
@@ -427,7 +427,7 @@ pub enum SourceMode {
 
 /// Query options for `/source`.
 #[derive(serde::Deserialize)]
-pub struct SourceQuery {
+pub(crate) struct SourceQuery {
     /// The view mode.
     mode: Option<SourceMode>,
     /// When in tree view, whether to process the Wikitext in include mode.
@@ -435,7 +435,7 @@ pub struct SourceQuery {
 }
 
 /// The source code viewer route handler.
-pub async fn source(
+pub(crate) async fn source(
     State(state): State<AppState>,
     Path(name): Path<String>,
     Query(SourceQuery { mode, include }): Query<SourceQuery>,
@@ -599,14 +599,14 @@ fn raw_source(
 
 /// The CSS resource route handler.
 #[cfg(not(feature = "debug-styles"))]
-pub async fn styles() -> impl IntoResponse {
+pub(crate) async fn styles() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/css")],
         include_str!("../res/styles.css"),
     )
 }
 
-pub mod filter {
+pub(crate) mod filter {
     use sailfish::{
         RenderError,
         runtime::{Buffer, Render},
@@ -621,7 +621,7 @@ pub mod filter {
     }
 
     /// An escaper for inline CSS.
-    pub struct Css<'a, T>(&'a T)
+    pub(crate) struct Css<'a, T>(&'a T)
     where
         T: Render + ?Sized;
     impl<T> Render for Css<'_, T>

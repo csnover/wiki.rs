@@ -16,7 +16,7 @@ use std::{
 
 /// An expression evaluation error.
 #[derive(Debug, thiserror::Error, PartialEq)]
-pub enum Error {
+pub(crate) enum Error {
     /// Someone tried to do too much arithmetic at once.
     #[error("stack exhausted at {0}")]
     StackExhausted(usize),

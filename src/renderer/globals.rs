@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, HashMap};
 
 /// A sorted set of categories which the article belongs to.
 #[derive(Debug, Default)]
-pub struct Categories(BTreeSet<String>);
+pub(crate) struct Categories(BTreeSet<String>);
 
 impl Categories {
     /// Adds a category to the set.
@@ -42,7 +42,7 @@ impl Categories {
 
 /// A collection of indicator badges.
 #[derive(Debug, Default)]
-pub struct Indicators(HashMap<String, String>);
+pub(crate) struct Indicators(HashMap<String, String>);
 
 impl Indicators {
     /// Adds an indicator to the collection.
@@ -67,7 +67,7 @@ impl core::fmt::Display for Indicators {
 
 /// An article outline (table of contents).
 #[derive(Debug, Default)]
-pub struct Outline(Vec<(HeadingLevel, String)>);
+pub(crate) struct Outline(Vec<(HeadingLevel, String)>);
 
 impl Outline {
     /// Push a new entry to the outline at the given heading level.

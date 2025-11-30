@@ -5,13 +5,13 @@ use time::{
     OffsetDateTime, UtcOffset,
     format_description::well_known::{Iso8601, Rfc2822},
 };
-pub use timelib::Error as DateTimeParseError;
+pub(crate) use timelib::Error as DateTimeParseError;
 
 mod timelib;
 
 /// Any time error.
 #[derive(Debug, thiserror::Error)]
-pub enum DateTimeError {
+pub(crate) enum DateTimeError {
     /// An error occurred when parsing.
     #[error(transparent)]
     Parse(#[from] DateTimeParseError),
@@ -22,7 +22,7 @@ pub enum DateTimeError {
 
 /// Time formatting error.
 #[derive(Debug, thiserror::Error)]
-pub enum DateTimeFormatError {
+pub(crate) enum DateTimeFormatError {
     /// An error occurred when formatting.
     #[error(transparent)]
     Format(#[from] time::error::Format),
@@ -33,7 +33,7 @@ pub enum DateTimeFormatError {
 
 /// A time zone.
 #[derive(Clone, Debug)]
-pub enum DateTimeZone {
+pub(crate) enum DateTimeZone {
     /// Offset from UTC.
     Offset(UtcOffset),
     /// Local time zone.
@@ -62,7 +62,7 @@ impl DateTimeZone {
 
 /// A time with associated time zone.
 #[derive(Clone, Debug)]
-pub struct DateTime {
+pub(crate) struct DateTime {
     /// The time.
     inner: OffsetDateTime,
     /// The time zone.

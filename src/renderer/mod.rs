@@ -152,16 +152,16 @@ use crate::{
 };
 use axum::http::Uri;
 use core::fmt::{self, Write as _};
-pub use expand_templates::{ExpandMode, ExpandTemplates};
-pub use manager::{Command, In, RenderManager as Manager, RenderOutput};
-pub use parser_fns::call_parser_fn;
+pub(crate) use expand_templates::{ExpandMode, ExpandTemplates};
+pub(crate) use manager::{Command, In, RenderManager as Manager, RenderOutput};
+pub(crate) use parser_fns::call_parser_fn;
 use piccolo::Lua;
 use schnellru::LruMap;
-pub use stack::{Kv, StackFrame};
+pub(crate) use stack::{Kv, StackFrame};
 use std::{borrow::Cow, collections::HashMap, rc::Rc, sync::Arc, time::Duration};
-pub use surrogate::Surrogate;
+pub(crate) use surrogate::Surrogate;
 use tags::LinkKind;
-pub use template::call_template;
+pub(crate) use template::call_template;
 
 mod document;
 mod emitters;
@@ -180,7 +180,7 @@ mod trim;
 
 /// An article rendering error.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// A database call failed.
     #[error("db error: {0}")]
     Database(#[from] crate::db::Error),
@@ -268,7 +268,7 @@ type ArticleId = u64;
 
 /// Global variables which are used for the entire lifetime of a renderer
 /// thread.
-pub struct Statics {
+pub(crate) struct Statics {
     /// The “current” time, according to the article database.
     pub base_time: DateTime,
     /// The server’s base URI.
@@ -287,7 +287,7 @@ pub struct Statics {
 
 /// A list of stripped extension tags.
 #[derive(Default)]
-pub struct StripMarkers(Vec<StripMarker>);
+pub(crate) struct StripMarkers(Vec<StripMarker>);
 
 impl StripMarkers {
     /// Gets the strip marker with the given index.
@@ -361,7 +361,7 @@ impl StripMarkers {
 
 /// A strip marker.
 #[derive(Debug)]
-pub enum StripMarker {
+pub(crate) enum StripMarker {
     /// A strip marker containing block-level elements.
     Block(String),
     /// A strip marker containing only phrasing content.
@@ -387,7 +387,7 @@ impl core::ops::Deref for StripMarker {
 }
 
 /// Renderer state that is shared across stack frames.
-pub struct State<'s> {
+pub(crate) struct State<'s> {
     /// Article data.
     pub globals: ArticleState,
     /// The page load strategy.
@@ -406,7 +406,7 @@ impl<T> WriteSurrogate for T where T: fmt::Write + Surrogate<Error> {}
 
 /// Shared article data.
 #[derive(Debug, Default)]
-pub struct ArticleState {
+pub(crate) struct ArticleState {
     /// Collected categories to append to the footer of the page.
     categories: globals::Categories,
     /// The last ordinal used by an unlabelled external link.

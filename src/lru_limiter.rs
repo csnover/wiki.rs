@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 
 /// A trait for implementing generic heap size calculations for a
 /// [`ByMemoryUsage`] limiter.
-pub trait ByMemoryUsageCalculator {
+pub(crate) trait ByMemoryUsageCalculator {
     /// The target type to size.
     type Target;
 
@@ -15,7 +15,7 @@ pub trait ByMemoryUsageCalculator {
 
 /// A limiter for a map which is limited by memory usage.
 #[derive(Copy, Clone, Debug)]
-pub struct ByMemoryUsage<T: ByMemoryUsageCalculator> {
+pub(crate) struct ByMemoryUsage<T: ByMemoryUsageCalculator> {
     /// Current *heap* memory usage.
     heap_size: usize,
     /// Maximum *total* (heap + map) allowed usage.

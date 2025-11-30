@@ -6,18 +6,18 @@
 
 use super::prelude::*;
 #[cfg(test)]
-pub use load::load_load_text;
-pub use math::load_math;
-pub use os::load_os;
+pub(crate) use load::load_load_text;
+pub(crate) use math::load_math;
+pub(crate) use os::load_os;
 use piccolo::{BoxSequence, Sequence, SequencePoll, meta_ops};
 use std::pin::Pin;
-pub use string::{
+pub(crate) use string::{
     calculate_start_count,
     find::{find_lua, match_lua, sub_lua},
     gmatch::gmatch_next,
     gsub, load_string,
 };
-pub use table::load_table;
+pub(crate) use table::load_table;
 
 #[cfg(test)]
 mod load;
@@ -29,7 +29,7 @@ mod table;
 mod tests;
 
 /// Loads Lua 5.1-compatible global functions and variables.
-pub fn load_compat(ctx: Context<'_>) {
+pub(crate) fn load_compat(ctx: Context<'_>) {
     let table = ctx.get_global::<Table<'_>>("table").unwrap();
     ctx.set_global("unpack", table.get_value(ctx, "unpack"));
     ctx.set_global("_G", ctx.globals());
@@ -40,10 +40,10 @@ pub fn load_compat(ctx: Context<'_>) {
 }
 
 /// Loads helpful debugging functionality.
-pub fn load_debug(ctx: Context<'_>) {
+pub(crate) fn load_debug(ctx: Context<'_>) {
     #[derive(gc_arena::Collect)]
     #[collect(require_static)]
-    pub struct PCall;
+    pub(crate) struct PCall;
 
     impl<'gc> Sequence<'gc> for PCall {
         fn poll(

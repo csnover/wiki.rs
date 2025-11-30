@@ -17,7 +17,7 @@ use time::{UtcDateTime, format_description::well_known::Iso8601};
 
 /// A single MediaWiki article.
 #[derive(Debug, Clone)]
-pub struct Article {
+pub(crate) struct Article {
     /// The article ID. (This is *not* the revision ID.)
     pub id: u64,
     /// The title of the article. This may contain a namespace name.
@@ -51,7 +51,7 @@ impl ByMemoryUsageCalculator for Option<Arc<Article>> {
 }
 
 /// A database namespace.
-pub struct DatabaseNamespace {
+pub(crate) struct DatabaseNamespace {
     /// The letter casing of the namespace name.
     pub case: NamespaceCase,
     /// The name of the namespace.
@@ -59,7 +59,7 @@ pub struct DatabaseNamespace {
 }
 
 /// Information about the database.
-pub struct Metadata {
+pub(crate) struct Metadata {
     /// The namespaces from the database.
     pub namespaces: HashMap<i32, DatabaseNamespace>,
     /// The name of the site from the database.

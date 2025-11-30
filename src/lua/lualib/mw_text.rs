@@ -19,7 +19,7 @@ use std::{borrow::Cow, cell::RefCell};
 /// The text support library.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub struct TextLibrary {
+pub(crate) struct TextLibrary {
     /// Cached HTML entity translation table.
     entity_table: RefCell<Option<StashedTable>>,
 }

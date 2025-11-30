@@ -24,7 +24,7 @@ use std::sync::{Arc, mpsc};
 use time::UtcDateTime;
 
 /// A renderer channel message command.
-pub enum Command {
+pub(crate) enum Command {
     /// Render an article.
     Article {
         /// The article to render.
@@ -48,7 +48,7 @@ pub enum Command {
 }
 
 /// The input format for a renderer channel message.
-pub struct In {
+pub(crate) struct In {
     /// The renderer command.
     pub command: Command,
     /// The return channel.
@@ -59,7 +59,7 @@ pub struct In {
 pub type Out = Result<RenderOutput, Error>;
 
 /// Manager for renderer connections.
-pub struct RenderManager {
+pub(crate) struct RenderManager {
     /// The base URI to provide to spawned renderers.
     base_uri: Uri,
     /// The article database to provide to spawned renderers.
@@ -131,7 +131,7 @@ impl r2d2::ManageConnection for RenderManager {
 }
 
 /// The result of an article rendering operation.
-pub struct RenderOutput {
+pub(crate) struct RenderOutput {
     /// The main HTML content of the page.
     pub content: String,
     /// Indicator badges. [`Display`](core::fmt::Display) formats as HTML.

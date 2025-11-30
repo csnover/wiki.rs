@@ -29,7 +29,7 @@ mod stdlib;
 
 /// A cached Lua module.
 #[derive(Clone)]
-pub struct VmCacheEntry {
+pub(crate) struct VmCacheEntry {
     /// The module.
     module: StashedClosure,
     /// The module’s sandbox environment.
@@ -48,7 +48,7 @@ impl ByMemoryUsageCalculator for VmCacheEntry {
 
 /// A child frame created by a Lua script.
 #[derive(Debug)]
-pub struct LuaFrame {
+pub(crate) struct LuaFrame {
     /// The title for the frame.
     title: Title,
     /// The arguments for the frame.

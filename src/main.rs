@@ -78,7 +78,7 @@ fn usage() {
 /// eliminated.
 #[derive(Clone, Copy, Debug, Default, serde::Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum LoadMode {
+pub(crate) enum LoadMode {
     /// Expand no templates.
     Base,
     /// Expand templates.
@@ -91,7 +91,7 @@ pub enum LoadMode {
 /// The error when [`LoadMode`] cannot be parsed from a string.
 #[derive(Debug, thiserror::Error)]
 #[error("unexpected value '{0}'; expected 'base', 'template', or 'module'")]
-pub struct LoadModeError(String);
+pub(crate) struct LoadModeError(String);
 
 impl core::str::FromStr for LoadMode {
     type Err = LoadModeError;

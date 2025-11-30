@@ -383,7 +383,6 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "staticredirect",
         "toc",
     },
-    category_namespaces: phf::phf_set! { "category" },
     extension_tags: phf::phf_set! {
         "categorytree",
         "ce",

@@ -1,22 +1,22 @@
 //! Wikitext parser.
 
 use crate::php::strtr;
-pub use codemap::{FileMap, Span, Spanned};
-pub use config::{Configuration, ConfigurationSource, HTML5_TAGS, MagicLinks};
-pub use inspectors::inspect;
-pub use peg::str::LineCol;
+pub(crate) use codemap::{FileMap, Span, Spanned};
+pub(crate) use config::{Configuration, ConfigurationSource, HTML5_TAGS, MagicLinks};
+pub(crate) use inspectors::inspect;
+pub(crate) use peg::str::LineCol;
 use regex::Regex;
 use std::{borrow::Cow, cell::Cell, collections::HashSet};
 
-pub mod builder;
+pub(crate) mod builder;
 mod codemap;
 mod config;
-pub mod helpers;
+pub(crate) mod helpers;
 mod inspectors;
 mod parser;
 #[cfg(test)]
 mod tests;
-pub mod visit;
+pub(crate) mod visit;
 
 /// The strip marker prefix.
 pub const MARKER_PREFIX: &str = "\x7f'\"`UNIQ-";
@@ -28,7 +28,7 @@ pub type Error = peg::error::ParseError<LineCol>;
 
 /// A Wikitext parser.
 #[derive(Clone, Debug)]
-pub struct Parser<'a> {
+pub(crate) struct Parser<'a> {
     /// The configuration for the parser.
     config: &'a Configuration,
     /// A pattern used to identify the end of a heading.
@@ -125,7 +125,7 @@ impl<'a> Parser<'a> {
 ///      ^^^^^^^^^^^^
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Argument {
+pub(crate) struct Argument {
     /// The argument body.
     ///
     /// Because parser functions treat arguments as scalar values, but templates
@@ -176,7 +176,7 @@ impl Argument {
 /// `<tvar|id>` syntax (where `id` is implicitly the value of a `name`
 /// attribute).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AnnoAttribute {
+pub(crate) struct AnnoAttribute {
     /// Attribute name.
     pub name: either::Either<&'static str, Span>,
     /// Attribute value, excluding any quotes.
@@ -202,7 +202,7 @@ struct Globals {
 ///    ^^^^^^^^^^^^^
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum LangFlags {
+pub(crate) enum LangFlags {
     /// The language markup contained a set of variant names. Only these names
     /// should be considered for conversion.
     Combined(HashSet<Span>),
@@ -230,7 +230,7 @@ impl LangFlags {
 ///     ^^ (Empty)
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum LangVariant {
+pub(crate) enum LangVariant {
     /// Disabled language conversion.
     Text {
         /// The source text.
@@ -258,7 +258,7 @@ pub enum LangVariant {
 
 /// The parser output.
 #[derive(Debug)]
-pub struct Output {
+pub(crate) struct Output {
     /// If true, the token tree contains an `<onlyinclude>`. Everything else
     /// should be treated as-if it is wrapped in `<noinclude>`.
     pub has_onlyinclude: bool,
@@ -269,7 +269,7 @@ pub struct Output {
 /// A Wikitext item.
 // TODO: This should use a flat arena with refs, to avoid boxing
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Token {
+pub(crate) enum Token {
     /// Plain text which can be turned into a link.
     Autolink {
         /// The link target.
@@ -441,11 +441,11 @@ pub enum Token {
 /// A conversion error for out-of-range heading levels.
 #[derive(Debug, thiserror::Error)]
 #[error("{0} is not a valid HTML heading level")]
-pub struct HeadingRangeError(u8);
+pub(crate) struct HeadingRangeError(u8);
 
 /// A heading level.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct HeadingLevel(u8);
+pub(crate) struct HeadingLevel(u8);
 
 impl HeadingLevel {
     /// Returns the HTML tag name corresponding to this heading level.
@@ -475,7 +475,7 @@ impl TryFrom<u8> for HeadingLevel {
 
 /// An inclusion control tag mode.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InclusionMode {
+pub(crate) enum InclusionMode {
     /// Display contents only when transcluded.
     IncludeOnly,
     /// Display contents only when not transcluded.
@@ -487,7 +487,7 @@ pub enum InclusionMode {
 
 /// A Wikitext text style.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TextStyle {
+pub(crate) enum TextStyle {
     /// Bold text.
     Bold(TextStylePosition),
     /// Bold and italic text. These are held as a combined style because it is
@@ -501,7 +501,7 @@ pub enum TextStyle {
 /// The positional attributes of a bold text style. Used for decomposition when
 /// balancing quotes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TextStylePosition {
+pub(crate) enum TextStylePosition {
     /// Any other position.
     Normal,
     /// The text style is immediately after a space followed by a single

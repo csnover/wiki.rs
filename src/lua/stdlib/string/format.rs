@@ -123,7 +123,7 @@ mod lua {
 
     /// A format string parsing error.
     #[derive(Debug, Clone, Copy, thiserror::Error, PartialEq, Eq)]
-    pub enum PrintfError {
+    pub(crate) enum PrintfError {
         /// Parsing failed. Womp-womp.
         #[error("Error parsing the format string")]
         ParseError,
@@ -134,7 +134,7 @@ mod lua {
     /// A part of a format string: either a string to be emitted verbatim, or a
     /// format specifier to be replaced by the next positional argument.
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub enum FormatElement<'a> {
+    pub(crate) enum FormatElement<'a> {
         /// Characters which are copied to the output as-is.
         Verbatim(&'a str),
         /// A format specifier.
@@ -144,7 +144,7 @@ mod lua {
     /// A `printf`-style conversion specifier.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     #[allow(clippy::struct_excessive_bools)]
-    pub struct ConversionSpecifier {
+    pub(crate) struct ConversionSpecifier {
         /// Flag `#`: use `0x`, etc.
         pub alt_form: bool,
         /// Flag `0`: left-pad with zeros.
@@ -626,7 +626,7 @@ mod lua {
 
     /// Printf data type
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum ConversionType {
+    pub(crate) enum ConversionType {
         /// `a`
         HexFloatLower,
         /// `A`
@@ -664,7 +664,7 @@ mod lua {
     }
 
     /// Converts a formatting string into a sequence of [`FormatElement`]s.
-    pub struct FormatIter<'a>(&'a str);
+    pub(crate) struct FormatIter<'a>(&'a str);
 
     impl<'a> Iterator for FormatIter<'a> {
         type Item = Result<FormatElement<'a>>;

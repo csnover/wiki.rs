@@ -14,7 +14,7 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 // Clippy: The error fields are self-explanatory.
 #[allow(clippy::missing_docs_in_private_items)]
 #[derive(Debug, Eq, thiserror::Error, PartialEq)]
-pub enum Error {
+pub(crate) enum Error {
     /// The pattern caused too much recursion.
     #[error("pattern too complex at {pos}")]
     TooComplex { pos: usize },

@@ -12,7 +12,7 @@ use phf::Set;
 ///
 /// There will only ever be these three kinds of magic links.
 #[derive(Clone, Copy, Debug)]
-pub struct MagicLinks {
+pub(crate) struct MagicLinks {
     /// ISBN magic links.
     pub isbn: bool,
     /// PubMed magic links.
@@ -25,7 +25,7 @@ pub struct MagicLinks {
 ///
 /// This is generated using the program `fetch_mediawiki_configuration`.
 #[derive(Debug)]
-pub struct ConfigurationSource {
+pub(crate) struct ConfigurationSource {
     /// Tag names of registered extension tags, lowercased.
     pub annotation_tags: Set<&'static str>,
 
@@ -34,9 +34,6 @@ pub struct ConfigurationSource {
 
     /// Words that can appear between `__` and `__`, lowercased.
     pub behavior_switch_words: Set<&'static str>,
-
-    /// Aliases of the category namespace, lowercased.
-    pub category_namespaces: Set<&'static str>,
 
     /// Tag names of registered extension tags, lowercased.
     pub extension_tags: Set<&'static str>,
@@ -66,7 +63,7 @@ pub struct ConfigurationSource {
 
 /// Processed configuration data for the parser.
 #[derive(Debug)]
-pub struct Configuration {
+pub(crate) struct Configuration {
     /// A compiled regular expression that matches link trails.
     pub(super) link_trail_pattern: Regex,
     /// A copy of magic links, for stupid testing purposes, since the rest of

@@ -21,7 +21,7 @@ use core::{
 
 /// Template expansion mode.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ExpandMode {
+pub(crate) enum ExpandMode {
     /// Expand templates in non-include mode. This is used when rendering the
     /// bodies of extension tags present in the root document.
     #[default]
@@ -33,7 +33,7 @@ pub enum ExpandMode {
 /// Performs partial evaluation of a Wikitext string, extracting extension tags
 /// into strip markers and expanding templates while converting all other tokens
 /// back into their original Wikitext.
-pub struct ExpandTemplates {
+pub(crate) struct ExpandTemplates {
     /// The inclusion control tag stack.
     inclusion_mode: Vec<InclusionMode>,
     /// The processing mode.

@@ -5,7 +5,7 @@ use peg::str::LineCol;
 
 /// A range of text within a string.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Span {
+pub(crate) struct Span {
     /// The position in the codemap representing the first byte of the span.
     pub start: usize,
 
@@ -18,12 +18,6 @@ impl Span {
     #[inline]
     pub fn new(start: usize, end: usize) -> Self {
         Span { start, end }
-    }
-
-    /// Checks if a span is contained within this span.
-    #[inline]
-    pub fn contains(self, other: Span) -> bool {
-        self.start <= other.start && self.end >= other.end
     }
 
     /// Returns true if this span is empty.
@@ -59,7 +53,7 @@ impl Span {
 
 /// Associate a Span with a value of arbitrary type (e.g. an AST node).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Spanned<T> {
+pub(crate) struct Spanned<T> {
     /// The value.
     pub node: T,
     /// The span.
@@ -96,7 +90,7 @@ impl<T> core::ops::Deref for Spanned<T> {
 
 /// A record of a source file’s lines.
 #[derive(Clone)]
-pub struct FileMap<'a> {
+pub(crate) struct FileMap<'a> {
     /// The source file.
     source: &'a str,
 

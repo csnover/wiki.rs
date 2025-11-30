@@ -24,7 +24,7 @@ pub fn timeline_to_svg(input: &str, base_uri: &Uri) -> Result<String> {
 
 /// An EasyTimeline error.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// Use of undefined colour.
     #[error("missing color '{0}'")]
     Color(String),
@@ -760,7 +760,7 @@ impl<'input> TextSpan<'input> {
 
 /// A time.
 #[derive(Clone, Copy, Debug)]
-pub enum Time {
+pub(crate) enum Time {
     /// Absolute time in `year.fract`.
     Decimal(f64),
     /// The [end](Period::till) of a time [period](Period).

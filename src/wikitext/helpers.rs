@@ -4,7 +4,7 @@ use super::{Span, visit::Visitor};
 use core::fmt;
 
 /// Extracts all text from a token tree.
-pub struct TextContent<'tt, W>
+pub(crate) struct TextContent<'tt, W>
 where
     W: fmt::Write,
 {

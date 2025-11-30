@@ -11,7 +11,7 @@ use std::{
 
 /// Errors that may occur when reading the dump index.
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub(crate) enum Error {
     /// The index file appears to be compressed.
     #[error("{0}: index file must be decompressed before running wiki.rs")]
     Compressed(PathBuf),

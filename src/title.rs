@@ -7,7 +7,7 @@ use std::{borrow::Cow, fmt::Write as _};
 
 /// The title casing strategy for a namespace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NamespaceCase {
+pub(crate) enum NamespaceCase {
     /// The first letter of the namespace name is capitalised.
     FirstLetter,
     /// The namespace name is case-sensitive.
@@ -17,7 +17,7 @@ pub enum NamespaceCase {
 /// An article namespace.
 #[derive(Debug, Eq)]
 #[allow(dead_code)]
-pub struct Namespace {
+pub(crate) struct Namespace {
     /// The namespace ID.
     pub id: i32,
     /// The display name of the namespace.
@@ -144,7 +144,7 @@ impl Namespace {
 
 /// A normalised article title.
 #[derive(Clone, Debug, Eq)]
-pub struct Title {
+pub(crate) struct Title {
     /// The location of the fragment delimiter in the title, if one exists.
     ///
     /// ```text

@@ -1,7 +1,7 @@
 //! Types and functions for interacting with a MediaWiki compressed multistream
 //! database dump.
 
-pub use article::{Article, DatabaseNamespace};
+pub(crate) use article::{Article, DatabaseNamespace};
 
 use crate::{lru_limiter::ByMemoryUsage, php::strtr};
 use article::ArticleDatabase;
@@ -21,7 +21,7 @@ mod index;
 
 /// Errors that may occur when interacting with the article database.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// A time value from the database was not a valid ISO-8601 time string.
     #[error("time error: {0}")]
     Date(#[from] time::error::Parse),
@@ -91,7 +91,7 @@ pub enum Error {
 type CacheableArticle = Option<Arc<Article>>;
 
 /// A MediaWiki multistream database reader.
-pub struct Database<'a> {
+pub(crate) struct Database<'a> {
     /// The uncompressed text index part of the database.
     index: Index<'a>,
     /// The compressed XML part of the database.

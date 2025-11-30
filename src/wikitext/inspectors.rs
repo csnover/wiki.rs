@@ -49,7 +49,7 @@ pub trait TInspector<'a>: fmt::Debug {
 }
 
 /// A debug formatter for slices of parser items.
-pub struct VInspector<'a, T>(&'a FileMap<'a>, &'a [T::Inspectee])
+pub(crate) struct VInspector<'a, T>(&'a FileMap<'a>, &'a [T::Inspectee])
 where
     T: TInspector<'a>;
 
@@ -65,7 +65,7 @@ where
 }
 
 /// A debug formatter for [`Argument`].
-pub struct ArgumentInspector<'a>(&'a FileMap<'a>, &'a Spanned<Argument>);
+pub(crate) struct ArgumentInspector<'a>(&'a FileMap<'a>, &'a Spanned<Argument>);
 
 impl<'a> TInspector<'a> for ArgumentInspector<'a> {
     type Inspectee = Spanned<Argument>;
@@ -91,7 +91,7 @@ impl fmt::Debug for ArgumentInspector<'_> {
 }
 
 /// A debug formatter for [`AnnoAttribute`].
-pub struct AnnoAttrInspector<'a>(&'a FileMap<'a>, &'a AnnoAttribute);
+pub(crate) struct AnnoAttrInspector<'a>(&'a FileMap<'a>, &'a AnnoAttribute);
 
 impl<'a> TInspector<'a> for AnnoAttrInspector<'a> {
     type Inspectee = Spanned<AnnoAttribute>;
@@ -116,7 +116,7 @@ impl fmt::Debug for AnnoAttrInspector<'_> {
 }
 
 /// A debug formatter for [`LangFlags`].
-pub struct LangFlagsInspector<'a>(&'a FileMap<'a>, &'a LangFlags);
+pub(crate) struct LangFlagsInspector<'a>(&'a FileMap<'a>, &'a LangFlags);
 
 impl<'a> TInspector<'a> for LangFlagsInspector<'a> {
     type Inspectee = Spanned<LangFlags>;
@@ -140,7 +140,7 @@ impl fmt::Debug for LangFlagsInspector<'_> {
 }
 
 /// A debug formatter for [`LangVariant`].
-pub struct LangVariantInspector<'a>(&'a FileMap<'a>, &'a LangVariant);
+pub(crate) struct LangVariantInspector<'a>(&'a FileMap<'a>, &'a LangVariant);
 
 impl<'a> TInspector<'a> for LangVariantInspector<'a> {
     type Inspectee = Spanned<LangVariant>;
@@ -174,7 +174,7 @@ impl fmt::Debug for LangVariantInspector<'_> {
 }
 
 /// A debug formatter for [`Spanned<Token>`].
-pub struct TokenInspector<'a>(&'a FileMap<'a>, &'a Spanned<Token>);
+pub(crate) struct TokenInspector<'a>(&'a FileMap<'a>, &'a Spanned<Token>);
 
 impl<'a> TInspector<'a> for TokenInspector<'a> {
     type Inspectee = Spanned<Token>;

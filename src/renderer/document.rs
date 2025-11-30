@@ -22,7 +22,7 @@ use std::borrow::Cow;
 
 /// The root of a Wikitext document.
 #[derive(Debug, Default)]
-pub struct Document {
+pub(crate) struct Document {
     /// The final rendered output.
     pub(super) html: String,
     /// The stack of inclusion control tags.

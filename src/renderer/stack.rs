@@ -27,7 +27,7 @@ use std::{
 // source code, but there could also be a value which is either the StashedClosure
 // or the parser Output, which would make it clearer what things are associated
 // with what?
-pub struct StackFrame<'a> {
+pub(crate) struct StackFrame<'a> {
     /// The title of the article (template or module) rendered by this frame.
     pub name: Title,
     /// The source code of the frame.
@@ -171,7 +171,7 @@ impl<'a> StackFrame<'a> {
 }
 
 /// Iterator over the argument keys in a [`KeyCacheKvs`].
-pub struct KeyIter<'a> {
+pub(crate) struct KeyIter<'a> {
     /// The arguments to iterate.
     arguments: &'a KeyCacheKvs<'a, 'a>,
     /// The parent stack frame.
@@ -218,7 +218,7 @@ impl fmt::Debug for StackFrame<'_> {
 
 /// A list of k-v pairs with a cached key map.
 #[derive(Debug, Default)]
-pub struct KeyCacheKvs<'call, 'args> {
+pub(crate) struct KeyCacheKvs<'call, 'args> {
     /// A lazily populated key-index map into [`Self::raw`].
     key_map: RefCell<(usize, HashMap<String, usize>)>,
     /// The raw arguments passed to the function.
@@ -393,7 +393,7 @@ where
 
 /// A helper for handling calls to function-like items (parser functions and
 /// extension tags).
-pub struct IndexedArgs<'args, 'call, 'sp> {
+pub(crate) struct IndexedArgs<'args, 'call, 'sp> {
     /// The raw arguments passed to the function.
     pub arguments: KeyCacheKvs<'call, 'args>,
     /// The name of the callee.
@@ -441,22 +441,6 @@ impl IndexedArgs<'_, '_, '_> {
     pub fn len(&self) -> usize {
         self.arguments.len()
     }
-
-    /// Evaluates the name part of a k-v pair at the given index.
-    ///
-    /// The returned value will include any leading and trailing whitespace
-    /// present in the original text.
-    pub fn name(&self, state: &mut State<'_>, index: usize) -> Result<Option<Cow<'_, str>>> {
-        self.arguments.name(state, self.sp, index)
-    }
-
-    /// Evaluates the value part of a k-v pair at the given index.
-    ///
-    /// The returned value will include any leading and trailing whitespace
-    /// present in the original text.
-    pub fn value(&self, state: &mut State<'_>, index: usize) -> Result<Option<Cow<'_, str>>> {
-        self.arguments.value(state, self.sp, index)
-    }
 }
 
 impl<'args, 'call> IntoIterator for &IndexedArgs<'args, 'call, '_> {
@@ -476,7 +460,7 @@ impl<'args, 'call> IntoIterator for &IndexedArgs<'args, 'call, '_> {
 /// are only treated as k-vs in template expansions; for parser function calls,
 /// they are usually treated as scalar values.
 #[derive(Clone, Debug)]
-pub enum Kv<'a> {
+pub(crate) enum Kv<'a> {
     /// A regular template argument.
     ///
     /// ```wikitext
@@ -617,29 +601,6 @@ impl Kv<'_> {
                 })
                 .map_err(Into::into),
             Kv::Argument(argument) => argument.name().map(|name| sp.eval(state, name)).transpose(),
-        }
-    }
-
-    /// Returns the argument as raw text.
-    ///
-    /// The returned value will include any leading and trailing whitespace
-    /// present in the original text.
-    pub fn text<'a>(&'a self, state: &mut State<'_>, source: &'a str) -> Cow<'a, str> {
-        match self {
-            Kv::Argument(argument) => Cow::Borrowed(&source[argument.span.into_range()]),
-            Kv::Borrowed(text) => Cow::Borrowed(text),
-            Kv::Partial(nodes) => {
-                if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
-                    Cow::Borrowed(&source[first.span.merge(last.span).into_range()])
-                } else {
-                    Cow::Borrowed("")
-                }
-            }
-            Kv::String(key, value) => state.statics.vm.enter(|ctx| {
-                let key = ctx.fetch(key).to_str().unwrap();
-                let value = ctx.fetch(value).to_str().unwrap();
-                Cow::Owned(format!(r#"{key}="{value}""#))
-            }),
         }
     }
 

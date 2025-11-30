@@ -11,7 +11,7 @@ mod to_unixtime;
 
 /// A time builder error.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// Invalid input string.
     #[error("invalid input: {0}")]
     Parse(#[from] parse_date::PegError),

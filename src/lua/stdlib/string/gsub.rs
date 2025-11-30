@@ -15,7 +15,7 @@ use piccolo::{Function, MetaMethod, SequenceReturn, async_sequence};
 ///
 /// Allows interruptible iterative replacement of strings by separating the
 /// matching and replacing parts.
-pub struct GSub<B: BackingType + ?Sized> {
+pub(crate) struct GSub<B: BackingType + ?Sized> {
     /// The search pattern.
     pattern: B::Owned,
     /// The number of possible replacements that may occur.
