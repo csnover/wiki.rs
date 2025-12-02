@@ -1,7 +1,7 @@
 //! Types and functions for extracting articles from a compressed multistream
 //! dump.
 
-use super::{Error, index::IndexEntry};
+use super::{Error, Result, index::IndexEntry};
 use crate::{lru_limiter::ByMemoryUsageCalculator, title::NamespaceCase};
 use bzip2_rs::DecoderReader;
 use memmap2::Mmap;
@@ -76,7 +76,7 @@ pub(super) struct ArticleDatabase {
 
 impl ArticleDatabase {
     /// Opens a raw `multistream.xml.bz2` file using memory mapping.
-    pub(super) fn from_file(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub(super) fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let file = File::open(path).map_err(|err| Error::Io(err, path.into()))?;
         // SAFETY: This data is only ever used immutably.
@@ -94,7 +94,7 @@ impl ArticleDatabase {
     }
 
     /// Gets the article at the given index.
-    pub(super) fn get_article(&self, entry: &IndexEntry<'_>) -> Result<Article, Error> {
+    pub(super) fn get_article(&self, entry: &IndexEntry<'_>) -> Result<Article> {
         let chunk = self.get_article_chunk(entry.offset)?;
         let root = chunk.parse::<Element>()?;
         let article = root.children().find(|el| {
@@ -115,7 +115,7 @@ impl ArticleDatabase {
 
     /// Reconstitutes a compressed multistream XML chunk into at the given
     /// offset.
-    fn get_article_chunk(&self, offset: u64) -> Result<String, Error> {
+    fn get_article_chunk(&self, offset: u64) -> Result<String> {
         let offset = usize::try_from(offset)?;
         let bzip_data = &self.data[offset..];
 
@@ -128,7 +128,7 @@ impl ArticleDatabase {
 
     /// Parses basic information about the database from the `<siteinfo>` in the
     /// first chunk.
-    fn database_info(data: &[u8]) -> Result<Metadata, Error> {
+    fn database_info(data: &[u8]) -> Result<Metadata> {
         // In case someone tries to load a non-multistream database, the number
         // of bytes read is limited to some amount well above the expected size
         // (the true expected data size is only ~2KiB).
@@ -181,7 +181,7 @@ impl ArticleDatabase {
     }
 
     /// Extracts article data from an XML element.
-    fn parse_article(article: &Element) -> Result<Article, Error> {
+    fn parse_article(article: &Element) -> Result<Article> {
         let id = try_get_child(article, "id")?.text().parse::<u64>()?;
         let title = try_get_child(article, "title")?.text();
         let revision = try_get_child(article, "revision")?;
@@ -213,13 +213,13 @@ impl ArticleDatabase {
 
 /// Tries to get a child element by name and returns an [`Error`] if it does not
 /// exist.
-fn try_get_child<'a>(element: &'a Element, name: &str) -> Result<&'a Element, Error> {
+fn try_get_child<'a>(element: &'a Element, name: &str) -> Result<&'a Element> {
     try_get_child_ns(element, name, "")
 }
 
 /// Tries to get a child element by name and namespace and returns an [`Error`]
 /// if it does not exist.
-fn try_get_child_ns<'a>(element: &'a Element, name: &str, ns: &str) -> Result<&'a Element, Error> {
+fn try_get_child_ns<'a>(element: &'a Element, name: &str, ns: &str) -> Result<&'a Element> {
     let child = element.get_child(name, ns);
     child.ok_or_else(|| Error::XmlProperty(name.into()))
 }

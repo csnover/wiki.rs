@@ -19,6 +19,9 @@ use time::UtcDateTime;
 mod article;
 mod index;
 
+/// The result type for database operations.
+pub type Result<T, E = Error> = core::result::Result<T, E>;
+
 /// Errors that may occur when interacting with the article database.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -106,7 +109,7 @@ impl Database<'_> {
     pub fn from_file(
         index_path: impl AsRef<Path>,
         articles_path: impl AsRef<Path>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let time = Instant::now();
 
         let index = Index::from_file(index_path)?;
@@ -135,7 +138,7 @@ impl Database<'_> {
 
     /// Gets an article with the given title from the database. The article will
     /// be cached in memory.
-    pub fn get(&self, title: &str) -> Result<Arc<Article>, Error> {
+    pub fn get(&self, title: &str) -> Result<Arc<Article>> {
         self.cache
             .write()
             .unwrap()
@@ -181,7 +184,7 @@ impl Database<'_> {
     }
 
     /// Gets an article directly from the database.
-    fn fetch_article(&self, title: &str) -> Result<Article, Error> {
+    fn fetch_article(&self, title: &str) -> Result<Article> {
         log::trace!("Loading article {title}");
 
         let hack = HACKS
