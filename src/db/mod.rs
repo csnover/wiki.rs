@@ -187,9 +187,7 @@ impl Database<'_> {
     fn fetch_article(&self, title: &str) -> Result<Article> {
         log::trace!("Loading article {title}");
 
-        let hack = HACKS
-            .iter()
-            .find_map(|(hack_title, hack)| (*hack_title == title).then_some(*hack));
+        let hack = HACKS.get(title).copied();
 
         if let Some(&Hack::Lobotomy(body)) = hack {
             log::warn!("Replacing {title} from hacks");
@@ -352,13 +350,10 @@ static MODULE_WIKIDATA: Hack = Hack::HorsePills(&[(r#""^\-?%d+""#, r#""^-?%d+""#
 
 /// All the sad hacks that are required to successfully load modules in a Lua
 /// engine which is not the modified Lua 5.1 engine used by Scribunto.
-static HACKS: &[(&str, &Hack)] = &[
-    ("Module:Citation/CS1", &MODULE_CITATION_CS1),
-    (
-        "Module:Footnotes/anchor id list",
-        &MODULE_FOOTNOTE_ANCHOR_ID_LIST,
-    ),
-    ("Module:Hatnote list", &MODULE_HATNOTE_LIST),
-    ("Module:TNT", &MODULE_TNT),
-    ("Module:Wikidata", &MODULE_WIKIDATA),
-];
+static HACKS: phf::Map<&str, &Hack> = phf::phf_map! {
+    "Module:Citation/CS1" => &MODULE_CITATION_CS1,
+    "Module:Footnotes/anchor id list" => &MODULE_FOOTNOTE_ANCHOR_ID_LIST,
+    "Module:Hatnote list" => &MODULE_HATNOTE_LIST,
+    "Module:TNT" => &MODULE_TNT,
+    "Module:Wikidata" => &MODULE_WIKIDATA,
+};
