@@ -77,4 +77,5 @@ debug-assertions = false
 overflow-checks = false
 
 [profile.release]
+debug = "line-tables-only"
 lto = "thin"
