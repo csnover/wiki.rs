@@ -1,11 +1,11 @@
 //! Types and functions for interacting with a MediaWiki compressed multistream
 //! database dump.
 
-pub(crate) use article::{Article, DatabaseNamespace};
-
 use crate::{lru_limiter::ByMemoryUsage, php::strtr};
 use article::ArticleDatabase;
+pub(crate) use article::{Article, DatabaseNamespace};
 use index::Index;
+pub(crate) use prefetch::PrefetchableDatabase as Database;
 use rayon::iter::ParallelIterator;
 use schnellru::LruMap;
 use std::{
@@ -18,6 +18,7 @@ use time::UtcDateTime;
 
 mod article;
 mod index;
+mod prefetch;
 
 /// The result type for database operations.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -94,7 +95,7 @@ pub(crate) enum Error {
 type CacheableArticle = Option<Arc<Article>>;
 
 /// A MediaWiki multistream database reader.
-pub(crate) struct Database<'a> {
+pub(crate) struct RawDatabase<'a> {
     /// The uncompressed text index part of the database.
     index: Index<'a>,
     /// The compressed XML part of the database.
@@ -103,7 +104,7 @@ pub(crate) struct Database<'a> {
     cache: RwLock<LruMap<String, CacheableArticle, ByMemoryUsage<CacheableArticle>>>,
 }
 
-impl Database<'_> {
+impl RawDatabase<'_> {
     /// Creates a new database from the given uncompressed text index and
     /// compressed multistream.xml.bz2 file.
     pub fn from_file(
@@ -143,6 +144,7 @@ impl Database<'_> {
             .write()
             .unwrap()
             .get_or_insert_fallible(title, || {
+                log::trace!("Loading article {title}");
                 self.fetch_article(title).map_or_else(
                     |err| {
                         if matches!(err, Error::NotFound) {
@@ -185,8 +187,6 @@ impl Database<'_> {
 
     /// Gets an article directly from the database.
     fn fetch_article(&self, title: &str) -> Result<Article> {
-        log::trace!("Loading article {title}");
-
         let hack = HACKS.get(title).copied();
 
         if let Some(&Hack::Lobotomy(body)) = hack {

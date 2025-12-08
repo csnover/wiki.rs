@@ -543,3 +543,194 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     )?;
     Ok(())
 }
+
+/// Attempts to prefetch templates that are immediately resolvable to
+/// allow for parallel decoding of database entries whilst the renderer is busy.
+pub(crate) struct DbPrefetch;
+
+impl Surrogate<Error> for DbPrefetch {
+    fn adopt_autolink(
+        &mut self,
+        _state: &mut State<'_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _target: &[Spanned<Token>],
+        _content: &[Spanned<Token>],
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn adopt_external_link(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        target: &[Spanned<Token>],
+        content: &[Spanned<Token>],
+    ) -> Result<(), Error> {
+        self.adopt_tokens(state, sp, target)?;
+        self.adopt_tokens(state, sp, content)
+    }
+
+    fn adopt_link(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        target: &[Spanned<Token>],
+        content: &[Spanned<Argument>],
+        _trail: Option<Spanned<&str>>,
+    ) -> Result<(), Error> {
+        self.adopt_tokens(state, sp, target)?;
+        for argument in content {
+            self.adopt_tokens(state, sp, &argument.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_parameter(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        name: &[Spanned<Token>],
+        default: Option<&[Spanned<Token>]>,
+    ) -> Result<(), Error> {
+        self.adopt_tokens(state, sp, name)?;
+        if let Some(default) = default {
+            self.adopt_tokens(state, sp, default)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_redirect(
+        &mut self,
+        _state: &mut State<'_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _target: &[Spanned<Token>],
+        _content: &[Spanned<Argument>],
+        _trail: Option<Spanned<&str>>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn adopt_start_tag(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        _name: &str,
+        attributes: &[Spanned<Argument>],
+        _self_closing: bool,
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_table_caption(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_table_data(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_table_heading(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+    fn adopt_table_row(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+    fn adopt_table_start(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_template(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        target: &[Spanned<Token>],
+        arguments: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        let mut first = None;
+        match split_target(state, sp, &mut first, target, arguments)? {
+            Target::Template { callee, .. } => state.statics.db.prefetch(callee.key()),
+            Target::ParserFn { callee, arguments } => {
+                if callee == "safesubst" {
+                    let target = arguments[0].eval(state, sp)?;
+                    let target = target.trim_ascii();
+                    let (callee, rest) = target
+                        .split_once(':')
+                        .map_or((target, None), |(callee, rest)| (callee, Some(rest)));
+                    let callee_lower = callee.to_lowercase();
+                    if !is_function_call(arguments.len() == 1, rest.is_some(), &callee_lower) {
+                        let title = Title::new(target, Namespace::find_by_id(Namespace::TEMPLATE));
+                        state.statics.db.prefetch(title.key());
+                    }
+                } else if callee == "#invoke" || callee == "invoke" {
+                    let target = arguments[0].eval(state, sp)?;
+                    let target = target.trim_ascii();
+                    let title = Title::new(target, Namespace::find_by_id(Namespace::MODULE));
+                    state.statics.db.prefetch(title.key());
+                }
+            }
+        }
+        if let Some(first) = first {
+            self.adopt_token(state, sp, &first)?;
+        }
+        for argument in arguments {
+            self.adopt_tokens(state, sp, &argument.content)?;
+        }
+
+        Ok(())
+    }
+}

@@ -349,6 +349,7 @@ impl Surrogate<Error> for ExpandTemplates {
         sp: &StackFrame<'_>,
         output: &Output,
     ) -> Result<(), Error> {
+        template::DbPrefetch.adopt_output(state, sp, output)?;
         if output.has_onlyinclude {
             self.inclusion_mode.push(InclusionMode::NoInclude);
             surrogate::adopt_output(self, state, sp, output)?;

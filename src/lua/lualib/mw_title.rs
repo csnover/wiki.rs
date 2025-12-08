@@ -136,7 +136,7 @@ impl TitleLibrary {
         ctx: Context<'gc>,
         text: VmString<'_>,
     ) -> Result<Table<'gc>, VmError<'gc>> {
-        log::trace!("getExpensiveData({text:?})");
+        // log::trace!("getExpensiveData({text:?})");
         let title = Title::new(text.to_str()?, None);
         let article = self.db.get().unwrap().get(title.key()).ok();
         let article = article.as_deref();
