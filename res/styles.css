@@ -547,8 +547,10 @@ th {
     --background-color-neutral: transparent;
     --background-color-neutral-subtle: transparent;
     --border-color-base: var(--border-fg);
+    --border-color-subtle: transparent;
     --box-tag: transparent linear-gradient(135deg, var(--fg) var(--tag-size), transparent var(--tag-size)) 0%/calc(var(--tag-size) * 2) no-repeat;
     --color-base: #000;
+    --color-subtle: var(--color-base);
     --max-width: 70rem;
     --side-table-stretch: 80%;
     --table-margin-inline: calc(var(--table-padding-inline) * -1);
@@ -2621,6 +2623,22 @@ th {
                 background-image: var(--bar-fill-light);
                 background-position: 0;
             }
+        }
+    }
+
+    /*********************/
+    /* Template:Fix span */
+    /* Template:CN span  */
+    /*********************/
+
+    .citation-needed-content {
+        border: 0 !important;
+        padding-inline: 0 !important;
+        text-decoration: underline wavy var(--border-th);
+
+        + .Template-Fact {
+            margin-left: -.15em !important;
+            margin-right: .15em;
         }
     }
 }
