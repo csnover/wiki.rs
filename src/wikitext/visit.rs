@@ -204,7 +204,7 @@ pub trait Visitor<'tt, E> {
 
     /// Visits a [`Token::StripMarker`].
     #[inline]
-    fn visit_strip_marker(&mut self, _marker: usize) -> Result<(), E> {
+    fn visit_strip_marker(&mut self, _marker: &'tt str) -> Result<(), E> {
         Ok(())
     }
 
@@ -542,7 +542,9 @@ where
             attributes,
             *self_closing,
         ),
-        Token::StripMarker(marker) => visitor.visit_strip_marker(*marker),
+        Token::StripMarker(marker) => {
+            visitor.visit_strip_marker(&visitor.source()[marker.into_range()])
+        }
         Token::Text => visitor.visit_text(&visitor.source()[token.span.into_range()]),
         Token::TextStyle(style) => visitor.visit_text_style(token.span, *style),
         Token::TableCaption { attributes } => visitor.visit_table_caption(token.span, attributes),

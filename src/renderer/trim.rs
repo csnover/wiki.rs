@@ -450,7 +450,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
         span: Span,
-        marker: usize,
+        marker: &str,
     ) -> Result {
         self.flush(state)?;
         self.out.adopt_strip_marker(state, sp, span, marker)

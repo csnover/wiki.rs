@@ -2,7 +2,7 @@
 
 use crate::php::strtr;
 pub(crate) use codemap::{FileMap, Span, Spanned};
-pub(crate) use config::{Configuration, ConfigurationSource, HTML5_TAGS, MagicLinks};
+pub(crate) use config::{Configuration, ConfigurationSource, MagicLinks};
 pub(crate) use inspectors::inspect;
 pub(crate) use peg::str::LineCol;
 use regex::Regex;
@@ -397,7 +397,7 @@ pub(crate) enum Token {
     },
     /// A strip marker. This will only ever appear in text that passed through
     /// an Evaluator.
-    StripMarker(usize),
+    StripMarker(Span),
     /// A run of plain text.
     Text,
     /// A bold or italic style.

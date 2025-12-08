@@ -540,7 +540,7 @@ fn expand_template(
             state,
             sp,
             &Kv::Borrowed(&title),
-            &title,
+            Title::new(&title, Namespace::find_by_id(Namespace::TEMPLATE)),
             &arguments,
         )?;
         Ok(state

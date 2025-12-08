@@ -234,16 +234,17 @@ mod ext {
     ) -> Result {
         if let (Some(name), Some(body)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
             let name = StripMarkers::kill(&name);
+            let name = name.trim_ascii().to_ascii_lowercase();
             match extension_tags::render_extension_tag(
                 state,
                 arguments.sp,
                 arguments.span,
-                &name.trim_ascii().to_ascii_lowercase(),
+                &name,
                 &extension_tags::InArgs::ParserFn(&arguments.arguments[2..]),
                 Some(&body),
             )? {
                 Some(Either::Left(marker)) => {
-                    state.strip_markers.push(out, marker);
+                    state.strip_markers.push(out, &name, marker);
                 }
                 Some(Either::Right(raw)) => {
                     write!(out, "{raw}")?;
@@ -770,7 +771,7 @@ mod subst {
                     state,
                     arguments.sp,
                     arguments.get_raw(0).unwrap(),
-                    target,
+                    Title::new(target, Namespace::find_by_id(Namespace::TEMPLATE)),
                     &arguments.arguments[1..],
                 )?;
             }

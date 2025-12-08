@@ -323,7 +323,7 @@ pub trait Surrogate<E> {
         _state: &mut State<'_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _marker: usize,
+        _marker: &str,
     ) -> Result<(), E> {
         Ok(())
     }
@@ -753,7 +753,9 @@ where
             attributes,
             *self_closing,
         ),
-        Token::StripMarker(marker) => surrogate.adopt_strip_marker(state, sp, token.span, *marker),
+        Token::StripMarker(marker) => {
+            surrogate.adopt_strip_marker(state, sp, token.span, &sp.source[marker.into_range()])
+        }
         Token::Text => {
             surrogate.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])
         }

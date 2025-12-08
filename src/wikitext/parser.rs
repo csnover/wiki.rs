@@ -173,7 +173,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// production of block flow items (e.g. headers, horizontal rules) which
     /// would normally only match immediately after a newline.
     rule sol_transparent(ctx: &Context) -> Vec<Spanned<Token>>
-    = t:comment() { vec![t] }
+    = t:strip_marker() { vec![t] }
+    / t:comment() { vec![t] }
     / include_limits(ctx)
     / t:annotation_tag(ctx) { vec![t] }
     / t:behavior_switch() { vec![t] }
@@ -1311,8 +1312,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       &assert({
         let (name, _) = start;
         // MW used Unicode case folding here, but why? All these are ASCII.
-        contains_ignore_case(&state.config.extension_tags, &name)
+        name.node == "wiki-rs" || (
+            contains_ignore_case(&state.config.extension_tags, &name)
             && !contains_ignore_case(&state.config.annotation_tags, &name)
+        )
       }, "extension tag")
 
     /// An extension tag. The entire tag and its contents are consumed at once.
@@ -1462,8 +1465,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// An extension tag which has been replaced by a strip marker.
     rule strip_marker() -> Spanned<Token>
     = spanned(<
-      const_value(MARKER_PREFIX) id:$(['0'..='9']+) const_value(MARKER_SUFFIX)
-      { Token::StripMarker(id.parse().unwrap()) }
+      const_value(MARKER_PREFIX) id:spanned(<(!const_value(MARKER_SUFFIX) [_])+>) const_value(MARKER_SUFFIX)
+      { Token::StripMarker(id.span) }
     >)
 
     /////////////////

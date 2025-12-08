@@ -34,6 +34,15 @@ pub(crate) struct Document {
     seen_block: bool,
     /// The stack of open HTML elements.
     stack: Vec<Node>,
+    /// The template processing stack used to identify which template was the
+    /// source of a fragment of the assembled Wikitext document.
+    ///
+    /// This is a workaround for templates that do not identify themselves for
+    /// styling but instead only emit inline styles (like
+    /// 'Template:Climate chart'), which need to have their styles overridden
+    /// nevertheless, which we can do by adding extra data attributes to
+    /// identify the template source of an element.
+    tag_blocks: Vec<(usize, String)>,
     /// The [`TextStyle`] emitter.
     text_style_emitter: TextStyleEmitter,
 }
@@ -48,6 +57,7 @@ impl Document {
             last_char: '\n',
             seen_block: <_>::default(),
             stack: <_>::default(),
+            tag_blocks: <_>::default(),
             text_style_emitter: <_>::default(),
         }
     }
@@ -278,6 +288,33 @@ impl Document {
                 .expect("element stack corruption");
         }
 
+        if !PHRASING_TAGS.contains(&tag) {
+            let mut has_some = false;
+            // It is possible that a template starts in an ambiguous position
+            // where the output of its first tag results in some other elements
+            // being closed. To handle this case, `level` is treated as a
+            // maximum which is reduced so child elements of the template do not
+            // get tagged as it builds its own DOM tree.
+            for (level, class) in self
+                .tag_blocks
+                .iter_mut()
+                .rev()
+                .take_while(|(level, _)| self.stack.len() <= *level)
+            {
+                *level = self.stack.len();
+                if has_some {
+                    write!(self.html, " ")?;
+                } else {
+                    write!(self.html, " data-wiki-rs=\"")?;
+                    has_some = true;
+                }
+                write!(self.html, "{class}")?;
+            }
+            if has_some {
+                write!(self.html, "\"")?;
+            }
+        }
+
         self.html.write_char('>')?;
         if !VOID_TAGS.contains(&tag) {
             self.stack.push(Node::Tag(tag, TagBody::Empty));
@@ -388,6 +425,14 @@ impl Document {
                     e.close(&mut self.html)?;
                 }
                 self.html += text;
+            }
+            StripMarker::WikiRsSourceStart(name) => {
+                self.tag_blocks.push((self.stack.len(), name.clone()));
+            }
+            StripMarker::WikiRsSourceEnd(name) => {
+                self.tag_blocks
+                    .pop_if(|(_, other)| name == other)
+                    .expect("tag block stack corruption");
             }
         }
 
@@ -547,7 +592,7 @@ impl Surrogate<Error> for Document {
         )? {
             Some(Either::Left(marker)) => {
                 if self.fragment {
-                    state.strip_markers.push(&mut self.html, marker);
+                    state.strip_markers.push(&mut self.html, name, marker);
                 } else {
                     self.write_strip_marker(&marker)?;
                 }
@@ -823,10 +868,10 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        marker: usize,
+        marker: &str,
     ) -> Result {
         let Some(tag) = state.strip_markers.get(marker) else {
-            return Err(Error::StripMarker(marker));
+            return Err(Error::StripMarker(marker.to_string()));
         };
 
         self.write_strip_marker(tag)?;

@@ -1,7 +1,7 @@
 //! Template rendering types and functions.
 
 use super::{
-    Error, Result, State,
+    Error, Result, State, StripMarker,
     expand_templates::{ExpandMode, ExpandTemplates},
     parser_fns::call_parser_fn,
     resolve_redirects,
@@ -14,11 +14,10 @@ use crate::{
     config::CONFIG,
     lua::run_vm,
     title::{Namespace, Title},
-    wikitext::{Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token},
+    wikitext::{Argument, FileMap, Span, Spanned, Token},
 };
 use core::fmt::{self, Write as _};
-use regex::Regex;
-use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
+use std::{borrow::Cow, pin::pin, rc::Rc, time::Instant};
 
 /// Calls a Lua function.
 pub(super) fn call_module(
@@ -182,21 +181,8 @@ pub(super) fn render_template<'tt>(
         return render_fallback(out, state, sp);
     }
 
-    let Target {
-        has_colon,
-        first,
-        rest,
-        callee,
-    } = split_target(state, sp, target)?;
-    // eprintln!("{callee} / {first:?} / {rest:?}");
-
-    // Technically, MediaWiki has some magic words that are case-sensitive
-    // and others which are case-insensitive. In practice, this does not
-    // seem to matter, and can just treat everything as lowercase. MW uses
-    // Unicode-aware functions for this, although everything seems to be ASCII.
-    let callee_lower = callee.to_lowercase();
-
-    let use_function_hook = is_function_call(arguments.is_empty(), has_colon, &callee_lower);
+    let mut first = None;
+    let target = split_target(state, sp, &mut first, target, arguments)?;
 
     // TODO: There is some undocumented stuff to remove 'msgnw', 'msg', or 'raw'
     // magic words from the callee and then to change some options before
@@ -211,114 +197,162 @@ pub(super) fn render_template<'tt>(
     // (`<math>`, etc.).
     let mut partial = String::new();
 
-    if use_function_hook {
-        // It is important to actually not pass a zeroth argument is there is
-        // not one because this changes the behaviour of variable get/set
-        let first =
-            has_colon.then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
+    let wrapper_key = match target {
+        Target::ParserFn { callee, arguments } => {
+            call_parser_fn(&mut partial, state, sp, Some(bounds), &callee, &arguments)?;
+            None
+        }
 
-        let arguments = first
-            .into_iter()
-            .chain(arguments.iter().map(Kv::Argument))
-            .collect::<Vec<_>>();
+        Target::Template {
+            callee,
+            target,
+            arguments,
+        } => {
+            call_template(&mut partial, state, sp, &target, callee.clone(), &arguments)?;
 
-        call_parser_fn(
-            &mut partial,
-            state,
-            sp,
-            Some(bounds),
-            &callee_lower,
-            &arguments,
-        )?;
-    } else {
-        let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
-
-        let callee = sp.eval(state, target)?;
-        call_template(
-            &mut partial,
-            state,
-            sp,
-            &Kv::Partial(target.iter().collect()),
-            callee.trim_ascii(),
-            &arguments,
-        )?;
-    }
+            // TODO: 'Template:Infobox' breaks when it is fed recursively into
+            // itself because it gets confused by the extra unexpected strip
+            // markers in its `fixChildBoxes` function and emits invalid table
+            // markup. Probably other things do this too but infobox is
+            // especially brain damaged. This is noticeable on
+            // 'Template:Nutritionalvalue', among other pages.
+            contains_blocks(&partial).then(|| {
+                callee
+                    .key()
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() {
+                            c.to_ascii_lowercase()
+                        } else {
+                            '-'
+                        }
+                    })
+                    .collect::<String>()
+            })
+        }
+    };
 
     // “T2529: if the template begins with a table or block-level
     //  element, it should be treated as beginning a new line.
     //  This behavior is somewhat controversial.”
     if !line_start && (partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*'])) {
-        partial.insert(0, '\n');
+        writeln!(out)?;
     }
 
-    // Many templates do not provide adequate (or any) hooks for overriding
-    // styles. (See styles.css; everything using `[data-wiki-rs]` is a template
-    // with missing or inadequate hooks of its own).
-    // TODO: This is related to `tag_blocks` (grep Git history). Do this, except
-    // more like how `tag_blocks` worked, no disgusting hacks.
-    {
-        // The hack in MW that is used to detect errors from random HTML-ish
-        // strings expects to see `<{tag} class="error"`. So, the disgusting
-        // hack *here* has to make sure to not cause *that* hack to break by
-        // injecting the attribute in the most convenient place. Unfortunately,
-        // only one of these hacks can ever be replaced by something less stupid
-        // later.
-        static DISGUSTING_HACK: LazyLock<Regex> = LazyLock::new(|| {
-            const HTML_TAG: &str = r#"<([\w-]+)[^>]*?(?: data-wiki-rs="([^"]+)")?>"#;
-            const WIKI_TABLE: &str = "(\\{\\|)[^\n]*?(?: data-wiki-rs=\"([^\"]+)\")?\n";
-
-            Regex::new(&format!(
-                r"^(?:\s|{MARKER_PREFIX}\d+{MARKER_SUFFIX})*(?:{HTML_TAG}|{WIKI_TABLE})"
-            ))
-            .unwrap()
-        });
-
-        if !use_function_hook
-            && let Some(hax) = DISGUSTING_HACK.captures(&partial)
-            && hax.get(1).is_none_or(|tag_name| {
-                crate::wikitext::HTML5_TAGS.contains(&tag_name.as_str().to_ascii_lowercase())
-            })
-        {
-            // TODO: This should account for redirections.
-            let class_name = Title::new(&callee, Namespace::find_by_id(Namespace::TEMPLATE))
-                .key()
-                .to_ascii_lowercase()
-                .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
-
-            let (prefix, extra, suffix) = if let Some(existing) = hax.get(2).or_else(|| hax.get(4))
-            {
-                (
-                    existing.start(),
-                    format!("{} {class_name}", existing.as_str()),
-                    existing.end(),
-                )
-            } else {
-                (
-                    hax.get_match().end() - 1,
-                    format!(r#" data-wiki-rs="{class_name}""#),
-                    hax.get_match().end() - 1,
-                )
-            };
-
-            partial = String::from(&partial[..prefix]) + &extra + &partial[suffix..];
-        }
+    if let Some(key) = wrapper_key {
+        // It is necessary to inject strip markers rather than extension tags
+        // or else the start-of-line rules break
+        state
+            .strip_markers
+            .push(out, "wiki-rs", StripMarker::WikiRsSourceStart(key.clone()));
+        write!(out, "{partial}")?;
+        state
+            .strip_markers
+            .push(out, "wiki-rs", StripMarker::WikiRsSourceEnd(key));
+    } else {
+        write!(out, "{partial}")?;
     }
-
-    write!(out, "{partial}")?;
 
     Ok(())
 }
 
+/// Returns whether a partial template string appears to contain some subset of
+/// block-level elements.
+///
+/// It is necessary to not just inject source markers into the output
+/// indiscriminately for every template because some template expansions are
+/// plain text interpolations which will break because other templates and
+/// modules don’t expect to see tags or strip markers in those positions. For
+/// example, 'Template:Speciesbox' interpolates a template expansion into the
+/// target for another template expansion, and having extra strip markers in
+/// there will just break it.
+///
+/// It is not possible without doing a bunch of extra work to check for every
+/// possible kind of element that would ideally be taged because characters
+/// which are valid to start Wikitext elements are often also intended to be
+/// used as part of some text expression where injecting anything into the
+/// output would break the output (e.g. `*` starting a template which is
+/// expanded as part of an arithmetic expression).
+fn contains_blocks(partial: &str) -> bool {
+    if partial.starts_with("{|") {
+        return true;
+    }
+
+    let mut iter = partial.chars();
+    while let Some(c) = iter.next() {
+        if (c == '<' && starts_with_block_tag_name(iter.as_str()))
+            || (c == '\n' && iter.as_str().starts_with("{|"))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns whether the given string starts with an interesting tag name.
+///
+/// This is necessary because 'Module:Citation/CS1' is unbearable and complains
+/// visibly if a strip marker exists inside of any of its parameters instead of
+/// just ignoring or stripping them itself. (Is it any wonder it runs so
+/// slowly?) Since it is only really necessary to attach extra styling markers
+/// to a subset of block-level tags, avoid generating the template source
+/// markers in this case.
+///
+/// Eventually it will turn out that source tracking has to occur totally out of
+/// band using a code map, and then the problem will be solved forever, but why
+/// do work when you can pretend like it is unnecessary, lol.
+fn starts_with_block_tag_name(tag_name: &str) -> bool {
+    let mut max = "blockquote".len() + 1;
+    while !tag_name.is_char_boundary(max) {
+        max -= 1;
+    }
+    let Some((tag_name, _)) = tag_name[..max].split_once(|c: char| c.is_ascii_whitespace()) else {
+        return false;
+    };
+
+    for candidate in [
+        "blockquote",
+        "caption",
+        "dd",
+        "div",
+        "dl",
+        "dt",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+    ] {
+        if tag_name.eq_ignore_ascii_case(candidate) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Template target information.
-struct Target<'tt> {
-    /// The extracted callee.
-    callee: String,
-    /// The first argument of a parser function.
-    first: Option<Spanned<Token>>,
-    /// The rest of the tokens.
-    rest: &'tt [Spanned<Token>],
-    /// Whether the target split on a colon.
-    has_colon: bool,
+enum Target<'tt> {
+    /// The target is a parser function (or a variable, which is implemented in
+    /// wiki.rs using parser functions).
+    ParserFn {
+        /// The parser function to invoke.
+        callee: String,
+        /// The arguments to the function.
+        arguments: Vec<Kv<'tt>>,
+    },
+    /// The target is a template.
+    Template {
+        /// The template to expand.
+        callee: Title,
+        /// The raw template name.
+        target: Kv<'tt>,
+        /// The arguments to the template.
+        arguments: Vec<Kv<'tt>>,
+    },
 }
 
 /// Splits a template target in the form `callee:arg` into parts without
@@ -326,12 +360,13 @@ struct Target<'tt> {
 fn split_target<'tt>(
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
+    first: &'tt mut Option<Spanned<Token>>,
     target: &'tt [Spanned<Token>],
+    arguments: &'tt [Spanned<Argument>],
 ) -> Result<Target<'tt>, Error> {
     let mut callee = String::new();
     let mut rest = target.iter();
     let mut has_colon = false;
-    let mut first = None;
     for part in rest.by_ref() {
         // It is not good enough to just look for text nodes because there are
         // insane but legal constructions like `{{ {{#if:1|#if:}} 1|y|n }}`
@@ -356,7 +391,7 @@ fn split_target<'tt>(
             callee += lhs;
             has_colon = true;
             if !rhs.is_empty() {
-                first = Some(Spanned {
+                *first = Some(Spanned {
                     node: Token::Generated(rhs.to_string()),
                     span: part.span,
                 });
@@ -367,13 +402,42 @@ fn split_target<'tt>(
         callee += &text;
     }
     let rest = rest.as_slice();
-    let callee = callee.trim_ascii().to_string();
-    Ok(Target {
-        callee,
-        first,
-        rest,
-        has_colon,
-    })
+
+    let callee = callee.trim_ascii();
+    let callee_lower = callee.to_lowercase();
+
+    // eprintln!("{callee} / {first:?} / {rest:?}");
+
+    Ok(
+        if is_function_call(arguments.is_empty(), has_colon, &callee_lower) {
+            // It is important to actually not pass a zeroth argument is there is
+            // not one because this changes the behaviour of variable get/set
+            let first = has_colon
+                .then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
+
+            let arguments = first
+                .into_iter()
+                .chain(arguments.iter().map(Kv::Argument))
+                .collect::<Vec<_>>();
+
+            Target::ParserFn {
+                callee: callee_lower,
+                arguments,
+            }
+        } else {
+            let callee = Title::new(
+                &sp.eval(state, target)?,
+                Namespace::find_by_id(Namespace::TEMPLATE),
+            );
+            let target = Kv::Partial(target.iter().collect());
+            let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
+            Target::Template {
+                callee,
+                target,
+                arguments,
+            }
+        },
+    )
 }
 
 /// Transcludes a template.
@@ -382,12 +446,9 @@ pub(crate) fn call_template(
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     target: &Kv<'_>,
-    callee: &str,
+    callee: Title,
     arguments: &[Kv<'_>],
 ) -> Result {
-    // log::trace!("{} is wanting {callee}", sp.name);
-    let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
-
     let Ok(template) = state.statics.db.get(callee.key()) else {
         log::warn!("No template found for '{callee}'");
 
@@ -419,6 +480,8 @@ pub(crate) fn call_template(
     let now = Instant::now();
     let mut expansion = ExpandTemplates::new(ExpandMode::Include);
 
+    // TODO: What is supposed to happen if there was a redirect? Is the callee
+    // name supposed to change?
     let sp = sp.chain(callee, FileMap::new(&template.body), arguments)?;
     // For now, just assume that the cache will always be big enough and unwrap
     let root = Rc::clone(

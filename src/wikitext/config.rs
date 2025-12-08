@@ -121,7 +121,7 @@ fn link_trail_regex(link_trail: &str) -> Regex {
 }
 
 /// HTML5 tags allowed in Wikitext.
-pub static HTML5_TAGS: Set<&str> = phf::phf_set! {
+pub(super) static HTML5_TAGS: Set<&str> = phf::phf_set! {
     // Explicit `<a>` tags are forbidden in Wikitext.
     "abbr",
     "b", "bdi", "bdo", "big", "blockquote", "br",

@@ -212,7 +212,7 @@ impl Surrogate<Error> for ExpandTemplates {
             &extension_tags::InArgs::Wikitext(attributes),
             content,
         )? {
-            Some(Either::Left(marker)) => state.strip_markers.push(&mut self.out, marker),
+            Some(Either::Left(marker)) => state.strip_markers.push(&mut self.out, name, marker),
             Some(Either::Right(raw)) => write!(self.out, "{raw}")?,
             None => {}
         }
@@ -424,7 +424,7 @@ impl Surrogate<Error> for ExpandTemplates {
         _state: &mut State<'_>,
         sp: &StackFrame<'_>,
         span: Span,
-        _marker: usize,
+        _marker: &str,
     ) -> Result {
         // Once an extension tag has been stripped once, there is not much
         // reason to reintroduce its content prior to the final output. At best

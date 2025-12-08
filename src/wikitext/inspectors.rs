@@ -349,7 +349,7 @@ impl fmt::Debug for TokenInspector<'_> {
                 .field("self_closing", self_closing)
                 .finish(),
             Token::StripMarker(marker) => {
-                write!(f, "(marker {marker})")
+                write!(f, "(marker {})", &self.0[marker.into_range()])
             }
             Token::TableCaption { attributes } => f
                 .debug_struct(&span_name("TableCaption", self.0, self.1))

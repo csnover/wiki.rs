@@ -244,7 +244,7 @@ pub(crate) enum Error {
     /// A [`StripMarker`](crate::wikitext::Token::StripMarker) was encountered
     /// without a corresponding entry.
     #[error("invalid strip marker {0}")]
-    StripMarker(usize),
+    StripMarker(String),
 
     /// A template called back into itself.
     ///
@@ -290,9 +290,19 @@ pub(crate) struct Statics {
 pub(crate) struct StripMarkers(Vec<StripMarker>);
 
 impl StripMarkers {
-    /// Gets the strip marker with the given index.
-    fn get(&self, index: usize) -> Option<&StripMarker> {
-        self.0.get(index)
+    /// Returns the index of the strip marker from a strip marker key.
+    ///
+    /// The strip marker key must be formatted in this specific way because it
+    /// is exposed to modules, and of course some of them like 'Module:Infobox'
+    /// rely on this implementation detail.
+    fn key_index(key: &str) -> usize {
+        let (_, index) = key.rsplit_once('-').expect("hyphenated marker key");
+        usize::from_str_radix(index, 16).expect("hexadecimal index")
+    }
+
+    /// Gets the strip marker with the given key.
+    fn get(&self, key: &str) -> Option<&StripMarker> {
+        self.0.get(Self::key_index(key))
     }
 
     /// Invokes callback `f` for each strip marker in the given text.
@@ -304,16 +314,16 @@ impl StripMarkers {
     where
         for<'m> F: FnMut(&'m StripMarker) -> Option<Cow<'m, str>>,
     {
-        Self::for_each_marker_index(body, |index| f(&self.0[index]))
+        Self::for_each_marker_key(body, |key| f(&self.0[Self::key_index(key)]))
     }
 
     /// Invokes callback `f` for each strip marker index in the given text.
     ///
     /// The callback should return `Some(string)` if it wants to replace the
     /// marker, or `None` if it wants the marker to be kept as-is in the text.
-    fn for_each_marker_index<'a, F>(body: &str, mut f: F) -> Cow<'_, str>
+    fn for_each_marker_key<'a, F>(body: &str, mut f: F) -> Cow<'_, str>
     where
-        F: FnMut(usize) -> Option<Cow<'a, str>>,
+        F: FnMut(&str) -> Option<Cow<'a, str>>,
     {
         let mut out = String::new();
         let mut flushed = 0;
@@ -322,8 +332,8 @@ impl StripMarkers {
             && let Some(end) = body[start..].find(MARKER_SUFFIX)
         {
             let end = start + end;
-            let index = body[start..end].parse::<usize>().unwrap();
-            if let Some(replacement) = f(index) {
+            let key = &body[start..end];
+            if let Some(replacement) = f(key) {
                 out += &body[flushed..start - MARKER_PREFIX.len()];
                 out += &replacement;
                 flushed = end + MARKER_SUFFIX.len();
@@ -341,18 +351,17 @@ impl StripMarkers {
     /// Removes all strip markers from the given text.
     #[inline]
     pub fn kill(body: &str) -> Cow<'_, str> {
-        Self::for_each_marker_index(body, |_| Some("".into()))
+        Self::for_each_marker_key(body, |_| Some("".into()))
     }
 
     /// Pushes a new strip marker to the list, emitting the marker to the given
     /// `out` string.
-    fn push(&mut self, out: &mut String, marker: StripMarker) {
-        // TODO: Of course modules rely on the implementation details of the MW
-        // strip markers. 'Module:Infobox' looks for
-        // `<MARKER_PREFIX>templatestyles-%x+<MARKER_SUFFIX>`, which means other
-        // modules probably do nonsense like this too. It doesn’t matter much
-        // in the case of 'Module:Infobox' since it is just moving stuff around.
-        let _ = write!(out, "{MARKER_PREFIX}{}{MARKER_SUFFIX}", self.0.len());
+    fn push(&mut self, out: &mut String, tag_name: &str, marker: StripMarker) {
+        let _ = write!(
+            out,
+            "{MARKER_PREFIX}{tag_name}-{:x}{MARKER_SUFFIX}",
+            self.0.len()
+        );
         self.0.push(marker);
     }
 
@@ -373,6 +382,11 @@ pub(crate) enum StripMarker {
     Inline(String),
     /// A strip marker containing only phrasing content from a `<nowiki>` tag.
     NoWiki(String),
+    /// A strip marker containing a wiki.rs-specific template source start
+    /// marker.
+    WikiRsSourceStart(String),
+    /// A strip marker containing a wiki.rs-specific template source end marker.
+    WikiRsSourceEnd(String),
 }
 
 impl fmt::Display for StripMarker {
@@ -386,6 +400,7 @@ impl core::ops::Deref for StripMarker {
 
     fn deref(&self) -> &Self::Target {
         match self {
+            StripMarker::WikiRsSourceStart(_) | StripMarker::WikiRsSourceEnd(_) => "",
             StripMarker::Block(s) | StripMarker::Inline(s) | StripMarker::NoWiki(s) => s,
         }
     }
