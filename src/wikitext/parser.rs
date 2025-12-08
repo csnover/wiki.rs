@@ -1096,7 +1096,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// (In parsoid: attribute_preprocessor_text{,_single,_double})
     rule generic_attribute_value_text(ctx: &Context, stop: rule<()>) -> Vec<Spanned<Token>>
     = t:(
-        t:spanned(<(stop() [^'{'|'}'|'&'|'<'|'-'|'|'|'/'|'>'])+ { Token::Text }>) { vec![t] }
+        t:spanned(<(stop() [^'\x7f'|'{'|'}'|'&'|'<'|'-'|'|'|'/'|'>'])+ { Token::Text }>) { vec![t] }
         /
         !inline_breaks(ctx)
         !"/>"
@@ -1118,7 +1118,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// (In parsoid: table_attribute_preprocessor_text{,_single,_double})
     rule table_attribute_value_text<T>(ctx: &Context, stop: rule<T>) -> Vec<Spanned<Token>>
     = t:(
-        t:spanned(<(stop() [^'{'|'}'|'&'|'<'|'-'|'!'|'['|'\r'|'\n'|'|'])+ { Token::Text }>) { vec![t] }
+        t:spanned(<(stop() [^'\x7f'|'{'|'}'|'&'|'<'|'-'|'!'|'['|'\r'|'\n'|'|'])+ { Token::Text }>) { vec![t] }
         /
         !inline_breaks(ctx)
         t:(
@@ -1130,7 +1130,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
 
     /// Characters valid in the unquoted plain text of an XML attribute.
     rule attribute_text()
-    = [^' '|'\t'|'\r'|'\n'|'\0'|'/'|'='|'>'|'<'|'&'|'{'|'}'|'-'|'!'|'|']
+    = [^'\x7f'|' '|'\t'|'\r'|'\n'|'\0'|'/'|'='|'>'|'<'|'&'|'{'|'}'|'-'|'!'|'|']
 
     /// This rule is used in carefully crafted places of xmlish tag tokenizing
     /// with the inclusion of solidus to match where the spec would ignore those
@@ -2880,7 +2880,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
 
     /// Any item which can exist within a plain text context.
     rule directive(ctx: &Context) -> Vec<Spanned<Token>>
-    = t:comment() { vec![t] }
+    = t:strip_marker() { vec![t] }
+    / t:comment() { vec![t] }
     / t:annotation_tag(ctx) { vec![t] }
     / t:wellformed_extension_tag(ctx) { vec![t] }
     / t:template_param_or_template(ctx) { vec![t] }

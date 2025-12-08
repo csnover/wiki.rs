@@ -99,6 +99,14 @@ Of course
   </li>
   <li>list item A2</li>
 </ol>",
+    marker_in_attr => &format!(
+        r#"<abbr a="{MARKER_PREFIX}1{MARKER_SUFFIX}"
+                 b='{MARKER_PREFIX}2{MARKER_SUFFIX}'
+                 c={MARKER_PREFIX}3{MARKER_SUFFIX}>:-(</abbr>
+        "<abbr a="a{MARKER_PREFIX}4{MARKER_SUFFIX}b{MARKER_PREFIX}5{MARKER_SUFFIX}c"
+               b='a{MARKER_PREFIX}6{MARKER_SUFFIX}b{MARKER_PREFIX}7{MARKER_SUFFIX}c'
+               c=a{MARKER_PREFIX}8{MARKER_SUFFIX}b{MARKER_PREFIX}9{MARKER_SUFFIX}c>:-(</abbr>"#
+    ),
     new_line_in_table_data => "{|\n|B\nC||d\n|}",
     redirect => "#REDIRECT [[Hello world]]\n\n----\nText content\nMore text content\n\nThird line\n",
     strip_marker => &format!("{MARKER_PREFIX}1{MARKER_SUFFIX}"),

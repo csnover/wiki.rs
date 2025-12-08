@@ -1,0 +1,90 @@
+[
+    StartTag @ 1:1..3:40 {
+        name: "abbr",
+        attributes: [
+            Argument @ 1:7..30 {
+                Some(
+                    [
+                        "a",
+                    ],
+                ): [
+                    (marker 1),
+                ],
+            },
+            Argument @ 2:18..41 {
+                Some(
+                    [
+                        "b",
+                    ],
+                ): [
+                    (marker 2),
+                ],
+            },
+            Argument @ 3:18..39 {
+                Some(
+                    [
+                        "c",
+                    ],
+                ): [
+                    (marker 3),
+                ],
+            },
+        ],
+        self_closing: false,
+    },
+    ":-(",
+    EndTag @ 3:43..50 {
+        name: "abbr",
+    },
+    \n,
+    "        \"",
+    StartTag @ 4:10..6:60 {
+        name: "abbr",
+        attributes: [
+            Argument @ 4:16..61 {
+                Some(
+                    [
+                        "a",
+                    ],
+                ): [
+                    "a",
+                    (marker 4),
+                    "b",
+                    (marker 5),
+                    "c",
+                ],
+            },
+            Argument @ 5:16..61 {
+                Some(
+                    [
+                        "b",
+                    ],
+                ): [
+                    "a",
+                    (marker 6),
+                    "b",
+                    (marker 7),
+                    "c",
+                ],
+            },
+            Argument @ 6:16..59 {
+                Some(
+                    [
+                        "c",
+                    ],
+                ): [
+                    "a",
+                    (marker 8),
+                    "b",
+                    (marker 9),
+                    "c",
+                ],
+            },
+        ],
+        self_closing: false,
+    },
+    ":-(",
+    EndTag @ 6:63..70 {
+        name: "abbr",
+    },
+]
