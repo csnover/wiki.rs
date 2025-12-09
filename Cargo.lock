@@ -1940,6 +1940,7 @@ dependencies = [
  "rxml",
  "sailfish",
  "schnellru",
+ "scopeguard",
  "serde",
  "serde-transcode",
  "serde_json",

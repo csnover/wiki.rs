@@ -239,9 +239,9 @@ pub(super) fn run_vm(
         let mw_exec = mw.get::<_, Function<'_>>(ctx, "executeFunction")?;
 
         let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
-        // After this point, there can be no early returns
-        // TODO: What is this, C? Use a drop guard to avoid accidental
-        // nightmares
+        // SAFETY: After this point, there can be no early returns, since
+        // `old_sp` needs to make it into the scope guard or else we have
+        // a dangling reference.
         let old_sp = engine.set_sp(Some(unsafe {
             core::mem::transmute::<Pin<&StackFrame<'_>>, Pin<&'static StackFrame<'static>>>(sp)
         }));
@@ -256,10 +256,18 @@ pub(super) fn run_vm(
         ))
     })?;
 
+    let mut state = scopeguard::guard(state, |state| {
+        state.statics.vm.enter(|ctx| {
+            let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
+            engine.set_sp(old_sp);
+        });
+    });
+
     // TODO: This time limit should probably exclude time spent loading from the
     // database.
     let start = Instant::now();
-    let result = 'outer: loop {
+
+    loop {
         const FUEL_PER_GC: i32 = 16384;
 
         loop {
@@ -272,20 +280,18 @@ pub(super) fn run_vm(
                 Ok(true) => break,
                 Ok(false) => {
                     if state.statics.vm.total_memory() > 128 * 1_048_576 {
-                        break 'outer Err(RuntimeError::new(anyhow::anyhow!(
-                            "memory limit exceeded"
-                        ))
-                        .into());
+                        return Err(
+                            RuntimeError::new(anyhow::anyhow!("memory limit exceeded")).into()
+                        );
                     }
 
                     if start.elapsed() > Duration::new(10, 0) {
-                        break 'outer Err(RuntimeError::new(anyhow::anyhow!(
-                            "time limit exceeded"
-                        ))
-                        .into());
+                        return Err(
+                            RuntimeError::new(anyhow::anyhow!("time limit exceeded")).into()
+                        );
                     }
                 }
-                Err(err) => break 'outer Err(RuntimeError::new(err).into()),
+                Err(err) => return Err(RuntimeError::new(err).into()),
             }
         }
 
@@ -313,11 +319,11 @@ pub(super) fn run_vm(
                 }
                 .into())
             }
-        });
+        })?;
 
         match result {
-            Ok(ControlFlow::Continue(host_call)) => {
-                let result = lualib::run_host_call(state, &sp, &host_call)?;
+            ControlFlow::Continue(host_call) => {
+                let result = lualib::run_host_call(&mut state, &sp, &host_call)?;
                 state.statics.vm.try_enter(|ctx| {
                     let ex = ctx.fetch(&ex);
                     let result = ctx.fetch(&result);
@@ -325,15 +331,7 @@ pub(super) fn run_vm(
                     Ok(())
                 })?;
             }
-            Ok(ControlFlow::Break(result)) => break Ok(result),
-            Err(err) => break Err(err),
+            ControlFlow::Break(result) => break Ok(result),
         }
-    };
-
-    state.statics.vm.enter(|ctx| {
-        let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
-        engine.set_sp(old_sp);
-    });
-
-    result
+    }
 }
