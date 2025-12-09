@@ -89,13 +89,13 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
         Namespace::FILE => {
             image::render_media(out, state, sp, title, content)?;
             if let Some(trail) = trail {
-                write!(out, "{trail}")?;
+                out.adopt_generated(state, sp, None, trail)?;
             }
         }
         Namespace::CATEGORY => {
             state.globals.categories.insert(target_text.to_string());
             if let Some(trail) = trail {
-                write!(out, "{trail}")?;
+                out.adopt_generated(state, sp, None, trail)?;
             }
         }
         _ => {
@@ -133,14 +133,12 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     if content.is_empty() {
         let target = sp.eval(state, target)?;
         let target = target.trim_start_matches(':');
-        // TODO: This needs to participate in smart quotes.
-        out.write_str(target)?;
+        out.adopt_generated(state, sp, None, target)?;
     } else {
         render_single_attribute(out, state, sp, content)?;
     }
-    // TODO: This needs to participate in smart quotes.
     if let Some(trail) = trail {
-        out.write_str(trail)?;
+        out.adopt_generated(state, sp, None, trail)?;
     }
     render_end_link(out, state, sp)
 }
