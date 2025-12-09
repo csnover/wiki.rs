@@ -150,18 +150,26 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       elc:empty_lines_with_comments()?
       st:sol_transparent(ctx)*
     {
-        reduce_tree(
-            p.into_iter().chain(elc.into_iter()).chain(st.into_iter().flatten())
-        )
+        let p = match (p, elc) {
+            (Some(mut p), Some(elc)) => {
+                p.span.end = elc.span.end;
+                Some(p)
+            }
+            (Some(p), None) => Some(p),
+            (None, Some(elc)) => Some(elc),
+            (None, None) => None,
+        };
+
+        reduce_tree(p.into_iter().chain(st.into_iter().flatten()))
     }
 
     /// Start of input or start of line. Consumes and returns a newline
     /// token for context-sensitive applications (e.g. paragraph wrappers).
-    rule sol_prefix() -> Vec<Spanned<Token>>
+    rule sol_prefix() -> Option<Spanned<Token>>
     = t:newline_token()
-      { vec![t] }
+      { Some(t) }
     / pos:position!()
-      {? if pos == 0 { Ok(vec![]) } else { Err("start of file") } }
+      {? if pos == 0 { Ok(None) } else { Err("start of file") } }
 
     /// A context-sensitive run of empty lines with at least one comment.
     rule empty_lines_with_comments() -> Spanned<Token>
