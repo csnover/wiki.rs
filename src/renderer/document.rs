@@ -2,7 +2,6 @@
 
 use super::{
     Error, Result, State, StripMarker, extension_tags,
-    manager::RenderOutput,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags,
@@ -22,16 +21,15 @@ use std::borrow::Cow;
 /// The root of a Wikitext document.
 #[derive(Debug, Default)]
 pub(crate) struct Document {
+    /// If true, this [`Document`] is used to render a document fragment rather
+    /// than a complete document.
+    fragment: bool,
     /// The final rendered output.
-    pub(super) html: String,
+    html: String,
     /// The stack of inclusion control tags.
     in_include: Vec<InclusionMode>,
     /// The last visible character rendered to the output.
     last_char: char,
-    /// A hack.
-    fragment: bool,
-    /// A hack.
-    seen_block: bool,
     /// The stack of open HTML elements.
     stack: Vec<Node>,
     /// The template processing stack used to identify which template was the
@@ -55,7 +53,6 @@ impl Document {
             html: <_>::default(),
             in_include: <_>::default(),
             last_char: '\n',
-            seen_block: <_>::default(),
             stack: <_>::default(),
             tag_blocks: <_>::default(),
             text_style_emitter: <_>::default(),
@@ -63,63 +60,12 @@ impl Document {
     }
 
     /// Finalises the document and returns the resulting output.
-    pub(crate) fn finish(mut self, state: State<'_>) -> RenderOutput {
+    pub(crate) fn finish(mut self) -> String {
         for rest in self.stack.drain(..).rev() {
             let _ = rest.close(&mut self.html);
         }
 
-        let mut timings = state.timing.into_iter().collect::<Vec<_>>();
-        timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
-        for (the_baddie, (count, time)) in timings {
-            log::trace!("{the_baddie}: {count} / {}s", time.as_secs_f64());
-        }
-
-        // Clippy: If memory usage is ever >2**52, something sure happened.
-        #[allow(clippy::cast_precision_loss)]
-        {
-            let tpl_mem = {
-                let cache = &state.statics.template_cache;
-                cache.limiter().heap_usage() + cache.memory_usage()
-            };
-            let vm_mem = {
-                let cache = &state.statics.vm_cache;
-                cache.limiter().heap_usage() + cache.memory_usage()
-            };
-
-            log::debug!(
-                "Caches:\n  Database: {:.2}KiB\n  Template: {:.2}KiB\n  VM: {:.2}KiB",
-                (state.statics.db.cache_size() as f64) / 1024.0,
-                (tpl_mem as f64) / 1024.0,
-                (vm_mem as f64) / 1024.0,
-            );
-        }
-
-        state
-            .globals
-            .categories
-            .finish(&mut self.html, state.statics.base_uri.path())
-            .unwrap();
-
-        RenderOutput {
-            content: self.html,
-            indicators: state.globals.indicators,
-            outline: state.globals.outline,
-            styles: state.globals.styles.text,
-        }
-    }
-
-    /// Finalises a document fragment and returns the resulting output as a
-    /// strip marker object.
-    pub(crate) fn finish_fragment(mut self) -> StripMarker {
-        for rest in self.stack.drain(..).rev() {
-            let _ = rest.close(&mut self.html);
-        }
-
-        if self.seen_block {
-            StripMarker::Block(self.html)
-        } else {
-            StripMarker::Inline(self.html)
-        }
+        self.html
     }
 
     /// Finishes formatting a line of Wikitext.
@@ -263,11 +209,8 @@ impl Document {
                 *body = TagBody::Inline;
             }
             self.expect_graf()?;
-        } else {
-            if let Some(Node::Tag(_, body)) = self.stack.last_mut() {
-                *body = TagBody::Block;
-            }
-            self.seen_block = true;
+        } else if let Some(Node::Tag(_, body)) = self.stack.last_mut() {
+            *body = TagBody::Block;
         }
 
         write!(self.html, "<{tag}")?;

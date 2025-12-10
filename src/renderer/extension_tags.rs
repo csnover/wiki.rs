@@ -164,7 +164,7 @@ impl ExtensionTag<'_, '_, '_> {
     }
 
     /// Evaluates the body of the tag.
-    pub fn eval_body(&self, state: &mut State<'_>) -> Result<StripMarker> {
+    pub fn eval_body(&self, state: &mut State<'_>) -> Result<String> {
         let source = FileMap::new(self.body());
         let sp = self.sp.clone_with_source(source);
         let root = state.statics.parser.parse(&sp.source, false)?;
@@ -178,7 +178,7 @@ impl ExtensionTag<'_, '_, '_> {
 
         let mut out = Document::new(true);
         out.adopt_output(state, &sp, &root)?;
-        Ok(out.finish_fragment())
+        Ok(out.finish())
     }
 
     /// Returns the body of the tag as a token tree.
@@ -262,7 +262,10 @@ fn indicator(
     if let Some(image) = image {
         let mut out = Document::new(true);
         out.adopt_token(state, &sp, image)?;
-        state.globals.indicators.insert(name.to_string(), out.html);
+        state
+            .globals
+            .indicators
+            .insert(name.to_string(), out.finish());
     }
 
     Ok(OutputMode::Empty)
