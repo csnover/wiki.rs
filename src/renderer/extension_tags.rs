@@ -178,7 +178,7 @@ impl ExtensionTag<'_, '_, '_> {
 
         let mut out = Document::new(true);
         out.adopt_output(state, &sp, &root)?;
-        Ok(out.finish())
+        out.finish()
     }
 
     /// Returns the body of the tag as a token tree.
@@ -265,7 +265,7 @@ fn indicator(
         state
             .globals
             .indicators
-            .insert(name.to_string(), out.finish());
+            .insert(name.to_string(), out.finish()?);
     }
 
     Ok(OutputMode::Empty)
@@ -454,6 +454,7 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
     // storing the node list for later, since rendering later would require
     // retaining the stack frame too
     let reference = arguments.eval_body(state)?;
+    let reference = reference.trim_ascii();
 
     let group = arguments
         .get(state, "group")?
@@ -464,7 +465,7 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
         state
             .globals
             .references
-            .append_named((group, follow.to_string()), &reference);
+            .append_named((group, follow.to_string()), reference);
         return Ok(OutputMode::Empty);
     }
 
@@ -473,14 +474,14 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
             state
                 .globals
                 .references
-                .insert_named((group.clone(), name.to_string()), &reference),
+                .insert_named((group.clone(), name.to_string()), reference),
         )
     } else if !reference.is_empty() {
         Some(
             state
                 .globals
                 .references
-                .insert_unnamed(group.clone(), &reference),
+                .insert_unnamed(group.clone(), reference),
         )
     } else {
         None

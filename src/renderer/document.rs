@@ -1,18 +1,17 @@
 //! The root of a Wikitext document.
 
 use super::{
-    Error, Result, State, StripMarker, extension_tags,
+    Error, Result, State, StripMarker,
+    emitters::{GrafEmitter, ListEmitter, ListKind, TextStyleEmitter},
+    extension_tags,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags,
     trim::Trim,
 };
-use crate::{
-    renderer::emitters::{ListEmitter, ListKind, TextStyleEmitter},
-    wikitext::{
-        AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
-        MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
-    },
+use crate::wikitext::{
+    AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+    MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
 };
 use core::fmt::{self, Write};
 use either::Either;
@@ -24,6 +23,8 @@ pub(crate) struct Document {
     /// If true, this [`Document`] is used to render a document fragment rather
     /// than a complete document.
     fragment: bool,
+    /// The line graf emitter.
+    graf_emitter: GrafEmitter,
     /// The final rendered output.
     html: String,
     /// The stack of inclusion control tags.
@@ -50,6 +51,7 @@ impl Document {
     pub(crate) fn new(fragment: bool) -> Self {
         Self {
             fragment,
+            graf_emitter: <_>::default(),
             html: <_>::default(),
             in_include: <_>::default(),
             last_char: '\n',
@@ -60,63 +62,22 @@ impl Document {
     }
 
     /// Finalises the document and returns the resulting output.
-    pub(crate) fn finish(mut self) -> String {
+    pub(crate) fn finish(mut self) -> Result<String> {
+        self.text_style_emitter.finish(&mut self.html)?;
+        self.graf_emitter.finish(&mut self.html);
+
         for rest in self.stack.drain(..).rev() {
-            let _ = rest.close(&mut self.html);
+            rest.close(&mut self.html)?;
         }
 
-        self.html
+        Ok(self.html)
     }
 
     /// Finishes formatting a line of Wikitext.
     pub(crate) fn finish_line(&mut self) -> Result {
         self.text_style_emitter.finish(&mut self.html)?;
-
-        // Paragraph rules:
-        //
-        // 1. Any multiple of two sequential newlines break a graf;
-        // 2. A newline after a break emits a `<br>` into the new graf;
-        // 3. If a line breaks immediately after the start of a tag, ignore it
-        //    (the actual rule seems to be more confusing and goes something
-        //    like “if a line containing only phrasing content ends in a newline
-        //    without a closing tag for a block-level element then it should be
-        //    wrapped in a `<p>`” or something bizarre like this);
-        // 4. When a graf is broken, the next element may be a non-graf, so it
-        //    should not emit the new tag straight away.
-        // TODO: 'Template:Infobox company' writes `<td><div/>,<div/></td>` and
-        // expects not to get a graf in the middle (for e.g. `hq_location`).
-        match self.stack.last_mut() {
-            Some(Node::Graf(graf)) => {
-                match graf {
-                    Graf::Start => {
-                        write!(self.html, "<br>")?;
-                        *graf = Graf::Break;
-                    }
-                    Graf::Text => *graf = Graf::Break,
-                    Graf::Break => {
-                        writeln!(self.html, "</p>")?;
-                        *graf = Graf::AfterBreak;
-                    }
-                    Graf::AfterBreak => {
-                        // Technically maybe this is supposed to introduce a
-                        // `<p><br>`, but it seems like everywhere there is a long
-                        // run of whitespace, this results in undesirable output,
-                        // and at least it complicates whatever logic is used to
-                        // make 'Template:TemplateData header' emit only a `<p>`
-                        write!(self.html, "<p>")?;
-                        *graf = Graf::Break;
-                    }
-                }
-            }
-            Some(Node::Tag(_, body @ TagBody::Inline)) => {
-                *body = TagBody::Block;
-                self.stack.push(Node::Graf(Graf::AfterBreak));
-            }
-            _ => {}
-        }
-
+        self.graf_emitter.next(&mut self.html);
         self.last_char = '\n';
-
         Ok(())
     }
 
@@ -128,6 +89,7 @@ impl Document {
         if VOID_TAGS.contains(&name) {
             return Ok(());
         } else if !PHRASING_TAGS.contains(&name) {
+            self.graf_emitter.has_block = true;
             self.last_char = ' ';
         }
 
@@ -138,27 +100,6 @@ impl Document {
         } else {
             log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
             write!(self.html, "</{name}>")?;
-        }
-
-        Ok(())
-    }
-
-    /// Updates the stack for a run of paragraph text.
-    fn expect_graf(&mut self) -> Result {
-        if let Some(Node::Graf(graf)) = self.stack.last_mut() {
-            match graf {
-                Graf::AfterBreak => {
-                    write!(self.html, "<p>")?;
-                    *graf = Graf::Text;
-                }
-                Graf::Text => {}
-                Graf::Start | Graf::Break => *graf = Graf::Text,
-            }
-        } else if self.needs_graf() {
-            write!(self.html, "<p>")?;
-            self.stack.push(Node::Graf(Graf::Start));
-        } else if let Some(Node::Tag(_, body @ TagBody::Empty)) = self.stack.last_mut() {
-            *body = TagBody::Inline;
         }
 
         Ok(())
@@ -188,7 +129,7 @@ impl Document {
         // table or tr.
         let close_tags = !matches!(
             self.stack.last(),
-            Some(node @ Node::Tag(last, _))
+            Some(node @ Node::Tag(last))
             if (last == "table" || last == "tr") && *last != tag && !node.can_parent(&tag));
 
         if close_tags {
@@ -196,7 +137,7 @@ impl Document {
                 // The transition from a wikitable caption directly into a table
                 // cell requires extra recovery gymnastics to avoid walking too
                 // far up the stack. 'Template:Football squad start' does this.
-                let in_caption = matches!(e, Node::Tag(ref name, _) if name == "caption");
+                let in_caption = matches!(e, Node::Tag(ref name) if name == "caption");
                 e.close(&mut self.html)?;
                 if in_caption && matches!(&*tag, "td" | "th") {
                     self.start_tag(state, sp, "tr", &[])?;
@@ -204,13 +145,8 @@ impl Document {
             }
         }
 
-        if PHRASING_TAGS.contains(&tag) {
-            if let Some(Node::Tag(_, body)) = self.stack.last_mut() {
-                *body = TagBody::Inline;
-            }
-            self.expect_graf()?;
-        } else if let Some(Node::Tag(_, body)) = self.stack.last_mut() {
-            *body = TagBody::Block;
+        if !PHRASING_TAGS.contains(&tag) {
+            self.graf_emitter.has_block = true;
         }
 
         write!(self.html, "<{tag}")?;
@@ -260,7 +196,7 @@ impl Document {
 
         self.html.write_char('>')?;
         if !VOID_TAGS.contains(&tag) {
-            self.stack.push(Node::Tag(tag, TagBody::Empty));
+            self.stack.push(Node::Tag(tag));
         } else if tag == "br" {
             self.last_char = '\n';
         }
@@ -290,7 +226,6 @@ impl Document {
             self.fragment || !text.contains(MARKER_PREFIX),
             "strip marker got into text"
         );
-        self.expect_graf()?;
 
         let in_attr = matches!(self.stack.last(), Some(Node::Attribute));
         let in_code = in_attr
@@ -298,7 +233,7 @@ impl Document {
                 .stack
                 .iter()
                 .rev()
-                .any(|e| matches!(e, Node::Tag(tag, _) if is_code(tag)));
+                .any(|e| matches!(e, Node::Tag(tag) if is_code(tag)));
 
         let mut prev = self.last_char;
         let mut chars = text.chars().peekable();
@@ -332,23 +267,6 @@ impl Document {
         }
 
         Ok(())
-    }
-
-    /// Returns true if a `<p>` needs to be added for text within the given
-    /// `parent`.
-    fn needs_graf(&self) -> bool {
-        // List items mustn’t receive graf tags at first because this breaks
-        // at least the layout of 'Template:Navbox'. Similarly, they cannot be
-        // given automatically in <div> because that breaks the
-        // header of 'Template:Documentation'. Basically, the expected Wikitext
-        // output is all so fragile that there is no way to emit grafs in a sane
-        // way, it pretty much always needs need to be the case that the first run
-        // of text in a block is emitted raw, which makes having good layout for
-        // text really difficult because having phrasing content directly inside
-        // blocks means a general selector is impossible.
-        let parent = self.stack.last();
-        (!self.fragment && parent.is_none())
-            || matches!(parent, Some(Node::Tag(tag, TagBody::Block)) if !PHRASING_TAGS.contains(tag))
     }
 
     /// Writes the contents of a strip marker to the output.
@@ -501,8 +419,6 @@ impl Surrogate<Error> for Document {
         _span: Span,
         value: char,
     ) -> Result {
-        self.expect_graf()?;
-
         match value {
             '<' => self.html += "&lt;",
             '>' => self.html += "&gt;",
@@ -555,7 +471,6 @@ impl Surrogate<Error> for Document {
         target: &[Spanned<Token>],
         content: &[Spanned<Token>],
     ) -> Result {
-        self.expect_graf()?;
         tags::render_external_link(self, state, sp, target, content)
     }
 
@@ -664,6 +579,7 @@ impl Surrogate<Error> for Document {
         }
 
         let list_index = self.stack.len() - 1;
+        self.graf_emitter.has_block = true;
 
         Trim::new(self, sp).adopt_tokens(state, sp, content)?;
 
@@ -681,6 +597,7 @@ impl Surrogate<Error> for Document {
             // The parser removes the newlines between list items in order to make
             // it easier to disambiguate the list-terminating newline. Since the
             // list item must have ended at a newline, finish the line now.
+            self.graf_emitter.has_block = true;
             self.finish_line()?;
         }
 
@@ -694,12 +611,14 @@ impl Surrogate<Error> for Document {
         _span: Span,
     ) -> Result {
         match self.stack.last_mut() {
-            None | Some(Node::Attribute) => {}
+            Some(Node::Attribute) => {}
             Some(Node::List(list)) => {
                 list.finish(&mut self.html)?;
                 self.stack.pop();
+                self.graf_emitter.has_block = true;
+                self.finish_line()?;
             }
-            Some(Node::Graf(_) | Node::Tag(_, _)) => {
+            None | Some(Node::Tag(_)) => {
                 self.finish_line()?;
             }
         }
@@ -839,9 +758,6 @@ impl Surrogate<Error> for Document {
         _span: Span,
         style: TextStyle,
     ) -> Result {
-        if matches!(self.text_style_emitter, TextStyleEmitter::None) {
-            self.expect_graf()?;
-        }
         self.text_style_emitter.emit(&mut self.html, style)?;
         Ok(())
     }
@@ -857,7 +773,7 @@ impl Surrogate<Error> for Document {
             .stack
             .iter()
             .rev()
-            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+            .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
         {
             self.start_tag(state, sp, "table", &[])?;
         }
@@ -875,13 +791,13 @@ impl Surrogate<Error> for Document {
             .stack
             .iter()
             .rev()
-            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "tr"))
+            .any(|e| matches!(e, Node::Tag(tag) if tag == "tr"))
         {
             if !self
                 .stack
                 .iter()
                 .rev()
-                .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+                .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
             {
                 self.start_tag(state, sp, "table", &[])?;
             }
@@ -910,13 +826,13 @@ impl Surrogate<Error> for Document {
             .stack
             .iter()
             .rev()
-            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "tr"))
+            .any(|e| matches!(e, Node::Tag(tag) if tag == "tr"))
         {
             if !self
                 .stack
                 .iter()
                 .rev()
-                .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+                .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
             {
                 self.start_tag(state, sp, "table", &[])?;
             }
@@ -936,7 +852,7 @@ impl Surrogate<Error> for Document {
             .stack
             .iter()
             .rev()
-            .any(|e| matches!(e, Node::Tag(tag, _) if tag == "table"))
+            .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
         {
             self.start_tag(state, sp, "table", &[])?;
         }
@@ -985,24 +901,11 @@ impl Surrogate<Error> for Document {
     }
 }
 
-/// HTML tag state.
-#[derive(Debug)]
-enum TagBody {
-    /// The tag is empty.
-    Empty,
-    /// The tag contains inline content.
-    Inline,
-    /// The tag contains block and optionally inline content.
-    Block,
-}
-
 /// An HTML tree node.
 #[derive(Debug)]
 enum Node {
-    /// A paragraph.
-    Graf(Graf),
     /// An HTML tag.
-    Tag(Cow<'static, str>, TagBody),
+    Tag(Cow<'static, str>),
     /// A run of Wikitext list items.
     List(ListEmitter),
     /// An HTML attribute.
@@ -1014,8 +917,7 @@ impl Node {
     /// name.
     fn can_parent(&self, tag: &str) -> bool {
         match self {
-            Node::Graf(_) => PHRASING_TAGS.contains(tag),
-            Node::Tag(parent, _) => {
+            Node::Tag(parent) => {
                 if VOID_TAGS.contains(parent) {
                     panic!("void tag on element stack")
                 } else if let Some(children) = PARENTS.get(parent) {
@@ -1041,15 +943,8 @@ impl Node {
     /// Writes the terminator for this element to the given output.
     fn close<W: fmt::Write + ?Sized>(self, out: &mut W) -> fmt::Result {
         match self {
-            Node::Attribute | Node::Graf(Graf::AfterBreak) => Ok(()),
-            Node::Graf(graf) => {
-                if matches!(graf, Graf::AfterBreak) {
-                    Ok(())
-                } else {
-                    write!(out, "</p>")
-                }
-            }
-            Node::Tag(name, _) => {
+            Node::Attribute => Ok(()),
+            Node::Tag(name) => {
                 if VOID_TAGS.contains(&name) {
                     Ok(())
                 } else {
@@ -1064,8 +959,7 @@ impl Node {
     fn tag_name(&self) -> Option<&str> {
         match self {
             Node::Attribute => None,
-            Node::Graf(_) => Some("p"),
-            Node::Tag(name, _) => Some(name),
+            Node::Tag(name) => Some(name),
             Node::List(list) => list.stack.last().map(|kind| match kind {
                 ListKind::Ordered | ListKind::Unordered => "li",
                 ListKind::Term => "dt",
@@ -1073,19 +967,6 @@ impl Node {
             }),
         }
     }
-}
-
-/// A paragraph.
-#[derive(Debug)]
-enum Graf {
-    /// The paragraph just started.
-    Start,
-    /// The paragraph has content.
-    Text,
-    /// The paragraph should break if another newline is received.
-    Break,
-    /// The paragraph should restart if more content is received.
-    AfterBreak,
 }
 
 /// Tags with restricted allowable children.

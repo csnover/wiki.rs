@@ -236,7 +236,7 @@ fn render(
     } else {
         let mut renderer = Document::new(false);
         renderer.adopt_output(&mut state, &sp, &root)?;
-        let mut content = renderer.finish();
+        let mut content = renderer.finish()?;
 
         let mut timings = state.timing.into_iter().collect::<Vec<_>>();
         timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));

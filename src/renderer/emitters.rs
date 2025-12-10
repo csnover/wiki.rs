@@ -3,6 +3,94 @@
 use crate::wikitext::TextStyle;
 use core::fmt;
 
+/// Emitter for implicit grafs.
+///
+/// Paragraph rules, like everything in Wikitext (try grepping for *that*!), are
+/// absolutely insane nonsense. Just look at this:
+///
+/// ```html
+/// <div>a
+/// <span>b
+/// c
+/// d</span></div>e
+/// f
+/// g
+/// ```
+///
+/// becomes:
+///
+/// ```html
+/// <div>a
+/// <p><span>b
+/// c
+/// </span></p> <!-- wtf is this, that is not where the `</span>` was?! -->
+/// d</div><p>e
+/// </p><p>f
+/// g
+/// </p>
+/// ```
+///
+/// Three newlines in a row are supposed to also emit a `<br>`, but that looks
+/// ugly and is harder to implement, so we don’t do that (until, sigh, it
+/// becomes necessary for something to render properly).
+#[derive(Debug, Default)]
+pub(super) struct GrafEmitter {
+    /// Whether the current line includes a block level element.
+    pub(super) has_block: bool,
+    /// The start position of the last line in the graf.
+    last_line: usize,
+    /// The number of new lines seen in the current sequence of new lines.
+    sequential: usize,
+    /// The start position of the current graf.
+    start: usize,
+}
+
+impl GrafEmitter {
+    /// Completes the line emitter.
+    #[inline]
+    pub(super) fn finish(mut self, out: &mut String) {
+        self.next(out);
+    }
+
+    /// Resets the state of the line emitter for a new line.
+    #[inline]
+    pub(super) fn next(&mut self, out: &mut String) {
+        // if seen a block:
+        //   emit graf around the previous content
+        //   reset the start and the empty-line count
+        // else if seen no content:
+        //   increment the empty-line count
+        // else:
+        //   keep going
+
+        if self.has_block {
+            // TODO: Do something with `sequential`
+            if self.last_line != self.start {
+                out.insert_str(self.last_line, "</p>");
+                out.insert_str(self.start, "<p>");
+            }
+            self.start = out.len() + 1;
+            self.sequential = 0;
+        } else if self.last_line == out.len() {
+            self.sequential += 1;
+            // TODO: Do the third sequence <br>
+            if self.sequential.is_multiple_of(2)
+                && out[self.start..self.last_line].contains(|c: char| c != '\n')
+            {
+                out.insert_str(self.last_line, "</p>");
+                out.insert_str(self.start, "<p>");
+                self.start = out.len() + 1;
+            }
+        } else {
+            self.sequential = 1;
+        }
+
+        out.push('\n');
+        self.has_block = false;
+        self.last_line = out.len();
+    }
+}
+
 /// List emitter.
 #[derive(Debug, Default)]
 pub(super) struct ListEmitter {
