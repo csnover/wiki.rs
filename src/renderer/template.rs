@@ -192,9 +192,7 @@ pub(super) fn render_template<'tt>(
     // where it is impossible to parse them correctly before template
     // expansion is completed, which is very annoying because it requires
     // this buffering and double-parsing where it would not otherwise be
-    // necessary, and makes extension tags very hard to deal with because
-    // they must be able to emit tags which are not serialisable in Wikitext
-    // (`<math>`, etc.).
+    // necessary.
     let mut partial = String::new();
 
     let wrapper_key = match target {

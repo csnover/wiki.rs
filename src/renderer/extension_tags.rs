@@ -426,7 +426,7 @@ impl References {
     }
 
     /// Adds an named reference with the given text. Returns the page-unique
-    /// numeric ID of the reference, or `None` if there was no text to add.
+    /// numeric ID of the reference.
     fn insert_unnamed(&mut self, group: String, value: &str) -> usize {
         let range = self.text.len()..(self.text.len() + value.len());
         self.text += value;
