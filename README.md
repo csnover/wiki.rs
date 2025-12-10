@@ -88,7 +88,7 @@ not supported right now. Here are all of the currently supported extension tags:
 * `<pre>`
 * `<ref>` & `<references>`
 * `<section>` (partial)
-* `<syntaxhighlight>` (stub)
+* `<syntaxhighlight>`
 * `<templatedata>` (stub)
 * `<templatestyles>`
 * `<timeline>`
