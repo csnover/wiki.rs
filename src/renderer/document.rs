@@ -9,9 +9,12 @@ use super::{
     tags,
     trim::Trim,
 };
-use crate::wikitext::{
-    AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
-    MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
+use crate::{
+    common::decode_html,
+    wikitext::{
+        AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+        MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
+    },
 };
 use core::fmt::{self, Write};
 use either::Either;
@@ -273,7 +276,7 @@ impl Document {
     fn write_strip_marker(&mut self, tag: &StripMarker) -> Result {
         match tag {
             StripMarker::NoWiki(text) => {
-                self.text_run(&html_escape::decode_html_entities(text))?;
+                self.text_run(&decode_html(text))?;
             }
             StripMarker::Inline(text) => {
                 self.html += text;

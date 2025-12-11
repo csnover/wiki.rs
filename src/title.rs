@@ -1,7 +1,6 @@
 //! Types and functions for parsing and formatting MediaWiki title strings.
 
-use crate::common::url_encode;
-use html_escape::decode_html_entities;
+use crate::common::{decode_html, url_encode};
 use percent_encoding::PercentEncode;
 use std::{borrow::Cow, fmt::Write as _};
 
@@ -383,7 +382,7 @@ fn bidi(c: char) -> bool {
 /// Normalises a title text part by decoding HTML entities and converting
 /// runs of whitespace + underscore to a single space character.
 pub fn normalize(text: &str) -> Cow<'_, str> {
-    let decoded = decode_html_entities(text);
+    let decoded = decode_html(text);
     let mut out = String::new();
     let mut flushed = 0;
     let mut iter = decoded.char_indices().peekable();

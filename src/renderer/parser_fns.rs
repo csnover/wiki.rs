@@ -12,7 +12,7 @@ use super::{
     template::{call_module, call_template, is_function_call},
 };
 use crate::{
-    common::{anchor_encode, format_date, make_url, url_encode},
+    common::{anchor_encode, decode_html, format_date, make_url, url_encode},
     config::CONFIG,
     expr,
     php::{format_number, fuzzy_cmp, parse_number},
@@ -24,7 +24,6 @@ use core::{
     iter,
 };
 use either::Either;
-use html_escape::decode_html_entities;
 use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 
@@ -606,7 +605,7 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let page_name = arguments.eval(state, 0)?.unwrap_or_default();
-        let page_name = decode_html_entities(&page_name);
+        let page_name = decode_html(&page_name);
         let return_count = arguments
             .eval(state, 1)?
             .map_or(0, |len| len.trim().parse::<i32>().unwrap_or(0));
@@ -1249,11 +1248,11 @@ fn decode_trim(value: Cow<'_, str>) -> Cow<'_, str> {
     match value {
         // This ugliness seems to be necessary to maintain the original lifetime
         // and satisfy borrowck
-        Cow::Borrowed(value) => match decode_html_entities(value) {
+        Cow::Borrowed(value) => match decode_html(value) {
             Cow::Borrowed(value) => Cow::Borrowed(value.trim_ascii()),
             Cow::Owned(value) => Cow::Owned(value.trim_ascii().to_string()),
         },
-        Cow::Owned(value) => Cow::Owned(decode_html_entities(&value).trim_ascii().to_string()),
+        Cow::Owned(value) => Cow::Owned(decode_html(&value).trim_ascii().to_string()),
     }
 }
 

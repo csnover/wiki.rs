@@ -31,6 +31,8 @@ impl TextLibrary {
         // log::trace!("stub: mw_text.getEntityTable()");
         if self.entity_table.borrow().is_none() {
             let table = Table::new(&ctx);
+            // In Scribunto, this takes the entitites from PHP, *not* from MW,
+            // so does not include the special Hebrew/Arabic RTL markers
             for (name, value) in html_escape::NAMED_ENTITIES {
                 table.set(ctx, format!("&{};", name.escape_ascii()), value)?;
             }

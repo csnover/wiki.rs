@@ -120,7 +120,7 @@ use super::{
     surrogate::Surrogate as _,
 };
 use crate::{
-    common::anchor_encode,
+    common::{anchor_encode, decode_html},
     db::Database,
     php::strtr,
     title::{Namespace, Title},
@@ -856,7 +856,7 @@ pub(super) fn render_extension_tag(
         write!(
             out,
             "&lt;{callee}&gt;{}&lt;/{callee}&gt;",
-            html_escape::encode_text(&html_escape::decode_html_entities(body.unwrap_or("")))
+            html_escape::encode_text(&decode_html(body.unwrap_or("")))
         )?;
         OutputMode::Block
     };

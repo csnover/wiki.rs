@@ -2,7 +2,7 @@
 
 use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use crate::{
-    common::anchor_encode,
+    common::{anchor_encode, decode_html},
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
@@ -132,8 +132,8 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
 
     if content.is_empty() {
         let target = sp.eval(state, target)?;
-        let target = target.trim_start_matches(':');
-        out.adopt_generated(state, sp, None, target)?;
+        let target = decode_html(target.trim_start_matches(':'));
+        out.adopt_generated(state, sp, None, &target)?;
     } else {
         render_single_attribute(out, state, sp, content)?;
     }

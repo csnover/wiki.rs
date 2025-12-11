@@ -8,29 +8,86 @@ use crate::{
 };
 use axum::http::Uri;
 use core::fmt::{self, Write as _};
-use html_escape::decode_html_entities;
+use html_escape::NAMED_ENTITIES;
 use std::borrow::Cow;
 use time::UtcOffset;
 
-/// The alphabet of characters to percent-encode when encoding URLs.
-const ALPHABET: percent_encoding::AsciiSet = percent_encoding::CONTROLS
-    .add(b'%')
-    .add(b'#')
-    .add(b'\'')
-    .add(b'"')
-    .add(b'&')
-    .add(b'<')
-    .add(b'>')
-    .add(b' ');
-
-/// Percent-encodes a URL part.
-pub fn url_encode(input: &str) -> percent_encoding::PercentEncode<'_> {
-    percent_encoding::utf8_percent_encode(input, &ALPHABET)
+/// Encodes section heading text into a format suitable for use as a URL anchor.
+pub fn anchor_encode(s: &str) -> String {
+    let s = decode_html(s.trim_ascii());
+    let id = title::normalize(&s);
+    let mut end = 1024.min(id.len());
+    while !id.is_char_boundary(end) {
+        end -= 1;
+    }
+    url_encode(&strtr(&id[..end], &[(" ", "_")])).to_string()
 }
 
-/// Percent-encodes a URL part.
-pub fn url_encode_bytes(input: &[u8]) -> percent_encoding::PercentEncode<'_> {
-    percent_encoding::percent_encode(input, &ALPHABET)
+/// Decodes HTML entities according to the Wikitext rules.
+pub fn decode_html(text: &str) -> Cow<'_, str> {
+    const MAX_LEN: usize = {
+        let mut max = 0;
+        let mut entities = NAMED_ENTITIES.as_slice();
+        while let [(name, _), rest @ ..] = entities {
+            if name.len() > max {
+                max = name.len();
+            }
+            entities = rest;
+        }
+
+        if "רלמ".len() > max {
+            max = "רלמ".len();
+        }
+
+        if "رلم".len() > max {
+            max = "رلم".len();
+        }
+
+        max + b";".len()
+    };
+
+    let bytes = text.as_bytes();
+    let entity_ranges = memchr::memchr_iter(b'&', bytes).filter_map(|start| {
+        let next = start + "&".len();
+        memchr::memchr(b';', &bytes[next..(next + MAX_LEN).min(bytes.len())])
+            .map(|len| start..(next + len + b";".len()))
+    });
+
+    let mut flushed = 0;
+    let mut out = String::new();
+    for range in entity_ranges {
+        let mut char = [0; 4];
+        let name = &text[range.start + 1..range.end - 1];
+        let value = if let Some(name) = name.strip_prefix('#') {
+            if let Some(name) = name.strip_prefix(|c: char| matches!(c, 'X' | 'x')) {
+                u32::from_str_radix(name, 16)
+            } else {
+                name.parse::<u32>()
+            }
+            .ok()
+            .and_then(char::from_u32)
+            .map(|c| &*c.encode_utf8(&mut char))
+        } else {
+            NAMED_ENTITIES
+                .binary_search_by(|(t_name, _)| t_name.cmp(&name.as_bytes()))
+                .map_or_else(
+                    |_| (name == "רלמ" || name == "رلم").then_some("\u{200f}"),
+                    |index| Some(NAMED_ENTITIES[index].1),
+                )
+        };
+        if let Some(value) = value {
+            out += &text[flushed..range.start];
+            out += value;
+            flushed = range.end;
+        }
+    }
+
+    if flushed != 0 {
+        out += &text[flushed..];
+        Cow::Owned(out)
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 /// Formats a date according to the given `format` string.
@@ -72,17 +129,6 @@ pub fn format_date(
     date.into_offset(tz)?.format(format).map_err(Into::into)
 }
 
-/// Encodes section heading text into a format suitable for use as a URL anchor.
-pub fn anchor_encode(s: &str) -> String {
-    let s = decode_html_entities(s.trim_ascii());
-    let id = title::normalize(&s);
-    let mut end = 1024.min(id.len());
-    while !id.is_char_boundary(end) {
-        end -= 1;
-    }
-    url_encode(&strtr(&id[..end], &[(" ", "_")])).to_string()
-}
-
 /// Creates a URL for the given title using the given protocol, base URI, path,
 /// and query string.
 pub fn make_url(
@@ -120,4 +166,86 @@ pub fn make_url(
         write!(url, "?{query}")?;
     }
     Ok(url)
+}
+
+/// Percent-encodes a URL part.
+#[inline]
+pub fn url_encode(input: &str) -> percent_encoding::PercentEncode<'_> {
+    percent_encoding::utf8_percent_encode(input, &ALPHABET)
+}
+
+/// Percent-encodes a URL part.
+#[inline]
+pub fn url_encode_bytes(input: &[u8]) -> percent_encoding::PercentEncode<'_> {
+    percent_encoding::percent_encode(input, &ALPHABET)
+}
+
+/// The alphabet of characters to percent-encode when encoding URLs.
+const ALPHABET: percent_encoding::AsciiSet = percent_encoding::CONTROLS
+    .add(b'%')
+    .add(b'#')
+    .add(b'\'')
+    .add(b'"')
+    .add(b'&')
+    .add(b'<')
+    .add(b'>')
+    .add(b' ');
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_html() {
+        assert_eq!(
+            decode_html("hello & world"),
+            Cow::Borrowed("hello & world"),
+            "non-entity should remain as-is"
+        );
+        assert_eq!(
+            decode_html("hello&nbsp;world"),
+            Cow::Owned::<str>(String::from("hello\u{00a0}world")),
+            "entity should decode"
+        );
+        assert_eq!(
+            decode_html("hello&oops;world"),
+            Cow::Borrowed("hello&oops;world"),
+            "invalid entity should remain as-is"
+        );
+        assert_eq!(
+            decode_html("hello&;world"),
+            Cow::Borrowed("hello&;world"),
+            "invalid empty entity should remain as-is"
+        );
+        assert_eq!(
+            decode_html("hello&nbsp world"),
+            Cow::Borrowed("hello&nbsp world"),
+            "html5 entity termination rules should not be used"
+        );
+        assert_eq!(
+            decode_html("hello&רלמ;world"),
+            Cow::Borrowed("hello\u{200f}world"),
+            "special Hebrew RTL entity should decode"
+        );
+        assert_eq!(
+            decode_html("hello&رلم;world"),
+            Cow::Borrowed("hello\u{200f}world"),
+            "special Arabic RTL entity should decode"
+        );
+        assert_eq!(
+            decode_html("hello&#42;world"),
+            Cow::Borrowed("hello*world"),
+            "decimal entity should decode"
+        );
+        assert_eq!(
+            decode_html("hello&#x42;world"),
+            Cow::Borrowed("helloBworld"),
+            "hexadecimal entity should decode"
+        );
+        assert_eq!(
+            decode_html("hello&&nbsp;world"),
+            Cow::Owned::<str>(String::from("hello&\u{00a0}world")),
+            "incomplete entity should not interfere with later entity"
+        );
+    }
 }
