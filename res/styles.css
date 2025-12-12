@@ -1437,6 +1437,12 @@ th {
             }
         }
 
+        /* When navbox titles are rotated, as in 'Template:Carnivora', the
+           inline styles rely on content-box to avoid overflow */
+        .navbox-group {
+            box-sizing: content-box;
+        }
+
         .navbox-group:has(+ td .navbox-subgroup) {
             border-right: thin solid var(--border-fg);
         }

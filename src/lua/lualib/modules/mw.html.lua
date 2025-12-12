@@ -95,17 +95,6 @@ local function htmlEncode( s )
 	return tmp
 end
 
-local function cssEncode( s )
-	-- mw.ustring is so slow that it's worth searching the whole string
-	-- for non-ASCII characters to avoid it if possible
-	return ( string.find( s, '[^%z\1-\127]' ) and mw.ustring or string )
-		-- XXX: I'm not sure this character set is complete.
-		-- bug #68011: allow delete character (\127)
-		.gsub( s, '[^\32-\57\60-\127]', function ( m )
-			return string.format( '\\%X ', mw.ustring.codepoint( m ) )
-		end )
-end
-
 -- Create a builder object. This is a separate function so that we can show the
 -- correct error levels in both HtmlBuilder.create and metatable.tag.
 --
@@ -167,7 +156,7 @@ methodtable._build = function( t, ret )
 				else -- added with css()
 					table.insert(
 						css,
-						htmlEncode( cssEncode( prop.name ) .. ':' .. cssEncode( prop.val ) )
+						htmlEncode( prop.name .. ':' .. prop.val )
 					)
 				end
 			end
