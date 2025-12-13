@@ -228,7 +228,10 @@ mod lua {
 
                 (
                     if trim {
-                        buf[..len].iter().position(|c| *c != b'0').unwrap_or(len)
+                        buf[..len]
+                            .iter()
+                            .position(|c| *c != b'0' && *c != b'.')
+                            .unwrap_or(len)
                     } else {
                         0
                     },
@@ -953,6 +956,8 @@ mod tests {
         assert_eq!(check_fmt_f64("%.1g", 2.599), "3");
         assert_eq!(check_fmt_f64("% f", f64::NAN), " nan");
         assert_eq!(check_fmt_f64("%+f", f64::NAN), "+nan");
+        assert_eq!(check_fmt_f64("%.6g", 1.0), "1");
+        assert_eq!(check_fmt_f64("%.6g", -1.0), "-1");
     }
 
     #[test]
