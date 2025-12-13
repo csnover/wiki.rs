@@ -496,10 +496,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// productions which only match immediately after a newline, which are
     /// discarded, plus any additional spaces or comments, which are returned.
     rule embedded_full_table_line_prefix(ctx: &Context) -> Vec<Spanned<Token>>
-    = sol(ctx)
+    = s:sol(ctx)
       t:space_or_comment()*
       not_empty()
-    { t }
+    { reduce_tree(s.into_iter().chain(t)) }
 
     /// Any table start, caption, row, heading, data, or end item.
     ///
