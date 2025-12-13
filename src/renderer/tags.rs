@@ -289,3 +289,14 @@ pub(super) fn render_runtime_list<
     let tokens = f(state, source);
     out.adopt_tokens(state, &sp.clone_with_source(FileMap::new(source)), &tokens)
 }
+
+/// Phrasing content, per the HTML5 specification.
+pub(super) static PHRASING_TAGS: phf::Set<&str> = phf::phf_set! {
+    "a", "abbr", "area", "audio", "b", "bdi", "bdo", "br", "button", "canvas",
+    "cite", "code", "data", "datalist", "del", "dfn", "em", "embed", "i",
+    "iframe", "img", "input", "ins", "kbd", "label", "link", "map", "mark",
+    "math", "meta", "meter", "noscript", "object", "output", "picture",
+    "progress", "q", "ruby", "s", "samp", "script", "selectedcontent", "slot",
+    "small", "span", "strong", "sub", "sup", "svg", "template", "textarea",
+    "time", "u", "var", "video", "wbr"
+};

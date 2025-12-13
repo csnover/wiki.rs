@@ -7,6 +7,7 @@ use super::{
     resolve_redirects,
     stack::{KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate,
+    tags,
 };
 use crate::{
     LoadMode,
@@ -233,9 +234,8 @@ pub(super) fn render_template<'tt>(
     // “T2529: if the template begins with a table or block-level
     //  element, it should be treated as beginning a new line.
     //  This behavior is somewhat controversial.”
-    if !line_start && (partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*'])) {
-        writeln!(out)?;
-    }
+    let needs_newline =
+        !line_start && (partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*']));
 
     if let Some(key) = wrapper_key {
         // It is necessary to inject strip markers rather than extension tags
@@ -243,11 +243,17 @@ pub(super) fn render_template<'tt>(
         state
             .strip_markers
             .push(out, "wiki-rs", StripMarker::WikiRsSourceStart(key.clone()));
+        if needs_newline {
+            writeln!(out)?;
+        }
         write!(out, "{partial}")?;
         state
             .strip_markers
             .push(out, "wiki-rs", StripMarker::WikiRsSourceEnd(key));
     } else {
+        if needs_newline {
+            writeln!(out)?;
+        }
         write!(out, "{partial}")?;
     }
 
@@ -304,32 +310,13 @@ fn starts_with_block_tag_name(tag_name: &str) -> bool {
     while !tag_name.is_char_boundary(max) {
         max -= 1;
     }
-    let Some((tag_name, _)) = tag_name[..max].split_once(|c: char| c.is_ascii_whitespace()) else {
+    let Some((tag_name, _)) =
+        tag_name[..max].split_once(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>')
+    else {
         return false;
     };
 
-    for candidate in [
-        "blockquote",
-        "caption",
-        "dd",
-        "div",
-        "dl",
-        "dt",
-        "li",
-        "ol",
-        "p",
-        "pre",
-        "table",
-        "td",
-        "th",
-        "tr",
-        "ul",
-    ] {
-        if tag_name.eq_ignore_ascii_case(candidate) {
-            return true;
-        }
-    }
-    false
+    !tags::PHRASING_TAGS.contains(&tag_name.to_ascii_lowercase())
 }
 
 /// Template target information.
