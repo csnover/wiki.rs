@@ -453,7 +453,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     rule full_table_in_link_caption(ctx: &Context) -> Vec<Spanned<Token>>
     = !inline_breaks(ctx)
       // "linkdesc" is suppressed to provide a nested parsing context in which
-      // to parse the table. Otherwise, we may break on on pipes in the
+      // to parse the table. Otherwise, we may break on pipes in the
       // `table_start_tag` and `table_row_tag` attributes. This is more
       // permissive than the old PHP parser but likelier to match the user's
       // intent.
