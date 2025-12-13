@@ -176,6 +176,19 @@ pub(crate) async fn eval_get(State(state): State<AppState>) -> Result<impl IntoR
         .map(IntoResponse::into_response)
 }
 
+/// Preprocessor display options for `/eval`.
+#[derive(Clone, Copy, Default, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum EvalPp {
+    /// Show post-processed result.
+    #[default]
+    Post,
+    /// Show pre-processed post-template-expansion source.
+    Pre,
+    /// Show pre-processed post-template-expansion source as a tree.
+    Tree,
+}
+
 /// Form options for `/eval`.
 #[derive(Default, serde::Deserialize)]
 pub(crate) struct EvalForm {
@@ -186,7 +199,7 @@ pub(crate) struct EvalForm {
     /// If `Some(true)`, also show the contents of strip markers.
     markers: Option<bool>,
     /// If `Some(true)`, show the parse tree instead of the rendered output.
-    tree: Option<bool>,
+    mode: EvalPp,
 }
 
 /// The ad-hoc Wikitext expression evaluator.
@@ -198,7 +211,7 @@ pub(crate) async fn eval_post(
         args: body.args.clone(),
         code: body.code.clone(),
         markers: body.markers == Some(true),
-        tree: body.tree == Some(true),
+        mode: body.mode,
     };
     let time = Instant::now();
     let output = call_renderer(&state, command)?;

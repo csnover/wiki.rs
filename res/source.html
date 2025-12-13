@@ -94,17 +94,24 @@
                 justify-content: end;
 
                 > * + * {
+                    /* actions */
                     margin-top: .5em;
                 }
 
                 > :first-child {
+                    /* all the not-actions */
+
                     > * {
                         line-height: 1.2;
                         margin-left: 1.2em;
+                        margin-top: .25em;
                         text-indent: -1.2em;
 
-                        + * {
-                            margin-top: .25em;
+                        &:first-child {
+                            margin-top: 0;
+                        }
+
+                        &:last-child {
                             margin-left: 2.4em;
                         }
                     }
@@ -130,11 +137,18 @@
                 cursor: pointer;
             }
 
-            div:has(> label > [name=tree]:not(:checked)) + div {
+            div:has(> label > [name=markers]) {
                 cursor: default;
                 opacity: .7;
                 pointer-events: none;
                 user-select: none;
+
+                div:has(> label > :is([value=tree], [value=pre]):checked) ~ & {
+                    cursor: unset;
+                    opacity: unset;
+                    pointer-events: unset;
+                    user-select: unset;
+                }
             }
 
             <%= crate::pages::filter::css(&css) %>
@@ -161,7 +175,9 @@
                 </div>
                 <div class="boopables">
                     <div>
-                        <div><label><input name="tree" value="true" type="checkbox"<% if form.tree == Some(true) { %> checked<% } %>> Show PP<br>tree (hehe)</label></div>
+                        <div><label><input name="mode" value="post" type="radio"<% if form.mode == crate::pages::EvalPp::Post { %> checked<% } %>> Show final</label></div>
+                        <div><label><input name="mode" value="pre" type="radio"<% if form.mode == crate::pages::EvalPp::Pre { %> checked<% } %>> Show PP (hehe)</label></div>
+                        <div><label><input name="mode" value="tree" type="radio"<% if form.mode == crate::pages::EvalPp::Tree { %> checked<% } %>> Show PP tree</label></div>
                         <div><label><input name="markers" value="true" type="checkbox"<% if form.markers == Some(true) { %> checked<% } %>> Unstrip<br>markers</label></div>
                     </div>
                     <button><%- if time::UtcDateTime::now().second() & 1 == 1 { "Pray" } else { "Weep" } %></button>

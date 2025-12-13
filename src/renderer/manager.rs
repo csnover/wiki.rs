@@ -1,7 +1,7 @@
 //! Types and functions for communicating with article renderers.
 
 use super::{
-    Error, ExpandMode, ExpandTemplates, State, Statics,
+    Error, ExpandMode, ExpandTemplates, Result, State, Statics,
     document::Document,
     globals::{Indicators, Outline},
     resolve_redirects,
@@ -14,6 +14,7 @@ use crate::{
     db::{Article, Database},
     lru_limiter::ByMemoryUsage,
     lua::{new_vm, reset_vm},
+    pages::EvalPp,
     php::DateTime,
     title::Title,
     wikitext::{FileMap, Parser, inspect},
@@ -42,8 +43,8 @@ pub(crate) enum Command {
         code: String,
         /// If true, append marker content to the output.
         markers: bool,
-        /// If true, return just the final parse tree instead of the rendering.
-        tree: bool,
+        /// Which rendering step to return.
+        mode: EvalPp,
     },
 }
 
@@ -111,8 +112,8 @@ impl r2d2::ManageConnection for RenderManager {
                         args,
                         code,
                         markers,
-                        tree,
-                    } => render_string(&mut statics, &code, &args, tree, markers),
+                        mode,
+                    } => render_string(&mut statics, &code, &args, mode, markers),
                 };
                 let _ = tx.send(output);
                 statics.vm.gc_collect();
@@ -150,7 +151,7 @@ fn render_article(
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
-) -> Result<RenderOutput, Error> {
+) -> Result<RenderOutput> {
     let article = Arc::clone(article);
     let article = if redirect {
         resolve_redirects(&statics.db, article)?
@@ -163,7 +164,7 @@ fn render_article(
         FileMap::new(&article.body),
     );
 
-    render(statics, load_mode, article.date, &sp, false, false)
+    render(statics, load_mode, article.date, &sp)
 }
 
 /// Main renderer entrypoint for eval.
@@ -171,21 +172,41 @@ fn render_string(
     statics: &mut Statics,
     source: &str,
     args: &str,
-    tree: bool,
+    mode: EvalPp,
     markers: bool,
-) -> Result<RenderOutput, Error> {
+) -> Result<RenderOutput> {
     let kvs = statics.parser.debug_parse_args(args)?;
     let kvs = kvs.iter().map(super::Kv::Argument).collect::<Vec<_>>();
     let sp = StackFrame::new(Title::new("<args>", None), FileMap::new(args));
     let sp = sp.chain(Title::new("<eval>", None), FileMap::new(source), &kvs)?;
-    render(
-        statics,
-        LoadMode::Module,
-        UtcDateTime::now(),
-        &sp,
-        tree,
-        markers,
-    )
+    let date = UtcDateTime::now();
+    let load_mode = LoadMode::Module;
+    match mode {
+        EvalPp::Post => render(statics, load_mode, date, &sp),
+        EvalPp::Pre | EvalPp::Tree => {
+            let (state, source) = preprocess(statics, &sp, date, load_mode)?;
+            let mut content = if mode == EvalPp::Pre {
+                source
+            } else {
+                let root = state.statics.parser.parse(&sp.source, false)?;
+                format!("{:#?}", inspect(&sp.source, &root.root))
+            };
+
+            if markers {
+                for (index, marker) in state.strip_markers.0.iter().enumerate() {
+                    use core::fmt::Write as _;
+                    write!(content, "\n\n=== Marker {index} ===\n\n{marker}\n")?;
+                }
+            }
+
+            Ok(RenderOutput {
+                content,
+                indicators: <_>::default(),
+                outline: <_>::default(),
+                styles: <_>::default(),
+            })
+        }
+    }
 }
 
 /// Main renderer entrypoint.
@@ -194,9 +215,64 @@ fn render(
     load_mode: LoadMode,
     date: UtcDateTime,
     sp: &StackFrame<'_>,
-    only_preprocess: bool,
-    markers: bool,
-) -> Result<RenderOutput, Error> {
+) -> Result<RenderOutput> {
+    let (mut state, source) = preprocess(statics, sp, date, load_mode)?;
+
+    let sp = sp.clone_with_source(FileMap::new(&source));
+    let root = state.statics.parser.parse_no_expansion(&sp.source)?;
+
+    let mut renderer = Document::new(false);
+    renderer.adopt_output(&mut state, &sp, &root)?;
+    let mut content = renderer.finish()?;
+
+    let mut timings = state.timing.into_iter().collect::<Vec<_>>();
+    timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
+    for (the_baddie, (count, time)) in timings {
+        log::trace!("{the_baddie}: {count} / {}s", time.as_secs_f64());
+    }
+
+    // Clippy: If memory usage is ever >2**52, something sure happened.
+    #[allow(clippy::cast_precision_loss)]
+    {
+        let tpl_mem = {
+            let cache = &state.statics.template_cache;
+            cache.limiter().heap_usage() + cache.memory_usage()
+        };
+        let vm_mem = {
+            let cache = &state.statics.vm_cache;
+            cache.limiter().heap_usage() + cache.memory_usage()
+        };
+
+        log::debug!(
+            "Caches:\n  Database: {:.2}KiB\n  Template: {:.2}KiB\n  VM: {:.2}KiB",
+            (state.statics.db.cache_size() as f64) / 1024.0,
+            (tpl_mem as f64) / 1024.0,
+            (vm_mem as f64) / 1024.0,
+        );
+    }
+
+    state
+        .globals
+        .categories
+        .finish(&mut content, state.statics.base_uri.path())?;
+
+    Ok(RenderOutput {
+        content,
+        indicators: state.globals.indicators,
+        outline: state.globals.outline,
+        styles: state.globals.styles.text,
+    })
+}
+
+/// Expands all templates for the given root frame, collecting out-of-band
+/// information and returning the incomplete state and the final pre-processed
+/// Wikitext.
+fn preprocess<'a>(
+    statics: &'a mut Statics,
+    sp: &StackFrame<'_>,
+    date: UtcDateTime,
+    load_mode: LoadMode,
+) -> Result<(State<'a>, String)> {
     let root = statics.parser.parse(&sp.source, false)?;
 
     reset_vm(&mut statics.vm, &sp.name, date)?;
@@ -213,67 +289,5 @@ fn render(
     // doing this awful double-parsing.
     let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
     preprocessor.adopt_output(&mut state, sp, &root)?;
-    let source = preprocessor.finish();
-
-    let sp = sp.clone_with_source(FileMap::new(&source));
-    let root = state.statics.parser.parse_no_expansion(&sp.source)?;
-
-    if only_preprocess {
-        let mut content = format!("{:#?}", inspect(&sp.source, &root.root));
-        if markers {
-            for (index, marker) in state.strip_markers.0.iter().enumerate() {
-                use core::fmt::Write as _;
-                write!(content, "\n\n=== Marker {index} ===\n\n{marker}\n")?;
-            }
-        }
-
-        Ok(RenderOutput {
-            content,
-            indicators: <_>::default(),
-            outline: <_>::default(),
-            styles: <_>::default(),
-        })
-    } else {
-        let mut renderer = Document::new(false);
-        renderer.adopt_output(&mut state, &sp, &root)?;
-        let mut content = renderer.finish()?;
-
-        let mut timings = state.timing.into_iter().collect::<Vec<_>>();
-        timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
-        for (the_baddie, (count, time)) in timings {
-            log::trace!("{the_baddie}: {count} / {}s", time.as_secs_f64());
-        }
-
-        // Clippy: If memory usage is ever >2**52, something sure happened.
-        #[allow(clippy::cast_precision_loss)]
-        {
-            let tpl_mem = {
-                let cache = &state.statics.template_cache;
-                cache.limiter().heap_usage() + cache.memory_usage()
-            };
-            let vm_mem = {
-                let cache = &state.statics.vm_cache;
-                cache.limiter().heap_usage() + cache.memory_usage()
-            };
-
-            log::debug!(
-                "Caches:\n  Database: {:.2}KiB\n  Template: {:.2}KiB\n  VM: {:.2}KiB",
-                (state.statics.db.cache_size() as f64) / 1024.0,
-                (tpl_mem as f64) / 1024.0,
-                (vm_mem as f64) / 1024.0,
-            );
-        }
-
-        state
-            .globals
-            .categories
-            .finish(&mut content, state.statics.base_uri.path())?;
-
-        Ok(RenderOutput {
-            content,
-            indicators: state.globals.indicators,
-            outline: state.globals.outline,
-            styles: state.globals.styles.text,
-        })
-    }
+    Ok((state, preprocessor.finish()))
 }
