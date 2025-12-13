@@ -489,7 +489,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// ```
     rule embedded_table_line(ctx: &Context) -> Vec<Spanned<Token>>
     = a:embedded_full_table_line_prefix(&ctx)+
-      b:(table_content_line(&ctx) / t:template_param_or_template(&ctx) { vec![t] })
+      b:(table_content_line(&ctx) / template_param_or_template(&ctx))
     { reduce_tree(a.into_iter().flatten().chain(b)) }
 
     /// Matches the start of a line and produces items which are transparent to
@@ -771,7 +771,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     rule inline_element(ctx: &Context) -> Vec<Spanned<Token>>
     = t:strip_marker() { vec![t] }
     / &"<" t:angle_bracket_markup(ctx) { t }
-    / &"{" t:template_param_or_template(ctx) { vec![t] }
+    / &"{" t:template_param_or_template(ctx) { t }
     / &"-{" t:lang_variant_or_tpl(ctx) { t }
     / t:spanned(<$("[[" &"[")+ { Token::Text }>) { vec![t] }
     / &"[" t:(wikilink(ctx) / t:extlink(ctx) { vec![t] }) { t }
@@ -1612,14 +1612,19 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// 7: {{{{{{{·}}}}}}} → {·{{{·{{{·}}}·}}}·}
     /// This is only if close has > 3 braces; otherwise we just match open
     /// and close as we find them.
-    rule template_param_or_template(ctx: &Context) -> Spanned<Token>
+    rule template_param_or_template(ctx: &Context) -> Vec<Spanned<Token>>
     = &"{{"
       t:(
-          &assert(ctx.after_expansion, "after expansion") t:spanned(<"{{" "{"? { Token::Text }>) { t }
-          / &("{{" &("{{{"+ !"{") template_param(ctx)) t:(template(ctx) / broken_template(ctx)) { t }
-          / ("{" &("{{{"+ !"{"))? t:template_param(ctx) { t }
-          / ("{" &("{{" !"{"))? t:template(ctx) { t }
-          / broken_template(ctx)
+          &assert(ctx.after_expansion, "after expansion") t:spanned(<"{{" "{"? { Token::Text }>)
+            { vec![t] }
+          / &("{{" &("{{{"+ !"{") template_param(ctx)) t:(template(ctx) / broken_template(ctx))
+            { vec![t] }
+          / p:spanned(<"{" &("{{{"+ !"{") { Token::Text }>)? t:template_param(ctx)
+            { p.into_iter().chain(iter::once(t)).collect() }
+          / p:spanned(<"{" &("{{" !"{") { Token::Text }>)? t:template(ctx)
+            { p.into_iter().chain(iter::once(t)).collect() }
+          / t:broken_template(ctx)
+            { vec![t] }
       )
     { t }
 
@@ -2665,7 +2670,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         t:#{|input, pos| {
             let proto_len = proto.span.len();
             let mut path = reduce_tree(
-                iter::once(proto).chain(iter::once(prefix)).chain(path)
+                iter::once(proto).chain(iter::once(prefix)).chain(path.into_iter().flatten())
             );
 
             // Exclude any terminating punctuation (',' '.' etc.) from the
@@ -2712,13 +2717,13 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// https://example.com/{{Path}}?query#Anchor
     ///         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule autourl_path_segment(ctx: &Context) -> Spanned<Token>
+    rule autourl_path_segment(ctx: &Context) -> Vec<Spanned<Token>>
     = // single quotes are ok, double quotes are bad
-      spanned(<(no_punctuation_char() / ("'" !"'")) { Token::Text }>)
-      / comment()
+      t:spanned(<(no_punctuation_char() / ("'" !"'")) { Token::Text }>) { vec![t] }
+      / t:comment() { vec![t] }
       / template_param_or_template(ctx)
-      / spanned(<"{" { Token::Text }>)
-      / autourl_html_entity(ctx)
+      / t:spanned(<"{" { Token::Text }>) { vec![t] }
+      / t:autourl_html_entity(ctx) { vec![t] }
 
     /// A non-terminating HTML entity inside an autolink URL.
     ///
@@ -2895,7 +2900,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     / t:comment() { vec![t] }
     / t:annotation_tag(ctx) { vec![t] }
     / t:wellformed_extension_tag(ctx) { vec![t] }
-    / t:template_param_or_template(ctx) { vec![t] }
+    / t:template_param_or_template(ctx) { t }
     / &"-{" t:lang_variant_or_tpl(ctx) { t }
     / &"&" t:htmlentity() { vec![t] }
     / include_limits(ctx)
