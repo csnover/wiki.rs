@@ -55,21 +55,15 @@ impl GrafEmitter {
     /// Resets the state of the line emitter for a new line.
     #[inline]
     pub(super) fn next(&mut self, out: &mut String) {
-        // if seen a block:
-        //   emit graf around the previous content
-        //   reset the start and the empty-line count
-        // else if seen no content:
-        //   increment the empty-line count
-        // else:
-        //   keep going
-
         if self.has_block {
             // TODO: Do something with `sequential`
-            if self.last_line != self.start {
+            if self.last_line != self.start
+                && out[self.start..self.last_line].contains(|c: char| c != '\n')
+            {
                 out.insert_str(self.last_line, "</p>");
                 out.insert_str(self.start, "<p>");
             }
-            self.start = out.len() + 1;
+            self.start = out.len();
             self.sequential = 0;
         } else if self.last_line == out.len() {
             self.sequential += 1;
@@ -79,13 +73,12 @@ impl GrafEmitter {
             {
                 out.insert_str(self.last_line, "</p>");
                 out.insert_str(self.start, "<p>");
-                self.start = out.len() + 1;
+                self.start = out.len();
             }
         } else {
             self.sequential = 1;
         }
 
-        out.push('\n');
         self.has_block = false;
         self.last_line = out.len();
     }
