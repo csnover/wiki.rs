@@ -563,12 +563,13 @@ mod string {
             if value.len() < len {
                 let pad = arguments.eval(state, 2)?.map_or(Cow::Borrowed("0"), trim);
                 // log::trace!("padleft({value}, {len}, {pad})");
-                // TODO: This needs to be entity-encoding the output.
-                for c in iter::repeat(&pad)
-                    .flat_map(|pad| pad.chars())
-                    .take(len - value.len())
-                {
-                    out.write_char(c)?;
+                if !pad.is_empty() {
+                    for c in iter::repeat(&pad)
+                        .flat_map(|pad| pad.chars())
+                        .take(len - value.len())
+                    {
+                        out.write_char(c)?;
+                    }
                 }
             }
             write!(out, "{value}")?;
