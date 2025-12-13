@@ -154,6 +154,7 @@ use axum::http::Uri;
 use core::fmt::{self, Write as _};
 pub(crate) use expand_templates::{ExpandMode, ExpandTemplates};
 pub(crate) use manager::{Command, In, RenderManager as Manager, RenderOutput};
+use memchr::memmem;
 pub(crate) use parser_fns::call_parser_fn;
 use piccolo::Lua;
 use schnellru::LruMap;
@@ -327,23 +328,26 @@ impl StripMarkers {
     {
         let mut out = String::new();
         let mut flushed = 0;
-        while let Some(start) = body[flushed..].find(MARKER_PREFIX)
-            && let start = flushed + start + MARKER_PREFIX.len()
-            && let Some(end) = body[start..].find(MARKER_SUFFIX)
+        let mut cursor = 0;
+        while let Some(before) = memmem::find(&body.as_bytes()[cursor..], MARKER_PREFIX.as_bytes())
+            && let before = cursor + before
+            && let start = before + MARKER_PREFIX.len()
+            && let Some(len) = memmem::find(&body.as_bytes()[start..], MARKER_SUFFIX.as_bytes())
         {
-            let end = start + end;
+            let end = start + len;
             let key = &body[start..end];
+            cursor = end + MARKER_SUFFIX.len();
             if let Some(replacement) = f(key) {
-                out += &body[flushed..start - MARKER_PREFIX.len()];
+                out += &body[flushed..before];
                 out += &replacement;
-                flushed = end + MARKER_SUFFIX.len();
+                flushed = cursor;
             }
         }
 
         if flushed == 0 {
             Cow::Borrowed(body)
         } else {
-            out += &body[flushed..];
+            out += &body[cursor..];
             Cow::Owned(out)
         }
     }
@@ -463,4 +467,30 @@ pub fn resolve_redirects(
     }
 
     Ok(article)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_markers() {
+        let text = format!(
+            "0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}abcd{MARKER_PREFIX}b-a{MARKER_SUFFIX}4567"
+        );
+        let result = StripMarkers::for_each_marker_key(&text, |key| {
+            let index = StripMarkers::key_index(key);
+            if index == 0 {
+                Some(Cow::Borrowed("?"))
+            } else if index == 10 {
+                Some(Cow::Borrowed("!"))
+            } else {
+                None
+            }
+        });
+        assert_eq!(
+            result,
+            Cow::Owned::<str>(format!("0123?{MARKER_PREFIX}a-1{MARKER_SUFFIX}abcd!4567"))
+        );
+    }
 }
