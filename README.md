@@ -1,8 +1,8 @@
-# wiki.rs
+# wiki.rs ######################################################################
 
 wiki.rs is a high-performance offline reader of multistream bz2 MediaWiki dumps.
 
-## Usage
+## Usage #######################################################################
 
 Download a [*multistream* dump], decompress *just* the index.txt file, then run:
 
@@ -13,7 +13,7 @@ list of all the options you can use with wiki.rs to change how it works for you.
 
 [*multistream* dump]:  https://en.wikipedia.org/wiki/Wikipedia:Database_download
 
-## Why did you do this?!
+## Why did you do this?! #######################################################
 
 Many great people, most of whom are also quite smart and cool, have been talking
 about how useful it would be if they could quickly read whatever might be inside
@@ -23,7 +23,7 @@ very slow, or were annoying to install, or they did not support all the features
 required to actually render a *full & complete* version of many stored articles.
 Nerd-snipe someone who is also “not” procrastinating and this what you will get.
 
-### wiki.rs tries to be fast
+### wiki.rs tries to be fast ###################################################
 
 wiki.rs starts up in under one second (when `index.txt` is on an SSD), loads and
 renders base articles in hundreds of milliseconds[^1], and can search across all
@@ -35,7 +35,7 @@ article titles in a database with tens of millions of records in about a second.
       designed with performance in mind. Caching improves page performance after
       various common templates and modules have already been loaded once before.
 
-### wiki.rs is self-contained
+### wiki.rs is self-contained ##################################################
 
 wiki.rs and its dependencies are written entirely in Rust. This makes it at once
 the trendiest wiki dump reader of the year and also the coolest wiki dump reader
@@ -43,14 +43,14 @@ of the year. But mostly it means never having to deal with awful C dependencies,
 or PHP engines, or Java runtimes. You do need to bring your own web browser, but
 it seems strongly implausible that you don’t already have at least one of those.
 
-### wiki.rs supports all Wikitext features
+### wiki.rs supports all Wikitext features #####################################
 
 wiki.rs supports Wikitext templates, parser functions, extension tags, and comes
 with a Lua engine written in pure Rust, so it will render all of the things that
 you expect to see, like info boxes, and nav boxes, and message boxes, and all of
 the other boxes. So many boxes. Maybe we can edit some of these out during post…
 
-### wiki.rs is beautiful, maybe?
+### wiki.rs is beautiful, maybe? ###############################################
 
 wiki.rs tries to offer superior reading experiences with a more designery design
 and typography than what you get with a typical MediaWiki installation. However,
@@ -59,7 +59,7 @@ this doesn’t always work perfectly. Also, maybe you hate things that try to lo
 aesthetic, so this is actually bad? Well, it’s open source, so you can do all of
 the things you need to do to create your own personal graphic design heaven. :-)
 
-### wiki.rs has its limits
+### wiki.rs has its limits #####################################################
 
 wiki.rs needs separate configuration information for each MediaWiki installation
 because this information isn’t included in the database dumps. The configuration
@@ -82,49 +82,49 @@ which means features like maps show up as blobs of unformatted code rather than,
 like, a map or whatever. Also, anything which relies on client-side scripting is
 not supported right now. Here are all of the currently supported extension tags:
 
-* `<indicator>`
-* `<math>` (partial)
-* `<nowiki>`
-* `<pre>`
-* `<ref>` & `<references>`
-* `<section>` (partial)
-* `<syntaxhighlight>`
-* `<templatedata>` (stub)
-* `<templatestyles>`
-* `<timeline>`
+* `<indicator>`, which is used to show indicator badges at the top of some pages
+* `<math>` (partial), which is used to display mathematical formulae and symbols
+* `<nowiki>`, which is used to stop sections of text from being read as Wikitext
+* `<pre>`, which is used to display preformatted text, exactly like the HTML tag
+* `<ref>` & `<references>`, which are used to collect and list article citations
+* `<section>` (partial), which is used to paste bits of articles into other ones
+* `<syntaxhighlight>`, which is like `<pre>` with syntax highlighting for coders
+* `<templatedata>` (stub), which is used to document the parameters of templates
+* `<templatestyles>`, which is used to inject separate CSS files into the output
+* `<timeline>`, which is used to render one or more time series like a bar chart
 
-## Debugging for nerds
+## Debugging for nerds #########################################################
 
 Everything is ｂ🆁⌾ʞ𝐄𝓝? Wikitext is a mess of a format, and this is my first day
 being a programmer, so of course it is! The first step is to set the environment
 variable `RUST_LOG=trace`, and the second step is to question all of the various
 life choices which led you to this moment of debugging a random Wikitext reader.
 
-### Cargo profile
+### Cargo profile ##############################################################
 
 When debugging, use the `dev-fast` profile (unless you want to sit there all day
 waiting for a slow unoptimised bz2 decompressor): `cargo run --profile dev-fast`
 
-### Ad-hoc evaluation
+### Ad-hoc evaluation ##########################################################
 
 Visit `/eval` to type arbitrary Wikitext into the mystery box. It will reveal to
 you profound secrets about the origin of the universe. Or maybe bugs. Who knows?
 
-### Source inspection
+### Source inspection ##########################################################
 
 Visit `/source/{Article name}[?mode={mode}][&include]` to view the raw source of
 some article. The first column is the byte offset; the second column is the line
 number. The third column is the source text, but you probably would have figured
 that out yourself (unless it is also *your* first day being a programmer, too?).
 
-* `mode` options are:
+* `mode` is used to change the operating mode of the inspector. The choices are:
   * `raw` - Show the raw source directly from the database (this is the default)
   * `tree` - Shows the dump of the abstract syntax tree from the Wikitext parser
 
 * The `include` flag is useful only in `tree` mode. By default the parser is run
   in no-include mode. Setting this flag will run it in the include mode instead.
 
-### Parser output inspection
+### Parser output inspection ###################################################
 
 Compiling using `cargo … --features peg/trace` will enable tracing for rust-peg.
 This will generate quite a lot of output to `stdout` so is mostly only useful in
@@ -134,7 +134,7 @@ The `wikitext::inspectors` module contains helpers for making the parser’s tok
 trees (which were designed specifically to avoid retaining references to article
 text) into outputs which are actually possible for humans to read and interpret.
 
-### Lua inspection
+### Lua inspection #############################################################
 
 When a bad thing happens, it is possible that the true cause of the bad thing is
 buried in some earlier `pcall` that silently discarded the original error. Calls
