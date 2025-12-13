@@ -626,8 +626,12 @@ th {
        ```
 
        (This expands to `* \n* <template content>` due to the T2529 rule.)
+
+       It appears that table rows should not receive this treatment since,
+       apparently, empty table rows are used to fix up styles in the presence of
+       rowspans, as in 'Template:Largest cities'.
     */
-    :is(li, p, tr):not([class], [style]):empty {
+    :is(li, p):not([class], [style]):empty {
         display: none;
     }
 
