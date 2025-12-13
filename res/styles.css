@@ -1547,6 +1547,7 @@ th {
         border: 0;
         background: var(--box-tag);
         font-family: var(--sans);
+        min-width: fit-content;
         width: auto;
 
         .side-box-flex > * + * {
