@@ -288,7 +288,9 @@ impl Document {
                 while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
                     e.close(&mut self.html, &mut self.graf_emitter)?;
                 }
+                self.graf_emitter.block_start(&self.html);
                 self.html += text;
+                self.graf_emitter.block_end(&self.html);
             }
             StripMarker::WikiRsSourceStart(name) => {
                 self.tag_blocks.push((self.stack.len(), name.clone()));

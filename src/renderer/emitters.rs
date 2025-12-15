@@ -78,6 +78,7 @@ pub(super) struct GrafEmitter {
 
 impl GrafEmitter {
     /// Updates the graf emitter state for the given end tag.
+    #[inline]
     pub(super) fn after_end_tag(&mut self, out: &str, name_lower: &str) {
         if !tags::PHRASING_TAGS.contains(name_lower) {
             self.level -= 1;
@@ -128,6 +129,7 @@ impl GrafEmitter {
     }
 
     /// Updates the graf emitter state for the given start tag.
+    #[inline]
     pub(super) fn before_start_tag(&mut self, out: &str, name_lower: &str) {
         // Any transition from a document root or blockquote root to
         // non-phrasing content must trigger an unconditional graf-wrap of any
@@ -137,6 +139,22 @@ impl GrafEmitter {
             self.end_wrap(out.len());
             self.level += 1;
         }
+    }
+
+    /// Updates the graf emitter state for the end of a block strip marker.
+    #[inline]
+    pub(super) fn block_end(&mut self, out: &str) {
+        self.close_match = true;
+        self.level -= 1;
+        self.start_wrap(out.len());
+    }
+
+    /// Updates the graf emitter state for the start of a block strip marker.
+    #[inline]
+    pub(super) fn block_start(&mut self, out: &str) {
+        self.open_match = true;
+        self.end_wrap(out.len());
+        self.level += 1;
     }
 
     /// Emits the end of a graf to the output.
