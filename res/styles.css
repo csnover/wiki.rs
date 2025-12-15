@@ -570,25 +570,14 @@ th {
     /* Layout */
     /**********/
 
-    > :where(:not(.navbox, .wiki-rs-categories, .reflist, .refbegin, .portal-bar, .sister-bar, .wikitable)) {
-        max-width: var(--max-width);
+    > * + *,
+    /* Using `:where()` to keep header, etc. styles working correctly */
+    :where(blockquote, .documentation, .templatedata-header, .excerpt) > * + * {
+        margin-top: var(--box-margin);
     }
 
-    /*
-    The standard `* + *` rule for layout cannot be used because many templates
-    break if the renderer tries to wrap all phrasing content in a `<p>`.
-    'Template:Documentation' is one example, where `.documentation-startbox`
-    uses `display: flex` with `<span>` children, so the flex layout breaks if
-    they are wrapped.
-
-    Instead, all the supported non-phrasing content elements are selected using
-    a zero-specificity `:where` selector.
-    */
-    :where(:is(blockquote, center, div, dl, figure, h1, h2, h3, h4, h5, h6, ol, p, pre, table, ul):not(:first-child)),
-    > :first-child,
-    > [class] /* Template:Mbox, etc. override flow when they should not */
-    {
-        margin-top: var(--box-margin);
+    > :where(:not(.navbox, .wiki-rs-categories, .reflist, .refbegin, .portal-bar, .sister-bar, .wikitable)) {
+        max-width: var(--max-width);
     }
 
     audio {
@@ -684,8 +673,6 @@ th {
         }
 
         > * + * {
-            margin-top: 0;
-
             &::before {
                 content: ' / ';
             }
@@ -709,11 +696,8 @@ th {
     * + h3 {
         margin-top: calc(var(--box-margin) * 1.5);
 
-        + p,
-        + ul,
-        + ol,
-        + dl,
-        + :is(.mw-halign-right, .mw-halign-left, .floatright),
+        + :is(p, ul, ol, dl, .mw-halign-right, .mw-halign-left, .floatright),
+        + *:has(> :first-child:is(p, ul, ol, dl, .mw-halign-right, .mw-halign-left, .floatright)),
         + :is(.mw-halign-right, .mw-halign-left, .floatright) + * {
             margin-top: 0;
         }
@@ -965,11 +949,6 @@ th {
     figcaption {
         font-family: var(--sans);
 
-        /* Used in 'Canada' */
-        .legend {
-            margin-top: 0;
-        }
-
         span.legend + span.legend {
             margin-left: .25em;
 
@@ -1094,7 +1073,6 @@ th {
         .sidebar-title > [style*=font-size] {
             font-size: smaller !important;
             font-stretch: normal;
-            margin-top: 0;
         }
 
         .sidebar-pretitle {
@@ -1152,10 +1130,6 @@ th {
             font-stretch: var(--sidebar-stretch);
             padding: 0;
             line-height: inherit;
-        }
-
-        .sidebar-list-content {
-            margin-top: 0;
         }
 
         tr:has(> .sidebar-content > .sidebar-list) + tr > .sidebar-content > .sidebar-list {
@@ -1234,10 +1208,6 @@ th {
                 margin-inline: auto;
                 width: 100%;
             }
-
-            * + * {
-                margin-top: 0;
-            }
         }
 
         .infobox-header {
@@ -1265,11 +1235,6 @@ th {
         .infobox-caption,
         .sidebar-caption {
             font-style: italic;
-            margin-top: 0;
-        }
-
-        * + .plainlist {
-            margin-top: 0;
         }
 
         /* 'United States Civil Administration of the Ryukyu Islands' */
@@ -1337,22 +1302,12 @@ th {
             /* !important: 'Sociology' */
             background-color: transparent !important;
             border: 0;
-            margin-top: 0;
         }
 
         &.navbox {
             border-top: 3px solid currentColor;
             /* !important: 'Crazy Taxi' */
             padding: 0 !important;
-
-            /* Lots of empty garbage elements inside navboxes */
-            div:empty {
-                display: none;
-
-                + * {
-                    margin-top: 0;
-                }
-            }
 
             li {
                 padding-left: 0;
@@ -1530,17 +1485,18 @@ th {
     .portal-bar, .sister-bar {
         font-family: var(--sans);
         margin-top: var(--footer-margin);
+
+         + :is(.sister-bar, .portal-bar) {
+            border-top: none;
+            margin-top: 0;
+         }
     }
+
     .portal-bar-bordered, .sister-bar {
         background-color: transparent;
         border: 0;
         border-top: thin solid var(--border-fg);
         border-bottom: thin solid var(--border-fg);
-    }
-
-    :is(.sister-bar, .portal-bar) + :is(.sister-bar, .portal-bar) {
-        border-top: none;
-        margin-top: 0;
     }
 
     /***************************************/
@@ -1553,10 +1509,6 @@ th {
         font-family: var(--sans);
         min-width: fit-content;
         width: auto;
-
-        .side-box-flex > * + * {
-            margin-top: 0;
-        }
 
         .side-box-text {
             padding-block: 0;
@@ -1607,7 +1559,6 @@ th {
 
     .reflist-columns {
         gap: calc(var(--ol-gutter) * 2);
-        margin-top: 0;
     }
 
     .refbegin-hanging-indents > ul {
@@ -1698,6 +1649,10 @@ th {
 
     .mbox-small {
         margin: 0 0 var(--figure-margin) var(--figure-margin);
+
+        &.ombox {
+            margin-top: initial;
+        }
     }
 
     /**************************/
@@ -1787,10 +1742,6 @@ th {
             max-width: 400px !important;
         }
 
-        .thumbcaption {
-            margin-top: 0;
-        }
-
         .multiimageinner[style*="max-width:100px"] {
             /* !important: This module blindly calculates values even if none
                are available, which means it ends up forced to 100px wide */
@@ -1860,7 +1811,6 @@ th {
 
             + * {
                 border-top: thin solid var(--border-fg);
-                margin-top: 0;
                 padding-top: calc(var(--box-margin) * .25);
             }
         }
@@ -2411,10 +2361,6 @@ th {
         * {
             text-align: inherit;
         }
-
-        * + * {
-            margin-top: 0;
-        }
     }
 
     /***************************/
@@ -2434,10 +2380,6 @@ th {
 
         th {
             border-bottom: thin solid var(--border-fg);
-
-            > * + * {
-                margin-top: 0;
-            }
 
             span[style*=font-size] {
                 font-stretch: var(--sidebar-stretch);
@@ -2492,9 +2434,6 @@ th {
 
         * {
             font-stretch: 50%;
-            /* TODO: This is part of the losing battle of having universal top
-               margin on block-level items inside all containers */
-            margin-top: 0;
             padding: 0 !important;
         }
 
@@ -2530,7 +2469,6 @@ th {
             display: flex;
             flex-wrap: wrap;
             gap: var(--box-margin);
-            margin-top: 0;
 
             > * {
                 flex: 1;
@@ -2581,15 +2519,6 @@ th {
         filter: saturate(200%) contrast(200%) brightness(200%) hue-rotate(50deg);
     }
     .smooth-pie {
-        /* TODO: Sadly, graf tags cannot be injected after anything that looks
-           like a block. */
-        p { display: none; }
-
-        &,
-        > * {
-            margin-top: 0;
-        }
-
         &::before {
             position: absolute;
             top: 0;
