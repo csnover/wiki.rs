@@ -1008,7 +1008,8 @@ th {
         padding-left: 0;
 
         :is(h2, h3, h4, h5) + &,
-        .hatnote + & {
+        .hatnote + &,
+        .hatnote + .mw-halign-right + & {
             margin-top: 0;
         }
     }
