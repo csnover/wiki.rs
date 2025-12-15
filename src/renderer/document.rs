@@ -67,11 +67,12 @@ impl Document {
     /// Finalises the document and returns the resulting output.
     pub(crate) fn finish(mut self) -> Result<String> {
         self.text_style_emitter.finish(&mut self.html)?;
-        self.graf_emitter.finish(&mut self.html);
 
         for rest in self.stack.drain(..).rev() {
-            rest.close(&mut self.html)?;
+            rest.close(&mut self.html, &mut self.graf_emitter)?;
         }
+
+        self.graf_emitter.finish(&mut self.html);
 
         Ok(self.html)
     }
@@ -96,17 +97,12 @@ impl Document {
         }
 
         if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(&name)) {
-            for e in self.stack.drain(pair + 1..).rev() {
-                e.close(&mut self.html)?;
+            for e in self.stack.drain(pair..).rev() {
+                e.close(&mut self.html, &mut self.graf_emitter)?;
             }
-            self.graf_emitter.before_end_tag(&self.html, &name);
-            self.stack.pop().unwrap().close(&mut self.html)?;
-            self.graf_emitter.after_end_tag(&self.html, &name);
         } else {
             log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
-            self.graf_emitter.before_end_tag(&self.html, &name);
             write!(self.html, "</{name}>")?;
-            self.graf_emitter.after_end_tag(&self.html, &name);
         }
 
         Ok(())
@@ -145,14 +141,19 @@ impl Document {
                 // cell requires extra recovery gymnastics to avoid walking too
                 // far up the stack. 'Template:Football squad start' does this.
                 let in_caption = matches!(e, Node::Tag(ref name) if name == "caption");
-                e.close(&mut self.html)?;
+                e.close(&mut self.html, &mut self.graf_emitter)?;
                 if in_caption && matches!(&*tag, "td" | "th") {
                     self.start_tag(state, sp, "tr", &[])?;
                 }
             }
         }
 
-        self.graf_emitter.before_start_tag(&self.html, &tag);
+        let is_void_tag = VOID_TAGS.contains(&tag);
+
+        if !is_void_tag {
+            self.graf_emitter.before_start_tag(&self.html, &tag);
+        }
+
         write!(self.html, "<{tag}")?;
         if !attributes.is_empty() {
             self.stack.push(Node::Attribute);
@@ -199,8 +200,8 @@ impl Document {
         }
 
         self.html.write_char('>')?;
-        self.graf_emitter.after_start_tag(&self.html, &tag);
-        if !VOID_TAGS.contains(&tag) {
+        if !is_void_tag {
+            self.graf_emitter.after_start_tag(&self.html, &tag);
             self.stack.push(Node::Tag(tag));
         } else if tag == "br" {
             self.last_char = '\n';
@@ -288,7 +289,7 @@ impl Document {
                 // since anything that cannot parent a `<div>` cannot parent any
                 // other block-level element
                 while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
-                    e.close(&mut self.html)?;
+                    e.close(&mut self.html, &mut self.graf_emitter)?;
                 }
                 self.html += text;
             }
@@ -571,15 +572,14 @@ impl Surrogate<Error> for Document {
         if let Some(Node::List(list)) = self.stack.last_mut() {
             list.emit(&mut self.html, bullets)?;
         } else {
-            self.graf_emitter.start_list(&mut self.html);
-
             // Using "ol" is a hack but one which does not really matter since
             // anything that cannot parent an `<ol>` cannot parent any of the
             // other list kinds either
             while let Some(e) = self.stack.pop_if(|e| !e.can_parent("ol")) {
-                e.close(&mut self.html)?;
+                e.close(&mut self.html, &mut self.graf_emitter)?;
             }
 
+            self.graf_emitter.start_list(&mut self.html);
             let mut list = ListEmitter::default();
             list.emit(&mut self.html, bullets)?;
             self.stack.push(Node::List(list));
@@ -596,7 +596,7 @@ impl Surrogate<Error> for Document {
         // elements here will corrupt the tree.
         if self.stack.len() > list_index && matches!(self.stack[list_index], Node::List(_)) {
             for e in self.stack.drain(list_index + 1..).rev() {
-                e.close(&mut self.html)?;
+                e.close(&mut self.html, &mut self.graf_emitter)?;
             }
 
             // The parser removes the newlines between list items in order to
@@ -946,18 +946,22 @@ impl Node {
     }
 
     /// Writes the terminator for this element to the given output.
-    fn close<W: fmt::Write + ?Sized>(self, out: &mut W) -> fmt::Result {
+    fn close(self, out: &mut String, graf_emitter: &mut GrafEmitter) -> fmt::Result {
         match self {
-            Node::Attribute => Ok(()),
+            Node::Attribute => {}
             Node::Tag(name) => {
-                if VOID_TAGS.contains(&name) {
-                    Ok(())
-                } else {
-                    write!(out, "</{name}>")
+                if !VOID_TAGS.contains(&name) {
+                    graf_emitter.before_end_tag(out, &name);
+                    write!(out, "</{name}>")?;
+                    graf_emitter.after_end_tag(out, &name);
                 }
             }
-            Node::List(mut list) => list.finish(out),
+            Node::List(mut list) => {
+                list.finish(out)?;
+                graf_emitter.end_list();
+            }
         }
+        Ok(())
     }
 
     /// The tag name for this node.

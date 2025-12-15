@@ -66,8 +66,8 @@ pub(super) struct GrafEmitter {
     current: GrafState,
     /// If true, the document is currently inside a graf block.
     in_block: bool,
-    /// If true, the document is currently inside a Wikitext list.
-    in_list: bool,
+    /// If non-zero, the document is currently inside a Wikitext list.
+    in_list: usize,
     /// If true, the document is currently inside a `<pre>`.
     in_pre: bool,
     /// The current DOM depth.
@@ -192,7 +192,7 @@ impl GrafEmitter {
             // but not a terminating tag, then the whole line is considered
             // to be part of a graf-suppressing block
             self.in_block = !self.close_match;
-        } else if !self.in_list && !self.in_block && !self.in_pre {
+        } else if self.in_list == 0 && !self.in_block && !self.in_pre {
             // If this line was not inside a graf-suppressing block or `<pre>`
             // element, maybe it’s time to emit something!
             let has_content = out[self.line_start..].contains(|c: char| !c.is_ascii_whitespace());
@@ -292,12 +292,13 @@ impl GrafEmitter {
     #[inline]
     pub(super) fn end_list(&mut self) {
         self.pending = GrafPendingState::None;
-        self.in_list = false;
+        self.in_list -= 1;
     }
 
     /// Finishes processing the document.
     #[inline]
     pub(super) fn finish(mut self, out: &mut String) {
+        debug_assert_eq!(self.level, 0);
         self.p_wrap(out);
         self.close(out, Some(self.line_start));
     }
@@ -327,7 +328,7 @@ impl GrafEmitter {
     pub(super) fn start_list(&mut self, out: &mut String) {
         self.close(out, None);
         self.pending = GrafPendingState::None;
-        self.in_list = true;
+        self.in_list += 1;
     }
 
     /// Marks the end of a p-wrapper.
