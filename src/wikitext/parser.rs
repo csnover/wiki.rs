@@ -3397,8 +3397,6 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
                 }),
             ) = (v.last_mut(), iter.peek())
         {
-            // TODO: This does not deal with list items separated by comments
-            // correctly.
             // This fixup collapses contiguous list items separated by newlines.
             // Due to the way the `sol` rule is designed it is not possible to
             // just consume the newline token in the list item rules without

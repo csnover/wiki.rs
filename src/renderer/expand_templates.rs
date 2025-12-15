@@ -61,7 +61,7 @@ impl ExpandTemplates {
 
     /// Serialises a token which is structured like
     /// `{prefix}{attributes}{delimiter}{content}{suffix}`.
-    pub(crate) fn adopt_attributes_content(
+    fn adopt_attributes_content(
         &mut self,
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
@@ -105,7 +105,7 @@ impl ExpandTemplates {
 
     /// Serialises the delimiter between two groups of spanned elements like
     /// `{before}{delimiter}{after}...`.
-    pub(crate) fn write_delimiter<T, U>(
+    fn write_delimiter<T, U>(
         &mut self,
         sp: &StackFrame<'_>,
         before: &[Spanned<T>],
