@@ -79,7 +79,7 @@ impl Document {
     /// Finishes formatting a line of Wikitext.
     pub(crate) fn finish_line(&mut self) -> Result {
         self.text_style_emitter.finish(&mut self.html)?;
-        self.graf_emitter.next(&mut self.html);
+        self.graf_emitter.end_line(&mut self.html);
         self.last_char = '\n';
         Ok(())
     }
@@ -92,17 +92,21 @@ impl Document {
         if VOID_TAGS.contains(&name) {
             return Ok(());
         } else if !PHRASING_TAGS.contains(&name) {
-            self.graf_emitter.has_block = true;
             self.last_char = ' ';
         }
 
         if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(&name)) {
-            for e in self.stack.drain(pair..).rev() {
+            for e in self.stack.drain(pair + 1..).rev() {
                 e.close(&mut self.html)?;
             }
+            self.graf_emitter.before_end_tag(&self.html, &name);
+            self.stack.pop().unwrap().close(&mut self.html)?;
+            self.graf_emitter.after_end_tag(&self.html, &name);
         } else {
             log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
+            self.graf_emitter.before_end_tag(&self.html, &name);
             write!(self.html, "</{name}>")?;
+            self.graf_emitter.after_end_tag(&self.html, &name);
         }
 
         Ok(())
@@ -148,10 +152,7 @@ impl Document {
             }
         }
 
-        if !PHRASING_TAGS.contains(&tag) {
-            self.graf_emitter.has_block = true;
-        }
-
+        self.graf_emitter.before_start_tag(&self.html, &tag);
         write!(self.html, "<{tag}")?;
         if !attributes.is_empty() {
             self.stack.push(Node::Attribute);
@@ -198,6 +199,7 @@ impl Document {
         }
 
         self.html.write_char('>')?;
+        self.graf_emitter.after_start_tag(&self.html, &tag);
         if !VOID_TAGS.contains(&tag) {
             self.stack.push(Node::Tag(tag));
         } else if tag == "br" {
@@ -569,6 +571,8 @@ impl Surrogate<Error> for Document {
         if let Some(Node::List(list)) = self.stack.last_mut() {
             list.emit(&mut self.html, bullets)?;
         } else {
+            self.graf_emitter.start_list(&mut self.html);
+
             // Using "ol" is a hack but one which does not really matter since
             // anything that cannot parent an `<ol>` cannot parent any of the
             // other list kinds either
@@ -582,8 +586,6 @@ impl Surrogate<Error> for Document {
         }
 
         let list_index = self.stack.len() - 1;
-        self.graf_emitter.has_block = true;
-
         Trim::new(self, sp).adopt_tokens(state, sp, content)?;
 
         // It is possible that content “inside” a list item actually contains
@@ -597,10 +599,10 @@ impl Surrogate<Error> for Document {
                 e.close(&mut self.html)?;
             }
 
-            // The parser removes the newlines between list items in order to make
-            // it easier to disambiguate the list-terminating newline. Since the
-            // list item must have ended at a newline, finish the line now.
-            self.graf_emitter.has_block = true;
+            // The parser removes the newlines between list items in order to
+            // make it easier to disambiguate the list-terminating newline.
+            // Since the list item must have ended at a newline, finish the line
+            // now.
             self.finish_line()?;
         }
 
@@ -618,8 +620,8 @@ impl Surrogate<Error> for Document {
             Some(Node::List(list)) => {
                 list.finish(&mut self.html)?;
                 self.stack.pop();
-                self.graf_emitter.has_block = true;
                 self.finish_line()?;
+                self.graf_emitter.end_list();
             }
             None | Some(Node::Tag(_)) => {
                 self.finish_line()?;

@@ -7,9 +7,12 @@ use super::{
     surrogate::{self, Surrogate},
     tags, template,
 };
-use crate::wikitext::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
-    Spanned, TextStyle, Token,
+use crate::{
+    title::{Namespace, Title},
+    wikitext::{
+        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
+        Spanned, TextStyle, Token,
+    },
 };
 use core::{
     fmt::{self, Write as _},
@@ -295,6 +298,26 @@ impl Surrogate<Error> for ExpandTemplates {
         content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,
     ) -> Result {
+        // “Strip newlines from the left hand context of Category links.
+        //  See T2087, T87753, T174639, T359886”
+        // Since it is necessary to expand the target to know whether it is a
+        // category link there is no good way to suppress the newline in the
+        // Wikitext parser itself, and trying to do it in the renderer is a
+        // fool’s errand with how the graf emitter works (it would require
+        // buffering at least two tokens, or doing some crazy nonsense to try to
+        // get the graf emitter to be able to undo part of what it just did).
+        if self.mode == ExpandMode::Normal {
+            let title = Title::new(&sp.eval(state, target)?, None);
+            if title.namespace().id == Namespace::CATEGORY {
+                let end = self
+                    .out
+                    .trim_end_matches(|c: char| c.is_ascii_whitespace() && c != '\n');
+                if end.ends_with('\n') {
+                    self.out.truncate(end.len() - 1);
+                }
+            }
+        }
+
         let (prefix, suffix) = calc_prefix_suffix(span, target, content);
         self.out.write_str(&sp.source[prefix])?;
         self.adopt_tokens(state, sp, target)?;

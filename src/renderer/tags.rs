@@ -83,17 +83,16 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     content: &[Spanned<Argument>],
     trail: Option<&str>,
 ) -> Result<(), Error> {
-    let target_text = sp.eval(state, target)?;
-    let title = Title::new(&target_text, None);
+    let title = Title::new(&sp.eval(state, target)?, None);
     match title.namespace().id {
-        Namespace::FILE => {
-            image::render_media(out, state, sp, title, content)?;
+        Namespace::CATEGORY => {
+            state.globals.categories.insert(title.key().to_string());
             if let Some(trail) = trail {
                 out.adopt_generated(state, sp, None, trail)?;
             }
         }
-        Namespace::CATEGORY => {
-            state.globals.categories.insert(target_text.to_string());
+        Namespace::FILE => {
+            image::render_media(out, state, sp, title, content)?;
             if let Some(trail) = trail {
                 out.adopt_generated(state, sp, None, trail)?;
             }
