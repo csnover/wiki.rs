@@ -177,8 +177,8 @@ fn render_string(
 ) -> Result<RenderOutput> {
     let kvs = statics.parser.debug_parse_args(args)?;
     let kvs = kvs.iter().map(super::Kv::Argument).collect::<Vec<_>>();
-    let sp = StackFrame::new(Title::new("<args>", None), FileMap::new(args));
-    let sp = sp.chain(Title::new("<eval>", None), FileMap::new(source), &kvs)?;
+    let sp = StackFrame::new(Title::new("(args)", None), FileMap::new(args));
+    let sp = sp.chain(Title::new("(eval)", None), FileMap::new(source), &kvs)?;
     let date = UtcDateTime::now();
     let load_mode = LoadMode::Module;
     match mode {
