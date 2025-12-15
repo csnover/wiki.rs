@@ -16,10 +16,7 @@ use time::UtcOffset;
 pub fn anchor_encode(s: &str) -> String {
     let s = decode_html(s.trim_ascii());
     let id = title::normalize(&s);
-    let mut end = 1024.min(id.len());
-    while !id.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = id.floor_char_boundary(1024);
     url_encode(&strtr(&id[..end], &[(" ", "_")])).to_string()
 }
 

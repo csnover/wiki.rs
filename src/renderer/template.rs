@@ -306,10 +306,7 @@ fn contains_blocks(partial: &str) -> bool {
 /// band using a code map, and then the problem will be solved forever, but why
 /// do work when you can pretend like it is unnecessary, lol.
 fn starts_with_block_tag_name(tag_name: &str) -> bool {
-    let mut max = "blockquote".len() + 1;
-    while !tag_name.is_char_boundary(max) {
-        max -= 1;
-    }
+    let max = tag_name.floor_char_boundary("blockquote".len() + 1);
     let Some((tag_name, _)) =
         tag_name[..max].split_once(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>')
     else {

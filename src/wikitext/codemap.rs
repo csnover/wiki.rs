@@ -100,10 +100,7 @@ pub(crate) struct FileMap<'a> {
 
 impl core::fmt::Debug for FileMap<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let mut limit = 100.min(self.source.len());
-        while !self.source.is_char_boundary(limit) {
-            limit += 1;
-        }
+        let limit = self.source.ceil_char_boundary(100);
 
         f.debug_struct("FileMap")
             .field(
