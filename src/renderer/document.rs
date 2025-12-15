@@ -91,6 +91,8 @@ impl Document {
         let name = Cow::Owned(name.to_ascii_lowercase());
 
         if VOID_TAGS.contains(&name) {
+            self.graf_emitter.before_end_tag(&self.html, &name);
+            self.graf_emitter.after_end_tag(&self.html, &name);
             return Ok(());
         } else if !PHRASING_TAGS.contains(&name) {
             self.last_char = ' ';
@@ -148,12 +150,7 @@ impl Document {
             }
         }
 
-        let is_void_tag = VOID_TAGS.contains(&tag);
-
-        if !is_void_tag {
-            self.graf_emitter.before_start_tag(&self.html, &tag);
-        }
-
+        self.graf_emitter.before_start_tag(&self.html, &tag);
         write!(self.html, "<{tag}")?;
         if !attributes.is_empty() {
             self.stack.push(Node::Attribute);
@@ -200,8 +197,8 @@ impl Document {
         }
 
         self.html.write_char('>')?;
-        if !is_void_tag {
-            self.graf_emitter.after_start_tag(&self.html, &tag);
+        self.graf_emitter.after_start_tag(&self.html, &tag);
+        if !VOID_TAGS.contains(&tag) {
             self.stack.push(Node::Tag(tag));
         } else if tag == "br" {
             self.last_char = '\n';
