@@ -459,6 +459,8 @@ pub(crate) fn call_template(
         return Ok(());
     };
 
+    log::trace!("Expanding {}", template.title);
+
     let now = Instant::now();
     let mut expansion = ExpandTemplates::new(ExpandMode::Include);
 
