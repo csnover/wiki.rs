@@ -602,11 +602,13 @@ th {
     ol, ul, dl {
         padding-left: var(--ol-gutter);
 
-        > * + * {
-            margin-top: calc(var(--box-margin) * .25);
+        > * {
+            + * {
+                margin-top: calc(var(--box-margin) * .25);
 
-            .plainlist & {
-                margin-top: 0;
+                .plainlist & {
+                    margin-top: 0;
+                }
             }
 
             > :is(ol, ul, dl) {
