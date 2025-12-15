@@ -304,9 +304,6 @@ fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_,
             .unwrap()
     });
 
-    let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
-    let body = state.strip_markers.unstrip(&body);
-
     write!(out, "<pre")?;
     for attribute in arguments.iter() {
         let value = attribute.value(state, arguments.sp)?;
@@ -329,11 +326,20 @@ fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_,
         write!(out, r#" {name}="{}""#, strtr(&value, &[("\"", "&quot;")]))?;
     }
 
-    write!(
-        out,
-        ">{}</pre>",
-        strtr(&body, &[("<", "&lt;"), (">", "&gt;")])
-    )?;
+    // 'Template:Blockquote' dumps a `<syntaxhighlight>` into 'Template:Markup'
+    // which blindly dumps that into a `<pre>`. Unstripping strip markers
+    // *before* encoding the rest of the body will result in double-encoding of
+    // the markup. MW does things differently and does not unstrip markers at
+    // all in its tag hooks, obviously preferring to commit a crime somewhere
+    // else to get the strip marker content out. Since all the strip markers in
+    // wiki.rs are supposed to contain well-formed HTML ready to be emitted to
+    // the final document with no other Wikitext parsing, doing things in this
+    // order ‘should’ be ‘fine’.
+    let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
+    let body = strtr(&body, &[("<", "&lt;"), (">", "&gt;")]);
+    let body = state.strip_markers.unstrip(&body);
+
+    write!(out, ">{body}</pre>")?;
     Ok(OutputMode::Block)
 }
 
@@ -602,11 +608,17 @@ fn syntax_highlight(
         themes.themes.get("InspiredGitHub").unwrap().clone()
     });
 
-    let (mode, tag) = if arguments.get(state, "inline")?.is_some() {
-        (OutputMode::Inline, "code")
+    let (mode, tag, attrs) = if arguments.get(state, "inline")?.is_some() {
+        (OutputMode::Inline, "code", "")
     } else {
-        (OutputMode::Block, "pre")
+        // Because this might get dumped into a `<pre>` (see the `pre` function
+        // for more detailed and thrilling commentary about this), make it a
+        // `<div>` like how the MW extension does it.
+        (OutputMode::Block, "div", r#" role="code""#)
     };
+
+    // TODO: `line`, `start`, `linelinks`, `highlight`, `class`, `style`, and
+    // `copy` attributes, plus undocumented `id` and `dir` attributes
 
     let lang = arguments
         .get(state, "lang")?
@@ -619,7 +631,7 @@ fn syntax_highlight(
     let body = state.strip_markers.unstrip(arguments.body());
     let body = body.trim_start_matches('\n').trim_ascii_end();
 
-    write!(out, "<{tag}>")?;
+    write!(out, r#"<{tag}{attrs} class="mw-highlight">"#)?;
 
     let mut highlighter = syntect::easy::HighlightLines::new(syntax, &THEME);
     for line in syntect::util::LinesWithEndings::from(body) {

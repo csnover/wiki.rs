@@ -1096,10 +1096,8 @@ mod title {
 
 /// Known parser functions.
 static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
-    // TODO: The Wikitext parser should just immediately convert these
-    // trivial functions
     "!" => |out: &mut String, _, _| { out.write_char('|')?; Ok(()) },
-    "=" => |out: &mut String, _, _| { write!(out, "&#61;")?; Ok(()) },
+    "=" => |out: &mut String, _, _| { out.write_char('=')?; Ok(()) },
 
     "#expr" => cond::expr,
     "#if" => cond::r#if,

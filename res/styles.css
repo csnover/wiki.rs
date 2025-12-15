@@ -419,7 +419,7 @@ cite {
     font-style: normal;
 }
 
-code, kbd, pre, samp, tt {
+code, kbd, pre, samp, tt, .mw-highlight {
     font-family: var(--mono);
 }
 
@@ -439,7 +439,8 @@ math {
     font-family: var(--serif);
 }
 
-pre {
+pre,
+.mw-highlight {
     hyphens: none;
     tab-size: 4;
     white-space: pre-wrap;
