@@ -78,6 +78,31 @@ impl ExpandTemplates {
         Ok(())
     }
 
+    /// “Strip newlines from the left hand context of Category links.
+    ///  See T2087, T87753, T174639, T359886”
+    /// Since it is necessary to expand the target to know whether it is a
+    /// category link there is no good way to suppress the newline in the
+    /// Wikitext parser itself, and trying to do it in the renderer is a
+    /// fool’s errand with how the graf emitter works (it would require
+    /// buffering at least two tokens, or doing some crazy nonsense to try to
+    /// get the graf emitter to be able to undo part of what it just did).
+    fn left_trim_category(&mut self, title: &Title, at: usize) {
+        if title.namespace().id == Namespace::CATEGORY {
+            // The regular expression used by MW was "\n\s*"
+            let end = self.out[..at]
+                .trim_end_matches(|c: char| c.is_ascii_whitespace())
+                .len();
+            let end = memchr::memchr(b'\n', &self.out.as_bytes()[end..at]).map(|e| e + end);
+            if let Some(end) = end {
+                if at == self.out.len() {
+                    self.out.truncate(end);
+                } else {
+                    self.out.replace_range(end..at, "");
+                }
+            }
+        }
+    }
+
     /// Serialises the delimiter between two groups of spanned elements like
     /// `{before}{delimiter}{after}...`.
     pub(crate) fn write_delimiter<T, U>(
@@ -298,24 +323,10 @@ impl Surrogate<Error> for ExpandTemplates {
         content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,
     ) -> Result {
-        // “Strip newlines from the left hand context of Category links.
-        //  See T2087, T87753, T174639, T359886”
-        // Since it is necessary to expand the target to know whether it is a
-        // category link there is no good way to suppress the newline in the
-        // Wikitext parser itself, and trying to do it in the renderer is a
-        // fool’s errand with how the graf emitter works (it would require
-        // buffering at least two tokens, or doing some crazy nonsense to try to
-        // get the graf emitter to be able to undo part of what it just did).
+        // TODO: Is it really the case that only the root expansion needs to
+        // worry about this here?
         if self.mode == ExpandMode::Normal {
-            let title = Title::new(&sp.eval(state, target)?, None);
-            if title.namespace().id == Namespace::CATEGORY {
-                let end = self
-                    .out
-                    .trim_end_matches(|c: char| c.is_ascii_whitespace() && c != '\n');
-                if end.ends_with('\n') {
-                    self.out.truncate(end.len() - 1);
-                }
-            }
+            self.left_trim_category(&Title::new(&sp.eval(state, target)?, None), self.out.len());
         }
 
         let (prefix, suffix) = calc_prefix_suffix(span, target, content);
@@ -470,6 +481,7 @@ impl Surrogate<Error> for ExpandTemplates {
         arguments: &[Spanned<Argument>],
     ) -> Result {
         let line_start = self.out.is_empty() || self.out.ends_with('\n');
+        let start = self.out.len();
         template::render_template(
             &mut self.out,
             state,
@@ -478,7 +490,21 @@ impl Surrogate<Error> for ExpandTemplates {
             target,
             arguments,
             line_start,
-        )
+        )?;
+
+        // Because template expansions always just results in a string, it is
+        // necessary to look at the start of whatever just got appended in order
+        // to go back and delete whitespace which needs to be erased due to the
+        // subtemplate expansion. These left-sided rules are awful.
+        // TODO: Less hacky shit. Ruin `reduce_tree` in the parser or emit a
+        // signal in the return value of `render_template` to strip whitespace
+        // or something less egregious.
+        if self.out[start..].starts_with("[[")
+            && let Ok(link) = state.statics.parser.parse_wikilink(&self.out[start..])
+        {
+            self.left_trim_category(&Title::new(link, None), start);
+        }
+        Ok(())
     }
 
     fn adopt_text(

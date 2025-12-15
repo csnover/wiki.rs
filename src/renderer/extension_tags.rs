@@ -277,18 +277,6 @@ fn no_wiki(
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    // TODO: This is supposed to have a way to communicate to the caller that
-    // it is nowiki content, so it does not get parsed as Wikitext later.
-    /* TODO:
-    The output of this tag is supposed to do this:
-    strtr(&body, &[
-            ("-{", "-&#123;"),
-            ("}-", "&#125;-"),
-            ("<", "&lt;"),
-            (">", "&gt;"),
-        ])
-    But until these tags are not eagerly parsed, this will not happen
-    */
     let body = state.strip_markers.unstrip(arguments.body());
     write!(
         out,
@@ -861,11 +849,15 @@ pub(super) fn render_extension_tag(
         OutputMode::Block
     };
 
-    Ok(match mode {
-        OutputMode::Block => Some(Either::Left(StripMarker::Block(out))),
-        OutputMode::Empty => None,
-        OutputMode::Inline => Some(Either::Left(StripMarker::Inline(out))),
-        OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out))),
-        OutputMode::Raw => Some(Either::Right(out)),
+    Ok(if out.is_empty() {
+        None
+    } else {
+        match mode {
+            OutputMode::Block => Some(Either::Left(StripMarker::Block(out))),
+            OutputMode::Empty => None,
+            OutputMode::Inline => Some(Either::Left(StripMarker::Inline(out))),
+            OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out))),
+            OutputMode::Raw => Some(Either::Right(out)),
+        }
     })
 }

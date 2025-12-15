@@ -80,55 +80,51 @@ impl GrafEmitter {
     /// Updates the graf emitter state for the given end tag.
     pub(super) fn after_end_tag(&mut self, out: &str, name_lower: &str) {
         if !tags::PHRASING_TAGS.contains(name_lower) {
+            self.level -= 1;
             // After transitioning back to a blockquote root or document root,
             // the next content is unconditionally graf-wrapped. (This is the
             // `RemexCompatMunger` half of this bullshit)
-            if self.level == 1
-                || matches!(self.blockquote_roots.last(), Some(root) if root.level == self.level)
-            {
-                self.wrap_points.push(GrafWrapPoint::Start(out.len()));
-            }
-
-            self.level -= 1;
+            self.start_wrap(out.len());
         }
     }
 
     /// Updates the graf emitter state for the given start tag.
     pub(super) fn after_start_tag(&mut self, out: &str, name_lower: &str) {
-        // Any transition into a blockquote needs to trigger a line transition
-        // because all text in a blockquote is unconditionally graf-wrapped.
-        // (This is the `RemexCompatMunger` half of this bullshit)
+        self.open_match |= BLOCK_TAG.contains(name_lower) || ALWAYS_TAG.contains(name_lower);
+        self.close_match |= ANTI_BLOCK_TAG.contains(name_lower) || NEVER_TAG.contains(name_lower);
+
         if name_lower == "blockquote" {
-            self.wrap_points.push(GrafWrapPoint::Start(out.len()));
+            self.blockquote_roots.push(BlockquoteRoot {
+                level: self.level,
+                start: out.len(),
+            });
+            // Any transition into a blockquote needs to trigger a line
+            // transition because all text in a blockquote is unconditionally
+            // graf-wrapped. (This is the `RemexCompatMunger` half of this
+            // bullshit)
+            self.start_wrap(out.len());
+        } else if name_lower == "pre" {
+            self.in_pre = true;
+            self.pre_open_match = true;
         }
     }
 
     /// Updates the graf emitter state for the given end tag.
     pub(super) fn before_end_tag(&mut self, out: &str, name_lower: &str) {
-        // Any transition out of a blockquote, or into a blockquote, or into the
-        // root, needs to trigger a line transition because all text in the
-        // document root and in blockquotes is unconditionally graf-wrapped.
+        // Any transition out of a blockquote needs to trigger a line transition
+        // because all text in a blockquote is unconditionally graf-wrapped.
         // (This is the `RemexCompatMunger` half of this bullshit)
         if name_lower == "blockquote" {
-            // Maybe a non-phrasing element was directly at the end of the root
-            if self
-                .wrap_points
-                .pop_if(|maybe_empty| maybe_empty == &GrafWrapPoint::Start(out.len()))
-                .is_none()
-            {
-                self.wrap_points.push(GrafWrapPoint::End(out.len()));
-            }
-
+            self.end_wrap(out.len());
             self.blockquote_roots
                 .pop_if(|root| self.level == root.level)
                 .expect("blockquote roots stack corruption");
+        } else if name_lower == "pre" {
+            self.pre_close_match = true;
         }
 
         self.open_match |= ANTI_BLOCK_TAG.contains(name_lower) || ALWAYS_TAG.contains(name_lower);
         self.close_match |= BLOCK_TAG.contains(name_lower) || NEVER_TAG.contains(name_lower);
-        if name_lower == "pre" {
-            self.pre_close_match = true;
-        }
     }
 
     /// Updates the graf emitter state for the given start tag.
@@ -138,37 +134,8 @@ impl GrafEmitter {
         // content on the line prior to the transition. (This is the
         // `RemexCompatMunger` half of this bullshit)
         if !tags::PHRASING_TAGS.contains(name_lower) {
-            // Maybe two non-phrasing elements are right next to each other
-            let empty = self
-                .wrap_points
-                .pop_if(|point| point == &GrafWrapPoint::Start(out.len()))
-                .is_some();
-
-            // Maybe the non-phrasing element is immediately at the start of the
-            // root
-            if ((self.level == 0 && self.line_start != out.len())
-                || matches!(
-                    self.blockquote_roots.last(),
-                    Some(root) if self.level == root.level && root.start != out.len()
-                ))
-                && !empty
-            {
-                self.wrap_points.push(GrafWrapPoint::End(out.len()));
-            }
-
+            self.end_wrap(out.len());
             self.level += 1;
-        }
-
-        self.open_match |= BLOCK_TAG.contains(name_lower) || ALWAYS_TAG.contains(name_lower);
-        self.close_match |= ANTI_BLOCK_TAG.contains(name_lower) || NEVER_TAG.contains(name_lower);
-        if name_lower == "blockquote" {
-            self.blockquote_roots.push(BlockquoteRoot {
-                level: self.level,
-                start: out.len(),
-            });
-        } else if name_lower == "pre" {
-            self.in_pre = true;
-            self.pre_open_match = true;
         }
     }
 
@@ -332,40 +299,26 @@ impl GrafEmitter {
     #[inline]
     pub(super) fn finish(mut self, out: &mut String) {
         self.p_wrap(out);
-        self.close(out, None);
+        self.close(out, Some(self.line_start));
     }
 
     /// Wraps bare plain text content within a line also containing non-phrasing
     /// elements into grafs.
     fn p_wrap(&mut self, out: &mut String) {
-        // Maybe a non-phrasing element was at the end of the line
-        let empty = self
-            .wrap_points
-            .pop_if(|bogus| bogus == &GrafWrapPoint::Start(out.len()));
-
-        // Because the content is being inserted rather than appended, the
-        // order of operations is backwards
-        let has_wrappers = !self.wrap_points.is_empty();
-        if has_wrappers && empty.is_none() {
-            out.push_str("</p>");
-        }
-        for wrapper in self.wrap_points.drain(..).rev() {
-            match wrapper {
-                GrafWrapPoint::Start(at) => {
-                    if at != out.len() {
-                        out.insert_str(at, "<p>");
-                    }
-                }
-                GrafWrapPoint::End(at) => {
-                    if at != self.line_start {
-                        out.insert_str(at, "</p>");
-                    }
-                }
+        if let Some(last) = self.wrap_points.last_mut() {
+            if last.start == out.len() {
+                // A non-phrasing element was at the end of the line
+                self.wrap_points.pop();
+            } else {
+                last.end.get_or_insert(out.len());
             }
         }
 
-        if has_wrappers {
-            out.insert_str(self.line_start, "<p>");
+        // Because the content is being inserted rather than appended, the
+        // order of operations is backwards
+        for GrafWrapPoint { start, end } in self.wrap_points.drain(..).rev() {
+            out.insert_str(end.unwrap(), "</p>");
+            out.insert_str(start, "<p>");
         }
     }
 
@@ -375,6 +328,50 @@ impl GrafEmitter {
         self.close(out, None);
         self.pending = GrafPendingState::None;
         self.in_list = true;
+    }
+
+    /// Marks the end of a p-wrapper.
+    fn end_wrap(&mut self, end: usize) {
+        let start = if self.level == 0 {
+            self.line_start
+        } else if let Some(root) = self.blockquote_roots.last()
+            && root.level == self.level
+        {
+            root.start.max(self.line_start)
+        } else {
+            // Non-phrasing element in some intermediate root which is not the
+            // document root nor the current blockquote root
+            return;
+        };
+
+        if let Some(last) = self.wrap_points.last_mut() {
+            if last.start == end {
+                // Two non-phrasing elements were directly adjacent
+                self.wrap_points.pop();
+            } else {
+                debug_assert!(last.end.is_none());
+                last.end.get_or_insert(end);
+            }
+        } else if start != end {
+            // Non-phrasing element, not at the start of the root
+            self.wrap_points.push(GrafWrapPoint {
+                start,
+                end: Some(end),
+            });
+        }
+    }
+
+    /// Marks the start of a possible p-wrapper.
+    fn start_wrap(&mut self, start: usize) {
+        if self.level == 0
+            || matches!(self.blockquote_roots.last(), Some(last) if last.level == self.level)
+        {
+            debug_assert!(matches!(
+                self.wrap_points.last(),
+                None | Some(GrafWrapPoint { end: Some(_), .. })
+            ));
+            self.wrap_points.push(GrafWrapPoint { start, end: None });
+        }
     }
 }
 
@@ -426,13 +423,13 @@ enum GrafState {
     Pre,
 }
 
-/// A record of a possible position where a `<p>` should be injected.
+/// A record of a possible `<p>` wrapper.
 #[derive(Debug, Eq, PartialEq)]
-enum GrafWrapPoint {
-    /// Insert `<p>` at the given position.
-    Start(usize),
-    /// Insert `</p>` at the given position.
-    End(usize),
+struct GrafWrapPoint {
+    /// Insert `<p>` here.
+    start: usize,
+    /// Insert `</p>` here.
+    end: Option<usize>,
 }
 
 /// HTML tags which start a new block when they are encountered as either a

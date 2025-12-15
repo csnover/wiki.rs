@@ -2217,6 +2217,28 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     // Internal links //
     ////////////////////
 
+    /// A single expanded wikilink.
+    ///
+    /// TODO: This is a hack for dealing with category link whitespace (ugh).
+    ///
+    /// ```wikitext
+    /// [[Link target|extra|arguments]]
+    /// ```
+    #[no_eof]
+    pub rule wikilink_single_target() -> &'input str
+    = ctx:({ Context::default().with_prod_kind(Some(ProdKind::Link)) })
+      link:wikilink_preproc_valid(&ctx)
+      t:#{|input, pos| {
+        if let Spanned { node: Token::Link { target, .. }, .. } = link
+            && let [Spanned { node: Token::Text, span }] = target.as_slice()
+        {
+            RuleResult::Matched(pos, &input[span.into_range()])
+        } else {
+            RuleResult::Failed
+        }
+      }}
+    { t }
+
     /// A wikilink.
     ///
     /// ```wikitext
