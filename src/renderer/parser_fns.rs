@@ -41,7 +41,7 @@ mod cond {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(expr) = arguments.eval(state, 0)? {
+        if let Some(expr) = arguments.eval(state, 0)?.map(trim) {
             let result = expr::do_expression(&expr);
             // log::trace!("#expr: '{expr}' = {result:?}");
 
@@ -448,7 +448,7 @@ mod site {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let no_separators = arguments.eval(state, 0)?.as_deref() == Some("R");
+        let no_separators = arguments.eval(state, 0)?.map(trim).as_deref() == Some("R");
         write!(
             out,
             "{}",
@@ -464,7 +464,7 @@ mod site {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if !arguments.is_empty() {
-            let no_separators = arguments.eval(state, 1)?.is_some_and(|flag| flag == "R");
+            let no_separators = arguments.eval(state, 1)?.map(trim).as_deref() == Some("R");
             write!(out, "{}", format_number(1.0, no_separators))?;
         }
 
@@ -604,7 +604,7 @@ mod string {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)? {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             let n = value
                 .trim_end_matches(|c: char| !c.is_ascii_digit())
                 .parse::<i32>()
@@ -1029,7 +1029,7 @@ mod title {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let ns = if let Some(value) = arguments.eval(state, 0)? {
+        let ns = if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             Namespace::find_by_name(value.split_once(':').map_or("", |(ns, _)| ns))
         } else {
             Some(arguments.sp.root().name.namespace())
@@ -1060,7 +1060,7 @@ mod title {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let ns = arguments.eval(state, 0)?.and_then(|value| {
+        let ns = arguments.eval(state, 0)?.map(trim).and_then(|value| {
             if let Ok(id) = value.parse::<i32>() {
                 Namespace::find_by_id(id)
             } else {
