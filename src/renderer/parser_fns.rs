@@ -691,7 +691,7 @@ mod string {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)? {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             write!(out, "{}", super::url_encode(&value))?;
         }
         Ok(())
