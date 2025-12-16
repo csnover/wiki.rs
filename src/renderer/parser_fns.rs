@@ -405,6 +405,32 @@ mod page {
         write!(out, "{}", sp.root().name.subpage_text())?;
         Ok(())
     }
+
+    /// `{{ARTICLEPAGENAME}}` or `{{SUBJECTPAGENAME}}`
+    pub fn subject_page_name(
+        out: &mut String,
+        _: &mut State<'_>,
+        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        let title = &sp.root().name;
+        if let Some(subject) = title.namespace().subject() {
+            write!(out, "{}:{}", subject.name, title.text())?;
+        }
+        Ok(())
+    }
+
+    /// `{{TALKPAGENAME}}`
+    pub fn talk_page_name(
+        out: &mut String,
+        _: &mut State<'_>,
+        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        let title = &sp.root().name;
+        if let Some(talk) = title.namespace().talk() {
+            write!(out, "{}:{}", talk.name, title.text())?;
+        }
+        Ok(())
+    }
 }
 
 mod site {
@@ -1112,6 +1138,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "tag" => ext::extension_tag,
     "#invoke" => ext::invoke,
 
+    "articlepagename" => page::subject_page_name,
     "basepagename" => page::base_page_name,
     "defaultsort" => page::set_page_var,
     "displaytitle" => page::set_page_var,
@@ -1122,7 +1149,9 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "revisionid" => page::revision_id,
     "rootpagename" => page::root_page_name,
     "shortdesc" => page::set_page_var,
+    "subjectpagename" => page::subject_page_name,
     "subpagename" => page::sub_page_name,
+    "talkpagename" => page::talk_page_name,
 
     "numberofpages" => site::number_of_pages,
     "pagesincategory" => site::pages_in_category,
