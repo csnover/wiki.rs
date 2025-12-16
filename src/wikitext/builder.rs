@@ -101,10 +101,7 @@ where
             content: vec![
                 tok_text(source, key),
                 tok_text(source, "=\""),
-                tok_text(
-                    source,
-                    html_escape::encode_double_quoted_attribute(value.as_ref()),
-                ),
+                tok_text(source, value.as_ref()),
                 tok_text(source, "\""),
             ],
             delimiter: Some(1),
