@@ -2585,4 +2585,58 @@ th {
             margin-right: .15em;
         }
     }
+
+    /*********************/
+    /* Template:Routemap */
+    /*********************/
+
+    .RMbox {
+        border-bottom: 3px solid var(--fg);
+        box-shadow: none;
+        font-family: var(--sans);
+
+        .selfreference {
+            border-bottom: thin solid var(--border-th);
+            font-size: 100% !important;
+            padding-block: calc(var(--box-margin) * .25);
+        }
+
+        > tbody > tr > td:has(> .selfreference) {
+            padding-top: 0 !important;
+            padding-inline: 0 !important;
+        }
+
+        .routemap {
+            font-stretch: var(--side-table-stretch);
+            margin-bottom: calc(var(--box-margin) * .5);
+        }
+
+        > tbody > tr:first-child > th {
+            background-image: linear-gradient(transparent 3px, var(--bg) 3px) !important;
+            border-bottom: thin solid var(--border-fg);
+            color: var(--fg) !important;
+            font-stretch: var(--sidebar-stretch);
+            line-height: 1;
+            padding-top: calc(5px + 3px) !important;
+            vertical-align: baseline;
+
+            [style*=color] {
+                color: unset !important;
+            }
+        }
+
+        .autocollapse > tbody > tr:first-child > th,
+        > tbody > tr:not(:first-child) > th {
+            background-color: transparent !important;
+            border-top: 3px solid var(--fg) !important;
+            color: var(--fg) !important;
+            font-stretch: var(--sidebar-stretch);
+            padding: 0 !important;
+        }
+
+        > tbody > tr:not(:first-child) > th {
+            border-top: thin solid var(--border-fg) !important;
+            font-stretch: 100%;
+        }
+    }
 }
