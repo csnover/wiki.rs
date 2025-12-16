@@ -321,14 +321,15 @@ pub fn fuzzy_cmp(lhs: &str, rhs: &str) -> bool {
     }
 }
 
-/// Parses a string as a number similar to [`floatval`](https://php.net/floatval).
-pub fn parse_number(n: &str) -> Result<f64, core::num::ParseFloatError> {
+/// Parses a string as a number similar to [`floatval`](https://php.net/floatval)
+/// but returning an error if there is no number instead of returning 0.0.
+pub fn parse_number(n: &str) -> Result<(f64, &str), core::num::ParseFloatError> {
     // TODO: Do something smarter using ICU
     let s = n
         .chars()
-        .filter(|c| c.is_ascii_digit() || ['.', 'e', 'E', '+', '-'].contains(c))
+        .take_while(|c| c.is_ascii_digit() || ['.', 'e', 'E', '+', '-'].contains(c))
         .collect::<String>();
-    s.parse()
+    s.parse().map(|value| (value, &n[s.len()..]))
 }
 
 /// Finds and replaces substrings in the input like [`strtr`](https://php.net/strtr).
@@ -391,6 +392,12 @@ mod tests {
         assert!(!fuzzy_cmp("1", "true"));
         assert!(!fuzzy_cmp("0", "1"));
         assert!(!fuzzy_cmp("0.0", "1.0"));
+    }
+
+    #[test]
+    fn test_parse_number() {
+        assert_eq!(parse_number("122.34343The"), Ok((122.34343, "The")));
+        assert_eq!(parse_number("1,200"), Ok((1.0, ",200")));
     }
 
     #[test]

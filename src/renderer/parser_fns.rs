@@ -514,10 +514,24 @@ mod string {
             write!(
                 out,
                 "{}",
-                StripMarkers::for_each_non_marker(&n, |n| {
-                    parse_number(n)
-                        .ok()
-                        .map(|n| super::format_number(n, no_separators))
+                StripMarkers::for_each_non_marker(&n, |mut s| {
+                    // MW used this unpleasant regex along with a callback:
+                    // '(-(?=[\d\.]))?(\d+|(?=\.\d))(\.\d*)?([Ee][-+]?\d+)?'
+                    // which is not really any different than just trying every
+                    // position and seeing if it succeeds to parse as a float,
+                    // except slower
+                    let mut out = String::new();
+                    while !s.is_empty() {
+                        if let Ok((n, rest)) = parse_number(s) {
+                            out += &super::format_number(n, no_separators);
+                            s = rest;
+                        } else {
+                            let c = s.chars().next().unwrap();
+                            out.push(c);
+                            s = &s[c.len_utf8()..];
+                        }
+                    }
+                    Some(out.into())
                 })
             )?;
         }
