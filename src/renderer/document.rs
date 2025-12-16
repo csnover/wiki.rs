@@ -91,8 +91,6 @@ impl Document {
         let name = Cow::Owned(name.to_ascii_lowercase());
 
         if VOID_TAGS.contains(&name) {
-            self.graf_emitter.before_end_tag(&self.html, &name);
-            self.graf_emitter.after_end_tag(&self.html, &name);
             return Ok(());
         } else if !PHRASING_TAGS.contains(&name) {
             self.last_char = ' ';
@@ -115,11 +113,11 @@ impl Document {
         &mut self,
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
-        tag: &str,
+        name: &str,
         attributes: &[Spanned<Argument>],
     ) -> Result {
         // TODO: Avoid ownership
-        let tag = Cow::Owned(tag.to_ascii_lowercase());
+        let name = Cow::Owned(name.to_ascii_lowercase());
 
         // Normally, receiving a new start tag should close any tags which cause
         // it to be in an invalid position in the DOM. This is especially
@@ -135,23 +133,23 @@ impl Document {
         let close_tags = !matches!(
             self.stack.last(),
             Some(node @ Node::Tag(last))
-            if (last == "table" || last == "tr") && *last != tag && !node.can_parent(&tag));
+            if (last == "table" || last == "tr") && *last != name && !node.can_parent(&name));
 
         if close_tags {
-            while let Some(e) = self.stack.pop_if(|e| !e.can_parent(&tag)) {
+            while let Some(e) = self.stack.pop_if(|e| !e.can_parent(&name)) {
                 // The transition from a wikitable caption directly into a table
                 // cell requires extra recovery gymnastics to avoid walking too
                 // far up the stack. 'Template:Football squad start' does this.
                 let in_caption = matches!(e, Node::Tag(ref name) if name == "caption");
                 e.close(&mut self.html, &mut self.graf_emitter)?;
-                if in_caption && matches!(&*tag, "td" | "th") {
+                if in_caption && matches!(&*name, "td" | "th") {
                     self.start_tag(state, sp, "tr", &[])?;
                 }
             }
         }
 
-        self.graf_emitter.before_start_tag(&self.html, &tag);
-        write!(self.html, "<{tag}")?;
+        self.graf_emitter.before_start_tag(&self.html, &name);
+        write!(self.html, "<{name}")?;
         if !attributes.is_empty() {
             self.stack.push(Node::Attribute);
             for attribute in attributes {
@@ -169,7 +167,7 @@ impl Document {
                 .expect("element stack corruption");
         }
 
-        if !PHRASING_TAGS.contains(&tag) {
+        if !PHRASING_TAGS.contains(&name) {
             let mut has_some = false;
             // It is possible that a template starts in an ambiguous position
             // where the output of its first tag results in some other elements
@@ -197,11 +195,15 @@ impl Document {
         }
 
         self.html.write_char('>')?;
-        self.graf_emitter.after_start_tag(&self.html, &tag);
-        if !VOID_TAGS.contains(&tag) {
-            self.stack.push(Node::Tag(tag));
-        } else if tag == "br" {
-            self.last_char = '\n';
+        self.graf_emitter.after_start_tag(&self.html, &name);
+        if VOID_TAGS.contains(&name) {
+            self.graf_emitter.before_end_tag(&self.html, &name);
+            self.graf_emitter.after_end_tag(&self.html, &name);
+            if name == "br" || name == "hr" {
+                self.last_char = '\n';
+            }
+        } else {
+            self.stack.push(Node::Tag(name));
         }
         Ok(())
     }
@@ -524,8 +526,7 @@ impl Surrogate<Error> for Document {
         _span: Span,
         _line_content: bool,
     ) -> Result {
-        self.start_tag(state, sp, "hr", &[])?;
-        self.end_tag("hr")
+        self.start_tag(state, sp, "hr", &[])
     }
 
     fn adopt_lang_variant(
@@ -949,11 +950,10 @@ impl Node {
         match self {
             Node::Attribute => {}
             Node::Tag(name) => {
-                if !VOID_TAGS.contains(&name) {
-                    graf_emitter.before_end_tag(out, &name);
-                    write!(out, "</{name}>")?;
-                    graf_emitter.after_end_tag(out, &name);
-                }
+                debug_assert!(!VOID_TAGS.contains(&name));
+                graf_emitter.before_end_tag(out, &name);
+                write!(out, "</{name}>")?;
+                graf_emitter.after_end_tag(out, &name);
             }
             Node::List(mut list) => {
                 list.finish(out)?;
