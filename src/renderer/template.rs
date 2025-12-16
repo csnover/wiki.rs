@@ -1,7 +1,7 @@
 //! Template rendering types and functions.
 
 use super::{
-    Error, Result, State, StripMarker,
+    Error, Result, State, StripMarker, StripMarkers,
     expand_templates::{ExpandMode, ExpandTemplates},
     parser_fns::call_parser_fn,
     resolve_redirects,
@@ -15,10 +15,11 @@ use crate::{
     config::CONFIG,
     lua::run_vm,
     title::{Namespace, Title},
-    wikitext::{Argument, FileMap, Span, Spanned, Token},
+    wikitext::{Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token},
 };
 use core::fmt::{self, Write as _};
-use std::{borrow::Cow, pin::pin, rc::Rc, time::Instant};
+use memchr::memmem::FinderRev;
+use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
 
 /// Calls a Lua function.
 pub(super) fn call_module(
@@ -716,5 +717,99 @@ impl Surrogate<Error> for DbPrefetch {
         }
 
         Ok(())
+    }
+}
+
+/// “Strip newlines from the left hand context of Category links.
+///  See T2087, T87753, T174639, T359886”
+/// Since it is necessary to expand the target to know whether it is a
+/// category link there is no good way to suppress the newline in the
+/// Wikitext parser itself, and trying to do it in the renderer is a
+/// fool’s errand with how the graf emitter works (it would require
+/// buffering at least two tokens, or doing some crazy nonsense to try to
+/// get the graf emitter to be able to undo part of what it just did).
+/// Of course, it is a fool’s errand here too because empty strip markers
+/// need to be retained for the sake of trimming parser functions but
+/// need to be ignored when left-trimming categories.
+pub(super) fn left_trim_category(
+    out: &mut String,
+    state: &mut State<'_>,
+    title: &Title,
+    at: usize,
+) {
+    if title.namespace().id == Namespace::CATEGORY {
+        let mut truncated = &out[..at];
+
+        // If the strip marker contains whitespace including a newline, and that
+        // newline is the last one in the final concatenation, then we will not
+        // truncate at the ‘correct’ place. Let’s at least be aware of it, but
+        // also mostly pretend like it will never happen.
+        #[cfg(debug_assertions)]
+        let mut uh_oh_newline = None;
+
+        // Scan backwards, looking for any sequence of ASCII whitespace mixed
+        // with empty strip markers, until we stop retreating and learn to stick
+        // up for ourselves
+        'outer: loop {
+            static PREFIX: LazyLock<FinderRev<'static>> =
+                LazyLock::new(|| FinderRev::new(MARKER_PREFIX));
+
+            while let Some(input) = truncated.strip_suffix(MARKER_SUFFIX)
+                && let Some(start) = PREFIX.rfind(input)
+            {
+                let key = &input[start + MARKER_PREFIX.len()..];
+                let marker = state.strip_markers.get(key).expect("trim key corruption");
+                eprintln!("marker {marker:?} at {start}");
+
+                let is_empty = match marker {
+                    StripMarker::NoWiki(s) => s.bytes().all(|c| {
+                        #[cfg(debug_assertions)]
+                        if c == b'\n' {
+                            uh_oh_newline.replace(start);
+                        }
+                        c.is_ascii_whitespace()
+                    }),
+                    StripMarker::WikiRsSourceStart(_) | StripMarker::WikiRsSourceEnd(_) => true,
+                    _ => false,
+                };
+
+                if is_empty {
+                    truncated = &truncated[..start];
+                } else {
+                    break 'outer;
+                }
+            }
+
+            let trimmed = truncated.trim_ascii_end();
+            if trimmed.len() == truncated.len() {
+                break;
+            }
+            eprintln!("whitespace at {}", trimmed.len());
+            truncated = trimmed;
+        }
+
+        eprintln!("minimum is {at} {}", truncated.len());
+
+        // The regular expression used by MW was "\n\s*", so after
+        // retreating before all of the whitespace, we must find some
+        // courage and advance forward to the nearest newline
+        let end = truncated.len();
+        let end = memchr::memchr(b'\n', &out.as_bytes()[end..at]).map(|e| e + end);
+
+        eprintln!("advance is {end:?}");
+
+        #[cfg(debug_assertions)]
+        if let Some(pos) = uh_oh_newline
+            && pos < end.unwrap_or(at)
+        {
+            panic!("uh-oh! the earliest newline was inside a strip marker");
+        }
+
+        if let Some(end) = end
+            && let Cow::Owned(replacement) =
+                StripMarkers::for_each_non_marker(&out[end..at], |_| Some("".into()))
+        {
+            out.replace_range(end..at, &replacement);
+        }
     }
 }

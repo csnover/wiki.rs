@@ -896,16 +896,12 @@ pub(super) fn render_extension_tag(
         OutputMode::Block
     };
 
-    Ok(if out.is_empty() {
-        None
-    } else {
-        match mode {
-            OutputMode::Block => Some(Either::Left(StripMarker::Block(out))),
-            OutputMode::Empty => None,
-            OutputMode::Inline => Some(Either::Left(StripMarker::Inline(out))),
-            OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out))),
-            OutputMode::Raw => Some(Either::Right(out)),
-        }
+    Ok(match mode {
+        OutputMode::Block => Some(Either::Left(StripMarker::Block(out))),
+        OutputMode::Empty => None,
+        OutputMode::Inline => Some(Either::Left(StripMarker::Inline(out))),
+        OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out))),
+        OutputMode::Raw => Some(Either::Right(out)),
     })
 }
 

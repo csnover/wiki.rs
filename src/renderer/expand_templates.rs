@@ -8,7 +8,7 @@ use super::{
     tags, template,
 };
 use crate::{
-    title::{Namespace, Title},
+    title::Title,
     wikitext::{
         AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
         Spanned, TextStyle, Token,
@@ -76,31 +76,6 @@ impl ExpandTemplates {
         self.adopt_tokens(state, sp, content)?;
         self.out.write_str(&sp.source[suffix])?;
         Ok(())
-    }
-
-    /// “Strip newlines from the left hand context of Category links.
-    ///  See T2087, T87753, T174639, T359886”
-    /// Since it is necessary to expand the target to know whether it is a
-    /// category link there is no good way to suppress the newline in the
-    /// Wikitext parser itself, and trying to do it in the renderer is a
-    /// fool’s errand with how the graf emitter works (it would require
-    /// buffering at least two tokens, or doing some crazy nonsense to try to
-    /// get the graf emitter to be able to undo part of what it just did).
-    fn left_trim_category(&mut self, title: &Title, at: usize) {
-        if title.namespace().id == Namespace::CATEGORY {
-            // The regular expression used by MW was "\n\s*"
-            let end = self.out[..at]
-                .trim_end_matches(|c: char| c.is_ascii_whitespace())
-                .len();
-            let end = memchr::memchr(b'\n', &self.out.as_bytes()[end..at]).map(|e| e + end);
-            if let Some(end) = end {
-                if at == self.out.len() {
-                    self.out.truncate(end);
-                } else {
-                    self.out.replace_range(end..at, "");
-                }
-            }
-        }
     }
 
     /// Serialises the delimiter between two groups of spanned elements like
@@ -326,7 +301,9 @@ impl Surrogate<Error> for ExpandTemplates {
         // TODO: Is it really the case that only the root expansion needs to
         // worry about this here?
         if self.mode == ExpandMode::Normal {
-            self.left_trim_category(&Title::new(&sp.eval(state, target)?, None), self.out.len());
+            let title = Title::new(&sp.eval(state, target)?, None);
+            let at = self.out.len();
+            template::left_trim_category(&mut self.out, state, &title, at);
         }
 
         let (prefix, suffix) = calc_prefix_suffix(span, target, content);
@@ -499,10 +476,10 @@ impl Surrogate<Error> for ExpandTemplates {
         // TODO: Less hacky shit. Ruin `reduce_tree` in the parser or emit a
         // signal in the return value of `render_template` to strip whitespace
         // or something less egregious.
-        if self.out[start..].starts_with("[[")
-            && let Ok(link) = state.statics.parser.parse_wikilink(&self.out[start..])
-        {
-            self.left_trim_category(&Title::new(link, None), start);
+        if let Ok((at, link)) = state.statics.parser.parse_wikilink(&self.out[start..]) {
+            let at = start + at;
+            let title = Title::new(link, None);
+            template::left_trim_category(&mut self.out, state, &title, at);
         }
         Ok(())
     }

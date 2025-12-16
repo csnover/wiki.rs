@@ -159,7 +159,13 @@ pub(crate) use parser_fns::call_parser_fn;
 use piccolo::Lua;
 use schnellru::LruMap;
 pub(crate) use stack::{CachedValue, Kv, StackFrame};
-use std::{borrow::Cow, collections::HashMap, rc::Rc, sync::Arc, time::Duration};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    rc::Rc,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 pub(crate) use surrogate::Surrogate;
 use tags::LinkKind;
 pub(crate) use template::call_template;
@@ -318,6 +324,41 @@ impl StripMarkers {
         Self::for_each_marker_key(body, |key| f(&self.0[Self::key_index(key)]))
     }
 
+    /// Invokes callback `f` for each run of text delimited by split markers.
+    ///
+    /// The callback should return `Some(string)` if it wants to replace the
+    /// text run, or `None` if it wants the text to be kept as-is.
+    pub fn for_each_non_marker<'a, F>(body: &'a str, mut f: F) -> Cow<'a, str>
+    where
+        F: FnMut(&str) -> Option<Cow<'a, str>>,
+    {
+        let mut out = String::new();
+        let mut flushed = 0;
+        let mut cursor = 0;
+
+        while cursor != body.len() {
+            let end = FIND_PREFIX
+                .find(&body.as_bytes()[cursor..])
+                .map_or(body.len(), |pos| cursor + pos);
+            if let Some(replacement) = f(&body[cursor..end]) {
+                out += &body[flushed..cursor];
+                out += &replacement;
+                flushed = end;
+            }
+
+            cursor = FIND_SUFFIX
+                .find(&body.as_bytes()[end..])
+                .map_or(body.len(), |pos| end + pos + MARKER_SUFFIX.len());
+        }
+
+        if flushed == 0 {
+            Cow::Borrowed(body)
+        } else {
+            out += &body[flushed..];
+            Cow::Owned(out)
+        }
+    }
+
     /// Invokes callback `f` for each strip marker index in the given text.
     ///
     /// The callback should return `Some(string)` if it wants to replace the
@@ -329,10 +370,10 @@ impl StripMarkers {
         let mut out = String::new();
         let mut flushed = 0;
         let mut cursor = 0;
-        while let Some(before) = memmem::find(&body.as_bytes()[cursor..], MARKER_PREFIX.as_bytes())
+        while let Some(before) = FIND_PREFIX.find(&body.as_bytes()[cursor..])
             && let before = cursor + before
             && let start = before + MARKER_PREFIX.len()
-            && let Some(len) = memmem::find(&body.as_bytes()[start..], MARKER_SUFFIX.as_bytes())
+            && let Some(len) = FIND_SUFFIX.find(&body.as_bytes()[start..])
         {
             let end = start + len;
             let key = &body[start..end];
@@ -376,6 +417,14 @@ impl StripMarkers {
         self.for_each_marker(body, |marker| Some(Cow::Borrowed(marker)))
     }
 }
+
+/// A precomputed finder for [`MARKER_PREFIX`].
+static FIND_PREFIX: LazyLock<memmem::Finder<'static>> =
+    LazyLock::new(|| memmem::Finder::new(MARKER_PREFIX.as_bytes()));
+
+/// A precomputed finder for [`MARKER_SUFFIX`].
+static FIND_SUFFIX: LazyLock<memmem::Finder<'static>> =
+    LazyLock::new(|| memmem::Finder::new(MARKER_SUFFIX.as_bytes()));
 
 /// A strip marker.
 #[derive(Debug)]
@@ -484,13 +533,62 @@ mod tests {
                 Some(Cow::Borrowed("?"))
             } else if index == 10 {
                 Some(Cow::Borrowed("!"))
-            } else {
+            } else if index == 1 {
                 None
+            } else {
+                panic!("bogus index {index:?}");
             }
         });
         assert_eq!(
             result,
             Cow::Owned::<str>(format!("0123?{MARKER_PREFIX}a-1{MARKER_SUFFIX}abcd!4567"))
+        );
+    }
+
+    #[test]
+    fn test_strip_non_markers() {
+        let text = format!(
+            "0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}abcd{MARKER_PREFIX}b-a{MARKER_SUFFIX}4567"
+        );
+        let result = StripMarkers::for_each_non_marker(&text, |text| {
+            if text == "0123" {
+                Some(Cow::Borrowed("?"))
+            } else if text == "abcd" {
+                Some(Cow::Borrowed("!"))
+            } else if text == "4567" {
+                None
+            } else if text.is_empty() {
+                Some(Cow::Borrowed("."))
+            } else {
+                panic!("bogus text {text:?}");
+            }
+        });
+        assert_eq!(
+            result,
+            Cow::Owned::<str>(format!(
+                "?{MARKER_PREFIX}a-0{MARKER_SUFFIX}.{MARKER_PREFIX}a-1{MARKER_SUFFIX}!{MARKER_PREFIX}b-a{MARKER_SUFFIX}4567"
+            ))
+        );
+    }
+
+    #[test]
+    fn test_strip_non_markers_end() {
+        let text =
+            format!("0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}4567");
+        let result = StripMarkers::for_each_non_marker(&text, |text| {
+            if text == "0123" || text.is_empty() {
+                None
+            } else if text == "4567" {
+                Some(Cow::Borrowed("!"))
+            } else {
+                panic!("bogus text {text:?}");
+            }
+        });
+        assert_eq!(
+            result,
+            Cow::Owned::<str>(format!(
+                "0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}!"
+            ))
         );
     }
 }

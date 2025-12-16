@@ -106,7 +106,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a single expanded wikilink and returns its target.
-    pub fn parse_wikilink<'s>(&self, source: &'s str) -> Result<&'s str, Error> {
+    pub fn parse_wikilink<'s>(&self, source: &'s str) -> Result<(usize, &'s str), Error> {
         parser::wikitext::wikilink_single_target(
             source,
             self,
