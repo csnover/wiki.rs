@@ -482,8 +482,7 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
     // Due to transclusion it is necessary to render immediately instead of
     // storing the node list for later, since rendering later would require
     // retaining the stack frame too
-    let reference = arguments.eval_body(state)?;
-    let reference = reference.trim_ascii();
+    let reference = eval_string(state, arguments.sp, arguments.body().trim_ascii())?;
 
     let group = arguments
         .get(state, "group")?
@@ -494,7 +493,7 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
         state
             .globals
             .references
-            .append_named((group, follow.to_string()), reference);
+            .append_named((group, follow.to_string()), &reference);
         return Ok(OutputMode::Empty);
     }
 
@@ -503,14 +502,14 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
             state
                 .globals
                 .references
-                .insert_named((group.clone(), name.to_string()), reference),
+                .insert_named((group.clone(), name.to_string()), &reference),
         )
     } else if !reference.is_empty() {
         Some(
             state
                 .globals
                 .references
-                .insert_unnamed(group.clone(), reference),
+                .insert_unnamed(group.clone(), &reference),
         )
     } else {
         None
