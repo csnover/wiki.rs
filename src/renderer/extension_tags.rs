@@ -159,26 +159,15 @@ impl<'args, 'call, 'sp> core::ops::Deref for ExtensionTag<'args, 'call, 'sp> {
 
 impl ExtensionTag<'_, '_, '_> {
     /// Returns the unevaluated body of the tag as a string.
+    #[inline]
     pub fn body(&self) -> &str {
         self.body.unwrap_or("")
     }
 
     /// Evaluates the body of the tag.
+    #[inline]
     pub fn eval_body(&self, state: &mut State<'_>) -> Result<String> {
-        let source = FileMap::new(self.body());
-        let sp = self.sp.clone_with_source(source);
-        let root = state.statics.parser.parse(&sp.source, false)?;
-
-        let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
-        preprocessor.adopt_output(state, &sp, &root)?;
-        let source = preprocessor.finish();
-
-        let sp = sp.clone_with_source(FileMap::new(&source));
-        let root = state.statics.parser.parse_no_expansion(&sp.source)?;
-
-        let mut out = Document::new(true);
-        out.adopt_output(state, &sp, &root)?;
-        out.finish()
+        eval_string(state, self.sp, self.body())
     }
 
     /// Returns the body of the tag as a token tree.
@@ -277,21 +266,67 @@ fn no_wiki(
     state: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    let body = state.strip_markers.unstrip(arguments.body());
-    write!(
-        out,
-        "{}",
-        strtr(
-            &body,
-            &[
-                ("-{", "-&#123;"),
-                ("}-", "&#125;-"),
-                ("<", "&lt;"),
-                (">", "&gt;"),
-            ]
-        )
-    )?;
+    let body = strtr(
+        arguments.body(),
+        &[
+            ("-{", "-&#123;"),
+            ("}-", "&#125;-"),
+            ("<", "&lt;"),
+            (">", "&gt;"),
+        ],
+    );
+    let body = state.strip_markers.unstrip(&body);
+    write!(out, "{body}")?;
     Ok(OutputMode::Nowiki)
+}
+
+/// The `<poem>` extension tag.
+/// <https://www.mediawiki.org/wiki/Extension:Poem>
+fn poem(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+    let source = arguments.body();
+    // The lines iterator strips a trailing newline
+    let source = source
+        .strip_prefix("\r\n")
+        .or_else(|| source.strip_prefix('\n'))
+        .unwrap_or(source);
+
+    let class = arguments.get(state, "class")?.unwrap_or_default();
+    let nl = arguments.get(state, "compact")?.map_or("\n", |_| "");
+    let mut text = format!(r#"<div class="poem {class}">{nl}"#);
+    let mut iter = source.lines().peekable();
+    while let Some(line) = iter.next() {
+        if let Some(indent) = line.find(|c: char| c != ':')
+            && indent != 0
+        {
+            write!(
+                text,
+                r#"<span class="mw-poem-indented" style="margin-inline-start: {indent}em">{}</span>"#,
+                &line[indent..]
+            )?;
+        } else if let Some(spaces) = line.find(|c: char| c != ' ')
+            && spaces != 0
+        {
+            for _ in 0..spaces {
+                write!(text, "&nbsp;")?;
+            }
+            write!(text, "{}", &line[spaces..])?;
+        } else {
+            write!(text, "{line}")?;
+        }
+
+        if line.ends_with("----") {
+            writeln!(text)?;
+        } else if iter.peek().is_some() {
+            writeln!(text, "<br>")?;
+        }
+    }
+    write!(text, "{nl}</div>")?;
+
+    let body = eval_string(state, arguments.sp, &text)?.replace("<hr><br>", "<hr>");
+    let body = state.strip_markers.unstrip(&body);
+    write!(out, "{body}")?;
+
+    Ok(OutputMode::Block)
 }
 
 /// The `<pre>` extension tag.
@@ -750,6 +785,7 @@ static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
     "indicator" => indicator,
     "math" => math,
     "nowiki" => no_wiki,
+    "poem" => poem,
     "pre" => pre,
     "ref" => r#ref,
     "references" => references,
@@ -872,4 +908,23 @@ pub(super) fn render_extension_tag(
             OutputMode::Raw => Some(Either::Right(out)),
         }
     })
+}
+
+/// Evaluates a Wikitext string as a document fragment, returning the rendered
+/// fragment.
+fn eval_string(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> Result<String> {
+    let source = FileMap::new(text);
+    let sp = sp.clone_with_source(source);
+    let root = state.statics.parser.parse(&sp.source, false)?;
+
+    let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
+    preprocessor.adopt_output(state, &sp, &root)?;
+    let source = preprocessor.finish();
+
+    let sp = sp.clone_with_source(FileMap::new(&source));
+    let root = state.statics.parser.parse_no_expansion(&sp.source)?;
+
+    let mut out = Document::new(true);
+    out.adopt_output(state, &sp, &root)?;
+    out.finish()
 }

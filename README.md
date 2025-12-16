@@ -85,6 +85,7 @@ not supported right now. Here are all of the currently supported extension tags:
 * `<indicator>`, which is used to show indicator badges at the top of some pages
 * `<math>` (partial), which is used to display mathematical formulae and symbols
 * `<nowiki>`, which is used to stop sections of text from being read as Wikitext
+* `<poem>`, which is used to write a record of a poet’s soul crying out in verse
 * `<pre>`, which is used to display preformatted text, exactly like the HTML tag
 * `<ref>` & `<references>`, which are used to collect and list article citations
 * `<section>` (partial), which is used to paste bits of articles into other ones
