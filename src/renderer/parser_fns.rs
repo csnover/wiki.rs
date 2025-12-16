@@ -497,8 +497,7 @@ mod string {
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(n) = arguments.eval(state, 0)?
-            && let n = n.trim()
+        if let Some(n) = arguments.eval(state, 0)?.map(trim)
             && !n.is_empty()
         {
             let no_separators = if let Some(flag) = arguments.eval(state, 1)? {
@@ -512,23 +511,15 @@ mod string {
             };
             // log::trace!("formatnum:{n:?}");
 
-            // TODO: This thing needs to do very sad things to work.
-            // MW uses the `markerSkipCallback` to invoke formatting on every
-            // non-marker element in the input.
-            // This is possible enough for us right now if only value were not
-            // preprocessed so this could just run against the Text nodes, which
-            // is (probably, who reads code, lol) more or less what markers are
-            // doing.
-            // The `lc` and `uc` callbacks are the only other (core) functions
-            // that use `markerSkipCallback`, if you can believe GitHub’s code
-            // analysis.
-            // For now, just DGAF and emit the string as-is if it turns out to
-            // have more than just a number in it.
-            if let Ok(n) = parse_number(n) {
-                write!(out, "{}", super::format_number(n, no_separators))?;
-            } else {
-                write!(out, "{n}")?;
-            }
+            write!(
+                out,
+                "{}",
+                StripMarkers::for_each_non_marker(&n, |n| {
+                    parse_number(n)
+                        .ok()
+                        .map(|n| super::format_number(n, no_separators))
+                })
+            )?;
         }
 
         Ok(())
@@ -546,7 +537,6 @@ mod string {
         Ok(())
     }
 
-    // TODO: Needs to run by markerSkipCallback.
     /// `{{lc: string }}`
     pub fn lc(
         out: &mut String,
@@ -554,12 +544,17 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            write!(out, "{}", value.to_lowercase())?;
+            write!(
+                out,
+                "{}",
+                StripMarkers::for_each_non_marker(&value, |value| {
+                    Some(value.to_lowercase().into())
+                })
+            )?;
         }
         Ok(())
     }
 
-    // TODO: Needs to run by markerSkipCallback.
     /// `{{lcfirst: string }}`
     pub fn lc_first(
         out: &mut String,
@@ -681,28 +676,30 @@ mod string {
     }
 
     /// `{{uc: string }}`
-    // TODO: Needs to run by markerSkipCallback.
     pub fn uc(
         out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        // TODO: All of these are only supposed to modify Text nodes
-        if let Some(value) = arguments.eval(state, 0)? {
-            write!(out, "{}", value.to_uppercase())?;
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
+            write!(
+                out,
+                "{}",
+                StripMarkers::for_each_non_marker(&value, |value| {
+                    Some(value.to_uppercase().into())
+                })
+            )?;
         }
         Ok(())
     }
 
     /// `{{ucfirst: string }}`
-    // TODO: Needs to run by markerSkipCallback.
     pub fn uc_first(
         out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        // TODO: All of these are only supposed to modify Text nodes
-        if let Some(value) = arguments.eval(state, 0)? {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             let mut text = value.chars();
             if let Some(first) = text.next() {
                 write!(out, "{}{}", first.to_uppercase(), text.as_str())?;
