@@ -1,4 +1,4 @@
-# wiki.rs ######################################################################
+# ![wiki.rs](.github/ferris.is.my.hero.donotuse.final2.realfinal.jpg_(copy).png)
 
 wiki.rs is a high-performance offline reader of multistream bz2 MediaWiki dumps.
 
