@@ -292,9 +292,10 @@ mod lua {
                 exp = abs.log10().floor().max(0.0) as i32;
 
                 u8::try_from(if prec > exp && exp >= -4 {
+                    let prec = prec - exp - 1;
                     exp_width = None;
                     exp = 0;
-                    prec - exp - 1
+                    prec
                 } else {
                     prec - 1
                 })
@@ -958,6 +959,9 @@ mod tests {
         assert_eq!(check_fmt_f64("%+f", f64::NAN), "+nan");
         assert_eq!(check_fmt_f64("%.6g", 1.0), "1");
         assert_eq!(check_fmt_f64("%.6g", -1.0), "-1");
+        assert_eq!(check_fmt_f64("%.2g", 1.15), "1.1");
+        assert_eq!(check_fmt_f64("%.2g", 1.16), "1.2");
+        assert_eq!(check_fmt_f64("%.3g", 10.15), "10.2");
     }
 
     #[test]
