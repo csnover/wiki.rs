@@ -568,9 +568,11 @@ fn get_all_expanded_arguments(
         let mut keys = sp.keys();
         while let Some(key) = keys.next(state)? {
             let value = sp.expand(state, &key)?;
-            let value = value.as_ref().map_or(Cow::Borrowed(""), |value| {
-                strip_wiki_rs_markers(state, &key, value)
-            });
+            let value = value
+                .as_ref()
+                .map_or(Cow::Borrowed(""), |(value, is_named)| {
+                    strip_wiki_rs_markers(state, *is_named, value)
+                });
             state.statics.vm.try_enter(|ctx| {
                 let key = if let Ok(key) = key.parse::<i64>() {
                     Value::Integer(key)
@@ -607,9 +609,9 @@ fn get_expanded_argument(
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
-        Ok(if let Some(value) = sp.expand(state, &key)? {
+        Ok(if let Some((value, is_named)) = sp.expand(state, &key)? {
             // eprintln!("renderparam2: {key} = {value}");
-            let value = strip_wiki_rs_markers(state, &key, &value);
+            let value = strip_wiki_rs_markers(state, is_named, &value);
             state
                 .statics
                 .vm
@@ -638,7 +640,7 @@ fn get_expanded_argument(
 /// Eventually it will turn out that source tracking has to occur totally out of
 /// band using a code map, and then the problem will be solved forever, but why
 /// do work when you can pretend like it is unnecessary, lol.
-fn strip_wiki_rs_markers<'a>(state: &State<'_>, key: &str, input: &'a str) -> Cow<'a, str> {
+fn strip_wiki_rs_markers<'a>(state: &State<'_>, trim: bool, input: &'a str) -> Cow<'a, str> {
     match state
         .strip_markers
         .for_each_marker(input, |marker| match marker {
@@ -649,10 +651,10 @@ fn strip_wiki_rs_markers<'a>(state: &State<'_>, key: &str, input: &'a str) -> Co
         }) {
         s @ Cow::Borrowed(_) => s,
         Cow::Owned(s) => {
-            if key.chars().all(|c| c.is_ascii_digit()) {
-                Cow::Owned(s)
-            } else {
+            if trim {
                 Cow::Owned(s.trim_ascii().to_string())
+            } else {
+                Cow::Owned(s)
             }
         }
     }

@@ -112,7 +112,7 @@ pub(super) fn render_parameter(
 
     let key = sp.eval(state, name)?;
 
-    if let Some(value) = sp.expand(state, key.trim_ascii())? {
+    if let Some((value, _)) = sp.expand(state, key.trim_ascii())? {
         write!(out, "{value}")?;
     } else if let Some(default) = default {
         out.adopt_tokens(state, sp, default)?;

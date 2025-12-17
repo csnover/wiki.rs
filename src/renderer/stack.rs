@@ -109,21 +109,26 @@ impl<'a> StackFrame<'a> {
     }
 
     /// Evaluates the argument with the given key.
-    pub fn expand(&self, state: &mut State<'_>, key: &str) -> Result<Option<Cow<'_, str>>> {
-        Ok(if let Some(parent) = &self.parent {
-            self.arguments.get(state, parent, key)?.map(|value| {
-                if is_numeric_arg(key) {
-                    value
-                } else {
-                    match value {
-                        Cow::Borrowed(b) => Cow::Borrowed(b.trim_ascii()),
-                        Cow::Owned(o) => Cow::Owned(o.trim_ascii().to_string()),
-                    }
-                }
-            })
-        } else {
-            None
-        })
+    pub fn expand(&self, state: &mut State<'_>, key: &str) -> Result<Option<(Cow<'_, str>, bool)>> {
+        Ok(
+            if let Some(parent) = &self.parent
+                && let Some((index, is_named)) = self.arguments.get_index(state, parent, key)?
+            {
+                self.arguments.value(state, parent, index)?.map(|value| {
+                    let value = if is_named {
+                        match value {
+                            Cow::Borrowed(b) => Cow::Borrowed(b.trim_ascii()),
+                            Cow::Owned(o) => Cow::Owned(o.trim_ascii().to_string()),
+                        }
+                    } else {
+                        value
+                    };
+                    (value, is_named)
+                })
+            } else {
+                None
+            },
+        )
     }
 
     /// Returns all cached arguments for the given Lua context.
@@ -134,8 +139,13 @@ impl<'a> StackFrame<'a> {
         (values.len() == self.arguments.raw.len()).then(|| {
             let table = Table::new(&ctx);
             let keys = self.arguments.key_map.borrow();
-            for (key, index) in &keys.1 {
+            for (key, index) in &keys.indices {
                 let value = values.get(index).unwrap();
+                let value = if keys.is_named(*index) {
+                    value.trim_ascii()
+                } else {
+                    value
+                };
                 if let Ok(key) = key.parse::<i64>() {
                     table.set(ctx, key, ctx.intern(value.as_bytes())).unwrap();
                 } else {
@@ -143,7 +153,7 @@ impl<'a> StackFrame<'a> {
                         .set(
                             ctx,
                             ctx.intern(key.as_bytes()),
-                            ctx.intern(value.trim_ascii().as_bytes()),
+                            ctx.intern(value.as_bytes()),
                         )
                         .unwrap();
                 }
@@ -153,17 +163,9 @@ impl<'a> StackFrame<'a> {
     }
 
     /// Returns the cached argument with the given key.
+    #[inline]
     pub fn expand_cached(&self, key: &str) -> CachedValue<'_> {
-        match self.arguments.get_cached(key) {
-            CachedValue::Cached(value) => {
-                if is_numeric_arg(key) {
-                    CachedValue::Cached(value)
-                } else {
-                    CachedValue::Cached(Ref::map(value, |value| value.trim_ascii()))
-                }
-            }
-            value => value,
-        }
+        self.arguments.get_cached(key)
     }
 
     /// Returns an iterator over the keys of the frame’s arguments.
@@ -247,11 +249,72 @@ impl fmt::Debug for StackFrame<'_> {
     }
 }
 
+/// Cached key-to-index map.
+#[derive(Clone, Debug, Default)]
+struct KeyMap {
+    /// A map from a trimmed key to its index in the raw argument list.
+    indices: HashMap<String, usize>,
+    /// The last used unnamed key.
+    last_unnamed_key: usize,
+    /// A bit map of named keys.
+    named_keys: [u8; 8],
+    /// Spill of named keys for things with way too many arguments.
+    named_keys_heap: Vec<u8>,
+}
+
+impl KeyMap {
+    /// Gets the index and named flag for the given key.
+    #[inline]
+    fn get_cached(&self, key: &str) -> Option<(usize, bool)> {
+        self.indices
+            .get(key)
+            .map(|&index| (index, self.is_named(index)))
+    }
+
+    /// Returns true if the given index is a named key.
+    // Clippy: Value can only be 0..=7.
+    #[allow(clippy::cast_possible_truncation)]
+    #[inline]
+    fn is_named(&self, index: usize) -> bool {
+        let slot = index / 8;
+        let bits = if slot >= self.named_keys.len() {
+            let slot = slot - self.named_keys.len();
+            if slot >= self.named_keys_heap.len() {
+                return false;
+            }
+            self.named_keys_heap[slot]
+        } else {
+            self.named_keys[slot]
+        };
+
+        (bits & (1 << (index as u8 & 7))) != 0
+    }
+
+    /// Marks the key at the given index as a named key.
+    // Clippy: Value can only be 0..=7.
+    #[allow(clippy::cast_possible_truncation)]
+    #[inline]
+    fn set_named(&mut self, index: usize) {
+        let slot = index / 8;
+        let bits = if slot >= self.named_keys.len() {
+            let slot = slot - self.named_keys.len();
+            if slot >= self.named_keys_heap.len() {
+                self.named_keys_heap.resize(slot + 1, 0);
+            }
+            &mut self.named_keys_heap[slot]
+        } else {
+            &mut self.named_keys[slot]
+        };
+
+        *bits |= 1 << (index as u8 & 7);
+    }
+}
+
 /// A list of k-v pairs with a cached key map.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KeyCacheKvs<'call, 'args> {
     /// A lazily populated key-index map into [`Self::raw`].
-    key_map: Rc<RefCell<(usize, HashMap<String, usize>)>>,
+    key_map: Rc<RefCell<KeyMap>>,
     /// The raw arguments passed to the function.
     raw: &'call [Kv<'args>],
     /// Cached values.
@@ -294,7 +357,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
         sp: &'call StackFrame<'_>,
         key: &str,
     ) -> Result<Option<Cow<'call, str>>> {
-        if let Some(index) = self.get_index(state, sp, key)? {
+        if let Some((index, _)) = self.get_index(state, sp, key)? {
             self.value(state, sp, index)
         } else {
             Ok(None)
@@ -306,13 +369,20 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
     /// The returned value will include any leading and trailing whitespace
     /// present in the original text.
     fn get_cached(&self, key: &str) -> CachedValue<'_> {
-        let index = self.key_map.borrow().1.get(key).copied();
+        let key_map = self.key_map.borrow();
+        let index = key_map.indices.get(key).copied();
         if let Some(index) = index {
             Ref::filter_map(self.value_cache.borrow(), |cache| {
-                cache.get(&index).map(String::as_str)
+                cache.get(&index).map(|value| {
+                    if key_map.is_named(index) {
+                        value.trim_ascii()
+                    } else {
+                        value
+                    }
+                })
             })
             .map_or(CachedValue::Unknown, CachedValue::Cached)
-        } else if self.key_map.borrow().1.len() == self.raw.len() {
+        } else if key_map.indices.len() == self.raw.len() {
             CachedValue::Nil
         } else {
             CachedValue::Unknown
@@ -325,22 +395,23 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
         key: &str,
-    ) -> Result<Option<usize>> {
-        if let Some(index) = self.key_map.borrow().1.get(key) {
-            return Ok(Some(*index));
-        } else if self.key_map.borrow().1.len() != self.len() {
+    ) -> Result<Option<(usize, bool)>> {
+        if let value @ Some(..) = self.key_map.borrow().get_cached(key) {
+            return Ok(value);
+        } else if self.key_map.borrow().indices.len() != self.len() {
             let mut key_map = self.key_map.borrow_mut();
-            for index in key_map.1.len()..self.len() {
-                let name = if let Some(name) = self.name(state, sp, index)? {
-                    name.trim_ascii().to_string()
+            for index in key_map.indices.len()..self.len() {
+                let (name, is_named) = if let Some(name) = self.name(state, sp, index)? {
+                    key_map.set_named(index);
+                    (name.trim_ascii().to_string(), true)
                 } else {
-                    key_map.0 += 1;
-                    key_map.0.to_string()
+                    key_map.last_unnamed_key += 1;
+                    (key_map.last_unnamed_key.to_string(), false)
                 };
                 let is_match = name == key;
-                key_map.1.insert(name, index);
+                key_map.indices.insert(name, index);
                 if is_match {
-                    return Ok(Some(index));
+                    return Ok(Some((index, is_named)));
                 }
             }
         }
@@ -363,23 +434,24 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
             return Ok(None);
         }
 
-        if self.key_map.borrow().1.len() <= index {
+        if self.key_map.borrow().indices.len() <= index {
             let mut key_map = self.key_map.borrow_mut();
-            for index in key_map.1.len()..=index {
+            for index in key_map.indices.len()..=index {
                 let name = if let Some(name) = self.name(state, sp, index)? {
+                    key_map.set_named(index);
                     name.trim_ascii().to_string()
                 } else {
-                    key_map.0 += 1;
-                    key_map.0.to_string()
+                    key_map.last_unnamed_key += 1;
+                    key_map.last_unnamed_key.to_string()
                 };
-                key_map.1.insert(name, index);
+                key_map.indices.insert(name, index);
             }
         }
 
         Ok(self
             .key_map
             .borrow()
-            .1
+            .indices
             .iter()
             .find_map(|(k, i)| (*i == index).then(|| k.clone())))
     }
@@ -665,10 +737,4 @@ fn debug_backtrace(title: &Title, mut sp: &StackFrame<'_>) {
             break;
         }
     }
-}
-
-/// Returns true if the given key is a numeric argument key.
-#[inline]
-fn is_numeric_arg(key: &str) -> bool {
-    key.chars().all(|c| c.is_ascii_digit())
 }
