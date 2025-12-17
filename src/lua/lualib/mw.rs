@@ -625,17 +625,19 @@ fn get_expanded_argument(
 
 /// Removes wiki.rs source markers from the given input.
 ///
-/// This is necessary because 'Module:Citation/CS1' is unbearable and complains
-/// visibly if a strip marker exists inside of any of its parameters instead of
-/// just ignoring or stripping them itself (is it any wonder it runs so
-/// slowly?).
+/// This is necessary because:
 ///
-/// More importantly, 'Module:Infobox' does that thing that PHP-adjacent
-/// programmers love to do and runs uses pattern matching on raw Wikitext
-/// inputs and expects that those inputs will be in a very specific format that
-/// does not include any extra strip markers or whitespace or *anything*,
-/// because that causes it to fail to match, and then it fucks the entire
-/// markup.
+/// 1. 'Module:Citation/CS1' is unbearable and complains visibly if a strip
+///    marker exists inside of any of its parameters instead of just ignoring or
+///    stripping them itself (is it any wonder it runs so slowly?).
+///
+/// 2. More importantly, 'Module:Infobox' (in `fixChildBoxes`) does that thing
+///    that script writers love to do and uses pattern matching expressions to
+///    match HTML tags in strings and expects that the strings will be in a very
+///    specific format without any different whitespace, strip markers, etc.
+///    that would cause its anchored pattern match to fail. Probably other
+///    modules do this too, but infobox is especially brain damaged. This is
+///    noticeable on at least 'Template:Nutritionalvalue'.
 ///
 /// Eventually it will turn out that source tracking has to occur totally out of
 /// band using a code map, and then the problem will be solved forever, but why

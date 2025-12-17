@@ -209,13 +209,6 @@ pub(super) fn render_template<'tt>(
             arguments,
         } => {
             call_template(&mut partial, state, sp, &target, callee.clone(), &arguments)?;
-
-            // TODO: 'Template:Infobox' breaks when it is fed recursively into
-            // itself because it gets confused by the extra unexpected strip
-            // markers in its `fixChildBoxes` function and emits invalid table
-            // markup. Probably other things do this too but infobox is
-            // especially brain damaged. This is noticeable on
-            // 'Template:Nutritionalvalue', among other pages.
             contains_blocks(&partial).then(|| {
                 callee
                     .key()
