@@ -3297,8 +3297,8 @@ fn balance_quotes(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<To
     let mut first_multi_letter_word = None;
     let mut first_space = None;
 
-    for (index, t) in t.into_iter().enumerate() {
-        match &t.node {
+    for (index, mut t) in t.into_iter().enumerate() {
+        match &mut t.node {
             Token::TextStyle(TextStyle::Bold(position)) => {
                 bold_count += 1;
                 match position {
@@ -3313,6 +3313,16 @@ fn balance_quotes(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<To
             Token::TextStyle(TextStyle::BoldItalic) => {
                 bold_count += 1;
                 italic_count += 1;
+            }
+            Token::ExternalLink { content, .. }
+            | Token::Heading { content, .. }
+            | Token::ListItem { content, .. } => {
+                *content = balance_quotes(core::mem::take(content));
+            }
+            Token::Link { content, .. } => {
+                for arg in content {
+                    arg.node.content = balance_quotes(core::mem::take(&mut arg.node.content));
+                }
             }
             _ => {}
         }
