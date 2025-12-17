@@ -979,6 +979,24 @@ th {
         font-family: var(--mono) !important;
     }
 
+    /**********************/
+    /* Template:Var serif */
+    /**********************/
+
+    .var-serif {
+        font-family: var(--serif);
+        font-size: 100%;
+    }
+
+    /*******************/
+    /* Template:Button */
+    /*******************/
+
+    [style*="font-family: sans-serif"],
+    [style*="font-family:sans-serif"] {
+        font-family: var(--sans) !important;
+    }
+
     /********************/
     /* Template:Hatnote */
     /********************/
@@ -2637,6 +2655,27 @@ th {
         > tbody > tr:not(:first-child) > th {
             border-top: thin solid var(--border-fg) !important;
             font-stretch: 100%;
+        }
+    }
+
+    /*******************/
+    /* Template:Markup */
+    /*******************/
+    [data-wiki-rs~=template-markup] {
+        margin-inline: var(--table-margin-inline) !important;
+        width: var(--table-width) !important;
+
+        * + & {
+            margin-top: var(--box-margin) !important;
+        }
+
+        > tbody > tr > td {
+            border: 0 !important;
+            padding: var(--table-padding-block) var(--table-padding-inline) !important;
+
+            + td:not([style*="border-style: none"]) {
+                border: thin solid var(--border-fg) !important;
+            }
         }
     }
 }
