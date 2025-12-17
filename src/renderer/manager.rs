@@ -38,13 +38,15 @@ pub(crate) enum Command {
     /// Render some arbitrary Wikitext.
     Eval {
         /// Arguments for parameters in the Wikitext.
-        args: String,
+        args: Option<String>,
         /// The Wikitext.
         code: String,
         /// If true, append marker content to the output.
         markers: bool,
         /// Which rendering step to return.
         mode: EvalPp,
+        /// The root page name.
+        page_name: String,
     },
 }
 
@@ -113,7 +115,15 @@ impl r2d2::ManageConnection for RenderManager {
                         code,
                         markers,
                         mode,
-                    } => render_string(&mut statics, &code, &args, mode, markers),
+                        page_name,
+                    } => render_string(
+                        &mut statics,
+                        &page_name,
+                        &code,
+                        args.as_deref(),
+                        mode,
+                        markers,
+                    ),
                 };
                 let _ = tx.send(output);
                 statics.vm.gc_collect();
@@ -170,15 +180,29 @@ fn render_article(
 /// Main renderer entrypoint for eval.
 fn render_string(
     statics: &mut Statics,
+    mut page_name: &str,
     source: &str,
-    args: &str,
+    args: Option<&str>,
     mode: EvalPp,
     markers: bool,
 ) -> Result<RenderOutput> {
-    let kvs = statics.parser.debug_parse_args(args)?;
+    if page_name.is_empty() {
+        page_name = "(eval)";
+    }
+
+    let kvs = args.map_or(Ok(<_>::default()), |args| {
+        statics.parser.debug_parse_args(args)
+    })?;
     let kvs = kvs.iter().map(super::Kv::Argument).collect::<Vec<_>>();
-    let sp = StackFrame::new(Title::new("(args)", None), FileMap::new(args));
-    let sp = sp.chain(Title::new("(eval)", None), FileMap::new(source), &kvs)?;
+
+    let mut sp = StackFrame::new(Title::new(page_name, None), FileMap::new(source));
+    let sp = if let Some(args) = args {
+        let source = core::mem::replace(&mut sp.source, FileMap::new(args));
+        sp.chain(Title::new("(include-eval)", None), source, &kvs)?
+    } else {
+        sp
+    };
+
     let date = UtcDateTime::now();
     let load_mode = LoadMode::Module;
     match mode {

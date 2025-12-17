@@ -118,7 +118,9 @@
                 }
             }
 
-            textarea {
+            fieldset,
+            textarea,
+            input {
                 background: inherit;
                 border: none;
                 color: inherit;
@@ -127,8 +129,13 @@
                 resize: none;
 
                 + textarea {
-                    border-top: thin solid var(--border-fg);
                     min-height: calc(var(--bottom-panel) * .25);
+                }
+
+                + textarea,
+                + fieldset,
+                + input {
+                    border-top: thin solid var(--border-fg);
                     padding-top: .5em;
                 }
             }
@@ -137,41 +144,35 @@
                 cursor: pointer;
             }
 
-            div:has(> label > [name=markers]) {
+            div:has(> label > [name=markers]),
+            fieldset:not(:has(> legend > label > [name=include]:checked)) > textarea {
                 cursor: default;
                 opacity: .7;
                 pointer-events: none;
                 user-select: none;
+            }
 
-                div:has(> label > :is([value=tree], [value=pre]):checked) ~ & {
-                    cursor: unset;
-                    opacity: unset;
-                    pointer-events: unset;
-                    user-select: unset;
-                }
+            div:has(> label > :is([value=tree], [value=pre]):checked) ~ div:has(> label > [name=markers])
+            {
+                cursor: unset;
+                opacity: unset;
+                pointer-events: unset;
+                user-select: unset;
             }
 
             <%= crate::pages::filter::css(&css) %>
         </style>
     </head>
     <body>
-        <table class="syntect-code">
-            <%
-                let mut lines = lines;
-                while let Some((offset, line, code)) = lines.next().transpose()? {
-            %>
-                <tr>
-                    <td><small><%- offset %></small></td>
-                    <td><%- line %></td>
-                    <td><code><%- code %></code></td>
-                </tr>
-            <% } %>
-        </table>
         <% if let Some(form) = form { %>
             <form method="post" class="syntect-code">
                 <div class="inputs">
                     <textarea name="code" autofocus autocorrect="off" autocomplete="off" placeholder="Wikitext goes here, to increase and/or reduce confusion"><%= form.code %></textarea>
-                    <textarea name="args" autocorrect="off" autocomplete="off" placeholder="Optional template arguments, in the usual k=v|1=b|2|3 format"><%= form.args %></textarea>
+                    <fieldset class="inputs">
+                        <legend><label><input name="include" value="true" type="checkbox"<% if form.include == Some(true) { %> checked<% } %>> Transclude</label></legend>
+                        <textarea name="args" autocorrect="off" autocomplete="off" placeholder="Optional template arguments, in the usual k=v|1=b|2|3 format"><%= form.args %></textarea>
+                    </fieldset>
+                    <input name="page_name" placeholder="Optional page name; defaults to (eval)" value="<%= form.page_name %>">
                 </div>
                 <div class="boopables">
                     <div>
@@ -184,5 +185,17 @@
                 </div>
             </form>
         <% } %>
+        <table class="syntect-code">
+            <%
+                let mut lines = lines;
+                while let Some((offset, line, code)) = lines.next().transpose()? {
+            %>
+                <tr>
+                    <td><small><%- offset %></small></td>
+                    <td><%- line %></td>
+                    <td><code><%- code %></code></td>
+                </tr>
+            <% } %>
+        </table>
     </body>
 </html>

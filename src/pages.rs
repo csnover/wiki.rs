@@ -196,10 +196,15 @@ pub(crate) struct EvalForm {
     args: String,
     /// The Wikitext to evaluate.
     code: String,
+    /// If `Some(true)`, treat the Wikitext as if it is being included in
+    /// another page.
+    include: Option<bool>,
     /// If `Some(true)`, also show the contents of strip markers.
     markers: Option<bool>,
     /// If `Some(true)`, show the parse tree instead of the rendered output.
     mode: EvalPp,
+    /// The name to use for the root frame.
+    page_name: String,
 }
 
 /// The ad-hoc Wikitext expression evaluator.
@@ -208,10 +213,11 @@ pub(crate) async fn eval_post(
     Form(body): Form<EvalForm>,
 ) -> Result<impl IntoResponse, Error> {
     let command = renderer::Command::Eval {
-        args: body.args.clone(),
+        args: (body.include == Some(true)).then(|| body.args.clone()),
         code: body.code.clone(),
         markers: body.markers == Some(true),
         mode: body.mode,
+        page_name: body.page_name.clone(),
     };
     let time = Instant::now();
     let output = call_renderer(&state, command)?;
