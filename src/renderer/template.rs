@@ -759,7 +759,6 @@ pub(super) fn left_trim_category(
             {
                 let key = &input[start + MARKER_PREFIX.len()..];
                 let marker = state.strip_markers.get(key).expect("trim key corruption");
-                eprintln!("marker {marker:?} at {start}");
 
                 let is_empty = match marker {
                     StripMarker::NoWiki(s) => s.bytes().all(|c| {
@@ -784,19 +783,14 @@ pub(super) fn left_trim_category(
             if trimmed.len() == truncated.len() {
                 break;
             }
-            eprintln!("whitespace at {}", trimmed.len());
             truncated = trimmed;
         }
-
-        eprintln!("minimum is {at} {}", truncated.len());
 
         // The regular expression used by MW was "\n\s*", so after
         // retreating before all of the whitespace, we must find some
         // courage and advance forward to the nearest newline
         let end = truncated.len();
         let end = memchr::memchr(b'\n', &out.as_bytes()[end..at]).map(|e| e + end);
-
-        eprintln!("advance is {end:?}");
 
         #[cfg(debug_assertions)]
         if let Some(pos) = uh_oh_newline
