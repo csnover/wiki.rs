@@ -114,7 +114,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     trail: Option<&str>,
     title: Title,
 ) -> Result<(), Error> {
-    if sp.root().name.key() == title.key() {
+    if title.fragment().is_empty() && sp.root().name.key() == title.key() {
         render_runtime(out, state, sp, |_, source| {
             token!(
                 source,
@@ -206,7 +206,12 @@ impl LinkKind<'_> {
                 if title.text().is_empty() {
                     format!("#{}", anchor_encode(title.fragment()))
                 } else {
-                    format!("{}/article/{}", base_uri.path(), title.partial_url())
+                    let mut link = format!("{}/article/{}", base_uri.path(), title.partial_url());
+                    if !title.fragment().is_empty() {
+                        link.push('#');
+                        link += &anchor_encode(title.fragment());
+                    }
+                    link
                 }
             }
         }
