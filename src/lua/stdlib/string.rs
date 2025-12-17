@@ -4,10 +4,7 @@ use crate::lua::prelude::*;
 use core::cell::Cell;
 use find::match_lua;
 use gmatch::gmatch_next;
-use piccolo::{
-    TypeError, Variadic,
-    meta_ops::{self, MetaResult},
-};
+use piccolo::TypeError;
 
 pub(crate) mod engine;
 pub(crate) mod find;
@@ -86,55 +83,6 @@ pub fn load_string(ctx: Context<'_>) -> Result<(), TypeError> {
     string.set_field(ctx, "gfind", string.get_value(ctx, "gmatch"));
 
     string.set_field(ctx, "format", Callback::from_fn(&ctx, format::format_impl));
-
-    ctx.set_global(
-        "tostring",
-        Callback::from_fn(&ctx, |ctx, _, mut stack| {
-            if stack.is_empty() {
-                Err("Bad argument to tostring".into_value(ctx).into())
-            } else {
-                // piccolo itself is doing the wrong thing here and not
-                // following the algorithm that Lua uses to hide floating-point
-                // errors.
-                let value = stack.get(0);
-                if let Value::Number(n) = value {
-                    let spec = format::ConversionSpecifier {
-                        alt_form: false,
-                        zero_pad: false,
-                        left_adj: false,
-                        space_sign: false,
-                        force_sign: false,
-                        width: None,
-                        precision: Some(14),
-                        conversion_type: format::ConversionType::CompactFloatLower,
-                    };
-
-                    let mut buf = String::new();
-                    spec.write_f64(&mut buf, n)?;
-                    if buf.bytes().all(|c| c.is_ascii_digit() || c == b'-') {
-                        buf += ".0";
-                    }
-                    stack.replace(ctx, ctx.intern(buf.as_bytes()));
-                    Ok(CallbackReturn::Return)
-                } else {
-                    match meta_ops::tostring(ctx, value)? {
-                        MetaResult::Value(v) => {
-                            stack[0] = v;
-                            stack.drain(1..);
-                            Ok(CallbackReturn::Return)
-                        }
-                        MetaResult::Call(call) => {
-                            stack.replace(ctx, Variadic(call.args));
-                            Ok(CallbackReturn::Call {
-                                function: call.function,
-                                then: None,
-                            })
-                        }
-                    }
-                }
-            }
-        }),
-    );
 
     Ok(())
 }

@@ -3,7 +3,7 @@
 use crate::lua::prelude::*;
 use core::fmt::Write as _;
 use gc_arena::Gc;
-pub(super) use lua::{ConversionSpecifier, ConversionType};
+pub(super) use lua::ConversionType;
 use lua::{FormatElement, parse_format_string};
 use piccolo::Function;
 
