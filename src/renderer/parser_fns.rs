@@ -807,7 +807,6 @@ mod subst {
                     out,
                     state,
                     arguments.sp,
-                    arguments.get_raw(0).unwrap(),
                     Title::new(target, Namespace::find_by_id(Namespace::TEMPLATE)),
                     &arguments.arguments[1..],
                 )?;

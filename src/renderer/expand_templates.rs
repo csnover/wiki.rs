@@ -46,6 +46,7 @@ pub(crate) struct ExpandTemplates {
 impl ExpandTemplates {
     /// Creates a new [`ExpandTemplates`] with the given writer and inclusion
     /// mode.
+    #[inline]
     pub fn new(mode: ExpandMode) -> Self {
         Self {
             inclusion_mode: vec![],
@@ -55,12 +56,14 @@ impl ExpandTemplates {
     }
 
     /// Consumes this object, returning the result.
+    #[inline]
     pub fn finish(self) -> String {
         self.out
     }
 
     /// Serialises a token which is structured like
     /// `{prefix}{attributes}{delimiter}{content}{suffix}`.
+    #[inline]
     fn adopt_attributes_content(
         &mut self,
         state: &mut State<'_>,
@@ -78,8 +81,29 @@ impl ExpandTemplates {
         Ok(())
     }
 
+    /// Serialises a token which is structured like
+    /// `{prefix}{target}{delimiter}{arguments}{suffix}`.
+    #[inline]
+    fn adopt_target_arguments(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        target: &[Spanned<Token>],
+        arguments: &[Spanned<Argument>],
+    ) -> Result {
+        let (prefix, suffix) = calc_prefix_suffix(span, target, arguments);
+        self.out.write_str(&sp.source[prefix])?;
+        self.adopt_tokens(state, sp, target)?;
+        self.write_delimiter(sp, target, arguments)?;
+        tags::render_single_attribute(self, state, sp, arguments)?;
+        self.out.write_str(&sp.source[suffix])?;
+        Ok(())
+    }
+
     /// Serialises the delimiter between two groups of spanned elements like
     /// `{before}{delimiter}{after}...`.
+    #[inline]
     fn write_delimiter<T, U>(
         &mut self,
         sp: &StackFrame<'_>,
@@ -306,13 +330,7 @@ impl Surrogate<Error> for ExpandTemplates {
             template::left_trim_category(&mut self.out, state, &title, at);
         }
 
-        let (prefix, suffix) = calc_prefix_suffix(span, target, content);
-        self.out.write_str(&sp.source[prefix])?;
-        self.adopt_tokens(state, sp, target)?;
-        self.write_delimiter(sp, target, content)?;
-        tags::render_single_attribute(self, state, sp, content)?;
-        self.out.write_str(&sp.source[suffix])?;
-        Ok(())
+        self.adopt_target_arguments(state, sp, span, target, content)
     }
 
     fn adopt_list_item(
@@ -459,7 +477,7 @@ impl Surrogate<Error> for ExpandTemplates {
     ) -> Result {
         let line_start = self.out.is_empty() || self.out.ends_with('\n');
         let start = self.out.len();
-        template::render_template(
+        let rendered = template::render_template(
             &mut self.out,
             state,
             sp,
@@ -469,19 +487,23 @@ impl Surrogate<Error> for ExpandTemplates {
             line_start,
         )?;
 
-        // Because template expansions always just results in a string, it is
-        // necessary to look at the start of whatever just got appended in order
-        // to go back and delete whitespace which needs to be erased due to the
-        // subtemplate expansion. These left-sided rules are awful.
-        // TODO: Less hacky shit. Ruin `reduce_tree` in the parser or emit a
-        // signal in the return value of `render_template` to strip whitespace
-        // or something less egregious.
-        if let Ok((at, link)) = state.statics.parser.parse_wikilink(&self.out[start..]) {
-            let at = start + at;
-            let title = Title::new(link, None);
-            template::left_trim_category(&mut self.out, state, &title, at);
+        if rendered {
+            // Because template expansions always just results in a string, it is
+            // necessary to look at the start of whatever just got appended in order
+            // to go back and delete whitespace which needs to be erased due to the
+            // subtemplate expansion. These left-sided rules are awful.
+            // TODO: Less hacky shit. Ruin `reduce_tree` in the parser or emit a
+            // signal in the return value of `render_template` to strip whitespace
+            // or something less egregious.
+            if let Ok((at, link)) = state.statics.parser.parse_wikilink(&self.out[start..]) {
+                let at = start + at;
+                let title = Title::new(link, None);
+                template::left_trim_category(&mut self.out, state, &title, at);
+            }
+            Ok(())
+        } else {
+            self.adopt_target_arguments(state, sp, span, target, arguments)
         }
-        Ok(())
     }
 
     fn adopt_text(

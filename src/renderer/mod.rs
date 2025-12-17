@@ -151,7 +151,7 @@ use crate::{
     wikitext::{LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, Parser},
 };
 use axum::http::Uri;
-use core::fmt::{self, Write as _};
+use core::fmt;
 pub(crate) use expand_templates::{ExpandMode, ExpandTemplates};
 pub(crate) use manager::{Command, In, RenderManager as Manager, RenderOutput};
 use memchr::memmem;
@@ -401,7 +401,7 @@ impl StripMarkers {
 
     /// Pushes a new strip marker to the list, emitting the marker to the given
     /// `out` string.
-    fn push(&mut self, out: &mut String, tag_name: &str, marker: StripMarker) {
+    fn push<W: fmt::Write + ?Sized>(&mut self, out: &mut W, tag_name: &str, marker: StripMarker) {
         let _ = write!(
             out,
             "{MARKER_PREFIX}{tag_name}-{:x}{MARKER_SUFFIX}",

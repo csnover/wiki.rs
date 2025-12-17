@@ -12,15 +12,15 @@ use crate::{
     db::Database,
     lua::{HostCall, LuaFrame},
     renderer::{
-        CachedValue, ExpandMode, ExpandTemplates, Kv, StackFrame, State, StripMarker, Surrogate,
-        call_parser_fn, call_template,
+        CachedValue, ExpandMode, ExpandTemplates, Kv, StackFrame, State, Surrogate, call_parser_fn,
+        call_template,
     },
     title::{Namespace, Title},
     wikitext::FileMap,
 };
 use arc_cell::OptionalArcCell;
 use piccolo::{ExternError, Stack, StashedString, StashedTable, StashedValue, UserData};
-use std::{borrow::Cow, cell::RefCell, pin::Pin};
+use std::{cell::RefCell, pin::Pin};
 
 /// The main Lua support library.
 #[derive(gc_arena::Collect, Default)]
@@ -539,7 +539,6 @@ fn expand_template(
             &mut result,
             state,
             sp,
-            &Kv::Borrowed(&title),
             Title::new(&title, Namespace::find_by_id(Namespace::TEMPLATE)),
             &arguments,
         )?;
@@ -567,12 +566,9 @@ fn get_all_expanded_arguments(
         let table = state.statics.vm.enter(|ctx| ctx.stash(Table::new(&ctx)));
         let mut keys = sp.keys();
         while let Some(key) = keys.next(state)? {
-            let value = sp.expand(state, &key)?;
-            let value = value
-                .as_ref()
-                .map_or(Cow::Borrowed(""), |(value, is_named)| {
-                    strip_wiki_rs_markers(state, *is_named, value)
-                });
+            let value = sp
+                .expand(state, &key)?
+                .expect("only keys with values should exist");
             state.statics.vm.try_enter(|ctx| {
                 let key = if let Ok(key) = key.parse::<i64>() {
                     Value::Integer(key)
@@ -609,9 +605,8 @@ fn get_expanded_argument(
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
-        Ok(if let Some((value, is_named)) = sp.expand(state, &key)? {
+        Ok(if let Some(value) = sp.expand(state, &key)? {
             // eprintln!("renderparam2: {key} = {value}");
-            let value = strip_wiki_rs_markers(state, is_named, &value);
             state
                 .statics
                 .vm
@@ -621,45 +616,6 @@ fn get_expanded_argument(
         })
     })
     .map_err(Into::into)
-}
-
-/// Removes wiki.rs source markers from the given input.
-///
-/// This is necessary because:
-///
-/// 1. 'Module:Citation/CS1' is unbearable and complains visibly if a strip
-///    marker exists inside of any of its parameters instead of just ignoring or
-///    stripping them itself (is it any wonder it runs so slowly?).
-///
-/// 2. More importantly, 'Module:Infobox' (in `fixChildBoxes`) does that thing
-///    that script writers love to do and uses pattern matching expressions to
-///    match HTML tags in strings and expects that the strings will be in a very
-///    specific format without any different whitespace, strip markers, etc.
-///    that would cause its anchored pattern match to fail. Probably other
-///    modules do this too, but infobox is especially brain damaged. This is
-///    noticeable on at least 'Template:Nutritionalvalue'.
-///
-/// Eventually it will turn out that source tracking has to occur totally out of
-/// band using a code map, and then the problem will be solved forever, but why
-/// do work when you can pretend like it is unnecessary, lol.
-fn strip_wiki_rs_markers<'a>(state: &State<'_>, trim: bool, input: &'a str) -> Cow<'a, str> {
-    match state
-        .strip_markers
-        .for_each_marker(input, |marker| match marker {
-            StripMarker::WikiRsSourceStart(_) | StripMarker::WikiRsSourceEnd(_) => {
-                Some(Cow::Borrowed(""))
-            }
-            _ => None,
-        }) {
-        s @ Cow::Borrowed(_) => s,
-        Cow::Owned(s) => {
-            if trim {
-                Cow::Owned(s.trim_ascii().to_string())
-            } else {
-                Cow::Owned(s)
-            }
-        }
-    }
 }
 
 /// Expands templates in the given `text` in the context of the given

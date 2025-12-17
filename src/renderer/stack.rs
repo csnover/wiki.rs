@@ -109,21 +109,20 @@ impl<'a> StackFrame<'a> {
     }
 
     /// Evaluates the argument with the given key.
-    pub fn expand(&self, state: &mut State<'_>, key: &str) -> Result<Option<(Cow<'_, str>, bool)>> {
+    pub fn expand(&self, state: &mut State<'_>, key: &str) -> Result<Option<Cow<'_, str>>> {
         Ok(
             if let Some(parent) = &self.parent
                 && let Some((index, is_named)) = self.arguments.get_index(state, parent, key)?
             {
                 self.arguments.value(state, parent, index)?.map(|value| {
-                    let value = if is_named {
+                    if is_named {
                         match value {
                             Cow::Borrowed(b) => Cow::Borrowed(b.trim_ascii()),
                             Cow::Owned(o) => Cow::Owned(o.trim_ascii().to_string()),
                         }
                     } else {
                         value
-                    };
-                    (value, is_named)
+                    }
                 })
             } else {
                 None
@@ -418,11 +417,6 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
         Ok(None)
     }
 
-    /// Returns the raw argument at the given index.
-    pub fn get_raw(&self, index: usize) -> Option<&Kv<'_>> {
-        self.raw.get(index)
-    }
-
     /// Returns the trimmed key for the given index.
     pub fn key(
         &self,
@@ -561,11 +555,6 @@ impl IndexedArgs<'_, '_, '_> {
     /// present in the original text.
     pub fn get(&self, state: &mut State<'_>, key: &str) -> Result<Option<Cow<'_, str>>> {
         self.arguments.get(state, self.sp, key)
-    }
-
-    /// Returns the raw argument at the given index.
-    pub fn get_raw(&self, index: usize) -> Option<&Kv<'_>> {
-        self.arguments.get_raw(index)
     }
 
     /// Returns true if there are no arguments.

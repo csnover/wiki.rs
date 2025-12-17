@@ -7,19 +7,57 @@ use super::{
     resolve_redirects,
     stack::{KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate,
-    tags,
 };
 use crate::{
     LoadMode,
     common::make_url,
     config::CONFIG,
     lua::run_vm,
+    renderer::LinkKind,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token},
 };
 use core::fmt::{self, Write as _};
 use memchr::memmem::FinderRev;
 use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
+
+/// Templates that need to be spruced up a bit, but don’t have any hooks of
+/// their own for styling.
+///
+/// It is necessary to use a whitelist instead of just marking everything
+/// because:
+///
+/// 1. 'Module:Citation/CS1' is unbearable and complains visibly if a strip
+///    marker exists inside of any of its parameters instead of just ignoring or
+///    stripping them itself (is it any wonder it runs so slowly?); and
+/// 2. More importantly, 'Module:Infobox' (in `fixChildBoxes`) does that thing
+///    that script writers love to do and uses pattern matching expressions to
+///    find HTML tags in strings, and expects that those strings will be in a
+///    very specific format without any changes to whitespace, strip markers,
+///    etc., since that causes its anchored pattern match to fail. Probably
+///    other modules do this too, but Infobox was the first one where the brain
+///    damage was terminal for the patient. This is noticeable on at least
+///    'Template:Nutritionalvalue'.
+///
+/// On the other hand, 'Module:Documentation' is also an ouroboros where
+/// stripping all the wiki.rs markers from `mw.getExpandedArgument(s)` to avoid
+/// breaking scripts generally means that *its* output ends up losing style
+/// hooks that are necessary to not be ugly. So, whitelist it is!
+static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
+    "Template:Ahnentafel",
+    "Template:Bar percent",
+    "Template:Climate chart",
+    "Template:Climate chart/celsius column",
+    "Template:Climate chart/celsius column i",
+    "Template:Climate chart/fahrenheit column",
+    "Template:Climate chart/fahrenheit column i",
+    "Template:Fossil range bar",
+    "Template:Historical populations",
+    "Template:Markup",
+    "Template:Phanerozoic 220px",
+    "Template:Largest cities",
+    "Template:Weather box",
+};
 
 /// Calls a Lua function.
 pub(super) fn call_module(
@@ -112,7 +150,7 @@ pub(super) fn render_parameter(
 
     let key = sp.eval(state, name)?;
 
-    if let Some((value, _)) = sp.expand(state, key.trim_ascii())? {
+    if let Some(value) = sp.expand(state, key.trim_ascii())? {
         write!(out, "{value}")?;
     } else if let Some(default) = default {
         out.adopt_tokens(state, sp, default)?;
@@ -176,15 +214,13 @@ pub(super) fn render_template<'tt>(
     target: &'tt [Spanned<Token>],
     arguments: &'tt [Spanned<Argument>],
     line_start: bool,
-) -> Result {
+) -> Result<bool> {
     // eprintln!("render_template {sp:?} {:?}", inspect(&sp.source, target));
 
     if state.load_mode == LoadMode::Base {
-        return render_fallback(out, state, sp);
+        render_fallback(out, state, sp)?;
+        return Ok(true);
     }
-
-    let mut first = None;
-    let target = split_target(state, sp, &mut first, target, arguments)?;
 
     // TODO: There is some undocumented stuff to remove 'msgnw', 'msg', or 'raw'
     // magic words from the callee and then to change some options before
@@ -197,31 +233,19 @@ pub(super) fn render_template<'tt>(
     // necessary.
     let mut partial = String::new();
 
-    let wrapper_key = match target {
+    let mut first = None;
+    let wrapper_key = match split_target(state, sp, &mut first, target, arguments)? {
         Target::ParserFn { callee, arguments } => {
             call_parser_fn(&mut partial, state, sp, Some(bounds), &callee, &arguments)?;
             None
         }
 
-        Target::Template {
-            callee,
-            target,
-            arguments,
-        } => {
-            call_template(&mut partial, state, sp, &target, callee.clone(), &arguments)?;
-            contains_blocks(&partial).then(|| {
-                callee
-                    .key()
-                    .chars()
-                    .map(|c| {
-                        if c.is_ascii_alphanumeric() {
-                            c.to_ascii_lowercase()
-                        } else {
-                            '-'
-                        }
-                    })
-                    .collect::<String>()
-            })
+        Target::Template { arguments, callee } => {
+            call_template(&mut partial, state, sp, callee.clone(), &arguments)?
+        }
+
+        Target::Text => {
+            return Ok(false);
         }
     };
 
@@ -251,63 +275,7 @@ pub(super) fn render_template<'tt>(
         write!(out, "{partial}")?;
     }
 
-    Ok(())
-}
-
-/// Returns whether a partial template string appears to contain some subset of
-/// block-level elements.
-///
-/// It is necessary to not just inject source markers into the output
-/// indiscriminately for every template because some template expansions are
-/// plain text interpolations which will break because other templates and
-/// modules don’t expect to see tags or strip markers in those positions. For
-/// example, 'Template:Speciesbox' interpolates a template expansion into the
-/// target for another template expansion, and having extra strip markers in
-/// there will just break it.
-///
-/// It is not possible without doing a bunch of extra work to check for every
-/// possible kind of element that would ideally be taged because characters
-/// which are valid to start Wikitext elements are often also intended to be
-/// used as part of some text expression where injecting anything into the
-/// output would break the output (e.g. `*` starting a template which is
-/// expanded as part of an arithmetic expression).
-fn contains_blocks(partial: &str) -> bool {
-    if partial.starts_with("{|") {
-        return true;
-    }
-
-    let mut iter = partial.chars();
-    while let Some(c) = iter.next() {
-        if (c == '<' && starts_with_block_tag_name(iter.as_str()))
-            || (c == '\n' && iter.as_str().starts_with("{|"))
-        {
-            return true;
-        }
-    }
-    false
-}
-
-/// Returns whether the given string starts with an interesting tag name.
-///
-/// This is necessary because 'Module:Citation/CS1' is unbearable and complains
-/// visibly if a strip marker exists inside of any of its parameters instead of
-/// just ignoring or stripping them itself. (Is it any wonder it runs so
-/// slowly?) Since it is only really necessary to attach extra styling markers
-/// to a subset of block-level tags, avoid generating the template source
-/// markers in this case.
-///
-/// Eventually it will turn out that source tracking has to occur totally out of
-/// band using a code map, and then the problem will be solved forever, but why
-/// do work when you can pretend like it is unnecessary, lol.
-fn starts_with_block_tag_name(tag_name: &str) -> bool {
-    let max = tag_name.floor_char_boundary("blockquote".len() + 1);
-    let Some((tag_name, _)) =
-        tag_name[..max].split_once(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>')
-    else {
-        return false;
-    };
-
-    !tags::PHRASING_TAGS.contains(&tag_name.to_ascii_lowercase())
+    Ok(true)
 }
 
 /// Template target information.
@@ -322,13 +290,26 @@ enum Target<'tt> {
     },
     /// The target is a template.
     Template {
-        /// The template to expand.
-        callee: Title,
-        /// The raw template name.
-        target: Kv<'tt>,
         /// The arguments to the template.
         arguments: Vec<Kv<'tt>>,
+        /// The template to expand.
+        callee: Title,
     },
+    /// The target looked like a template, but after further consideration, this
+    /// is actually just plain text.
+    ///
+    /// The Wikitext grammar parser cannot disambiguate on its own whether a
+    /// template call containing an extension tag is valid or not because
+    /// extension tags are valid in the first argument to a parser function, but
+    /// it is impossible to know whether this is a parser function call until
+    /// any inner templates are expanded, since it is legal in most towns for
+    /// `{{{{Trenchcoat}}<nowiki/>}}` to become `{{#threechildren:<nowiki/>}}`
+    /// once the inner template is expanded.
+    ///
+    /// 'Template:Date and time templates' contains a
+    /// `{{<nowiki/>{{template call which returns wikilink}}<nowiki/>}}` which
+    /// triggers this path.
+    Text,
 }
 
 /// Splits a template target in the form `callee:arg` into parts without
@@ -401,16 +382,28 @@ fn split_target<'tt>(
                 arguments,
             }
         } else {
-            let callee = Title::new(
-                &sp.eval(state, target)?,
-                Namespace::find_by_id(Namespace::TEMPLATE),
-            );
-            let target = Kv::Partial(target.iter().collect());
-            let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
-            Target::Template {
-                callee,
-                target,
-                arguments,
+            let callee = &sp.eval(state, target)?;
+            // TODO: The correct condition for this fallback is anything which
+            // is not a valid title string, and anything which is an interwiki
+            // link which does not exist. Things which are *invalid* in a title
+            // are:
+            // 1. Anything with an invalid HTML entity (the string is
+            //    entity-decoded before being checked);
+            // 2. A valid percent-encoding sequence;
+            // 3. Anything not in the list of `$wgLegalTitleChars`, which is
+            //    actually a regular expression (of course) and something which
+            //    must actually come from the wiki configuration (also of
+            //    course). The default for MediaWiki 1.39+ is:
+            //    '/ %!"$&\'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+/'
+            //
+            // For now, notice which *notable* characters are missing from that
+            // list and just check those ones…
+            if callee.contains(['<', '\x7f', '{', '}']) {
+                Target::Text
+            } else {
+                let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
+                let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
+                Target::Template { callee, arguments }
             }
         },
     )
@@ -421,39 +414,41 @@ pub(crate) fn call_template(
     out: &mut String,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
-    target: &Kv<'_>,
     callee: Title,
     arguments: &[Kv<'_>],
-) -> Result {
+) -> Result<Option<String>> {
     let Ok(template) = state.statics.db.get(callee.key()) else {
         log::warn!("No template found for '{callee}'");
-
-        // 'Template:Date and time templates' contains a
-        // `{{<nowiki/>{{template call which returns wikilink}}<nowiki/>}}`.
-        // TODO: It is not totally clear which thing is intended to trigger this
-        // fallback mode. It is valid to create a target by interpolating with a
-        // template call, so is it the existence of a extension tag (in which
-        // case the parser should not parse those inside a template target)? Is
-        // it because the *expanded* target contains non-text tokens? It
-        // *cannot* actually be due to the database lookup failing because
-        // *that* is supposed to fall back to a wikilink to edit the template.
-        // Therefore, this is not a totally correct fallback, and more work
-        // needs to be done elsewhere.
-        write!(out, "{{{{{}", target.eval(state, sp)?)?;
-        for argument in arguments {
-            write!(out, "|{}", argument.eval(state, sp)?)?;
-        }
-        out.write_str("}}")?;
-
-        return Ok(());
+        write!(
+            out,
+            "[{} {}]",
+            LinkKind::Internal(callee.clone()).to_string(&state.statics.base_uri),
+            callee
+        )?;
+        return Ok(None);
     };
 
     let Ok(template) = resolve_redirects(&state.statics.db, template) else {
         log::warn!("Template redirects failed for {callee}");
-        return Ok(());
+        return Ok(None);
     };
 
-    log::trace!("Expanding {}", template.title);
+    let resolved_title = Title::new(&template.title, None);
+    let resolved_key = resolved_title.key();
+    let wrapper_key = TACKY_TEMPLATES.contains(resolved_key).then(|| {
+        resolved_key
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+    });
+
+    log::trace!("Expanding {resolved_title}");
 
     let now = Instant::now();
     let mut expansion = ExpandTemplates::new(ExpandMode::Include);
@@ -484,7 +479,8 @@ pub(crate) fn call_template(
             *duration += now.elapsed();
         })
         .or_insert_with(|| (1, now.elapsed()));
-    Ok(())
+
+    Ok(wrapper_key)
 }
 
 /// Returns true if the given template target is a variable or parser function.
@@ -700,6 +696,9 @@ impl Surrogate<Error> for DbPrefetch {
                     let title = Title::new(target, Namespace::find_by_id(Namespace::MODULE));
                     state.statics.db.prefetch(title.key());
                 }
+            }
+            Target::Text => {
+                self.adopt_tokens(state, sp, target)?;
             }
         }
         if let Some(first) = first {
