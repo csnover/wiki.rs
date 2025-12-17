@@ -2749,15 +2749,20 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       / t:spanned(<"{" { Token::Text }>) { vec![t] }
       / t:autourl_html_entity(ctx) { vec![t] }
 
-    /// A non-terminating HTML entity inside an autolink URL.
+    /// A non-terminating HTML entity or bare ampersand inside an autolink URL.
     ///
     /// ```wikitext
     /// https://example.com/?1&amp;2
     ///                       ^^^^^
+    ///
+    /// https://example.com/?1&2
+    ///                       ^
     /// ```
     rule autourl_html_entity(ctx: &Context) -> Spanned<Token>
-    = rhe:raw_htmlentity()
-      &assert(!matches!(rhe, Some('<' | '>' | '\u{00A0}')), "not greater-than, less-than, or nbsp")
+    = !(
+        rhe:raw_htmlentity()
+        assert(matches!(rhe, Some('<' | '>' | '\u{00A0}')), "not greater-than, less-than, or nbsp")
+      )
       t:(
           &"&" t:htmlentity() { t }
           / spanned(<"&" { Token::Text }>)
