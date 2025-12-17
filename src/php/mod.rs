@@ -284,7 +284,32 @@ pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
         n if n.is_nan() => Cow::Borrowed("Not a number"),
         n if no_separators => Cow::Owned(format!("{n}")),
         n => {
-            let f = format!("{n}");
+            let f = {
+                // Clippy: Truncation and sign loss is deliberate.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let exp = (n.abs() as u64).max(1).ilog10() as usize;
+                // In PHP, this is configurable by the `precision` ini value,
+                // which defaults to 14. MW does not actually use the PHP
+                // `number_format` function, but rather, performs a
+                // cast-to-string and inserts its own separators
+                let len = 14_usize.checked_sub(exp + 1);
+                if let Some(len) = len {
+                    let mut s = format!("{n:.len$}");
+                    let b = s.as_bytes();
+                    let end = b
+                        .iter()
+                        .rposition(|c| *c != b'0')
+                        .map_or(b.len(), |e| e + usize::from(b[e] != b'.'));
+                    s.truncate(end);
+                    s
+                } else {
+                    // Clippy: The number is always positive and in range.
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                    {
+                        format!("{:.13}E+{exp}", n / 10.0_f64.powi(exp as i32))
+                    }
+                }
+            };
             let (n, d) = f.split_once('.').unwrap_or((&f, ""));
             let mut out = String::new();
             for chunk in n.as_bytes().rchunks(3).rev() {
