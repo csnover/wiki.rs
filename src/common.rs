@@ -186,6 +186,8 @@ const ALPHABET: percent_encoding::AsciiSet = percent_encoding::CONTROLS
     .add(b'&')
     .add(b'<')
     .add(b'>')
+    .add(b'[')
+    .add(b']')
     .add(b' ');
 
 #[cfg(test)]
