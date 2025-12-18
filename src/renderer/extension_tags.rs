@@ -732,12 +732,13 @@ impl Styles {
         src: &str,
         wrapper: Option<&str>,
     ) -> Result<()> {
-        if self.sources.contains(src) {
-            if wrapper.is_some() {
-                // What happens if this happens? Probably the wrappers need to
-                // be part of the key.
-                log::warn!("CSS reuse with a wrapper; this might be broken");
-            }
+        let key = if let Some(wrapper) = wrapper {
+            format!("{src}{wrapper}")
+        } else {
+            src.to_string()
+        };
+
+        if self.sources.contains(&key) {
             return Ok(());
         }
 
@@ -753,7 +754,7 @@ impl Styles {
             log::warn!("Could not load CSS from '{src}'");
         }
 
-        self.sources.insert(src.to_string());
+        self.sources.insert(key);
         Ok(())
     }
 }
