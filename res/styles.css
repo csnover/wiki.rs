@@ -557,7 +557,7 @@ th {
     --table-margin-inline: calc(var(--table-padding-inline) * -1);
     --table-padding-block: .1rem;
     --table-padding-inline: .5rem;
-    --table-width: calc(min(100%, var(--max-width)) + var(--table-padding-inline) * 2);
+    --table-width: calc(min(100%, var(--max-width)) + var(--table-margin-inline) * -2);
     --tag-size: .4rem;
     --sidebar-stretch: 110%;
 
@@ -906,6 +906,16 @@ th {
     /* 'Toronto' */
     > .wikitable[style*="border"][style*="margin"] {
         border-width: 0 0 thin !important;
+    }
+
+    .mw-cite-backlink > :first-child + ul {
+        display: inline;
+        padding-left: 0;
+
+        > :first-child {
+            display: inline;
+            padding-left: 0;
+        }
     }
 
     /***********/
@@ -2065,7 +2075,7 @@ th {
            “climatic data” table right after the weather box */
         + .wikitable {
             border-bottom: none;
-            width: calc(100% + var(--table-padding-inline) * 2) !important;
+            width: var(--table-width) !important;
 
             td {
                 border: solid var(--bg);
@@ -2393,7 +2403,7 @@ th {
             font-size: 1em !important;
             font-variant-numeric: tabular-nums;
             margin-inline: var(--table-margin-inline) !important;
-            width: calc(100% + var(--table-padding-inline) * 2) !important;
+            width: var(--table-width) !important;
         }
 
         th {
@@ -2410,6 +2420,14 @@ th {
 
         td {
             padding: .25em;
+
+            &:first-child {
+                padding-left: var(--table-padding-inline);
+            }
+
+            &:last-child {
+                padding-right: var(--table-padding-inline);
+            }
 
             &:has(+ .largestCities-cell-background) {
                 padding-right: 1em;
@@ -2661,6 +2679,7 @@ th {
     /*******************/
     /* Template:Markup */
     /*******************/
+
     [data-wiki-rs~=template-markup] {
         margin-inline: var(--table-margin-inline) !important;
         width: var(--table-width) !important;
@@ -2677,5 +2696,13 @@ th {
                 border: thin solid var(--border-fg) !important;
             }
         }
+    }
+
+    /***************/
+    /* Template:Xt */
+    /***************/
+
+    .example:not(.monospaced) {
+        font-family: var(--serif) !important;
     }
 }
