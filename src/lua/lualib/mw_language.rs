@@ -8,7 +8,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use crate::{common::format_date, php::format_number};
+use crate::{
+    common::{format_date, format_number, parse_formatted_number},
+    php::strval,
+};
 use std::cell::Cell;
 use time::UtcDateTime;
 
@@ -283,14 +286,14 @@ impl LanguageLibrary {
         // log::trace!("stub: mw.language.parseFormattedNumber({value:?})");
         // One might think that this would return `Value::Number` but actually
         // it is supposed to return strings…
-        Ok(match value {
-            Value::Integer(_) | Value::Number(_) => value.into_string(ctx).unwrap().into_value(ctx),
-            Value::String(s) if s == "NaN" => "NAN".into_value(ctx),
-            Value::String(s) if s == "∞" => "INF".into_value(ctx),
-            Value::String(s) if s == "-∞" || s == "\u{2212}∞" => "-INF".into_value(ctx),
-            Value::String(s) => s.to_str()?.replace(',', "").into_value(ctx),
-            _ => Value::Nil,
-        })
+        let s = match value {
+            Value::Integer(i) => format!("{i}").into(),
+            Value::Number(n) => strval(n).into(),
+            Value::String(s) => parse_formatted_number(s.to_str()?),
+            _ => return Ok(Value::Nil),
+        };
+
+        Ok(ctx.intern(s.as_bytes()).into())
     }
 
     /// Converts a string to uppercase according to the rules of the given

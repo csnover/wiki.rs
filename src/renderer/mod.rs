@@ -330,7 +330,7 @@ impl StripMarkers {
     /// text run, or `None` if it wants the text to be kept as-is.
     pub fn for_each_non_marker<'a, F>(body: &'a str, mut f: F) -> Cow<'a, str>
     where
-        F: FnMut(&str) -> Option<Cow<'a, str>>,
+        F: FnMut(&'a str) -> Option<Cow<'a, str>>,
     {
         let mut out = String::new();
         let mut flushed = 0;

@@ -12,16 +12,20 @@ use super::{
     template::{call_module, call_template, is_function_call},
 };
 use crate::{
-    common::{anchor_encode, decode_html, format_date, make_url, url_encode},
+    common::{
+        anchor_encode, decode_html, format_date, format_number, make_url, parse_formatted_number,
+        url_encode,
+    },
     config::CONFIG,
     expr,
-    php::{format_number, fuzzy_cmp, parse_number},
+    php::{floatval, fuzzy_cmp},
     title::{Namespace, Title},
     wikitext::Span,
 };
 use core::{
     fmt::{self, Write as _},
     iter,
+    str::FromStr,
 };
 use either::Either;
 use regex::Regex;
@@ -491,49 +495,100 @@ mod string {
         Ok(())
     }
 
-    /// `{{formatnum: number [|flag] }}`
+    /// `{{formatnum: number [|flag [|flag]] }}`
     pub fn format_number(
         out: &mut String,
         state: &mut State<'_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(n) = arguments.eval(state, 0)?.map(trim)
-            && !n.is_empty()
-        {
-            let no_separators = if let Some(flag) = arguments.eval(state, 1)? {
-                // TODO: Deal with flags in a generic way
-                if !flag.is_empty() && flag != "R" {
-                    log::warn!("formatnum: unsupported flag {flag}");
-                }
-                flag == "R"
-            } else {
-                false
-            };
-            // log::trace!("formatnum:{n:?}");
+        bitflags::bitflags! {
+            /// Number formatting flags.
+            pub struct Flags: u8 {
+                /// Remove number formatting from a string.
+                const REVERSE = 1;
+                /// Format a number with no separators. For English, this is a
+                /// no-op.
+                const NO_SEPARATORS = 2;
+                /// Return the original unformatted number if parsing the number
+                /// causes a loss of precision.
+                const LOSSLESS = 4;
+            }
+        }
 
-            write!(
-                out,
-                "{}",
-                StripMarkers::for_each_non_marker(&n, |mut s| {
-                    // MW used this unpleasant regex along with a callback:
-                    // '(-(?=[\d\.]))?(\d+|(?=\.\d))(\.\d*)?([Ee][-+]?\d+)?'
-                    // which is not really any different than just trying every
-                    // position and seeing if it succeeds to parse as a float,
-                    // except slower
-                    let mut out = String::new();
-                    while !s.is_empty() {
-                        if let Ok((n, rest)) = parse_number(s) {
-                            out += &super::format_number(n, no_separators);
-                            s = rest;
+        impl FromStr for Flags {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                if s.eq_ignore_ascii_case("R") {
+                    Ok(Self::REVERSE)
+                } else if s.eq_ignore_ascii_case("NOSEP") {
+                    Ok(Self::NO_SEPARATORS)
+                } else if s.eq_ignore_ascii_case("LOSSLESS") {
+                    Ok(Self::LOSSLESS)
+                } else {
+                    Err(anyhow::anyhow!("unknown flag '{s}'"))
+                }
+            }
+        }
+
+        /// Formats a numeric string.
+        fn format_part(flags: Flags) -> impl Fn(&str) -> Option<Cow<'_, str>> {
+            move |mut s| {
+                let no_separators = flags.contains(Flags::NO_SEPARATORS);
+                let lossless = flags.contains(Flags::LOSSLESS);
+
+                // MW used this unpleasant regex along with a callback:
+                // '(-(?=[\d\.]))?(\d+|(?=\.\d))(\.\d*)?([Ee][-+]?\d+)?'
+                // which is not really any different than just trying every
+                // position and seeing if it succeeds to parse as a float,
+                // except slower
+                let mut out = String::new();
+                while !s.is_empty() {
+                    if let Ok((n, rest)) = floatval(s) {
+                        let formatted = super::format_number(n, no_separators);
+                        if lossless
+                            && let original = &s[..s.len() - rest.len()]
+                            && parse_formatted_number(&formatted) != original
+                        {
+                            out += original;
                         } else {
-                            let c = s.chars().next().unwrap();
-                            out.push(c);
-                            s = &s[c.len_utf8()..];
+                            out += &formatted;
+                        }
+                        s = rest;
+                    } else {
+                        let c = s.chars().next().unwrap();
+                        out.push(c);
+                        s = &s[c.len_utf8()..];
+                    }
+                }
+                Some(out.into())
+            }
+        }
+
+        if let Some(n) = arguments.eval(state, 0)?.map(trim) {
+            let flags = {
+                let mut flags = Flags::empty();
+                for index in 1..=2 {
+                    if let Some(flag) = arguments.eval(state, index)?.map(trim) {
+                        match Flags::from_str(&flag) {
+                            Ok(flag) => flags |= flag,
+                            Err(err) => log::warn!("#formatnum: {err}"),
                         }
                     }
-                    Some(out.into())
+                }
+                flags
+            };
+
+            let value = if flags.contains(Flags::REVERSE) {
+                StripMarkers::for_each_non_marker(&n, |s| match parse_formatted_number(s) {
+                    Cow::Borrowed(_) => None,
+                    s @ Cow::Owned(_) => Some(s),
                 })
-            )?;
+            } else {
+                StripMarkers::for_each_non_marker(&n, format_part(flags))
+            };
+
+            write!(out, "{value}")?;
         }
 
         Ok(())

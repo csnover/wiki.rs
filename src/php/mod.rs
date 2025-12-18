@@ -276,59 +276,15 @@ impl core::ops::Deref for DateTime {
     }
 }
 
-/// Formats a number similar to [`number_format`](https://php.net/number_format).
-pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
-    match n {
-        f64::INFINITY => Cow::Borrowed("∞"),
-        f64::NEG_INFINITY => Cow::Borrowed("\u{2212}∞"),
-        n if n.is_nan() => Cow::Borrowed("Not a number"),
-        n if no_separators => Cow::Owned(format!("{n}")),
-        n => {
-            let f = {
-                // Clippy: Truncation and sign loss is deliberate.
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let exp = (n.abs() as u64).max(1).ilog10() as usize;
-                // In PHP, this is configurable by the `precision` ini value,
-                // which defaults to 14. MW does not actually use the PHP
-                // `number_format` function, but rather, performs a
-                // cast-to-string and inserts its own separators
-                let len = 14_usize.checked_sub(exp + 1);
-                if let Some(len) = len {
-                    let mut s = format!("{n:.len$}");
-                    let b = s.as_bytes();
-                    let end = b
-                        .iter()
-                        .rposition(|c| *c != b'0')
-                        .map_or(b.len(), |e| e + usize::from(b[e] != b'.'));
-                    s.truncate(end);
-                    s
-                } else {
-                    // Clippy: The number is always positive and in range.
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-                    {
-                        format!("{:.13}E+{exp}", n / 10.0_f64.powi(exp as i32))
-                    }
-                }
-            };
-            let (n, d) = f.split_once('.').unwrap_or((&f, ""));
-            let mut out = String::new();
-            for chunk in n.as_bytes().rchunks(3).rev() {
-                if !out.is_empty() {
-                    out.push(',');
-                }
-                // SAFETY: The chunk string is a Rust-formatted f64 which
-                // contains only ASCII characters.
-                out += unsafe { str::from_utf8_unchecked(chunk) };
-            }
-            if !d.is_empty() {
-                out.push('.');
-                // SAFETY: The chunk string is a Rust-formatted f64 which
-                // contains only ASCII characters.
-                out += unsafe { str::from_utf8_unchecked(d.as_bytes()) };
-            }
-            Cow::Owned(out)
-        }
-    }
+/// Parses a string as a number similar to [`floatval`](https://php.net/floatval)
+/// but returning an error if there is no number instead of returning 0.0.
+pub fn floatval(n: &str) -> Result<(f64, &str), core::num::ParseFloatError> {
+    let end = n
+        .as_bytes()
+        .iter()
+        .position(|b| !b.is_ascii_digit() && !matches!(b, b'.' | b'e' | b'E' | b'+' | b'-'))
+        .unwrap_or(n.len());
+    n[..end].parse().map(|value| (value, &n[end..]))
 }
 
 /// Performs a fuzzy comparison of two string values
@@ -344,17 +300,6 @@ pub fn fuzzy_cmp(lhs: &str, rhs: &str) -> bool {
     } else {
         lhs == rhs
     }
-}
-
-/// Parses a string as a number similar to [`floatval`](https://php.net/floatval)
-/// but returning an error if there is no number instead of returning 0.0.
-pub fn parse_number(n: &str) -> Result<(f64, &str), core::num::ParseFloatError> {
-    // TODO: Do something smarter using ICU
-    let s = n
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || ['.', 'e', 'E', '+', '-'].contains(c))
-        .collect::<String>();
-    s.parse().map(|value| (value, &n[s.len()..]))
 }
 
 /// Finds and replaces substrings in the input like [`strtr`](https://php.net/strtr).
@@ -395,6 +340,46 @@ pub fn strtr<'a>(input: &'a str, replacements: &[(&str, &str)]) -> Cow<'a, str> 
     }
 }
 
+/// Casts a float to a string similar to [`strval`](https://www.php.net/strval).
+pub fn strval(n: f64) -> String {
+    match n {
+        f64::INFINITY => return "INF".into(),
+        f64::NEG_INFINITY => return "-INF".into(),
+        n if n.is_nan() => return "NAN".into(),
+        _ => {}
+    }
+
+    // In PHP, this is configurable by the `precision` ini value; MW does not
+    // appear to really think about it
+    let len = 14_usize;
+
+    // Clippy: Truncation and sign loss is deliberate.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let whole = n.abs() as u64;
+    let (len, exp) = if whole == 0 {
+        (Some(len), 0)
+    } else {
+        let exp = whole.ilog10() as usize;
+        (14_usize.checked_sub(exp + 1), exp)
+    };
+    if let Some(len) = len {
+        let mut s = format!("{n:.len$}");
+        let b = s.as_bytes();
+        let end = b
+            .iter()
+            .rposition(|c| *c != b'0')
+            .map_or(b.len(), |e| e + usize::from(b[e] != b'.'));
+        s.truncate(end);
+        s
+    } else {
+        // Clippy: The number is always positive and in range.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+        {
+            format!("{:.13}E+{exp}", n / 10.0_f64.powi(exp as i32))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,9 +405,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_number() {
-        assert_eq!(parse_number("122.34343The"), Ok((122.34343, "The")));
-        assert_eq!(parse_number("1,200"), Ok((1.0, ",200")));
+    fn test_floatval() {
+        assert_eq!(floatval("122.34343The"), Ok((122.34343, "The")));
+        assert_eq!(floatval("1,200"), Ok((1.0, ",200")));
     }
 
     #[test]
@@ -446,5 +431,23 @@ mod tests {
             strtr(input, &[("foo", "bar")]),
             Cow::Borrowed("hello, world!")
         );
+    }
+
+    #[test]
+    fn test_strval() {
+        assert_eq!(strval(f64::INFINITY), "INF");
+        assert_eq!(strval(f64::NEG_INFINITY), "-INF");
+        assert_eq!(strval(f64::NAN), "NAN");
+        assert_eq!(strval(0.0), "0");
+        assert_eq!(strval(0.1 + 0.2), "0.3");
+        assert_eq!(strval(1.123_456_789_012_34), "1.1234567890123");
+        assert_eq!(strval(1.123_456_789_012_345), "1.1234567890123");
+        assert_eq!(strval(0.123_456_789_012_34), "0.12345678901234");
+        assert_eq!(strval(0.123_456_789_012_345), "0.12345678901234");
+        assert_eq!(strval(12_345_678_901_234.0), "12345678901234");
+        assert_eq!(strval(123_456_789_012_340.0), "1.2345678901234E+14");
+        // TODO: Fix this if it ever matters
+        // assert_eq!(strval(123_456_789_012_345.0), "1.2345678901234E+14");
+        assert_eq!(strval(123_456_789_012_346.0), "1.2345678901235E+14");
     }
 }

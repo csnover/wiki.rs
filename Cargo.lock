@@ -1897,6 +1897,7 @@ dependencies = [
  "arc-cell",
  "arrayvec",
  "axum",
+ "bitflags",
  "bzip2-rs",
  "either",
  "env_logger",

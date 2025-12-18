@@ -3,7 +3,7 @@
 //! correspond to PHP nor Lua built-ins).
 
 use crate::{
-    php::{DateTime, DateTimeError, DateTimeParseError, DateTimeZone, strtr},
+    php::{DateTime, DateTimeError, DateTimeParseError, DateTimeZone, strtr, strval},
     title::{self, Title},
 };
 use axum::http::Uri;
@@ -126,6 +126,39 @@ pub fn format_date(
     date.into_offset(tz)?.format(format).map_err(Into::into)
 }
 
+/// Formats a number similar to [`number_format`](https://php.net/number_format).
+pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
+    match n {
+        f64::INFINITY => Cow::Borrowed("∞"),
+        f64::NEG_INFINITY => Cow::Borrowed("\u{2212}∞"),
+        n if n.is_nan() => Cow::Borrowed("Not a number"),
+        n => {
+            let f = strval(n);
+            if no_separators {
+                Cow::Owned(f)
+            } else {
+                let (n, d) = f.split_once('.').unwrap_or((&f, ""));
+                let mut out = String::new();
+                for chunk in n.as_bytes().rchunks(3).rev() {
+                    if !out.is_empty() {
+                        out.push(',');
+                    }
+                    // SAFETY: The chunk string is a Rust-formatted f64 which
+                    // contains only ASCII characters.
+                    out += unsafe { str::from_utf8_unchecked(chunk) };
+                }
+                if !d.is_empty() {
+                    out.push('.');
+                    // SAFETY: The chunk string is a Rust-formatted f64 which
+                    // contains only ASCII characters.
+                    out += unsafe { str::from_utf8_unchecked(d.as_bytes()) };
+                }
+                Cow::Owned(out)
+            }
+        }
+    }
+}
+
 /// Creates a URL for the given title using the given protocol, base URI, path,
 /// and query string.
 pub fn make_url(
@@ -163,6 +196,16 @@ pub fn make_url(
         write!(url, "?{query}")?;
     }
     Ok(url)
+}
+
+/// Strips formatting characters from a numeric string.
+pub fn parse_formatted_number(s: &str) -> Cow<'_, str> {
+    match s {
+        "NaN" => "NAN".into(),
+        "∞" => "INF".into(),
+        "-∞" | "\u{2212}∞" => "-INF".into(),
+        s => strtr(s, &[("\u{2212}", "-"), (",", "")]),
+    }
 }
 
 /// Percent-encodes a URL part.
