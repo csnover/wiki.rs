@@ -37,12 +37,17 @@ pub fn load_table(ctx: Context<'_>) -> Result<(), TypeError> {
         "maxn",
         Callback::from_fn(&ctx, |ctx, _, mut stack| {
             let t = stack.consume::<Table<'_>>(ctx)?;
-            let max = t.into_iter().fold(0.0, |acc, (k, _)| match k {
-                Value::Integer(n) => (n as f64).max(acc),
-                Value::Number(n) => n.max(acc),
-                _ => acc,
+            let max = t.into_iter().fold(Value::Integer(0), |acc, (k, _)| {
+                let lt = match (acc, k) {
+                    (Value::Integer(acc), Value::Integer(k)) => acc < k,
+                    (Value::Integer(acc), Value::Number(k)) => (acc as f64) < k,
+                    (Value::Number(acc), Value::Number(k)) => acc < k,
+                    (Value::Number(acc), Value::Integer(k)) => acc < (k as f64),
+                    _ => false,
+                };
+                if lt { k } else { acc }
             });
-            stack.replace(ctx, max);
+            stack.replace(ctx, max.to_integer().map_or(max, Value::Integer));
             Ok(CallbackReturn::Return)
         }),
     );
