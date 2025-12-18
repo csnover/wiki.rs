@@ -45,6 +45,7 @@ use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
 /// hooks that are necessary to not be ugly. So, whitelist it is!
 static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Ahnentafel",
+    "Template:Article for improvement banner",
     "Template:Bar percent",
     "Template:Climate chart",
     "Template:Climate chart/celsius column",
