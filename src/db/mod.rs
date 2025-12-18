@@ -348,12 +348,17 @@ return p
 /// Lua 5.4-conforming engine.
 static MODULE_WIKIDATA: Hack = Hack::HorsePills(&[(r#""^\-?%d+""#, r#""^-?%d+""#)]);
 
+/// Hover effects on tables were extremely cool back in 2004, or so I hear.
+static TEMPLATE_ROW_HOVER_HIGHLIGHT: Hack = Hack::Lobotomy("");
+
 /// All the sad hacks that are required to successfully load modules in a Lua
-/// engine which is not the modified Lua 5.1 engine used by Scribunto.
+/// engine which is not the modified Lua 5.1 engine used by Scribunto, plus
+/// some templates which are truly awful and should be discouraged from loading.
 static HACKS: phf::Map<&str, &Hack> = phf::phf_map! {
     "Module:Citation/CS1" => &MODULE_CITATION_CS1,
     "Module:Footnotes/anchor id list" => &MODULE_FOOTNOTE_ANCHOR_ID_LIST,
     "Module:Hatnote list" => &MODULE_HATNOTE_LIST,
     "Module:TNT" => &MODULE_TNT,
     "Module:Wikidata" => &MODULE_WIKIDATA,
+    "Template:Row hover highlight" => &TEMPLATE_ROW_HOVER_HIGHLIGHT,
 };

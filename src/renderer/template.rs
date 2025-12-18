@@ -52,6 +52,7 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Climate chart/celsius column i",
     "Template:Climate chart/fahrenheit column",
     "Template:Climate chart/fahrenheit column i",
+    "Template:Football kit",
     "Template:Fossil range bar",
     "Template:Historical populations",
     "Template:Markup",

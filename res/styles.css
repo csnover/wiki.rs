@@ -544,6 +544,7 @@ th {
     --aside-max: calc(100cqw - var(--figure-margin) - var(--max-width));
     --aside-min: 23rem;
     --background-color-base: transparent;
+    --background-color-interactive: transparent;
     --background-color-interactive-subtle: transparent;
     --background-color-neutral: transparent;
     --background-color-neutral-subtle: transparent;
@@ -770,11 +771,32 @@ th {
         margin-inline: var(--table-margin-inline);
         width: var(--table-width);
 
-        tbody > tr:nth-child(2n) {
+        > tbody > tr:nth-child(2n) {
             background-color: var(--shade-bg);
             /* For the case where there are shaded rowspans, ensure they are
             visually separated */
             border-top: thin solid var(--bg);
+        }
+
+        /* This is a ridiculous hack for improving the visual design of tables
+           with 2 or 3 rowspan headers by making sure that the stripe for the
+           second row is also visible behind the spanned rows. Using `::after`
+           to avoid conflict with the 'Template:Static row numbers', though it
+           could be made to work with either one, probably. */
+        > tbody > tr:first-child:has(> [rowspan]) + tr {
+            position: relative;
+
+            &::after {
+                background-color: var(--shade-bg);
+                content: "";
+                display: block;
+                top: 0;
+                right: 0;
+                bottom: 0;
+                left: 0;
+                position: absolute;
+                z-index: -1;
+            }
         }
 
         caption, td, th {
@@ -800,7 +822,7 @@ th {
             }
         }
 
-        tr:first-child > th {
+        tr:first-child:not(:has(> td)) > th {
             vertical-align: bottom;
         }
 
@@ -808,12 +830,12 @@ th {
            of headings in a table have borders to separate them from the table
            data, whilst making sure that row headings do not get underlined */
         tr:first-child > th:not([scope=row]),
-        tr:first-child + tr:not(:has(td)) > th,
+        tr:first-child:not(:has(> td)) + tr:not(:has(> td)) > th,
         th[scope=col] {
             border-bottom: thin solid var(--border-th);
         }
 
-        tr:first-child + tr:not(:has(td)) {
+        tr:first-child + tr:not(:has(> td)) {
             border-top: 0;
         }
 
@@ -877,7 +899,8 @@ th {
     .us-census-pop-right, /* 'Template:US Census population' */
     .stack-clear-right, /* 'Template:Stack start' */
     .stack-right, /* 'Template:Stack start' */
-    .side-box-right /* 'Template:Side box' */
+    .side-box-right, /* 'Template:Side box' */
+    .portalright /* 'Template:Portal' */
     {
         clear: right;
         float: right;
@@ -912,13 +935,19 @@ th {
         border-width: 0 0 thin !important;
     }
 
-    .mw-cite-backlink > :first-child + ul {
-        display: inline;
-        padding-left: 0;
+    .mw-cite-backlink > :first-child {
+        + p {
+            display: inline;
+        }
 
-        > :first-child {
+        + ul {
             display: inline;
             padding-left: 0;
+
+            > :first-child {
+                display: inline;
+                padding-left: 0;
+            }
         }
     }
 
@@ -1126,7 +1155,7 @@ th {
         }
 
         > tbody > :last-child > * {
-            padding-bottom: calc(var(--box-margin) * .5);
+            padding-bottom: calc(var(--box-margin) * .5) !important;
         }
 
         /* 'Elizabeth II' nests infoboxes */
@@ -1137,16 +1166,13 @@ th {
             transform: var(--aside-gutter-align);
         }
 
-        :where(ul) {
-            padding-left: 0;
-        }
-
         * + & {
             /* !important: 'Wikipedia' */
             margin-top: var(--box-margin) !important;
         }
 
         &.sidebar {
+            background: transparent !important;
             border-spacing: 0;
             line-height: 1.5rem;
             max-width: 18rem;
@@ -1171,6 +1197,7 @@ th {
         .sidebar-title,
         .sidebar-title-with-pretitle {
             background-color: transparent !important; /* !important: 'Fart' */
+            color: var(--fg) !important; /* !important: 'Manchester United F.C.' */
             font-size: 1.1rem !important; /* !important: 'Crazy Taxi' */
             font-stretch: var(--sidebar-stretch);
             font-style: normal !important; /* !important: 'Crazy Taxi' */
@@ -1215,12 +1242,17 @@ th {
             padding-bottom: calc(var(--box-margin) * .25);
         }
 
+        .mergedtoprow.mergedtoprow > * {
+            padding-top: calc(var(--box-margin) * .25);
+        }
+
         tr:not([class]):has(+ .mergedrow) > *,
         .mergedtoprow:not(.ib-settlement-official) > :not(.infobox-subheader) {
             border-top: thin solid var(--fg);
         }
 
         .sidebar-title {
+            border: 0 0 thin solid var(--fg) !important; /* !important: 'Manchester United F.C.' */
             /* Matching MW '.navbox-title' */
             padding: .25em 1em;
         }
@@ -1234,6 +1266,10 @@ th {
         .sidebar-pretitle {
             font-size: 95%;
             padding-top: calc(var(--box-margin) * .25);
+        }
+
+        .sidebar-above {
+            border-bottom: thin solid var(--fg);
         }
 
         .sidebar-pretitle,
@@ -1259,6 +1295,10 @@ th {
             font-size: 105%;
             padding-top: calc(var(--box-margin) * .25);
             text-align: left;
+
+            &[style*=padding] {
+                padding: calc(var(--box-margin) * .25) 0 0 !important;
+            }
         }
 
         .sidebar-below {
@@ -1266,7 +1306,7 @@ th {
             border-bottom: 0 !important;
             font-size: .9rem;
             font-weight: normal;
-            padding-top: calc(var(--box-margin) * .5);
+            padding-top: calc(var(--box-margin) * .5) !important;
 
             br {
                 display: none;
@@ -1277,6 +1317,26 @@ th {
             font-stretch: var(--side-table-stretch);
             padding-bottom: calc(var(--box-margin) * .25);
             text-align: left !important;
+
+            /* 'Template:United States House of Representatives' */
+            [style*=padding] {
+                padding-inline: 0 !important;
+            }
+
+            /* 'Template:Greek dieties (primordial)' */
+            > .div-col:first-child {
+                margin-top: 0;
+            }
+
+            ul li + li {
+                margin-top: 0;
+            }
+
+            /* 'Template:United States House of Representatives' */
+            > hr {
+                border: 0;
+                margin-top: calc(var(--box-margin) * .25);
+            }
         }
 
         .sidebar-navbar {
@@ -1286,7 +1346,8 @@ th {
 
         .sidebar-title-with-pretitle {
             font-size: 110%;
-            padding-bottom: calc(var(--box-margin) * .25);
+            /* !important: 'Template:Economic systems sidebar' */
+            padding: 0 0 calc(var(--box-margin) * .25) !important;
             text-align: center;
 
             .tmp-color {
@@ -1304,6 +1365,7 @@ th {
         .sidebar-list-title {
             /* !important: 'Template:Sociology' */
             background: transparent !important;
+            border-top: 0 !important;
             padding: calc(var(--box-margin) * .25) 0 0;
             line-height: inherit;
         }
@@ -1352,6 +1414,9 @@ th {
 
             img {
                 display: block;
+                /* Since there is currently no way to load any actual images,
+                   avoid taking up a bunch of space on giant placeholders */
+                max-height: 3rlh;
                 margin-inline: auto;
                 width: 100%;
             }
@@ -1427,6 +1492,10 @@ th {
             padding: 0;
         }
 
+        .ib-company-logo img {
+            background-color: transparent;
+        }
+
         /* 'Turkey (bird)', 'Cat', etc. */
         &.biota {
             tr, th {
@@ -1492,6 +1561,33 @@ th {
         }
     }
 
+    /***********************************/
+    /* 'Template:Infobox football club */
+    /***********************************/
+
+    /* lol */
+    .infobox > tbody > tr > td:has(> table > tbody > tr > td > [data-wiki-rs~=template-football-kit]) {
+        border: 0 !important;
+
+        [data-wiki-rs~=template-football-kit] {
+            border-block: thin solid var(--fg) !important;
+            border-inline: 0 !important;
+            padding: calc(var(--box-margin) * .5) 0 !important;
+            margin: calc(var(--box-margin) * .5) 0 !important;
+            width: auto !important;
+        }
+    }
+
+    /*************************/
+    /* Template:Football kit */
+    /*************************/
+
+    [data-wiki-rs~=template-football-kit] {
+        > :last-child {
+            padding-top: 0 !important;
+        }
+    }
+
     /*******************/
     /* Template:Navbox */
     /*******************/
@@ -1516,6 +1612,7 @@ th {
             border-top: 3px solid currentColor;
             /* !important: 'Crazy Taxi' */
             padding: 0 !important;
+            margin-inline: 0;
 
             li {
                 padding-left: 0;
@@ -1636,6 +1733,40 @@ th {
                 padding-left: calc(var(--box-margin) * .25) !important;
             }
         }
+
+        .hlist td ul {
+            + ul {
+                padding-top: 0;
+            }
+            &:has(+ ul) {
+                padding-bottom: 0;
+            }
+        }
+
+        .wikitable, table.sortable {
+            border-bottom: 0;
+            margin-inline: 0;
+            width: 100%;
+
+            &[style*=line-height] {
+                line-height: 1rlh !important;
+            }
+
+            td:first-child,
+            th:first-child {
+                padding-left: var(--table-padding-inline);
+            }
+
+            td:last-child,
+            th:last-child {
+                padding-right: var(--table-padding-inline);
+            }
+        }
+
+        [style*="padding\:0 0.25em"] > :is(.wikitable, table.sortable) {
+            margin-inline: -.25em !important;
+            width: calc(100% + .5em) !important;
+        }
     }
 
     .navbox-styles {
@@ -1643,7 +1774,8 @@ th {
     }
 
     /* extra specificity to override `.navbox + .navbox-styles + .navbox` */
-    > * + .navbox.navbox.navbox {
+    > * + .navbox.navbox.navbox,
+    .documentation > * + .navbox.navbox {
         clear: both;
         margin-top: var(--footer-margin);
     }
@@ -1673,19 +1805,40 @@ th {
         }
     }
 
+    .portalbox {
+        background: var(--box-tag);
+        padding-top: .25rem;
+        padding-left: var(--tag-size);
+
+        * + & {
+            margin-top: var(--box-margin);
+        }
+    }
+
     .portalbox-entry {
         font-family: var(--sans);
         font-size: 88%; /* match side-box */
+        display: block;
         line-height: 1;
         height: auto;
         font-style: normal;
         font-weight: normal;
+
+        + .portalbox-entry {
+            margin-top: calc(var(--box-margin) * .25);
+        }
     }
 
     .portalbox-image,
     .portalbox-link {
         padding: 0;
     }
+
+    .portalbox-image img {
+        max-height: 1cap;
+        max-width: 1cap;
+    }
+
     .portalbox-link {
         padding-left: .3em;
     }
@@ -1765,7 +1918,7 @@ th {
     .side-box-right {
         margin-bottom: var(--figure-margin);
         margin-left: var(--figure-margin);
-        min-width: var(--aside-min);
+        min-width: min-content;
         max-width: var(--aside-max);
         transform: var(--aside-gutter-align);
 
@@ -1779,6 +1932,10 @@ th {
 
         * + & {
             margin-top: var(--box-margin);
+        }
+
+        + .side-box-right {
+            margin-top: calc(var(--figure-margin) * -.5);
         }
     }
 
@@ -1841,6 +1998,10 @@ th {
         }
     }
 
+    .templatequote {
+        overflow: visible;
+    }
+
     .templatequotecite {
         font-family: var(--sans);
         line-height: 1rlh;
@@ -1866,7 +2027,7 @@ th {
     /* Template:Tmbox */
     /******************/
 
-    .ambox, .ombox, .cmbox {
+    .ambox, .cmbox, .fmbox, .imbox, .ombox, .tmbox {
         background: var(--box-tag);
         border: 0;
         font-family: var(--sans);
@@ -1909,11 +2070,20 @@ th {
         }
     }
 
+    .compact-ambox .ambox {
+        background: none;
+        /* !important: Module’s own CSS uses !important */
+        margin-left: 0 !important;
+    }
+
     /**************************/
     /* Template:Documentation */
     /**************************/
 
     .documentation-container {
+        clear: both;
+        max-width: none;
+
         * + & {
             border-top: 3px solid currentColor;
             margin-top: 2rem;
@@ -1956,6 +2126,23 @@ th {
         font-style: normal;
         padding: .5rem 0 0;
         margin: 4rem 0 0;
+    }
+
+    .documentation {
+        > :where(:not(.documentation-startbox)) {
+            max-width: var(--max-width);
+        }
+
+        [style*="display: inline-grid"] {
+            + [style*="display: inline-grid"] {
+                margin-left: var(--box-margin);
+            }
+
+            .wikitable {
+                margin-inline: 0;
+                width: auto;
+            }
+        }
     }
 
     /*******************************/
@@ -2971,5 +3158,84 @@ th {
         img {
             display: block;
         }
+    }
+
+    /*******************************/
+    /* Template:Static row numbers */
+    /*******************************/
+
+    .static-row-numbers.static-row-numbers.wikitable {
+        font-variant-numeric: tabular-nums;
+
+        > tbody > tr {
+            &::before {
+                font-family: var(--sans);
+                padding: var(--table-padding-block) var(--table-padding-inline);
+                width: 0;
+            }
+
+            &:has(> th[scope=col])::before {
+                /* !important: 'Template:Static row numbers' styles does it */
+                border-bottom: thin solid var(--border-th) !important;
+                counter-increment: none;
+                content: "";
+            }
+
+            &:first-child:has(> th[scope=col]):has(+ tr > th[scope=col])::before {
+                border-bottom: 0 !important;
+            }
+
+            &::before {
+                border: 0;
+            }
+
+            &.static-row-header:not(.sortbottom, .sorttop)::before {
+                border-bottom: thin solid var(--border-th);
+            }
+        }
+    }
+
+    .static-row-header-text.static-row-numbers > tbody:first-child > tr:first-child:has(+ tr > th[scope=col], + .static-row-header) {
+        &::before {
+            content: "";
+        }
+
+        + tr::before {
+            content: "No.";
+            font-weight: bold;
+        }
+    }
+
+    .static-row-header-hash.static-row-numbers > tbody:first-child > tr:first-child:has(+ tr > th[scope=col], + .static-row-header) {
+        &::before {
+            content: "";
+        }
+
+        + tr::before {
+            content: "#";
+            font-weight: bold;
+        }
+    }
+
+    .sticky-header-multi {
+        > tbody > tr:first-child {
+            position: sticky;
+            top: 0;
+        }
+    }
+
+    /********************/
+    /* Template:Tracked */
+    /********************/
+
+    .tracked {
+        background: var(--box-tag);
+        border: 0;
+        border-radius: 0;
+        font-family: var(--sans);
+        margin-bottom: var(--figure-margin);
+        margin-right: var(--figure-margin);
+        padding: calc(var(--tag-size) / 2) var(--tag-size);
+        text-align: left;
     }
 }
