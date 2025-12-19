@@ -3403,6 +3403,30 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
         {
             *text_span = text_span.merge(token.span);
         } else if matches!(token.node, Token::NewLine)
+            && let Some(
+                last @ Spanned {
+                    node: Token::TableRow { .. },
+                    ..
+                },
+            ) = v.last_mut()
+            && !matches!(
+                iter.peek(),
+                None | Some(Spanned {
+                    node: Token::TableData { .. }
+                        | Token::TableHeading { .. }
+                        | Token::Template { .. }
+                        | Token::Parameter { .. },
+                    ..
+                })
+            )
+        {
+            // Wikitext table rows are ignored by MW if they are not followed by
+            // a table data or table heading token. Also, if there is some
+            // template in the middle, it is ambiguous what the next token will
+            // be, and so the row needs to be retained until the final pass when
+            // all templates have been expanded.
+            *last = token;
+        } else if matches!(token.node, Token::NewLine)
             && let (
                 Some(Spanned {
                     span: li_span,
