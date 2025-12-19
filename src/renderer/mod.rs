@@ -518,6 +518,55 @@ pub fn resolve_redirects(
     Ok(article)
 }
 
+/// Writes a run of text to the given output as entity-encoded HTML, converting
+/// wretched typewriter quote marks to beautiful works of fine typographical
+/// art. We are not savages here today.
+fn text_run<W: fmt::Write + ?Sized>(
+    out: &mut W,
+    mut prev: char,
+    text: &str,
+    in_code: bool,
+) -> Result<char> {
+    fn is_break(prev: char, next: Option<char>) -> bool {
+        use unicode_general_category::{
+            GeneralCategory::{InitialPunctuation, OpenPunctuation},
+            get_general_category,
+        };
+        prev.is_whitespace()
+            || (matches!(
+                get_general_category(prev),
+                OpenPunctuation | InitialPunctuation
+            ) && !next.is_some_and(char::is_whitespace))
+    }
+
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if !in_code => {
+                out.write_char(if is_break(prev, chars.peek().copied()) {
+                    '“'
+                } else {
+                    '”'
+                })?;
+            }
+            '\'' if !in_code => {
+                out.write_char(if is_break(prev, chars.peek().copied()) {
+                    '‘'
+                } else {
+                    '’'
+                })?;
+            }
+            '<' => write!(out, "&lt;")?,
+            '>' => write!(out, "&gt;")?,
+            '&' => write!(out, "&amp;")?,
+            c => out.write_char(c)?,
+        }
+        prev = c;
+    }
+
+    Ok(prev)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

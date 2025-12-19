@@ -7,6 +7,7 @@ use super::{
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags::{self, PHRASING_TAGS},
+    text_run,
     trim::Trim,
 };
 use crate::{
@@ -211,18 +212,6 @@ impl Document {
     /// Writes a run of text, also converting wretched typewriter quote marks to
     /// beautiful works of fine typographical art, as we are not savages.
     fn text_run(&mut self, text: &str) -> Result {
-        fn is_break(prev: char, next: Option<char>) -> bool {
-            use unicode_general_category::{
-                GeneralCategory::{InitialPunctuation, OpenPunctuation},
-                get_general_category,
-            };
-            prev.is_whitespace()
-                || (matches!(
-                    get_general_category(prev),
-                    OpenPunctuation | InitialPunctuation
-                ) && !next.is_some_and(char::is_whitespace))
-        }
-
         fn is_code(tag: &str) -> bool {
             matches!(tag, "code" | "kbd" | "pre" | "samp" | "var")
         }
@@ -240,33 +229,7 @@ impl Document {
                 .rev()
                 .any(|e| matches!(e, Node::Tag(tag) if is_code(tag)));
 
-        let mut prev = self.last_char;
-        let mut chars = text.chars().peekable();
-        while let Some(c) = chars.next() {
-            match c {
-                '"' if !in_code => {
-                    self.html
-                        .write_char(if is_break(prev, chars.peek().copied()) {
-                            '“'
-                        } else {
-                            '”'
-                        })?;
-                }
-                '\'' if !in_code => {
-                    self.html
-                        .write_char(if is_break(prev, chars.peek().copied()) {
-                            '‘'
-                        } else {
-                            '’'
-                        })?;
-                }
-                '<' => self.html += "&lt;",
-                '>' => self.html += "&gt;",
-                '&' => self.html += "&amp;",
-                c => self.html.write_char(c)?,
-            }
-            prev = c;
-        }
+        let prev = text_run(&mut self.html, self.last_char, text, in_code)?;
         if !in_attr {
             self.last_char = prev;
         }

@@ -1,6 +1,6 @@
 //! Collections for semi-structured article data.
 
-use super::Result;
+use super::{Result, text_run};
 use crate::{
     common::anchor_encode,
     wikitext::{HeadingLevel, Span, Spanned, Token, helpers::TextContent, visit::Visitor},
@@ -80,9 +80,11 @@ impl Outline {
     ) -> Result<String> {
         // TODO: Duplicate headings should get unique IDs.
         let name = {
+            let mut name = String::new();
             let mut extractor = TextContent::new(source, String::new());
             extractor.visit_heading(span, level, content)?;
-            extractor.finish().trim_ascii().to_string()
+            text_run(&mut name, '\n', &extractor.finish(), false)?;
+            name
         };
 
         let id = anchor_encode(&name);
