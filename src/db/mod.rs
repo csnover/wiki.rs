@@ -305,6 +305,7 @@ static MODULE_HATNOTE_LIST: Hack = Hack::HorsePills(&[
 static MODULE_TNT: Hack = Hack::Lobotomy(
     r"
 local p = {}
+local link, formatMessage
 function p.msg(frame)
     local dataset, id
     local params = {}
@@ -337,6 +338,9 @@ end
 formatMessage = function(dataset, key, params, lang)
     local result = mw.message.newRawMessage(key, unpack(params or {}))
     return result:plain()
+end
+link = function(dataset)
+	return 'c:Data:' .. mw.text.trim(dataset or '')
 end
 return p
 ",
