@@ -182,7 +182,7 @@ impl RawDatabase<'_> {
 
     /// Finds articles in the index whose titles match the given query.
     pub fn search(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str> {
-        self.index.find_articles(query).map(|entry| entry.title)
+        self.index.find_articles(query)
     }
 
     /// Gets an article directly from the database.
@@ -213,7 +213,7 @@ impl RawDatabase<'_> {
             .and_then(|entry| {
                 log::trace!("Located article in {:.2?}", time.elapsed());
                 let time = Instant::now();
-                let mut article = self.articles.get_article(entry);
+                let mut article = self.articles.get_article(&entry);
                 log::trace!("Extracted article in {:.2?}", time.elapsed());
 
                 if let (Ok(article), Some(Hack::HorsePills(hacks))) = (article.as_mut(), hack) {

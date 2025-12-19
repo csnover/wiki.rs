@@ -94,7 +94,7 @@ impl ArticleDatabase {
     }
 
     /// Gets the article at the given index.
-    pub(super) fn get_article(&self, entry: &IndexEntry<'_>) -> Result<Article> {
+    pub(super) fn get_article(&self, entry: &IndexEntry) -> Result<Article> {
         let chunk = self.get_article_chunk(entry.offset)?;
         let root = chunk.parse::<Element>()?;
         let article = root.children().find(|el| {
