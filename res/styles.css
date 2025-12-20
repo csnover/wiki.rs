@@ -1539,6 +1539,65 @@ th {
         [style*="line-height: 1.2em"] {
             line-height: unset !important;
         }
+
+        &.ib-chembox {
+            caption {
+                border-bottom: thin solid var(--fg);
+                font-size: 1.1rem;
+                font-stretch: var(--sidebar-stretch);
+                font-weight: bold;
+            }
+
+            > tbody > tr > th[style*=background] {
+                background-color: transparent !important;
+            }
+
+            td, th {
+                border: 0;
+            }
+
+            th[colspan] {
+                border-top: thin solid var(--fg);
+                font-size: 105%;
+            }
+
+            tr:has(+ tr > th[colspan]) > * {
+                padding-bottom: calc(var(--box-margin) * .25);
+            }
+
+            td:has(+ td) {
+                font-stretch: var(--side-table-stretch);
+                font-weight: bold;
+            }
+
+            td[colspan] {
+                font-weight: bold;
+                font-stretch: var(--side-table-stretch);
+
+                > div {
+                    font-weight: normal;
+                    font-stretch: normal;
+                }
+            }
+
+            .collapsible-list {
+                > :first-child {
+                    font-weight: bold !important;
+                }
+            }
+
+            [style*=padding-left] {
+                padding-left: 1rem !important;
+            }
+
+            [style*=border] {
+                border: 0 !important;
+            }
+
+            tr:has(+ tr:last-child:empty) > * {
+                padding-bottom: calc(var(--box-margin) * .5);
+            }
+        }
     }
 
     .infobox.vevent > tbody > tr {
