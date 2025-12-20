@@ -3415,7 +3415,9 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
                     node: Token::TableData { .. }
                         | Token::TableHeading { .. }
                         | Token::Template { .. }
-                        | Token::Parameter { .. },
+                        | Token::Parameter { .. }
+                        | Token::Comment { .. }
+                        | Token::NewLine,
                     ..
                 })
             )
