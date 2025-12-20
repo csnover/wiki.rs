@@ -48,6 +48,8 @@ pub(crate) struct Document {
     tag_blocks: Vec<(usize, String)>,
     /// The [`TextStyle`] emitter.
     text_style_emitter: TextStyleEmitter,
+    /// The number of open Wikitext tables.
+    wikitext_table_count: usize,
 }
 
 impl Document {
@@ -107,6 +109,25 @@ impl Document {
         }
 
         Ok(())
+    }
+
+    /// Returns true if the document is currently processing any table.
+    ///
+    /// The way that Wikitext and HTML tables interact is, like everything about
+    /// Wikitext, cursed. In MediaWiki, `<table>` cannot start a Wikitext table,
+    /// but a bare `</table>` *will* terminate the table. So there are three
+    /// possible states, requiring two variables (this function, and
+    /// `wikitext_table_count`):
+    ///
+    /// * Not in Wikitext table: Emit raw text
+    /// * In Wikitext table but not HTML table: Emit content
+    /// * In both Wikitext table and HTML table: Emit table element
+    #[inline]
+    fn in_table(&self) -> bool {
+        self.stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Tag(name) if name == "table"))
     }
 
     /// Starts a new HTML element with the given tag name and attributes.
@@ -734,97 +755,88 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if !self
-            .stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
-        {
-            self.start_tag(state, sp, "table", &[])?;
+        if self.wikitext_table_count != 0 {
+            self.start_tag(state, sp, "caption", attributes)
+        } else if self.in_table() {
+            Ok(())
+        } else {
+            self.text_run(&sp.source[span.into_range()])
         }
-        self.start_tag(state, sp, "caption", attributes)
     }
 
     fn adopt_table_data(
         &mut self,
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if !self
-            .stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Tag(tag) if tag == "tr"))
-        {
-            if !self
-                .stack
-                .iter()
-                .rev()
-                .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
-            {
-                self.start_tag(state, sp, "table", &[])?;
+        if self.wikitext_table_count == 0 {
+            self.text_run(&sp.source[span.into_range()])
+        } else if self.in_table() {
+            if matches!(self.stack.last(), Some(Node::Tag(name)) if name == "table") {
+                self.start_tag(state, sp, "tr", &[])?;
             }
-            self.start_tag(state, sp, "tr", &[])?;
+            self.start_tag(state, sp, "td", attributes)
+        } else {
+            Ok(())
         }
-        self.start_tag(state, sp, "td", attributes)
     }
 
     fn adopt_table_end(
         &mut self,
         _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
+        sp: &StackFrame<'_>,
+        span: Span,
     ) -> Result {
-        self.end_tag("table")
+        if self.wikitext_table_count == 0 {
+            self.text_run(&sp.source[span.into_range()])
+        } else {
+            self.wikitext_table_count -= 1;
+            if self.in_table() {
+                self.end_tag("table")
+            } else {
+                Ok(())
+            }
+        }
     }
 
     fn adopt_table_heading(
         &mut self,
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if !self
-            .stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Tag(tag) if tag == "tr"))
-        {
-            if !self
-                .stack
-                .iter()
-                .rev()
-                .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
-            {
-                self.start_tag(state, sp, "table", &[])?;
+        if self.wikitext_table_count == 0 {
+            self.text_run(&sp.source[span.into_range()])
+        } else if self.in_table() {
+            if matches!(self.stack.last(), Some(Node::Tag(name)) if name == "table") {
+                self.start_tag(state, sp, "tr", &[])?;
             }
-            self.start_tag(state, sp, "tr", &[])?;
+            self.start_tag(state, sp, "th", attributes)
+        } else {
+            Ok(())
         }
-        self.start_tag(state, sp, "th", attributes)
     }
 
     fn adopt_table_row(
         &mut self,
         state: &mut State<'_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if !self
-            .stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Tag(tag) if tag == "table"))
-        {
-            self.start_tag(state, sp, "table", &[])?;
+        if self.wikitext_table_count == 0 {
+            self.text_run(&sp.source[span.into_range()])
+        } else if self.in_table() {
+            self.start_tag(state, sp, "tr", attributes)
+        } else {
+            Ok(())
         }
-        self.start_tag(state, sp, "tr", attributes)
     }
 
     fn adopt_table_start(
@@ -834,6 +846,7 @@ impl Surrogate<Error> for Document {
         _span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
+        self.wikitext_table_count += 1;
         self.start_tag(state, sp, "table", attributes)
     }
 
