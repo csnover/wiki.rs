@@ -782,6 +782,7 @@ type ExtensionTagFn = fn(&mut String, &mut State<'_>, &ExtensionTag<'_, '_, '_>)
 
 /// All supported extension tags.
 static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
+    "chem" => math,
     "indicator" => indicator,
     "math" => math,
     "nowiki" => no_wiki,
