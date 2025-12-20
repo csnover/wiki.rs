@@ -76,6 +76,11 @@
 :any-link {
     text-underline-position: from-font;
 
+    &[href$="redlink=1"] {
+        color: hsl(0, 50%, 20%);
+        text-decoration-color: rgb(180, 0, 0);
+    }
+
     &:hover {
         text-decoration-color: transparent;
     }

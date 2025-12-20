@@ -13,7 +13,6 @@ use crate::{
     common::make_url,
     config::CONFIG,
     lua::run_vm,
-    renderer::LinkKind,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token},
 };
@@ -424,7 +423,13 @@ pub(crate) fn call_template(
         write!(
             out,
             "[{} {}]",
-            LinkKind::Internal(callee.clone()).to_string(&state.statics.base_uri),
+            make_url(
+                None,
+                &state.statics.base_uri,
+                callee.key(),
+                Some("action=edit&redlink=1"),
+                false
+            )?,
             callee
         )?;
         return Ok(None);
