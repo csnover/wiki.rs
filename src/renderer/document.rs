@@ -64,28 +64,8 @@ impl Document {
             stack: <_>::default(),
             tag_blocks: <_>::default(),
             text_style_emitter: <_>::default(),
+            wikitext_table_count: <_>::default(),
         }
-    }
-
-    /// Finalises the document and returns the resulting output.
-    pub(crate) fn finish(mut self) -> Result<String> {
-        self.text_style_emitter.finish(&mut self.html)?;
-
-        for rest in self.stack.drain(..).rev() {
-            rest.close(&mut self.html, &mut self.graf_emitter)?;
-        }
-
-        self.graf_emitter.finish(&mut self.html);
-
-        Ok(self.html)
-    }
-
-    /// Finishes formatting a line of Wikitext.
-    pub(crate) fn finish_line(&mut self) -> Result {
-        self.text_style_emitter.finish(&mut self.html)?;
-        self.graf_emitter.end_line(&mut self.html);
-        self.last_char = '\n';
-        Ok(())
     }
 
     /// Ends an HTML element with the given tag name and attributes.
@@ -108,6 +88,27 @@ impl Document {
             write!(self.html, "</{name}>")?;
         }
 
+        Ok(())
+    }
+
+    /// Finalises the document and returns the resulting output.
+    pub(crate) fn finish(mut self) -> Result<String> {
+        self.text_style_emitter.finish(&mut self.html)?;
+
+        for rest in self.stack.drain(..).rev() {
+            rest.close(&mut self.html, &mut self.graf_emitter)?;
+        }
+
+        self.graf_emitter.finish(&mut self.html);
+
+        Ok(self.html)
+    }
+
+    /// Finishes formatting a line of Wikitext.
+    pub(crate) fn finish_line(&mut self) -> Result {
+        self.text_style_emitter.finish(&mut self.html)?;
+        self.graf_emitter.end_line(&mut self.html);
+        self.last_char = '\n';
         Ok(())
     }
 
