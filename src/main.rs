@@ -189,7 +189,7 @@ impl Args {
 /// Don’t run this. You’ve been warned!
 #[tokio::main]
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
     let args = match Args::new() {
         Ok(args) => args,
