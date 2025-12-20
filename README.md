@@ -89,7 +89,7 @@ not supported right now. Here are all of the currently supported extension tags:
 * `<pre>`, which is used to display preformatted text, exactly like the HTML tag
 * `<ref>` & `<references>`, which are used to collect and list article citations
 * `<section>` (partial), which is used to paste bits of articles into other ones
-* `<syntaxhighlight>`, which is like `<pre>` with syntax highlighting for coders
+* `<syntaxhighlight>` (partial), which is just `<pre>` with extra stuff for code
 * `<templatedata>` (stub), which is used to document the parameters of templates
 * `<templatestyles>`, which is used to inject separate CSS files into the output
 * `<timeline>`, which is used to render one or more time series like a bar chart
