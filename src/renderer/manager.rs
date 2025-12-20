@@ -207,10 +207,13 @@ fn render_string(
     let load_mode = LoadMode::Module;
     match mode {
         EvalPp::Post => render(statics, load_mode, date, &sp),
-        EvalPp::Pre | EvalPp::Tree => {
+        EvalPp::Pre | EvalPp::PreTree | EvalPp::Tree => {
             let (state, source) = preprocess(statics, &sp, date, load_mode)?;
             let mut content = if mode == EvalPp::Pre {
                 source
+            } else if mode == EvalPp::PreTree {
+                let root = state.statics.parser.parse(&source, false)?;
+                format!("{:#?}", inspect(&FileMap::new(&source), &root.root))
             } else {
                 let root = state.statics.parser.parse(&sp.source, false)?;
                 format!("{:#?}", inspect(&sp.source, &root.root))

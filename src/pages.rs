@@ -180,13 +180,15 @@ pub(crate) async fn eval_get(State(state): State<AppState>) -> Result<impl IntoR
 #[derive(Clone, Copy, Default, Eq, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum EvalPp {
+    /// Show unprocessed source as a tree.
+    Tree,
+    /// Show preprocessed source.
+    Pre,
+    /// Show preprocessed source as a tree.
+    PreTree,
     /// Show post-processed result.
     #[default]
     Post,
-    /// Show pre-processed post-template-expansion source.
-    Pre,
-    /// Show pre-processed post-template-expansion source as a tree.
-    Tree,
 }
 
 /// Form options for `/eval`.

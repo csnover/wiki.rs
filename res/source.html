@@ -177,8 +177,9 @@
                 <div class="boopables">
                     <div>
                         <div><label><input name="mode" value="post" type="radio"<% if form.mode == crate::pages::EvalPp::Post { %> checked<% } %>> Show final</label></div>
+                        <div><label><input name="mode" value="tree" type="radio"<% if form.mode == crate::pages::EvalPp::Tree { %> checked<% } %>> Show tree</label></div>
                         <div><label><input name="mode" value="pre" type="radio"<% if form.mode == crate::pages::EvalPp::Pre { %> checked<% } %>> Show PP (hehe)</label></div>
-                        <div><label><input name="mode" value="tree" type="radio"<% if form.mode == crate::pages::EvalPp::Tree { %> checked<% } %>> Show PP tree</label></div>
+                        <div><label><input name="mode" value="pretree" type="radio"<% if form.mode == crate::pages::EvalPp::PreTree { %> checked<% } %>> Show PP tree</label></div>
                         <div><label><input name="markers" value="true" type="checkbox"<% if form.markers == Some(true) { %> checked<% } %>> Unstrip<br>markers</label></div>
                     </div>
                     <button><%- if time::UtcDateTime::now().second() & 1 == 1 { "Pray" } else { "Weep" } %></button>
