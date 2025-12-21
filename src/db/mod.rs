@@ -369,6 +369,12 @@ return p
 /// Lua 5.4-conforming engine.
 static MODULE_WIKIDATA: Hack = Hack::HorsePills(&[(r#""^\-?%d+""#, r#""^-?%d+""#)]);
 
+/// A fix for 'Module:WPSHIPS utilities'.
+///
+/// This module contains an invalid replacement string.
+static MODULE_WPSHIPS_UTILITIES: Hack =
+    Hack::HorsePills(&[("gsub('|[%s%dx]+px%s*', '%|", "gsub('|[%s%dx]+px%s*', '%%|")]);
+
 /// Hover effects on tables were extremely cool back in 2004, or so I hear.
 static TEMPLATE_ROW_HOVER_HIGHLIGHT: Hack = Hack::Lobotomy("");
 
@@ -382,5 +388,6 @@ static HACKS: phf::Map<&str, &Hack> = phf::phf_map! {
     "Module:Infobox" => &MODULE_INFOBOX,
     "Module:TNT" => &MODULE_TNT,
     "Module:Wikidata" => &MODULE_WIKIDATA,
+    "Module:WPSHIPS utilities" => &MODULE_WPSHIPS_UTILITIES,
     "Template:Row hover highlight" => &TEMPLATE_ROW_HOVER_HIGHLIGHT,
 };
