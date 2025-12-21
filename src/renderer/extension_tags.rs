@@ -729,7 +729,7 @@ fn timeline(
     if let Some(body) = arguments.body {
         let result = timeline::timeline_to_svg(body, &state.statics.base_uri)
             .map_err(|err| Error::Extension(Box::new(err)))?;
-        write!(out, "<figure>{result}</figure>")?;
+        write!(out, r#"<figure class="wiki-rs-timeline">{result}</figure>"#)?;
     }
     Ok(OutputMode::Block)
 }
