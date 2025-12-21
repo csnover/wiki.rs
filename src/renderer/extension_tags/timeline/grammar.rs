@@ -804,6 +804,8 @@ peg::parser! {pub(super) grammar easy_timeline() for str {
       "yyyy or x[.y]")
     d:$("-"? digit()+ "."? digit()*)
   { Time::Decimal(d.parse::<f64>().unwrap()) }
+  / y:$(digit()*<4,4>)
+  { Time::Decimal(y.parse::<f64>().unwrap()) }
 
   ///////////
   // Atoms //

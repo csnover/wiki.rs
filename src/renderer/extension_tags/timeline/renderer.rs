@@ -474,7 +474,11 @@ fn draw_legend(r: &mut Renderer<'_>) -> Result<()> {
         || (r.plot_area.width() - MARGIN) / columns as f64,
         |w| w.into_abs(r.image_dims.width()),
     );
-    let per_column = r.legends.len().div_ceil(columns);
+
+    // Clippy: Truncation is intentional, and sign cannot be negative.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let max_per_column = (((r.image_dims.height() - y).max(0.0) / line_height) as usize).max(1);
+    let per_column = r.legends.len().div_ceil(columns).min(max_per_column);
 
     let mut dx = 0.0;
     let mut dy = 0.0;

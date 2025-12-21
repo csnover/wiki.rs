@@ -32,6 +32,7 @@ run_tests! {
     fractional_major_scale,
     history_of_computing,
     mcdonnell_douglas_md_11,
+    secretary_of_state_for_defence,
     tabs,
     vertical,
     wikimedia_growth,
