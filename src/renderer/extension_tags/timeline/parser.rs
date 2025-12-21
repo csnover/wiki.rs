@@ -18,23 +18,34 @@ use std::collections::{BTreeMap, HashMap};
 /// Because variable replacement is arbitrary text in any position, it is
 /// simpler to do this separately than it is to try to try to make the grammar
 /// support it.
-pub(super) fn expand(mut input: &str) -> Result<String> {
+pub(super) fn expand(input: &str) -> Result<(String, Vec<(usize, isize)>)> {
     let mut expanded = String::new();
     let mut defines = Defines::new();
-    while !input.is_empty() {
-        let end = match grammar::easy_timeline::chunk(input)? {
-            grammar::Chunk::Command(end) => {
-                replace_idents(&mut expanded, &defines, &input[..end])?;
-                end
+    let mut deltas = Vec::new();
+    let mut cursor = 0;
+    while cursor != input.len() {
+        let len = match grammar::easy_timeline::chunk(&input[cursor..]).map_err(|mut err| {
+            err.location = peg::Parse::position_repr(input, cursor + err.location.offset);
+            err
+        })? {
+            grammar::Chunk::Command(len) => {
+                replace_idents(
+                    &mut expanded,
+                    &mut deltas,
+                    &defines,
+                    &input[cursor..cursor + len],
+                );
+                len
             }
-            grammar::Chunk::Define(end, Define { key, value }) => {
+            grammar::Chunk::Define(len, Define { key, value }) => {
                 defines.insert(key.to_ascii_lowercase(), value);
-                end
+                deltas.push((expanded.len(), -isize::try_from(len).unwrap()));
+                len
             }
         };
-        input = &input[end..];
+        cursor += len;
     }
-    Ok(expanded)
+    Ok((expanded, deltas))
 }
 
 /// A collection of defined variables.
@@ -50,13 +61,29 @@ pub(super) struct Define<'input> {
 }
 
 /// Parses an expanded input text into an intermediate representation.
-pub(super) fn parse(mut expanded: &str) -> Result<Timeline<'_>> {
+pub(super) fn parse<'a>(
+    input: &'a str,
+    original: &str,
+    deltas: &[(usize, isize)],
+) -> Result<Timeline<'a>> {
     let mut pen = Timeline::new();
-    while !expanded.is_empty() {
-        let (end, command) = grammar::easy_timeline::timeline(expanded, pen.date_format)?;
+    let mut cursor = 0;
+    while cursor != input.len() {
+        let (len, command) = grammar::easy_timeline::timeline(&input[cursor..], pen.date_format)
+            .map_err(|mut err| {
+                let mut offset = cursor + err.location.offset;
+                for delta in deltas
+                    .iter()
+                    .map_while(move |&(at, delta)| (at < offset).then_some(delta))
+                {
+                    offset = offset.strict_sub_signed(delta);
+                }
+                err.location = peg::Parse::position_repr(original, offset);
+                err
+            })?;
         // eprintln!("command: {command:#?}");
         pen.update_state(command)?;
-        expanded = &expanded[end..];
+        cursor += len;
     }
 
     Ok(pen)
@@ -823,10 +850,15 @@ where
 
 /// Replaces any variables in the given `input` with corresponding values from
 /// `defines` and emits the replaced input text to `out`.
-fn replace_idents(out: &mut String, defines: &Defines<'_>, input: &str) -> Result {
+fn replace_idents(
+    out: &mut String,
+    deltas: &mut Vec<(usize, isize)>,
+    defines: &Defines<'_>,
+    input: &str,
+) {
     let mut flushed = 0;
     for at in memchr::memchr_iter(b'$', input.as_bytes()) {
-        let start = at + 1;
+        let start = at + "$".len();
         let end = input[start..]
             .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
             .map_or(input.len(), |p| p + start);
@@ -839,6 +871,9 @@ fn replace_idents(out: &mut String, defines: &Defines<'_>, input: &str) -> Resul
             // as-is and let the next stage fail to parse.
             *out += &input[flushed..at];
             if let Some(value) = defines.get(&key.to_lowercase()) {
+                let old_len = key.len() + "$".len();
+                let new_len = value.len();
+                deltas.push((out.len(), new_len.checked_signed_diff(old_len).unwrap()));
                 *out += value;
                 flushed = end;
             } else {
@@ -848,5 +883,4 @@ fn replace_idents(out: &mut String, defines: &Defines<'_>, input: &str) -> Resul
     }
 
     *out += &input[flushed..];
-    Ok(())
 }

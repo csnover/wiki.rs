@@ -12,8 +12,8 @@ mod tests;
 
 /// Converts an EasyTimeline script into a serialised SVG image.
 pub fn timeline_to_svg(input: &str, base_uri: &Uri) -> Result<String> {
-    let expanded = parser::expand(input.trim_ascii_end())?;
-    let pen = parser::parse(&expanded)?;
+    let (expanded, deltas) = parser::expand(input.trim_ascii_end())?;
+    let pen = parser::parse(&expanded, input, &deltas)?;
     let svg = renderer::render(pen, base_uri)?;
 
     let mut out = Vec::new();
