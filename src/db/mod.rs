@@ -293,6 +293,23 @@ static MODULE_HATNOTE_LIST: Hack = Hack::HorsePills(&[
     ),
 ]);
 
+/// A fix for 'Module:Infobox'.
+///
+/// Because some modules like 'Module:Navbox/configuration' cache the output of
+/// calls to the `#tag` parser function and then wiki.rs caches those modules,
+/// wiki.rs does not return strip markers to modules that call `#tag` (it
+/// returns extension tag XML instead). As such, 'Module:Infobox' needs to be
+/// fixed so that it is not trying to match strip markers, because when it fails
+/// to match them it emits even more garbage HTML than usual.
+///
+/// It would be possible to only send extension XML when a module is being
+/// initialised, which would allow this hack to go away, but that would require
+/// slightly more work, so, you know.
+static MODULE_INFOBOX: Hack = Hack::HorsePills(&[(
+    r"'(</[Tt][Rr]%s*>%s*)(\127[^\127]*UNIQ%-%-templatestyles%-%x+%-QINU[^\127]*\127)'",
+    r"'(</[Tt][Rr]%s*>%s*)(<templatestyles%s+[^>]*>)'",
+)]);
+
 /// A fix for 'Module:TNT'.
 ///
 /// Like its name accidentally implies, this module explodes if someone tries
@@ -362,6 +379,7 @@ static HACKS: phf::Map<&str, &Hack> = phf::phf_map! {
     "Module:Citation/CS1" => &MODULE_CITATION_CS1,
     "Module:Footnotes/anchor id list" => &MODULE_FOOTNOTE_ANCHOR_ID_LIST,
     "Module:Hatnote list" => &MODULE_HATNOTE_LIST,
+    "Module:Infobox" => &MODULE_INFOBOX,
     "Module:TNT" => &MODULE_TNT,
     "Module:Wikidata" => &MODULE_WIKIDATA,
     "Template:Row hover highlight" => &TEMPLATE_ROW_HOVER_HIGHLIGHT,
