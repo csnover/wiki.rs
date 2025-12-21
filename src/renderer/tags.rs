@@ -294,13 +294,14 @@ pub(super) fn render_runtime_list<
     out.adopt_tokens(state, &sp.clone_with_source(FileMap::new(source)), &tokens)
 }
 
-/// Phrasing content, per the HTML5 specification.
+/// Phrasing content, per the HTML5 specification, including obsolete elements
+/// allowed by MediaWiki.
 pub(super) static PHRASING_TAGS: phf::Set<&str> = phf::phf_set! {
-    "a", "abbr", "area", "audio", "b", "bdi", "bdo", "br", "button", "canvas",
-    "cite", "code", "data", "datalist", "del", "dfn", "em", "embed", "i",
-    "iframe", "img", "input", "ins", "kbd", "label", "link", "map", "mark",
-    "math", "meta", "meter", "noscript", "object", "output", "picture",
-    "progress", "q", "ruby", "s", "samp", "script", "selectedcontent", "slot",
-    "small", "span", "strong", "sub", "sup", "svg", "template", "textarea",
-    "time", "u", "var", "video", "wbr"
+    "a", "abbr", "area", "audio", "b", "bdi", "bdo", "big", "br", "button",
+    "canvas", "cite", "code", "data", "datalist", "del", "dfn", "em", "embed",
+    "font", "i", "iframe", "img", "input", "ins", "kbd", "label", "link", "map",
+    "mark", "math", "meta", "meter", "noscript", "object", "output", "picture",
+    "progress", "q", "rb", "rp", "rt", "rtc", "ruby", "s", "samp", "script",
+    "selectedcontent", "slot", "small", "span", "strike", "strong", "sub",
+    "sup", "svg", "template", "textarea", "time", "u", "var", "video", "wbr"
 };
