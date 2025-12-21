@@ -346,6 +346,10 @@ fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_,
             .name(state, arguments.sp)?
             .unwrap_or(value.clone());
 
+        if name == "format" {
+            continue;
+        }
+
         // ha ha kill me
         let value = if arguments.from_parser_fn
             && ((value.starts_with('"') && value.ends_with('"'))
@@ -361,19 +365,29 @@ fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_,
         write!(out, r#" {name}="{}""#, strtr(&value, &[("\"", "&quot;")]))?;
     }
 
-    // 'Template:Blockquote' dumps a `<syntaxhighlight>` into 'Template:Markup'
-    // which blindly dumps that into a `<pre>`. Unstripping strip markers
-    // *before* encoding the rest of the body will result in double-encoding of
-    // the markup. MW does things differently and does not unstrip markers at
-    // all in its tag hooks, obviously preferring to commit a crime somewhere
-    // else to get the strip marker content out. Since all the strip markers in
-    // wiki.rs are supposed to contain well-formed HTML ready to be emitted to
-    // the final document with no other Wikitext parsing, doing things in this
-    // order ‘should’ be ‘fine’.
-    let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
-    let body = strtr(&body, &[("<", "&lt;"), (">", "&gt;")]);
-    let body = state.strip_markers.unstrip(&body);
+    let process_wikitext = arguments.get(state, "format")?.as_deref() == Some("wikitext");
 
+    let body = if process_wikitext {
+        Cow::Owned(arguments.eval_body(state)?)
+    } else {
+        // 'Template:Blockquote' dumps a `<syntaxhighlight>` into
+        // 'Template:Markup' which blindly dumps that into a `<pre>`.
+        // Unstripping strip markers *before* encoding the rest of the body will
+        // result in double-encoding of the markup. MW does things differently
+        // and does not unstrip markers at all in its tag hooks, obviously
+        // preferring to commit a crime somewhere else to get the strip marker
+        // content out. Since all the strip markers in wiki.rs are supposed to
+        // contain well-formed HTML ready to be emitted to the final document
+        // with no other Wikitext parsing, doing things in this order ‘should’
+        // be ‘fine’.
+        let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
+        match strtr(&body, &[("<", "&lt;"), (">", "&gt;")]) {
+            Cow::Borrowed(_) => body,
+            Cow::Owned(body) => Cow::Owned(body),
+        }
+    };
+
+    let body = state.strip_markers.unstrip(&body);
     write!(out, ">{body}</pre>")?;
     Ok(OutputMode::Block)
 }
@@ -691,12 +705,17 @@ fn template_data(
     _: &mut State<'_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    // TODO: Hook process data
-    // Confusingly, because this is emitting `<pre>`, and someone decided that
-    // `<pre>` should be an extension tag, the output will sometimes end up
-    // getting sent again to `<pre>`. Probably, just parsing and emitting the
-    // content as a table, as intended, would be a good idea.
-    write!(out, "<pre>{}</pre>", arguments.body())?;
+    // TODO: Actually parse the JSON and emit a table
+    let body = strtr(
+        arguments.body(),
+        &[
+            ("-{", "-&#123;"),
+            ("}-", "&#125;-"),
+            ("<", "&lt;"),
+            (">", "&gt;"),
+        ],
+    );
+    write!(out, "<pre>{body}</pre>")?;
     Ok(OutputMode::Block)
 }
 

@@ -1220,8 +1220,22 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         if globals.including {
             match mode {
                 InclusionMode::IncludeOnly => {
+                    // T353697: `<pre<includeonly></includeonly>` in a template
+                    // should be equivalent to emitting an HTML `<pre>` at the
+                    // output stage.
+                    let pre_hack = content.is_some_and(|_| {
+                        input[..t.span.start].ends_with("<pre")
+                    });
+
                     // Discard the tag, parse the content
-                    RuleResult::Matched(pos, vec![])
+                    RuleResult::Matched(pos, if pre_hack {
+                        // …unless it’s the pre-hack
+                        vec![t.map_node(|_| {
+                            Token::Generated(" format=\"wikitext\"".into())
+                        })]
+                    } else {
+                        vec![]
+                    })
                 }
                 InclusionMode::NoInclude => {
                     // Discard the tag, skip the content.
