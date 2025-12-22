@@ -11,7 +11,7 @@ use axum::{
     Form,
     extract::{Path, Query, RawQuery, State},
     http::{HeaderMap, StatusCode, header},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
 };
 use rayon::{iter::ParallelIterator, slice::ParallelSliceMut};
 use sailfish::TemplateSimple;
@@ -165,7 +165,7 @@ pub(crate) async fn article(
         site: state.database.name(),
     }
     .render_once()
-    .map(Html::from)
+    .map(html_result)
     .map(IntoResponse::into_response)
     .map_err(Into::into)
 }
@@ -225,7 +225,6 @@ pub(crate) async fn eval_post(
     let output = call_renderer(&state, command)?;
     log::trace!("Rendered article in {:.2?}", time.elapsed());
     raw_source(state.base_uri.path(), &output.content, "html", Some(body))
-        .map(IntoResponse::into_response)
 }
 
 /// The external link page route handler.
@@ -265,8 +264,19 @@ pub(crate) async fn external(
         site: state.database.name(),
     }
     .render_once()
-    .map(Html::from)
+    .map(html_result)
     .map_err(Into::into)
+}
+
+/// Returns an HTML response with appropriate cache-control headers.
+fn html_result(result: String) -> impl IntoResponse {
+    (
+        [
+            (header::CACHE_CONTROL, "max-age=604800, public"),
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+        ],
+        result,
+    )
 }
 
 /// The font resource route handler.
@@ -298,7 +308,13 @@ pub(crate) async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
         .iter()
         .find_map(|(name, data)| (*name == font).then_some(*data))
     {
-        Ok(([(header::CONTENT_TYPE, "font/woff2")], body))
+        Ok((
+            [
+                (header::CONTENT_TYPE, "font/woff2"),
+                (header::CACHE_CONTROL, "max-age=806400, public, immutable"),
+            ],
+            body,
+        ))
     } else {
         Err(StatusCode::NOT_FOUND)
     }
@@ -307,13 +323,16 @@ pub(crate) async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
 /// The media resource route handler.
 pub(crate) async fn media(Path(_): Path<String>) -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "image/svg+xml")],
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "max-age=806400, public, immutable"),
+        ],
         include_str!("../res/placeholder.svg"),
     )
 }
 
 /// The index page route handler.
-pub(crate) async fn index_page(State(state): State<AppState>) -> Result<Html<String>, Error> {
+pub(crate) async fn index_page(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
     #[derive(TemplateSimple)]
     #[template(path = "index.html")]
     struct Index<'a> {
@@ -328,7 +347,7 @@ pub(crate) async fn index_page(State(state): State<AppState>) -> Result<Html<Str
         site: state.database.name(),
     }
     .render_once()
-    .map(Html::from)
+    .map(html_result)
     .map_err(Into::into)
 }
 
@@ -432,7 +451,7 @@ pub(crate) async fn search(
         site: state.database.name(),
     }
     .render_once()
-    .map(Html::from)
+    .map(html_result)
     .map_err(Error::from)
 }
 
@@ -501,7 +520,7 @@ fn raw_source(
     source: &str,
     model: &str,
     form: Option<EvalForm>,
-) -> Result<Html<String>, Error> {
+) -> Result<impl IntoResponse + use<>, Error> {
     use syntect::{
         highlighting::ThemeSet,
         html::{ClassStyle, css_for_theme_with_class_style, line_tokens_to_classed_spans},
@@ -614,7 +633,7 @@ fn raw_source(
         lines,
     }
     .render_once()
-    .map(Html::from)
+    .map(html_result)
     .map_err(Into::into)
 }
 
@@ -622,7 +641,10 @@ fn raw_source(
 #[cfg(not(feature = "debug-styles"))]
 pub(crate) async fn styles() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/css")],
+        [
+            (header::CONTENT_TYPE, "text/css"),
+            (header::CACHE_CONTROL, "max-age=604800, public, immutable"),
+        ],
         include_str!("../res/styles.css"),
     )
 }

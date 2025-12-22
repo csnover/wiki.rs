@@ -1754,6 +1754,26 @@ th {
         }
     }
 
+    /*************************/
+    /* Template:Hidden begin */
+    /*************************/
+
+    .hidden-begin {
+        border: 0 !important;
+
+        &:has(+ .navbox-styles, + .navbox) {
+            margin-block-start: var(--footer-margin);
+        }
+    }
+
+    .hidden-title {
+        border-block-start: 3px solid var(--fg);
+        border-block-end: thin solid var(--border-th);
+        font-family: var(--sans);
+        font-size: var(--big-caption);
+        font-stretch: var(--sidebar-stretch);
+    }
+
     /***********************************/
     /* Template:Historical populations */
     /* Template:US Census population   */
@@ -3250,9 +3270,13 @@ th {
     .succession-box.succession-box {
         border-block-start: thin solid var(--border-fg);
         inline-size: 100%;
-        margin-block: var(--footer-margin) 0 !important;
+        margin-block: 0 !important;
         margin-inline: 0 !important;
         max-inline-size: none;
+
+        &:has(+ .navbox-styles, + .navbox) {
+            margin-block: var(--footer-margin) 0 !important;
+        }
 
         .navbox & {
             border: none;
@@ -3265,8 +3289,14 @@ th {
         }
 
         > tbody > tr {
+            background-color: transparent;
+
             > td {
                 font-size: .88rem;
+
+                &[style*=border] {
+                    border-block-start-width: 3px !important;
+                }
             }
 
             > th {
