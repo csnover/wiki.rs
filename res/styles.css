@@ -1063,8 +1063,7 @@ th {
         }
     }
 
-    > .wikitable[style*="border"][style*="margin"], /* 'Toronto' */
-    .succession-box /* 'Template:S-start' */
+    > .wikitable[style*="border"][style*="margin"] /* 'Toronto' */
     {
         margin-inline: var(--table-margin-inline) !important;
 
@@ -3082,7 +3081,8 @@ th {
     /**********************/
 
     .quotebox {
-        background: transparent;
+        background: transparent !important;
+        color: var(--fg) !important;
         border: 0;
         border-block-end: thin solid currentColor;
         border-block-start: 3px solid currentColor;
@@ -3249,6 +3249,10 @@ th {
 
     .succession-box.succession-box {
         border-block-start: thin solid var(--border-fg);
+        inline-size: 100%;
+        margin-block: var(--footer-margin) 0 !important;
+        margin-inline: 0 !important;
+        max-inline-size: none;
 
         .navbox & {
             border: none;
@@ -3258,6 +3262,18 @@ th {
 
         * {
             text-align: inherit;
+        }
+
+        > tbody > tr {
+            > td {
+                font-size: .88rem;
+            }
+
+            > th {
+                border-block-start-width: 3px !important;
+                font-size: 1rem;
+                font-stretch: var(--sidebar-stretch);
+            }
         }
     }
 
