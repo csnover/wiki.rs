@@ -104,6 +104,10 @@ b, strong {
     font-weight: var(--bold);
 }
 
+big {
+    font-size: 1em;
+}
+
 code, kbd, pre, samp, tt, .mw-highlight /* wiki.rs <syntaxhighlight> */ {
     font-family: var(--mono);
 }
@@ -167,7 +171,9 @@ h6 {
 
 hr {
     border: solid currentColor;
-    border-width: thin 0 0;
+    border-width: 1px 0 0;
+    margin-block-start: calc(1lh / 2);
+    padding-block-start: calc(1lh / 2 - 1px);
 }
 
 img {
@@ -1418,6 +1424,33 @@ th {
             margin-inline-end: .15em;
             margin-inline-start: -.15em !important;
         }
+    }
+
+    /*****************************/
+    /* Template:Chart top        */
+    /* Template:Tree chart start */
+    /*****************************/
+
+    [data-wiki-rs~=template-chart-top] {
+        border: 0 !important;
+
+        * + & {
+            margin: 0 !important;
+            margin-block-start: var(--box-margin) !important;
+        }
+
+        > tbody > tr:first-child > th {
+            border-block-end: thin solid var(--fg);
+            border-block-start: 3px solid var(--fg);
+            font-stretch: var(--sidebar-stretch);
+            font-size: 1.05rem;
+        }
+    }
+
+    [data-wiki-rs~=template-tree-chart-start] {
+        font-size: .95rem !important;
+        font-family: var(--sans);
+        font-stretch: 80%;
     }
 
     /**************************/
@@ -3292,15 +3325,28 @@ th {
             background-color: transparent;
 
             > td {
+                border-block-end: thin solid var(--border-fg);
                 font-size: .88rem;
 
                 &[style*=border] {
                     border-block-start-width: 3px !important;
                 }
+
+                [style*=font-size] {
+                    display: block;
+                    font-family: var(--sans);
+                    font-size: .95em !important;
+                }
             }
 
             > th {
                 border-block-start-width: 3px !important;
+                font-size: 1rem;
+                font-stretch: var(--sidebar-stretch);
+            }
+
+            &:first-child > td[colspan] {
+                font-family: var(--sans);
                 font-size: 1rem;
                 font-stretch: var(--sidebar-stretch);
             }

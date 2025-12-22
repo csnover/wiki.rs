@@ -46,6 +46,7 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Ahnentafel",
     "Template:Article for improvement banner",
     "Template:Bar percent",
+    "Template:Chart top",
     "Template:Climate chart",
     "Template:Climate chart/celsius column",
     "Template:Climate chart/celsius column i",
@@ -54,9 +55,11 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Football kit",
     "Template:Fossil range bar",
     "Template:Historical populations",
+    "Template:Largest cities",
     "Template:Markup",
     "Template:Phanerozoic 220px",
-    "Template:Largest cities",
+    "Template:Tree chart",
+    "Template:Tree chart/start",
     "Template:Weather box",
 };
 
