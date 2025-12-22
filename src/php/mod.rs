@@ -173,6 +173,7 @@ impl DateTime {
                     // 'Template:Tomorrow' uses this
                     let rest = f.as_str();
                     if let Some(end) = rest.find('"') {
+                        f.nth(end);
                         out.push_str(&rest[..end]);
                     } else {
                         out.push('"');
