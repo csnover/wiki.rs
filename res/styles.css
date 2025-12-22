@@ -2881,7 +2881,7 @@ th {
     > * + .navbox.navbox.navbox,
     .documentation > * + .navbox.navbox {
         clear: both;
-        margin-block-start: var(--footer-margin);
+        margin-block-start: var(--footer-margin) !important;
     }
 
     /******************************/
