@@ -328,7 +328,7 @@ impl GrafEmitter {
     /// elements into grafs.
     fn p_wrap(&mut self, out: &mut String) {
         if let Some(last) = self.wrap_points.last_mut() {
-            if last.start == out.len() {
+            if out[last.start..].bytes().all(|c| c.is_ascii_whitespace()) {
                 // A non-phrasing element was at the end of the line
                 self.wrap_points.pop();
             } else {
