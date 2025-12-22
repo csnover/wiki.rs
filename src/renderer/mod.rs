@@ -540,20 +540,24 @@ fn text_run<W: fmt::Write + ?Sized>(
     }
 
     let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
+    while let Some(mut c) = chars.next() {
         match c {
             '"' if !in_code => {
                 out.write_char(if is_break(prev, chars.peek().copied()) {
-                    '“'
+                    c = '“';
+                    c
                 } else {
-                    '”'
+                    c = '”';
+                    c
                 })?;
             }
             '\'' if !in_code => {
                 out.write_char(if is_break(prev, chars.peek().copied()) {
-                    '‘'
+                    c = '‘';
+                    c
                 } else {
-                    '’'
+                    c = '’';
+                    c
                 })?;
             }
             '<' => write!(out, "&lt;")?,
