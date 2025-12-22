@@ -291,8 +291,11 @@ impl GrafEmitter {
         // This is the point where the “buffered” text would be emitted, so
         // anything before now needs to be `insert`, and anything after here
         // needs to be `append`
-        if self.pending == GrafPendingState::None && self.current != GrafState::None {
-            /* TODO: if not last line, and not in a list item, emit a newline */
+        if self.pending == GrafPendingState::None
+            && self.current != GrafState::None
+            && self.in_list == 0
+        {
+            out.push('\n');
         }
 
         self.line_start = out.len();
