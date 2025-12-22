@@ -982,7 +982,7 @@ fn make_time(y: &str, m: &str, d: &str) -> Result<Time, &'static str> {
     )
     .map(|date| {
         let (year, days) = date.to_ordinal_date();
-        let fract = f64::from(days) / f64::from(time::util::days_in_year(year));
+        let fract = f64::from(days - 1) / f64::from(time::util::days_in_year(year));
         Time::Decimal(f64::from(year) + fract)
     })
     .map_err(|_| "valid date")
