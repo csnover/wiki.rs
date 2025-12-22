@@ -3445,12 +3445,10 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
         {
             *text_span = text_span.merge(token.span);
         } else if matches!(token.node, Token::NewLine)
-            && let Some(
-                last @ Spanned {
-                    node: Token::TableRow { .. },
-                    ..
-                },
-            ) = v.last_mut()
+            && let Some(Spanned {
+                node: Token::TableRow { .. },
+                ..
+            }) = v.last()
             && !matches!(
                 iter.peek(),
                 None | Some(Spanned {
@@ -3468,8 +3466,9 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
             // a table data or table heading token. Also, if there is some
             // template in the middle, it is ambiguous what the next token will
             // be, and so the row needs to be retained until the final pass when
-            // all templates have been expanded.
-            *last = token;
+            // all templates have been expanded. This newline should also be
+            // discarded or else it can cause unexpected graf breaks.
+            v.pop();
         } else if matches!(token.node, Token::NewLine)
             && let (
                 Some(Spanned {
