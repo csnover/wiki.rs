@@ -320,7 +320,7 @@ impl GrafEmitter {
     #[inline]
     pub(super) fn finish(mut self, out: &mut String) {
         debug_assert_eq!(self.level, 0);
-        self.p_wrap(out);
+        self.end_line(out);
         self.close(out, Some(self.line_start));
     }
 
