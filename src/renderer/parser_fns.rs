@@ -474,6 +474,14 @@ mod site {
 
         Ok(())
     }
+
+    /// `{{SERVER}}`
+    pub fn server(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+        if let Some(authority) = state.statics.base_uri.authority() {
+            write!(out, "//{authority}")?;
+        }
+        Ok(())
+    }
 }
 
 mod string {
@@ -1089,6 +1097,23 @@ mod title {
         Ok(())
     }
 
+    /// `{{localurl: title [| query string] }}`
+    pub fn local_url(
+        out: &mut String,
+        state: &mut State<'_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
+            let url = make_url(None, &state.statics.base_uri, &value, None, true)?;
+            write!(out, "{url}")?;
+            if let Some(query) = arguments.eval(state, 1)?.map(trim) {
+                write!(out, "?{query}")?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// `{{NAMESPACE[:title] }}` or `{{NAMESPACENUMBER[:title] }}` or
     /// `{{SUBJECTSPACE[:title] }}` or `{{ARTICLESPACE[:title] }}` or
     /// `{{TALKSPACE[:title] }}`
@@ -1220,6 +1245,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
 
     "numberofpages" => site::number_of_pages,
     "pagesincategory" => site::pages_in_category,
+    "server" => site::server,
 
     "anchorencode" => string::anchor_encode,
     "formatnum" => string::format_number,
@@ -1271,6 +1297,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "subjectspace" => title::namespace,
     "fullurl" => title::full_url,
     "#ifexist" => title::if_exist,
+    "localurl" => title::local_url,
     "#lst" => title::transclude_section,
     "#lsth" => title::transclude_heading,
     "#lstx" => title::transclude_except,
