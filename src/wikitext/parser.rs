@@ -2231,6 +2231,31 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     // Internal links //
     ////////////////////
 
+    /// A `<gallery>` extension tag line parser.
+    ///
+    /// ```wikitext
+    /// Target|extra|arguments
+    /// ```
+    pub rule gallery_image_options() -> (&'input str, Vec<Spanned<Argument>>)
+    = ctx:({ Context::default().with_template_arg() })
+      target:$([^'|']+)
+      "|"?
+      content:spanned(<
+        !eof()
+        nd:(
+          t:template_arg_name(&ctx)
+          d:spanned(<"=" space()* { Token::Text }>)
+          { (t, d) }
+        )?
+        value:wikilink_content_text(&ctx.without_equal())?
+        end:(
+            t:spanned(<"|" { Token::Text }>) { Some(t) }
+          / eof() { None }
+        )
+        { make_argument(nd, value, end) }
+      >)*
+    { (target, content) }
+
     /// A single expanded wikilink optionally prefixed by whitespace and strip
     /// markers.
     ///
@@ -2420,38 +2445,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
           / &"]]"
             { None }
         )
-        {
-            let value_len = value.as_ref().map_or(0, Vec::len);
-            if let Some((name, delimiter_token)) = nd {
-                let delimiter = Some(name.len());
-                let terminator = end.as_ref().map(|_| {
-                    name.len() + 1 + value_len
-                });
-                let content = name.into_iter()
-                    .chain(iter::once(delimiter_token))
-                    .chain(value.into_iter().flatten())
-                    .chain(end.into_iter())
-                    .collect();
-                Argument {
-                    content,
-                    delimiter,
-                    terminator,
-                }
-            } else {
-                let terminator = end.as_ref().map(|_| value_len);
-                let content = value
-                    .into_iter()
-                    .flatten()
-                    .chain(end.into_iter())
-                    .collect();
-
-                Argument {
-                    content,
-                    delimiter: None,
-                    terminator,
-                }
-            }
-        }
+        { make_argument(nd, value, end) }
       >)*
     { t }
 
@@ -3370,6 +3364,40 @@ fn balance_quotes(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<To
     }
 
     acc
+}
+
+/// Creates an [`Argument`] for a wikilink argument from an optional name and
+/// given value.
+fn make_argument(
+    nd: Option<(Vec<Spanned<Token>>, Spanned<Token>)>,
+    value: Option<Vec<Spanned<Token>>>,
+    end: Option<Spanned<Token>>,
+) -> Argument {
+    let value_len = value.as_ref().map_or(0, Vec::len);
+    if let Some((name, delimiter_token)) = nd {
+        let delimiter = Some(name.len());
+        let terminator = end.as_ref().map(|_| name.len() + 1 + value_len);
+        let content = name
+            .into_iter()
+            .chain(iter::once(delimiter_token))
+            .chain(value.into_iter().flatten())
+            .chain(end)
+            .collect();
+        Argument {
+            content,
+            delimiter,
+            terminator,
+        }
+    } else {
+        let terminator = end.as_ref().map(|_| value_len);
+        let content = value.into_iter().flatten().chain(end).collect();
+
+        Argument {
+            content,
+            delimiter: None,
+            terminator,
+        }
+    }
 }
 
 /// The intermediate type of a parsed XML attribute.

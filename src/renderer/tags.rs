@@ -180,7 +180,7 @@ pub(super) fn render_end_link<W: WriteSurrogate + ?Sized>(
 }
 
 /// A kind of link to render.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) enum LinkKind<'a> {
     /// An external link.
     External(Cow<'a, str>),

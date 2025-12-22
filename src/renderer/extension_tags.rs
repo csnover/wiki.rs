@@ -116,8 +116,10 @@ mod timeline;
 use super::{
     Error, ExpandMode, ExpandTemplates, State, StripMarker,
     document::Document,
+    image,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
+    text_run,
 };
 use crate::{
     common::{anchor_encode, decode_html},
@@ -182,40 +184,70 @@ impl ExtensionTag<'_, '_, '_> {
     }
 }
 
-/// The `<math>` extension tag.
-/// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Math>
-fn math(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
-    let latex = arguments.body();
+/// The `<gallery>` extension tag.
+fn gallery(
+    out: &mut String,
+    state: &mut State<'_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
+    // TODO: params mode, showfilename, showthumbnails (for mode = slideshow),
+    // PLUS any valid HTML attribute that applies to a `<ul>`,
+    // TODO: modes: nolines, packed, packed-hover, packed-overlay, slideshow
+    let mode = arguments
+        .get(state, "mode")?
+        .unwrap_or("traditional".into());
 
-    // TODO: Undocumented 'id' attribute
+    let class = arguments.get(state, "class")?.unwrap_or_default();
+    let heights = arguments.get(state, "heights")?;
 
-    // TODO: This might not be accurate enough to MW.
-    // In MW:
-    // * 'block' wraps "{\displaystyle{latex}}"
-    // * 'inline' wraps "{\textstyle{latex}}"
-    // * 'linebreak' is also an option, wraps "\[{latex}\]"
-    let (output, mode) = if let Some(value) = arguments.get(state, "display")?
-        && value == "block"
-    {
-        (OutputMode::Block, math_core::MathDisplay::Block)
-    } else {
-        (OutputMode::Inline, math_core::MathDisplay::Inline)
-    };
-
-    match math_core::LatexToMathML::const_default().convert_with_local_counter(latex, mode) {
-        Ok(maths) => {
-            out.write_str(&wikitext::escape(&maths))?;
-        }
-        Err(err) => {
-            write!(
-                out,
-                r#"<span class="error texerror">{}</span>"#,
-                wikitext::escape_no_wiki(&err.to_string())
-            )?;
-        }
+    let mut defaults = image::Options::default();
+    defaults.align = Some("none".into());
+    defaults.format = Some("thumb".into());
+    if let Some(heights) = &heights {
+        defaults
+            .attrs
+            .insert("height".into(), Cow::Borrowed(heights));
     }
 
-    Ok(output)
+    let per_row = arguments.get(state, "perrow")?;
+    let widths = arguments.get(state, "widths")?;
+    let attrs = if per_row.is_some() || widths.is_some() {
+        let width = widths.map_or("1fr".into(), |widths| Cow::Owned(format!("{widths}px")));
+        let per_row = per_row.unwrap_or("auto-fill".into());
+        format!(r#" style="grid-template-columns: repeat({per_row}, {width})""#)
+    } else {
+        <_>::default()
+    };
+
+    // MW put this *inside* the list, which is obviously stupid and wrong
+    if let Some(caption) = arguments.get(state, "caption")? {
+        write!(out, r#"<div class="gallerycaption">"#)?;
+        text_run(out, ' ', &caption, false)?;
+        write!(out, "</div>")?;
+    }
+
+    write!(
+        out,
+        r#"<ul class="gallery mw-gallery-{mode} {class}"{attrs}>"#
+    )?;
+    for image in arguments.body().lines() {
+        if image.as_bytes().iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+
+        let sp = arguments.sp.clone_with_source(FileMap::new(image));
+        let (target, media_args) = state.statics.parser.parse_gallery_media(&sp.source)?;
+        let target = percent_encoding::percent_decode_str(target).decode_utf8_lossy();
+        let title = Title::new(&target, Namespace::find_by_id(Namespace::FILE));
+        let options = image::media_options(state, &sp, title, &media_args, defaults.clone())?;
+
+        let mut inner = Document::new(true);
+        image::render_media_with_options(&mut inner, state, &sp, &options)?;
+        write!(out, r#"<li class="gallerybox">{}</li>"#, inner.finish()?)?;
+    }
+    write!(out, "</ul>")?;
+
+    Ok(OutputMode::Block)
 }
 
 /// The `<indicator>` extension tag.
@@ -258,6 +290,64 @@ fn indicator(
     }
 
     Ok(OutputMode::Empty)
+}
+
+/// The `<mapframe>` extension tag.
+/// <https://www.mediawiki.org/wiki/Extension:Kartographer>
+fn map_frame(out: &mut String, _: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+    // TODO: Params: width (number, "100%", "full"), height (number), zoom
+    // (0-19, default 12), latitude, longitude, align ("left", "center",
+    // "right"), mapstyle ("osm", "osm-intl"), lang (code or "local"), alt,
+    // text, frameless
+
+    // TODO: Actually parse whatever JSON is there and emit a map
+    let body = strtr(
+        arguments.body(),
+        &[
+            ("-{", "-&#123;"),
+            ("}-", "&#125;-"),
+            ("<", "&lt;"),
+            (">", "&gt;"),
+        ],
+    );
+    write!(out, "<pre>{body}</pre>")?;
+    Ok(OutputMode::Block)
+}
+
+/// The `<math>` extension tag.
+/// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Math>
+fn math(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+    let latex = arguments.body();
+
+    // TODO: Undocumented 'id' attribute
+
+    // TODO: This might not be accurate enough to MW.
+    // In MW:
+    // * 'block' wraps "{\displaystyle{latex}}"
+    // * 'inline' wraps "{\textstyle{latex}}"
+    // * 'linebreak' is also an option, wraps "\[{latex}\]"
+    let (output, mode) = if let Some(value) = arguments.get(state, "display")?
+        && value == "block"
+    {
+        (OutputMode::Block, math_core::MathDisplay::Block)
+    } else {
+        (OutputMode::Inline, math_core::MathDisplay::Inline)
+    };
+
+    match math_core::LatexToMathML::const_default().convert_with_local_counter(latex, mode) {
+        Ok(maths) => {
+            out.write_str(&wikitext::escape(&maths))?;
+        }
+        Err(err) => {
+            write!(
+                out,
+                r#"<span class="error texerror">{}</span>"#,
+                wikitext::escape_no_wiki(&err.to_string())
+            )?;
+        }
+    }
+
+    Ok(output)
 }
 
 /// The `<nowiki>` extension tag.
@@ -802,7 +892,9 @@ type ExtensionTagFn = fn(&mut String, &mut State<'_>, &ExtensionTag<'_, '_, '_>)
 /// All supported extension tags.
 static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
     "chem" => math,
+    "gallery" => gallery,
     "indicator" => indicator,
+    "mapframe" => map_frame,
     "math" => math,
     "nowiki" => no_wiki,
     "poem" => poem,

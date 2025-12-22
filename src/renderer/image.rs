@@ -43,12 +43,12 @@ impl MediaKind {
 }
 
 /// Options for rendering a media node.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct Options<'a> {
     /// Horizontal image alignment. One of 'left', 'right', 'center', or 'none'.
-    align: Option<Cow<'a, str>>,
+    pub(super) align: Option<Cow<'a, str>>,
     /// Arbitrary HTML attributes to apply to the HTML tag.
-    attrs: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    pub(super) attrs: HashMap<Cow<'a, str>, Cow<'a, str>>,
     /// Render the image with a border??? (lol).
     border: Option<()>,
     /// The caption for the media. This will be rendered below the image in
@@ -56,7 +56,7 @@ pub(super) struct Options<'a> {
     caption: Option<&'a [Spanned<Token>]>,
     /// The intended format of the image. One of 'frameless', 'frame', 'framed',
     /// 'thumb', or 'thumbnail'.
-    format: Option<Cow<'a, str>>,
+    pub(super) format: Option<Cow<'a, str>>,
     /// The kind of the media.
     kind: MediaKind,
     /// The language to use when rendering an SVG with `<switch>` options
@@ -90,21 +90,17 @@ pub(super) fn media_options<'s>(
     sp: &'s StackFrame<'_>,
     title: Title,
     arguments: &'s [Spanned<Argument>],
+    mut options: Options<'s>,
 ) -> Result<Options<'s>> {
-    let mut options = Options {
-        kind: if let Some((_, ext)) = title.key().rsplit_once('.') {
-            // TODO: Get from config. API has siprops "fileextensions".
-            match ext.to_ascii_lowercase().as_str() {
-                "mid" | "ogg" | "oga" | "flac" | "opus" | "wav" | "mp3" | "midi" => {
-                    MediaKind::Audio
-                }
-                "ogv" | "webm" | "mpg" | "mpeg" => MediaKind::Video,
-                _ => MediaKind::Image,
-            }
-        } else {
-            MediaKind::Image
-        },
-        ..Default::default()
+    options.kind = if let Some((_, ext)) = title.key().rsplit_once('.') {
+        // TODO: Get from config. API has siprops "fileextensions".
+        match ext.to_ascii_lowercase().as_str() {
+            "mid" | "ogg" | "oga" | "flac" | "opus" | "wav" | "mp3" | "midi" => MediaKind::Audio,
+            "ogv" | "webm" | "mpg" | "mpeg" => MediaKind::Video,
+            _ => MediaKind::Image,
+        }
+    } else {
+        MediaKind::Image
     };
 
     options.attrs.insert(
@@ -245,15 +241,24 @@ pub(super) fn media_options<'s>(
 }
 
 /// Renders a media tag.
-pub(crate) fn render_media<W: WriteSurrogate + ?Sized>(
+pub(super) fn render_media<W: WriteSurrogate + ?Sized>(
     out: &mut W,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
     title: Title,
     arguments: &[Spanned<Argument>],
 ) -> Result {
-    let options = media_options(state, sp, title, arguments)?;
+    let options = media_options(state, sp, title, arguments, <_>::default())?;
+    render_media_with_options(out, state, sp, &options)
+}
 
+/// Renders a media tag using the given media options.
+pub(super) fn render_media_with_options<W: WriteSurrogate + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    options: &Options<'_>,
+) -> Result {
     if options.caption.is_some() {
         tags::render_runtime(out, state, sp, |_, source| {
             token!(
@@ -273,10 +278,10 @@ pub(crate) fn render_media<W: WriteSurrogate + ?Sized>(
 
     match options.kind {
         MediaKind::Audio | MediaKind::Video => {
-            render_timed_media(out, state, sp, &options)?;
+            render_timed_media(out, state, sp, options)?;
         }
         MediaKind::Image => {
-            render_image(out, state, sp, &options)?;
+            render_image(out, state, sp, options)?;
         }
     }
 

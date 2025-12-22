@@ -381,15 +381,19 @@ where
 pub fn visit_link<'tt, V, E>(
     visitor: &mut V,
     _span: Span,
-    _target: &'tt [Spanned<Token>],
+    target: &'tt [Spanned<Token>],
     content: &'tt [Spanned<Argument>],
     trail: Option<&'tt str>,
 ) -> Result<(), E>
 where
     V: Visitor<'tt, E> + ?Sized,
 {
-    for token in content {
-        visitor.visit_tokens(&token.content)?;
+    if content.is_empty() {
+        visitor.visit_tokens(target)?;
+    } else {
+        for token in content {
+            visitor.visit_tokens(&token.content)?;
+        }
     }
 
     if let Some(trail) = trail {

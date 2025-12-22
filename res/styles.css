@@ -578,6 +578,7 @@ th {
     --legend-valign: baseline;
     --legend-wh: calc(1ex + 2px);
 
+    --big-caption: 1.1rem;
     --max-width: 70rem;
 
     --table-margin-inline: calc(var(--table-padding-inline) * -1);
@@ -860,6 +861,46 @@ th {
                 content: ' ';
                 white-space: normal;
             }
+        }
+    }
+
+    /*********************/
+    /* wiki.rs <gallery> */
+    /*********************/
+
+    .gallery.gallery.gallery.gallery {
+        border-block: thin solid var(--border-fg);
+        display: grid;
+        gap: var(--box-margin);
+        grid-template-columns: repeat(auto-fill, 20%);
+        justify-content: space-between;
+        margin-inline: 0;
+        padding-block: var(--box-margin);
+    }
+
+    .gallerybox {
+        list-style: none;
+        margin: 0;
+        text-align: start;
+
+        img {
+            block-size: 120px;
+        }
+    }
+
+    .gallerycaption.gallerycaption.gallerycaption.gallerycaption {
+        border-block-start: 3px solid var(--fg);
+        font-family: var(--sans);
+        font-size: var(--big-caption);
+        font-stretch: var(--sidebar-stretch);
+        font-weight: var(--bold);
+        margin-inline: var(--table-margin-inline);
+        text-align: center;
+
+        + * {
+            margin-block-start: 0;
+            margin-inline: var(--table-margin-inline);
+            padding-inline: var(--table-padding-inline);
         }
     }
 
@@ -1684,6 +1725,20 @@ th {
     }
 
     /********************/
+    /* Template:Gallery */
+    /********************/
+
+    .mod-gallery,
+    .mod-gallery > .main,
+    .mod-gallery > .main > div {
+        display: block;
+    }
+
+    > * + .mod-gallery {
+        margin-block-start: var(--box-margin);
+    }
+
+    /********************/
     /* Template:Hatnote */
     /********************/
 
@@ -1876,7 +1931,7 @@ th {
         > caption {
             border-block-end: thin solid var(--fg);
             border-block-start: 3px solid var(--fg);
-            font-size: 1.1rem;
+            font-size: var(--big-caption);
             font-stretch: var(--sidebar-stretch);
             font-weight: var(--bold);
 
@@ -1917,7 +1972,7 @@ th {
         .sidebar-title-with-pretitle {
             background-color: transparent !important; /* !important: 'Fart' */
             color: var(--fg) !important; /* !important: 'Manchester United F.C.' */
-            font-size: 1.1rem !important; /* !important: 'Crazy Taxi' */
+            font-size: var(--big-caption) !important; /* !important: 'Crazy Taxi' */
             font-stretch: var(--sidebar-stretch);
             font-style: normal !important; /* !important: 'Crazy Taxi' */
             font-weight: var(--bold);
@@ -2287,7 +2342,7 @@ th {
         }
 
         .sidebar-title-with-pretitle {
-            font-size: 110%;
+            font-size: var(--big-caption);
             /* !important: 'Template:Economic systems sidebar' */
             padding-block: 0 calc(var(--box-margin) * .25) !important;
             padding-inline: 0 !important;
@@ -2348,7 +2403,7 @@ th {
                 background: transparent !important;
                 border-block-start: 0;
                 border-block-end: thin solid var(--fg);
-                font-size: 110% !important;
+                font-size: var(--big-caption) !important;
                 font-stretch: var(--sidebar-stretch);
             }
         }
@@ -3421,7 +3476,7 @@ th {
 
     .var-serif {
         font-family: var(--serif);
-        font-size: 100%;
+        font-size: 1em;
     }
 
     /*******************************/

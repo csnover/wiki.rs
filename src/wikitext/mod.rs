@@ -88,6 +88,21 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses a `<gallery>` media item.
+    pub fn parse_gallery_media<'s>(
+        &self,
+        image: &'s str,
+    ) -> Result<(&'s str, Vec<Spanned<Argument>>), Error> {
+        parser::wikitext::gallery_image_options(
+            image,
+            self,
+            &Globals {
+                including: true,
+                ..Default::default()
+            },
+        )
+    }
+
     /// Parses Wikitext from `source` into a token tree, treating templates as
     /// plain text.
     pub fn parse_no_expansion(&self, source: &str) -> Result<Output, Error> {

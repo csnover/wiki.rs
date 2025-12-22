@@ -82,7 +82,9 @@ which means features like maps show up as blobs of unformatted code rather than,
 like, a map or whatever. Also, anything which relies on client-side scripting is
 not supported right now. Here are all of the currently supported extension tags:
 
+* `<gallery>` (partial), which is used to display several images in a collection
 * `<indicator>`, which is used to show indicator badges at the top of some pages
+* `<mapframe>` (stub), which is used to draw a map so you may know where you are
 * `<math>` (partial), which is used to display mathematical formulae and symbols
 * `<nowiki>`, which is used to stop sections of text from being read as Wikitext
 * `<poem>`, which is used to write a record of a poet’s soul crying out in verse
