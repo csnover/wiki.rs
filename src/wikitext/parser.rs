@@ -1009,15 +1009,28 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       t:(
           t:spanned(<wikilink(ctx) { Token::Text }>) { vec![t] }
         / directive(ctx)
-          // Accept tags-inside-attributes as attribute names.
-          // The sanitizer will strip and shadow them for roundtripping.
-          // Example: <hiddentext>generated with.. </hiddentext>
-        / &"<" x:html_tag(ctx) ill:inlineline(ctx)?
-          { reduce_tree(iter::once(x).chain(ill.into_iter().flatten())) }
+          // Wikitext is trash and obliges us to accept HTML tags in the table
+          // attribute list. Parsoid takes an entire XML-ish tag as an attribute
+          // name and then does postprocessing to extract the attributes inside
+          // the tag, which seems excessive when the whole point is just that a
+          // braindead parser once treated an HTML tag like an attribute name,
+          // and we can fix it by just doing the exact same thing and then
+          // emitting a nothing-token.
+        / x:spanned(<html_tag_name() { Token::Generated(String::new()) }>) { vec![x] }
         / t:spanned(<!(space_or_newline() / ['\0'|'/'|'='|'>']) [_] { Token::Text }>)
           { vec![t] }
       )
       { t }
+
+    /// An HTML start tag squatting illegally inside a Wikitext attribute part.
+    ///
+    /// ```wikitext
+    /// {| attr="value" <span attr2="value2" ... |}
+    ///                 ^^^^^
+    /// ```
+    rule html_tag_name()
+    = start:xmlish_start()
+      &assert({ contains_ignore_case(&HTML5_TAGS, &start.0) }, "html tag")
 
     /// An attribute value inside an XML tag.
     ///
