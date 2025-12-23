@@ -3,7 +3,7 @@ name = "wiki-rs"
 description = "A high-performance offline reader of multistream MediaWiki dumps."
 license = "MIT AND GPL-2.0-or-later"
 # year.month.release-in-month
-version = "2025.12.13"
+version = "2025.12.14-pre"
 edition = "2024"
 
 [dependencies]
