@@ -9,8 +9,13 @@ use crate::{
 use axum::http::Uri;
 use core::fmt::{self, Write as _};
 use html_escape::NAMED_ENTITIES;
-use std::borrow::Cow;
+use regex::Regex;
+use std::{borrow::Cow, sync::LazyLock};
 use time::UtcOffset;
+
+/// The i18n dictionary from MediaWiki.
+pub(crate) static MESSAGES: LazyLock<serde_json::Value> =
+    LazyLock::new(|| serde_json::from_str(include_str!("../res/i18n/en.json")).unwrap());
 
 /// Encodes section heading text into a format suitable for use as a URL anchor.
 pub fn anchor_encode(s: &str) -> String {
@@ -126,6 +131,39 @@ pub fn format_date(
     date.into_offset(tz)?.format(format).map_err(Into::into)
 }
 
+/// Finds the first valid message from the list of keys given in `keys` and
+/// returns that message, formatted using `cb` to replace any `$N` placeholders.
+/// If `cb` returns `None`, no replacement occurs.
+///
+/// If the message is not found, returns a not-found string.
+pub fn format_message<'a, F, I, R, E>(keys: I, cb: F) -> Result<Cow<'static, str>, E>
+where
+    R: AsRef<str> + Default,
+    I: IntoIterator<Item = R>,
+    F: FnMut(&str) -> Result<Option<Cow<'a, str>>, E>,
+{
+    let mut last = R::default();
+    for key in keys {
+        if let Some(message) = MESSAGES
+            .get(key.as_ref().to_lowercase())
+            .and_then(serde_json::Value::as_str)
+            .filter(|message| !matches!(*message, "" | "-"))
+        {
+            return format_raw_message(message, cb);
+        // TODO: This is not in the default MW dictionary, it is in some other
+        // dictionary from mediawiki-gadgets-ConvenientDiscussions, but that one
+        // is lowercase. This is used by 'Template:Ambox'
+        } else if key.as_ref() == "dot-separator" {
+            return Ok(Cow::Borrowed("&nbsp;<b>·</b>&#32;"));
+        }
+        last = key;
+    }
+
+    let last = html_escape::encode_text(last.as_ref());
+    let last = strtr(&last, &[("\u{0338}", "&#x338;")]);
+    Ok(format!("⧼{last}⧽").into())
+}
+
 /// Formats a number similar to [`number_format`](https://php.net/number_format).
 pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
     match n {
@@ -157,6 +195,34 @@ pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
             }
         }
     }
+}
+
+/// Formats a message, using `cb` to replace any `$N` placeholders in the
+/// message. If `cb` returns `None`, no replacement occurs.
+pub fn format_raw_message<'a, E, F>(message: &str, mut cb: F) -> Result<Cow<'_, str>, E>
+where
+    F: FnMut(&str) -> Result<Option<Cow<'a, str>>, E>,
+{
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(\d+)").unwrap());
+
+    let mut out = String::new();
+    let mut flushed = 0;
+    for capture in RE.captures_iter(message) {
+        let (_, [key]) = capture.extract();
+        if let Some(value) = cb(key)? {
+            let range = capture.get_match().range();
+            out += &message[flushed..range.start];
+            out += &value;
+            flushed = range.end;
+        }
+    }
+
+    Ok(if flushed == 0 {
+        Cow::Borrowed(message)
+    } else {
+        out += &message[flushed..];
+        Cow::Owned(out)
+    })
 }
 
 /// Creates a URL for the given title using the given protocol, base URI, path,

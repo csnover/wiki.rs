@@ -13,8 +13,8 @@ use super::{
 };
 use crate::{
     common::{
-        anchor_encode, decode_html, format_date, format_number, make_url, parse_formatted_number,
-        url_encode,
+        anchor_encode, decode_html, format_date, format_message, format_number, make_url,
+        parse_formatted_number, url_encode,
     },
     config::CONFIG,
     expr,
@@ -609,7 +609,11 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            write!(out, "{value}")?;
+            let message = format_message([value], |key| {
+                let index = key.parse::<usize>().unwrap();
+                arguments.eval(state, index)
+            })?;
+            write!(out, "{message}")?;
         }
         Ok(())
     }
