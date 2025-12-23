@@ -402,7 +402,7 @@ fn split_target<'tt>(
             //
             // For now, notice which *notable* characters are missing from that
             // list and just check those ones…
-            if callee.contains(['<', '\x7f', '{', '}']) {
+            if callee.contains(['<', '\x7f', '[', ']', '{', '}']) {
                 Target::Text
             } else {
                 let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
