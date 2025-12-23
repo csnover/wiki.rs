@@ -679,7 +679,7 @@ th {
         /* Allow many cute things to cuddle up to the heading */
         + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right),
         /* This is for containers that show up sometimes like `.excerpt` */
-        + :has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
+        + :not(blockquote):has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
         /* Things which take themselves out of the flow by float mean the next
            thing also needs to be cuddled */
         + :is(.floatright, .mw-halign-left, .mw-halign-right) + * {
@@ -938,9 +938,11 @@ th {
         }
 
         > tbody > tr {
-            /* Ensure even shaded rowspans are visually separated */
+            /* Ensure zebra striped rowspans are visually separated more often
+               even in the case of a rowspan */
             border-block-start: thin solid var(--bg);
 
+            /* Zebra stripe the tables */
             &:nth-child(2n) {
                 background-color: var(--shade-bg);
             }
@@ -952,6 +954,53 @@ th {
                 padding-block: var(--table-padding-block);
                 padding-inline: var(--table-padding-inline);
                 text-align: start;
+            }
+
+            > :is(
+                .table-yes,
+                .table-maybe,
+                .table-no,
+                .table-active,
+                .table-siteactive,
+                .table-siteinactive,
+                .table-success,
+                .table-failure,
+                .table-yes2,
+                .table-no2,
+                .table-partial,
+                .table-any,
+                .table-automatic,
+                .table-draw,
+                .table-noAttempt,
+                .table-na,
+                .table-Un\ADknown,
+                .table-included,
+                .noresult,
+                .table-planned,
+                .table-scheduled,
+                .table-beta,
+                .table-experimental,
+                .table-nightly,
+                .table-release-candidate,
+                .table-software,
+                .table-free,
+                .table-proprietary,
+                .table-nonfree,
+                .table-needs,
+                .table-depends,
+                .table-dropped,
+                .incorrect,
+                .table-debate,
+                .table-cast,
+            )[style*="background"] {
+                --fake-transparent: var(--bg);
+                background-image: linear-gradient(to right, transparent 0, transparent 5px, var(--fake-transparent) 5px) !important;
+                color: var(--fg) !important;
+                text-align: start !important;
+
+                :nth-child(2n) > & {
+                    --fake-transparent: var(--shade-bg);
+                }
             }
 
             > th[colspan] {
@@ -1067,6 +1116,10 @@ th {
             margin-inline-end: var(--table-margin-inline) !important;
             inline-size: auto;
         }
+    }
+
+    > .wikitable[style*="width"]:not([style*="float"], .floatleft, .floatright) {
+        inline-size: var(--table-width) !important;
     }
 
     > .wikitable[style*="border"][style*="margin"] /* 'Toronto' */
@@ -1219,15 +1272,18 @@ th {
 
     /******************/
     /* Template:Asbox */
+    /* Template:Dmbox */
     /******************/
 
-    .asbox {
+    .asbox, .dmbox {
         border-block-start: thin solid var(--fg);
         font-family: var(--sans);
         max-inline-size: none;
 
         * + & {
-            margin-block-start: var(--footer-margin);
+            border-block-end: 0;
+            margin-block: var(--footer-margin) 0;
+            margin-inline: 0;
             padding-block: .5rem;
             padding-inline: 0;
         }
@@ -1238,7 +1294,7 @@ th {
         }
     }
 
-    .asbox-body {
+    .asbox-body, .dmbox-body {
         font-style: normal;
     }
 
@@ -1738,6 +1794,15 @@ th {
         }
     }
 
+    /********************/
+    /* Template:Excerpt */
+    /********************/
+
+    /* This is a viewer, so no reason to show edit links */
+    .mw-editsection-like {
+        display: none;
+    }
+
     /*********************/
     /* Template:Flagicon */
     /*********************/
@@ -1990,6 +2055,15 @@ th {
             [style*=font-size] {
                 font-size: inherit !important;
             }
+        }
+
+        li {
+            text-align: start;
+        }
+
+        li + li,
+        * + :is(dt, ol, ul) {
+            margin-block-start: 0;
         }
 
         td, th {
@@ -2540,8 +2614,9 @@ th {
     /* Template:Legend */
     /*******************/
 
-    /* This is a colour swatch. Used in 'Canada' and 'McDonnell Douglas MD-11' */
-    .legend-color {
+    /* This is a colour swatch. Used in 'Canada' and 'McDonnell Douglas MD-11'.
+       It is also inexplicably used as a wrapper for things like bus numbers. */
+    .legend-color:not(:has(> .legend-text, > :any-link)) {
         block-size: var(--legend-wh);
         border-color: var(--legend-border);
         line-height: var(--legend-lh);
@@ -3543,6 +3618,29 @@ th {
 
         th[style*=border-right] {
             border-inline-end-width: .5ch !important;
+        }
+    }
+
+    /**************************/
+    /* Template:Track listing */
+    /**************************/
+
+    .tracklist-length.tracklist-length {
+        text-align: end;
+    }
+
+    .tracklist-total-length.tracklist-total-length {
+        background-color: var(--shade-bg);
+        border-block-start: thin solid var(--border-th);
+        font-family: var(--sans);
+        text-align: end;
+
+        > :is(td, th) {
+            padding-block: var(--table-padding-block);
+
+            &:last-child {
+                text-align: end;
+            }
         }
     }
 
