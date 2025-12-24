@@ -205,6 +205,10 @@ q {
     }
 }
 
+small {
+    font-size: .9em;
+}
+
 sub {
     position: relative;
     inset-block-start: .125em;
@@ -573,8 +577,14 @@ th {
     --aside-gutter-align: translateX(min(0%, calc(var(--aside-max) * -1 + 100%)));
     --aside-max: calc(100cqi - var(--figure-margin) - var(--max-width));
     --aside-min: 23rem;
-    --side-table-stretch: 80%;
-    --sidebar-stretch: 110%;
+    --side-margin: calc(var(--box-margin) * .25);
+    --side-body-stretch: 80%;
+    --side-head-font-size: 1.05em;
+    --side-line-height: 1.5;
+    --side-title-stretch: 110%;
+    --side-title-lh: 1.2;
+    --side-title-lh-adjust: calc(1em * (var(--side-line-height) - var(--side-title-lh)) / 2);
+    --side-title-margin: calc(var(--side-margin) + var(--side-title-lh-adjust));
 
     --box-tag: transparent linear-gradient(135deg, var(--fg) var(--tag-size), transparent var(--tag-size)) 0%/calc(var(--tag-size) * 2) no-repeat;
     --tag-size: .4rem;
@@ -898,7 +908,7 @@ th {
         border-block-start: 3px solid var(--fg);
         font-family: var(--sans);
         font-size: var(--big-caption);
-        font-stretch: var(--sidebar-stretch);
+        font-stretch: var(--side-title-stretch);
         font-weight: var(--bold);
         margin-inline: var(--table-margin-inline);
         text-align: center;
@@ -1097,7 +1107,7 @@ th {
         .floatright, [style*="float:right"], [style*="float: right"]
     ):where(:not(:has(+ [style*="clear"]))) {
         font-family: var(--sans);
-        font-stretch: var(--side-table-stretch);
+        font-stretch: var(--side-body-stretch);
         font-size: unset !important;
         font-variant-numeric: tabular-nums;
 
@@ -1249,7 +1259,7 @@ th {
         }
 
         .ahnentafel {
-            font-stretch: var(--side-table-stretch);
+            font-stretch: var(--side-body-stretch);
 
             td {
                 border-color: var(--border-th) !important;
@@ -1304,7 +1314,7 @@ th {
 
     .barbox {
         font-family: var(--sans);
-        font-stretch: var(--side-table-stretch);
+        font-stretch: var(--side-body-stretch);
         overflow-inline: visible !important;
 
         table {
@@ -1416,7 +1426,7 @@ th {
     }
 
     .bar-chart-right {
-        font-stretch: var(--side-table-stretch);
+        font-stretch: var(--side-body-stretch);
     }
 
     /***********************/
@@ -1498,7 +1508,7 @@ th {
         > tbody > tr:first-child > th {
             border-block-end: thin solid var(--fg);
             border-block-start: 3px solid var(--fg);
-            font-stretch: var(--sidebar-stretch);
+            font-stretch: var(--side-title-stretch);
             font-size: 1.05rem;
         }
     }
@@ -1543,7 +1553,7 @@ th {
         }
 
         .cladogram.cladogram {
-            font-stretch: var(--side-table-stretch);
+            font-stretch: var(--side-body-stretch);
             padding: 0;
         }
 
@@ -1621,7 +1631,7 @@ th {
 
                 &[style*="font-size\:70%"] {
                     font-size: 80% !important;
-                    font-stretch: var(--side-table-stretch);
+                    font-stretch: var(--side-body-stretch);
                 }
             }
 
@@ -1681,7 +1691,7 @@ th {
         > tbody > tr {
             &:first-child > th {
                 border-block-start: 3px solid var(--fg);
-                font-stretch: var(--sidebar-stretch);
+                font-stretch: var(--side-title-stretch);
             }
 
             > td > .infobox {
@@ -1869,7 +1879,7 @@ th {
         border-block-end: thin solid var(--border-th);
         font-family: var(--sans);
         font-size: var(--big-caption);
-        font-stretch: var(--sidebar-stretch);
+        font-stretch: var(--side-title-stretch);
     }
 
     /***********************************/
@@ -1895,7 +1905,7 @@ th {
 
         td {
             font-family: var(--sans);
-            font-stretch: var(--side-table-stretch);
+            font-stretch: var(--side-body-stretch);
             font-variant-numeric: tabular-nums;
         }
 
@@ -1930,7 +1940,7 @@ th {
 
     [data-wiki-rs~=template-historical-populations]:where([style*="float:right"], [style*="float:left"]) {
         caption, th {
-            font-stretch: var(--side-table-stretch);
+            font-stretch: var(--side-body-stretch);
         }
     }
 
@@ -1995,47 +2005,45 @@ th {
         }
     }
 
-    .infobox.infobox, .sidebar {
-        --tag-size: 1rem;
+    .infobox.infobox.infobox,
+    .sidebar.sidebar {
+        --caption-size: .9rem;
+        --label-baseline-align: var(--side-title-lh-adjust);
 
-        border: solid var(--fg);
-        border-width: 3px 0;
+        background: transparent !important;
+        border-block: 3px solid var(--fg);
+        border-inline: 0;
         clear: inline-end;
+        color: var(--fg) !important;
         float: inline-end;
         font-family: var(--sans);
+        line-height: var(--side-line-height) !important;
         margin-block: var(--box-margin) var(--figure-margin);
         margin-inline: var(--figure-margin) 0;
-        padding: 0;
 
-        &.sidebar {
-            background: transparent !important;
-            border-spacing: 0;
-            line-height: 1.5rem;
-            max-inline-size: 18rem;
-
-            /* !important: 'Template:History of Ryukyu' */
-            .infobox[style*="width:100%"] {
-                inline-size: 100% !important;
-            }
-        }
-
-        * + & {
-            /* !important: 'Wikipedia' */
-            margin-block-start: var(--box-margin) !important;
-        }
-
-        &[style*="line-height: 1.2em"],
-        [style*="line-height: 1.2em"] {
-            line-height: unset !important;
+        [style*=line-height] {
+            line-height: inherit !important;
         }
 
         /* 'Elizabeth II' nests infoboxes, so only the root box should be
             sized. Also, 'Template:Climate chart' uses infobox and floats to the
             left, so should not receive explicit sizing either. */
-        .mw-parser-output > &:not([style*="float: left"]) {
+        :is(
+            .mw-parser-output,
+            .documentation,
+            .hidden-content
+        ) > &:not([style*="float: left"]) {
             max-inline-size: var(--aside-max);
             min-inline-size: var(--aside-min);
             transform: var(--aside-gutter-align);
+        }
+
+        li {
+            text-align: inherit;
+        }
+
+        * + dt {
+            margin-block-start: 0;
         }
 
         /* The CSS table box model puts captions visually outside of the table.
@@ -2045,118 +2053,221 @@ th {
             border-block-start: 0;
         }
 
-        > caption {
-            border-block-end: thin solid var(--fg);
-            border-block-start: 3px solid var(--fg);
-            font-size: var(--big-caption);
-            font-stretch: var(--sidebar-stretch);
-            font-weight: var(--bold);
+        /* Anything following a block that creates a block-end border needs
+           padding. The DOM for a caption is special, so needs a special
+           selector */
+        > caption + tbody > tr:first-child > * {
+            padding-block-start: var(--side-margin);
+        }
 
-            [style*=font-size] {
-                font-size: inherit !important;
+        /* Nested tables bring trouble if this were to apply to all tr inside
+           an infobox or sidebox */
+        > tbody > tr,
+        /* Avoiding specificity here to deal with .infobox-label needing a
+           default bottom padding due to the reduced line-height */
+        &:where(.vcard) > :where(tbody) > :where(tr) > :where(td) > :where(table) > :where(tbody) > :where(tr) {
+            /* Authors are obsessed with inline colours */
+            background: transparent !important;
+            color: var(--fg) !important;
+
+            /* Anything following a block that creates a block-end border needs
+               padding */
+            &:has(> :is(
+                .infobox-above,
+                .infobox-title,
+                .sidebar-title,
+                .sidebar-title-with-pretitle
+            )) + tr > * {
+                padding-block-start: var(--side-margin);
+            }
+
+            /* Anything following an image block, which is not another image
+               block, needs a block-start border and padding */
+            &:has(> :is(
+                .infobox-image,
+                .sidebar-image
+            )) + tr:not(:has(> :is(
+                .infobox-image,
+                .sidebar-image
+            ))) > * {
+                border-block-start: thin solid var(--fg);
+                padding-block-start: var(--side-margin);
+            }
+
+            /* Anything preceding a block that creates a block-start border
+               needs padding, and anything immediately below the end of the
+               table needs the same */
+            &:has(+ .mergedtoprow),
+            &:has(+ tr > :is(
+                .infobox-below,
+                .infobox-header,
+                .sidebar-below
+            )),
+            &:last-child {
+                > * {
+                    padding-block-end: var(--side-margin);
+
+                    &.infobox-label {
+                        padding-block-end: calc(var(--side-margin) + var(--label-baseline-align));
+                    }
+                }
+            }
+
+            /* Sidebar navbar has no top border, so anything before it should not
+            have block-end padding so they flow together */
+            &:has(+ tr > .sidebar-navbar) > * {
+                padding-block-end: 0;
+            }
+
+            > :where(td, th) {
+                /* Many of the default templatestyles for infobox variants apply
+                   default borders to cells and then selectively remove the
+                   borders */
+                border-color: var(--fg) !important;
+
+                padding: 0;
+                vertical-align: top;
+
+                /* In an embedded 'Template:Multiple image', give an unlabelled
+                   caption outside the collage a compressed text. Also justify
+                   the caption, since this box is narrow, so it looks bad with
+                   jagged edges. */
+                &:has(> .tmulti) {
+                    font-stretch: var(--side-body-stretch);
+                    text-align: justify;
+                    text-align-last: center;
+
+                    > .hlist {
+                        font-size: var(--caption-size);
+                        font-stretch: normal;
+                        text-align: justify;
+                        text-align-last: center;
+                    }
+                }
+
+                /* Give the actual collage captions smaller non-compressed
+                   text */
+                > .tmulti {
+                    font-size: var(--caption-size);
+                    font-stretch: normal;
+                    text-align: center;
+
+                    .trow + .trow {
+                        margin-block-start: var(--side-margin);
+                    }
+                }
+
+                /* TODO: Maybe 'Template:Hidden begin' should just never have
+                   padding globally */
+                > .hidden-begin {
+                    padding: 0;
+                }
             }
         }
 
-        li {
-            text-align: start;
-        }
-
-        li + li,
-        * + :is(dt, ol, ul) {
-            margin-block-start: 0;
-        }
-
-        td, th {
-            padding: 0;
-            vertical-align: top;
-        }
-
-        th {
-            font-stretch: var(--side-table-stretch);
-        }
-
-        > tbody > :last-child > * {
-            padding-block-end: calc(var(--box-margin) * .5) !important;
-        }
-
-        tr:has(+ .mergedtoprow) > * {
-            padding-block-end: calc(var(--box-margin) * .25);
-        }
-
-        .mergedtoprow.mergedtoprow > * {
-            padding-block-start: calc(var(--box-margin) * .25);
-        }
-
-        tr:not([class]):has(+ .mergedrow) > *,
-        .mergedtoprow:not(.ib-settlement-official) > :not(.infobox-subheader) {
-            border-block-start: thin solid var(--fg);
-        }
-
+        /* These are the main styles for the title of all infobox/sidebox */
+        > caption,
         .infobox-above,
         .infobox-title,
         .sidebar-title,
-        .sidebar-title-with-pretitle {
-            background-color: transparent !important; /* !important: 'Fart' */
-            color: var(--fg) !important; /* !important: 'Manchester United F.C.' */
-            font-size: var(--big-caption) !important; /* !important: 'Crazy Taxi' */
-            font-stretch: var(--sidebar-stretch);
-            font-style: normal !important; /* !important: 'Crazy Taxi' */
+        .sidebar-title-with-pretitle,
+        &.vevent > tbody > tr:first-child > *
+        {
+            background: transparent !important;
+            border-block: thin solid var(--fg);
+            border-block-start-width: 3px;
+            color: var(--fg) !important;
+            font-size: var(--big-caption) !important;
+            font-stretch: var(--side-title-stretch);
             font-weight: var(--bold);
-            line-height: 1.2;
+            line-height: var(--side-title-lh) !important;
+            padding-block: var(--side-title-margin) !important;
+            text-align: center;
 
-            /* !important: 'Minnesota' */
-            [style*=font-size] {
+            /* Too many things decide to try to be cute with the font size */
+            &[style*=font-size] {
+                font-size: var(--big-caption) !important;
+            }
+
+            /* …aggressively cute… */
+            :where([style*=font-size]) {
                 font-size: inherit !important;
+            }
+
+            /* Same thing with the font colour */
+            .tmp-color,
+            .tmpl-colored-link {
+                color: inherit !important;
             }
         }
 
-        .infobox-above,
-        .infobox-title {
-            border-block-end: thin solid var(--fg);
-            padding-block: calc(var(--box-margin) * .25);
+        .infobox-below,
+        .sidebar-below {
+            border-block: thin solid var(--fg) !important;
+            border-block-end: 0 !important;
+            padding-block: var(--side-margin);
         }
 
-        .infobox-data,
-        .infobox-full-data,
-        .infobox-label {
-            border: 0;
-            line-height: unset;
-            padding: 0;
+        .infobox-data {
+            text-align: start;
         }
 
-        .infobox-full-data.anthem {
-            border-block-start: thin solid var(--fg);
+        .infobox-full-data {
+            font-stretch: var(--side-body-stretch);
+
+            &:empty {
+                display: none;
+            }
+
+            &:has(> .infobox) {
+                border-block-end: thin solid var(--fg);
+                padding-block-start: var(--side-margin);
+
+                > .infobox > tbody > tr:first-child > * {
+                    padding-block-start: var(--side-margin);
+                }
+            }
+        }
+
+        .infobox-full-data > :any-link > img,
+        .infobox-full-data > img,
+        .infobox-image img,
+        .ib-settlement-cols img,
+        .sidebar-image img {
+            background-color: transparent;
+            display: block;
+            inline-size: 100%;
+            margin-inline: auto;
+            /* Since there is currently no way to load any actual images,
+                avoid taking up a bunch of space on giant placeholders */
+            max-block-size: 3rlh;
+        }
+
+        .infobox-header,
+        .sidebar-heading {
+            background: transparent !important;
+            font-size: var(--side-head-font-size) !important;
+            font-stretch: var(--side-body-stretch);
+            font-weight: var(--bold);
+            line-height: calc(var(--side-line-height) / var(--side-head-font-size));
+            padding-block: 0;
+            padding-inline: 0 !important;
+            text-align: start;
+
+            /* 'Elizabeth II' */
+            &:has(> div:empty:first-child:last-child) {
+                display: none;
+            }
         }
 
         .infobox-header {
-            /* !important: 'Rust (programming language)' */
-            background-color: transparent !important;
-            padding: 0;
-
-            /* !important: 'Minnesota' */
-            &[style*=border-top] {
-                border-block-start: 0 !important;
-            }
-
-            &.description {
-                font-stretch: normal;
-            }
-
-            /* Because it is a table cell, to get a horizontal rule with
-               spacing, choose poison: a nasty selector that walks backward, or
-               a pseudo-element */
-            /* padding-top: .6rem;
-            &::before {
-                border-block-start: thin solid var(--fg);
-                content: '';
-                display: block;
-                transform: translateY(.1rem);
-            } */
+            border-block-start: thin solid var(--fg);
         }
 
-        .infobox-image {
-            font-size: .9rem;
-            padding-block: calc(var(--box-margin) * .5);
+        .infobox-image,
+        .sidebar-image {
+            font-size: var(--caption-size);
+            padding-block-end: var(--side-margin);
             text-align: center;
 
             img {
@@ -2170,391 +2281,398 @@ th {
         }
 
         .infobox-label {
-            line-height: 1.2;
+            font-stretch: var(--side-body-stretch);
+            font-weight: var(--bold);
+            line-height: var(--side-title-lh);
             padding-inline-end: .3rem;
+            padding-block-end: var(--label-baseline-align);
             text-align: start;
             /* keep first baseline alignment w/ reduced line height */
             /* TODO: CSS is missing logical translate */
-            transform: translateY(.185em);
-
-            > * {
-                /* !important: At least 'Template:Infobox company' creates an
-                   inline block with inline top padding style which breaks the
-                   text grid */
-                padding-block-start: 0 !important;
-            }
-
-            > [style*=text-indent],
-            .ib-country-fake-li /* 'Template:Infobox country' */ {
-                margin-inline-start: 1ch !important;
-                text-indent: -1ch !important;
-            }
+            transform: translateY(var(--label-baseline-align));
         }
 
         .infobox-subheader {
             background-color: transparent;
-            border: 0;
-            padding-block-end: 0;
+            padding-block-end: var(--side-margin);
+            text-align: center;
         }
 
-        .paragraphbreak {
-            display: none;
-        }
+        .mergedtoprow {
+            > * {
+                padding-block-start: var(--side-margin);
 
-        /********************/
-        /* Template:Chembox */
-        /********************/
-
-        &.ib-chembox {
-            > tbody > tr > th[style*=background] {
-                background-color: transparent !important;
-            }
-
-            td, th {
-                border: 0;
-            }
-
-            th[colspan] {
-                border-block-start: thin solid var(--fg);
-                font-size: 105%;
-            }
-
-            tr:has(+ tr > th[colspan]) > * {
-                padding-block-end: calc(var(--box-margin) * .25);
-            }
-
-            td:has(+ td) {
-                font-stretch: var(--side-table-stretch);
-                font-weight: var(--bold);
-            }
-
-            td[colspan] {
-                font-stretch: var(--side-table-stretch);
-                font-weight: var(--bold);
-
-                > div {
-                    font-stretch: normal;
-                    font-weight: var(--normal-weight);
+                &:has(> .hidden-begin) {
+                    border-block-start: 0;
+                    padding-block-start: 0;
                 }
-            }
-
-            .collapsible-list > :first-child {
-                font-weight: var(--bold) !important;
-            }
-
-            [style*=padding-left] {
-                padding-inline-start: 1rem !important;
-            }
-
-            [style*=border] {
-                border: 0 !important;
-            }
-
-            tr:has(+ tr:last-child:empty) > * {
-                padding-block-end: calc(var(--box-margin) * .5);
-            }
-        }
-
-        /*******************************/
-        /* Template:Infobox company    */
-        /*******************************/
-        /* Template:Infobox television */
-        /*******************************/
-
-        &.ib-tv img, .ib-company-logo img {
-            background-color: transparent;
-        }
-
-        /*******************************/
-        /* Template:Infobox country    */
-        /* Template:Infobox settlement */
-        /*******************************/
-
-        /* 'United States Civil Administration of the Ryukyu Islands' */
-        .ib-country-names {
-            font-stretch: normal;
-            margin-block-start: calc(var(--box-margin) * .25);
-            padding-block-start: 0;
-        }
-
-        .ib-country-anthem {
-            border: 0;
-            margin: 0;
-            padding: 0;
-        }
-
-        &.ib-country,
-        &.ib-settlement {
-            line-height: unset;
-        }
-
-        /*******************************/
-        /* Template:Infobox settlement */
-        /*******************************/
-
-        tr:has(+ .ib-settlement-official) > .infobox-subheader {
-            padding-block-end: 0;
-        }
-
-        .ib-settlement-caption-link {
-            font-size: .9rem;
-        }
-
-        .ib-settlement-cols {
-            margin-block-start: calc(var(--box-margin) * .5);
-        }
-
-        .ib-settlement-official + tr > * {
-            border-block-start: thin solid var(--fg);
-        }
-
-        /****************************************/
-        /* Template:Infobox YouTube personality */
-        /****************************************/
-
-        &.ib-youtube {
-            .ib-youtube-above,
-            .ib-youtube-header {
-                /* !important: 'Cristiano Ronaldo' */
-                color: var(--fg) !important;
-            }
-        }
-
-        /***************************/
-        /* Template:Multiple image */
-        /***************************/
-
-        > tbody > tr > td:has(> .tmulti) {
-            border-block-end: thin solid var(--fg) !important;
-            font-stretch: var(--side-table-stretch);
-            line-height: 1.4 !important;
-            padding-block-end: .5rem;
-            text-align: justify !important;
-            text-align-last: center;
-
-            > .tmulti {
-                font-size: .9rem;
-                font-stretch: normal;
-                margin-block-start: .5rem;
-
-                &:not(:last-child) {
-                    padding-block-end: .25rem;
-                }
-
-                .trow + .trow {
-                    margin-block-start: .25rem;
-                }
-            }
-
-            > .hlist {
-                font-size: .9rem;
-                font-stretch: 100%;
-            }
-        }
-
-        /********************/
-        /* Template:Sidebar */
-        /********************/
-
-        .sidebar-above {
-            border-block-end: thin solid var(--fg);
-        }
-
-        .sidebar-below,
-        .sidebar-content,
-        .sidebar-heading,
-        .sidebar-pretitle {
-            background-color: transparent !important;
-            color: inherit !important;
-
-            /* !important: 'Template:Conservation status' */
-            :any-link > [style*=color] {
-                color: inherit !important;
-            }
-
-            /* !important: 'Template:Content policy list' */
-            > [style*="font-size:120%"] {
-                font-size: inherit !important;
-                font-stretch: var(--sidebar-stretch);
             }
         }
 
         .sidebar-below {
-            border-block-end: 0 !important;
-            border-block-start-color: var(--fg) !important;
-            font-size: .9rem;
-            font-weight: var(--normal-weight);
-            padding-block-start: calc(var(--box-margin) * .5) !important;
+            font-size: var(--caption-size);
 
-            br {
+            > br {
                 display: none;
+
+                + * {
+                    margin-inline-start: .3em;
+                }
             }
         }
 
         .sidebar-content {
-            font-stretch: var(--side-table-stretch);
-            padding-block-end: calc(var(--box-margin) * .25);
+            background: transparent !important;
+            color: var(--fg) !important;
+            font-size: 1em !important;
+            font-stretch: var(--side-body-stretch);
+            padding-inline: 0;
             text-align: start !important;
-
-            /* 'Template:United States House of Representatives' */
-            [style*=padding] {
-                padding-inline: 0 !important;
-            }
-
-            /* 'Template:Greek dieties (primordial)' */
-            > .div-col:first-child {
-                margin-block-start: 0;
-            }
-
-            ul li + li {
-                margin-block-start: 0;
-            }
-
-            /* 'Template:United States House of Representatives' */
-            > hr {
-                border: 0;
-                margin-block-start: calc(var(--box-margin) * .25);
-            }
         }
 
         .sidebar-heading {
-            font-size: 105%;
-            padding-block-start: calc(var(--box-margin) * .25);
-            text-align: start;
-
-            &[style*=padding] {
-                padding-block: calc(var(--box-margin) * .25) 0 !important;
-                padding-inline: 0 !important;
-            }
-        }
-
-        .sidebar-image {
-            border-block-end: thin solid var(--fg);
-            border-block-start: thin solid var(--fg);
-            font-size: .9rem;
-            padding-block: calc(var(--box-margin) * .25);
+            padding-block-start: var(--side-margin);
         }
 
         .sidebar-list-title {
-            /* !important: 'Template:Sociology' */
-            background: transparent !important;
-            border-block-start: 0 !important;
-            padding-block: calc(var(--box-margin) * .25) 0;
+            font-size: var(--side-head-font-size) !important;
+            line-height: calc(1em / var(--side-head-font-size));
+            font-weight: var(--bold);
             padding-inline: 0;
-            line-height: inherit;
         }
 
-        .sidebar-navbar {
-            padding-block-end: .15em;
-            font-stretch: var(--sidebar-stretch);
+        .sidebar-navbar > .navbar-mini {
+            font-stretch: var(--side-title-stretch);
         }
 
+        /* This always comes before a .sidebar-title-with-pretitle */
         .sidebar-pretitle {
-            font-size: 95%;
-            padding-block-start: calc(var(--box-margin) * .25);
+            background: transparent !important;
+            color: var(--fg) !important;
+            padding-block-start: var(--side-title-margin);
         }
 
-        .sidebar-title {
-            border: 0 !important; /* !important: 'Manchester United F.C.' */
-            /* Matching MW '.navbox-title' */
-            padding-block: .25em;
-            padding-inline: 1em;
+        .sidebar-subgroup > tbody > tr:last-child > * {
+            padding-block-end: 0;
         }
 
-        /* !important: 'Template:Conservation status' */
-        .sidebar-title > [style*=font-size] {
-            font-size: smaller !important;
-            font-stretch: normal;
-        }
-
+        /* This always comes after a .sidebar-pretitle */
         .sidebar-title-with-pretitle {
-            font-size: var(--big-caption);
-            /* !important: 'Template:Economic systems sidebar' */
-            padding-block: 0 calc(var(--box-margin) * .25) !important;
-            padding-inline: 0 !important;
-            text-align: center;
-
-            .tmp-color {
-                color: inherit !important;
-            }
+            border-block-start: 0;
+            padding-block-start: 0 !important;
         }
 
-        /***********************/
-        /* Template:Speciesbox */
-        /***********************/
+        /****************************/
+        /* Template:Infobox country */
+        /****************************/
 
-        /* 'Turkey (bird)', 'Cat', etc. */
-        &.biota {
-            tr, th {
-                background: transparent !important;
+        .ib-country-names {
+            font-size: var(--caption-size);
+        }
+
+        &.ib-country,
+        &.ib-uk-place {
+            .infobox-label > [style*=text-indent],
+            .ib-country-fake-li {
+                margin-inline-start: 1ch !important;
+                text-indent: -1ch !important;
             }
 
-            > tbody > :first-child > th {
-                &::first-line {
-                    font-stretch: var(--sidebar-stretch);
-                }
+            .infobox-data > table {
+                inline-size: 100%;
 
-                > br {
-                    display: none;
-                }
-
-                [style*="font-size: 85%"] {
+                [style*=font-size] {
                     font-size: 1em !important;
                 }
+
+                td, th {
+                    border: 0;
+                }
+
+                th[colspan] {
+                    border-block: thin solid var(--border-fg);
+                    border-block-start-color: var(--border-th);
+                }
+
+                tr:nth-child(2n) {
+                    background-color: var(--shade-bg);
+                }
+
+                tr:first-child > th[colspan] {
+                    border-block-start: 0;
+                }
             }
 
-            td:first-child:not(:last-child) {
-                font-stretch: var(--side-table-stretch);
+            td, th {
+                padding: 0;
+
+                &.infobox-label {
+                    padding-inline-end: .3rem;
+                }
+            }
+
+            > tbody {
+                > :not(.mergedrow, .mergedbottomrow) > :is(td, th) {
+                    padding-block-start: var(--side-margin);
+                }
+
+                > :has(+ tr:not(.mergedrow, .mergedbottomrow) > *) > * {
+                    padding-block-end: var(--side-margin);
+
+                    &.infobox-label {
+                        padding-block-end: calc(var(--side-margin) + var(--label-baseline-align));
+                    }
+                }
+            }
+        }
+
+        /**************************************/
+        /* Template:Infobox military conflict */
+        /**************************************/
+
+        &.vevent {
+            > tbody > tr {
+                /* “Part of” */
+                &:nth-child(2) > * {
+                    background: transparent !important;
+                    color: var(--fg) !important;
+                    padding-block-start: calc(var(--side-margin) * .5);
+                }
+
+                /* Image part, if one exists */
+                &:is(
+                    :nth-child(2),
+                    :nth-child(3)
+                ):has(
+                    > td > :any-link > img,
+                    > td > img,
+                    > td > .tmulti
+                ) > * {
+                    padding-block: var(--side-margin);
+                    font-size: var(--caption-size);
+                    text-align: justify;
+                    text-align-last: center;
+
+                    &:has(> .tmulti) {
+                        font-size: 1em;
+                    }
+                }
+
+                /* Belligerents, strength, etc. */
+                > th[colspan]:not(.summary) {
+                    background-color: transparent !important;
+                    border-block-start: thin solid var(--fg);
+                    border-block-end: thin solid var(--border-th) !important;
+                    color: var(--fg) !important;
+                    font-size: 1em !important;
+                }
+
+                > td[style*=border-right] {
+                    border-inline-end: thin solid var(--border-th) !important;
+                    padding-inline-end: var(--side-margin);
+
+                    + td {
+                        padding-inline-start: var(--side-margin) !important;
+                    }
+                }
+            }
+
+            /* Date, place, etc. */
+            table {
+                margin-block: var(--side-margin) !important;
+
+                th {
+                    font-stretch: var(--side-body-stretch);
+                    font-weight: var(--bold);
+                }
+
+                :is(td, th) {
+                    text-align: start;
+                    vertical-align: top;
+                }
+            }
+        }
+
+        /***************************/
+        /* Template:Infobox person */
+        /***************************/
+
+        &.vcard.vcard {
+            .honorific-prefix,
+            .honorific-suffix {
+                font-size: var(--caption-size) !important;
+                font-weight: var(--normal-weight) !important;
+                line-height: inherit !important;
+            }
+
+            .infobox-header[style*=padding] {
+                padding-block-end: 0 !important;
+            }
+
+            > tbody > tr {
+                &:has(+ tr > td > table:first-child) > * {
+                    padding-block-end: var(--side-margin);
+
+                    &.infobox-label {
+                        padding-block-end: calc(var(--side-margin) + var(--label-baseline-align));
+                    }
+                }
+
+                > td > table {
+                    border-block-start: thin solid var(--fg);
+                    margin: 0 !important;
+
+                    > tbody > tr:first-child > th {
+                        border: 0 !important;
+                        padding-inline: 0 !important;
+                        padding-block: var(--side-margin) !important;
+                    }
+                }
+            }
+
+            .infobox-below:has(> :empty:first-child:last-child) {
+                display: none;
+            }
+
+            .skin-nightmode-reset-color {
+                background: transparent !important;
+            }
+        }
+
+        /*******************************/
+        /* Template:Infobox settlement */
+        /*******************************/
+
+        &.ib-settlement > tbody > tr {
+            &:has(> .infobox-subheader):has(+ .ib-settlement-official) > * {
+                padding-block-end: 0;
+            }
+
+            &.ib-settlement-official > * {
+                border-block-start: 0;
+                padding-block-start: 0;
+            }
+        }
+
+        .ib-settlement-official > * {
+            font-stretch: normal;
+            text-align: center;
+        }
+
+        .ib-settlement-native,
+        .ib-uk-place-other-names {
+            font-size: var(--caption-size);
+            font-stretch: normal;
+            font-weight: var(--normal-weight);
+            padding: 0;
+        }
+
+        .ib-settlement-caption,
+        .ib-settlement-caption-link,
+        .sidebar-caption {
+            font-size: var(--caption-size);
+            font-stretch: normal;
+            line-height: 1.4;
+            text-align: justify;
+            text-align-last: center;
+        }
+
+        .ib-settlement-caption-link {
+            padding-block-end: 0;
+        }
+
+        .ib-settlement-cols + .ib-settlement-cols {
+            margin-block-start: calc(var(--side-margin) * 2);
+        }
+
+        .ib-settlement-cols-cell {
+            vertical-align: bottom;
+        }
+
+        /*******************************/
+        /* Template:Infobox television */
+        /*******************************/
+
+        &.ib-tv {
+            border-collapse: collapse;
+        }
+
+        /***************************/
+        /* Template:Sidebar person */
+        /***************************/
+
+        &.sidebar-person {
+            --image-w: 3em;
+
+            border-color: var(--fg) !important;
+
+            hr {
+                display: none;
+
+                &:not(:first-child) {
+                    margin-block-start: var(--side-margin);
+
+                    ul + & + ul {
+                        margin-block-start: 0;
+                    }
+                }
+            }
+
+            .hidden-begin {
+                font-size: inherit;
+            }
+
+            .hidden-title,
+            .sidebar-content > [style*=font-weight],
+            .sidebar-content > .mw-collapsible > [style*=font-weight] {
+                border-block: 0;
+                font-size: var(--side-head-font-size) !important;
+                font-stretch: var(--side-body-stretch);
+                font-weight: var(--bold) !important;
+                line-height: calc(var(--side-line-height) / var(--side-font-size)) !important;
+                margin-block: var(--side-margin) 0 !important;
+                margin-inline: 0 !important;
+            }
+
+            .hidden-content {
+                text-align: start !important;
+            }
+
+
+            .sidebar-navbar {
+                text-align: end;
+            }
+        }
+
+        .sidebar-person-title-image,
+        .sidebar-person-title {
+            background: transparent !important;
+            color: var(--fg) !important;
+            padding: 0;
+        }
+
+        .sidebar-person-title-image {
+            inline-size: var(--image-w);
+
+            img {
+                max-block-size: 1lh;
+                max-inline-size: var(--image-w);
+            }
+        }
+
+        .sidebar-person-title {
+            font-stretch: normal;
+            font-weight: var(--normal-weight);
+            padding-inline-end: var(--image-w);
+
+            > div {
+                font-size: 1rem;
+            }
+
+            .vcard {
+                font-stretch: var(--side-title-stretch);
                 font-weight: var(--bold);
             }
-        }
-    }
-
-    /**************************/
-    /* Template:Infobox event */
-    /**************************/
-
-    .infobox.vevent > tbody > tr {
-        > td > table th {
-            text-align: start;
-        }
-
-        > th[colspan] {
-            background-color: transparent !important;
-            border-block-start: thin solid var(--fg);
-            font-size: 1em !important;
-            font-stretch: var(--sidebar-stretch);
-
-            &.summary {
-                background: transparent !important;
-                border-block-start: 0;
-                border-block-end: thin solid var(--fg);
-                font-size: var(--big-caption) !important;
-                font-stretch: var(--sidebar-stretch);
-            }
-        }
-
-        > td[style*=border-right] {
-            border-inline-end: 0 !important;
-        }
-    }
-
-    /**********************************/
-    /* Template:Infobox football club */
-    /**********************************/
-
-    /* lol :-( */
-    .infobox > tbody > tr > td:has(> table > tbody > tr > td > [data-wiki-rs~=template-football-kit]) {
-        border: 0 !important;
-
-        [data-wiki-rs~=template-football-kit] {
-            border-block: thin solid var(--fg) !important;
-            border-inline: 0 !important;
-            inline-size: auto !important;
-            margin-block: calc(var(--box-margin) * .5) !important;
-            margin-inline: 0 !important;
-            padding-block: calc(var(--box-margin) * .5) !important;
-            padding-inline: 0 !important;
         }
     }
 
@@ -2597,7 +2715,7 @@ th {
             border-block-end: thin solid var(--border-fg);
 
             span[style*=font-size] {
-                font-stretch: var(--sidebar-stretch);
+                font-stretch: var(--side-title-stretch);
             }
         }
 
@@ -2639,7 +2757,7 @@ th {
     }
 
     .locmap {
-        font-stretch: var(--side-table-stretch);
+        font-stretch: var(--side-body-stretch);
         text-align: center;
 
         img {
@@ -2806,7 +2924,7 @@ th {
         }
 
         .navbox-abovebelow {
-            font-size: .9rem;
+            font-size: var(--caption-size);
         }
 
         /* 'Wikipedia:Five pillars' uses this */
@@ -2878,12 +2996,70 @@ th {
 
         .navbox-title {
             font-size: 1rem;
-            font-stretch: var(--sidebar-stretch);
+            font-stretch: var(--side-title-stretch);
 
             > :not(.navbar) {
                 /* !important: Pages like 'Crazy Taxi' on an anonymous
                 container */
                 font-size: 1rem !important;
+            }
+        }
+
+        /* This is more closely related to 'Template:Sidebar' than to
+           'Template:Navbox', but is used as part of
+           'Template:Infobox military conflict' on e.g. 'World War II' */
+        .navbox-vertical.navbox-vertical {
+            font-family: var(--sans);
+            font-size: 1rem;
+            line-height: var(--side-line-height);
+
+            .navbox-title {
+                border-block-end-color: var(--fg);
+                font-size: var(--big-caption);
+                line-height: var(--side-title-lh);
+                padding-block: var(--side-title-margin);
+                padding-inline: 0;
+
+                .navbar-mini {
+                    font-size: 90%;
+                    margin-inline-start: .5em;
+                }
+
+                [style*=font-size] {
+                    font-size: inherit !important;
+                }
+
+                [style*=margin] {
+                    margin-inline: 3em !important;
+                }
+
+                [style*=line-height] {
+                    line-height: inherit !important;
+                }
+            }
+
+            .navbox-list {
+                border-block-color: var(--fg);
+                font-stretch: var(--side-body-stretch);
+                line-height: var(--side-line-height);
+                padding-block-end: var(--side-margin) !important;
+                text-align: start;
+
+                [style*=padding] {
+                    padding-inline: 0 !important;
+                }
+
+                &.hlist ul {
+                    padding-block: 0;
+                }
+
+                > div > b,
+                > div > p > b {
+                    display: block;
+                    font-size: var(--side-head-font-size);
+                    line-height: calc(var(--side-line-height) / var(--side-font-size));
+                    padding-block-start: var(--side-margin);
+                }
             }
         }
 
@@ -3280,7 +3456,7 @@ th {
                 background-image: linear-gradient(transparent 3px, var(--bg) 3px) !important;
                 border-block-end: thin solid var(--border-fg);
                 color: var(--fg) !important;
-                font-stretch: var(--sidebar-stretch);
+                font-stretch: var(--side-title-stretch);
                 line-height: 1;
                 padding-block-start: calc(5px + 3px) !important;
                 vertical-align: baseline;
@@ -3319,12 +3495,12 @@ th {
             background-color: transparent !important;
             border-block-start: 3px solid var(--fg) !important;
             color: var(--fg) !important;
-            font-stretch: var(--sidebar-stretch);
+            font-stretch: var(--side-title-stretch);
             padding: 0 !important;
         }
 
         .routemap {
-            font-stretch: var(--side-table-stretch);
+            font-stretch: var(--side-body-stretch);
         }
 
         .selfreference {
@@ -3335,6 +3511,8 @@ th {
     }
 
     > .RMbox[style*="float:right"] {
+        margin-inline-start: var(--figure-margin) !important;
+        margin-block-end: var(--figure-margin) !important;
         transform: var(--aside-gutter-align);
     }
 
@@ -3343,7 +3521,7 @@ th {
     }
 
     .routemap {
-        font-stretch: var(--side-table-stretch);
+        font-stretch: var(--side-body-stretch);
 
         .RMr1.RMr1,
         .RMl1.RMl1 {
@@ -3417,13 +3595,13 @@ th {
             > th {
                 border-block-start-width: 3px !important;
                 font-size: 1rem;
-                font-stretch: var(--sidebar-stretch);
+                font-stretch: var(--side-title-stretch);
             }
 
             &:first-child > td[colspan] {
                 font-family: var(--sans);
                 font-size: 1rem;
-                font-stretch: var(--sidebar-stretch);
+                font-stretch: var(--side-title-stretch);
             }
         }
     }
@@ -3451,6 +3629,11 @@ th {
         &.stack-right {
             margin-block-end: var(--figure-margin);
             margin-inline-start: var(--figure-margin);
+            min-inline-size: var(--aside-min);
+
+            > * > * {
+                min-inline-size: var(--aside-min);
+            }
         }
 
         > * > * {
@@ -3460,47 +3643,6 @@ th {
 
             + * {
                 margin-block-start: calc(var(--box-margin) * .25) !important;
-            }
-        }
-
-        .navbox-list {
-            border: 0;
-            font-family: var(--sans);
-            font-size: 1rem;
-            font-stretch: var(--side-table-stretch);
-
-            > div {
-                padding: 0 !important;
-            }
-
-            > div > b,
-            > div > p > b {
-                font-family: var(--sans);
-                font-size: 1rem;
-                font-stretch: 100%;
-            }
-
-            > div > p {
-                text-align: inherit;
-
-                * + & {
-                    border-block-start: thin solid var(--fg);
-                    margin-block-start: calc(var(--box-margin) * .25);
-                }
-            }
-
-            &.hlist ul {
-                padding: 0;
-                text-align: start;
-            }
-        }
-
-        .navbox-title {
-            border-block-end-color: var(--fg);
-            line-height: 1.1;
-
-            span[style*=line-height] {
-                line-height: inherit !important;
             }
         }
     }
@@ -3613,7 +3755,7 @@ th {
         }
 
         td {
-            font-stretch: var(--side-table-stretch);
+            font-stretch: var(--side-body-stretch);
         }
 
         th[style*=border-right] {
