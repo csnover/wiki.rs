@@ -18,7 +18,12 @@ use crate::{
 };
 use core::fmt::{self, Write as _};
 use memchr::memmem::FinderRev;
-use std::{borrow::Cow, pin::pin, rc::Rc, sync::LazyLock, time::Instant};
+use std::{
+    borrow::Cow,
+    pin::pin,
+    sync::{Arc, LazyLock},
+    time::Instant,
+};
 
 /// Templates that need to be spruced up a bit, but don’t have any hooks of
 /// their own for styling.
@@ -453,12 +458,13 @@ pub(crate) fn call_template(
     // name supposed to change?
     let sp = sp.chain(callee, FileMap::new(&template.body), arguments)?;
     // For now, just assume that the cache will always be big enough and unwrap
-    let root = Rc::clone(
+    let root = Arc::clone(
         state
             .statics
             .template_cache
+            .write()?
             .get_or_insert_fallible(template.id, || {
-                state.statics.parser.parse(&sp.source, true).map(Rc::new)
+                state.statics.parser.parse(&sp.source, true).map(Arc::new)
             })?
             .unwrap(),
     );

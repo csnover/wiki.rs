@@ -1,7 +1,7 @@
 //! Types and functions for communicating with article renderers.
 
 use super::{
-    Error, ExpandMode, ExpandTemplates, Result, State, Statics,
+    Error, ExpandMode, ExpandTemplates, Result, State, Statics, TemplateCache,
     document::Document,
     globals::{Indicators, Outline},
     resolve_redirects,
@@ -9,7 +9,7 @@ use super::{
     surrogate::Surrogate as _,
 };
 use crate::{
-    LoadMode,
+    Limits, LoadMode,
     config::CONFIG,
     db::{Article, Database},
     lru_limiter::ByMemoryUsage,
@@ -21,7 +21,7 @@ use crate::{
 };
 use axum::http::Uri;
 use schnellru::LruMap;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, RwLock, mpsc};
 use time::UtcDateTime;
 
 /// A renderer channel message command.
@@ -67,14 +67,22 @@ pub(crate) struct RenderManager {
     base_uri: Uri,
     /// The article database to provide to spawned renderers.
     database: Arc<Database<'static>>,
+    /// Time and memory limits.
+    limits: Limits,
+    /// Template cache.
+    template_cache: TemplateCache,
 }
 
 impl RenderManager {
     /// Creates a new render manager.
-    pub fn new(base_uri: &Uri, database: &Arc<Database<'static>>) -> Self {
+    pub fn new(base_uri: &Uri, database: &Arc<Database<'static>>, limits: Limits) -> Self {
         Self {
             base_uri: base_uri.clone(),
             database: Arc::clone(database),
+            limits,
+            template_cache: Arc::new(RwLock::new(LruMap::new(ByMemoryUsage::new(
+                limits.template_cache,
+            )))),
         }
     }
 }
@@ -87,6 +95,8 @@ impl r2d2::ManageConnection for RenderManager {
     fn connect(&self) -> Result<Self::Connection, Self::Error> {
         let (tx, rx) = mpsc::channel::<In>();
         let base_uri = self.base_uri.clone();
+        let limits = self.limits;
+        let template_cache = Arc::clone(&self.template_cache);
         // TODO: This date should be calculated from the database file.
         let base_time = DateTime::now()?;
         let db = Arc::clone(&self.database);
@@ -97,10 +107,11 @@ impl r2d2::ManageConnection for RenderManager {
                 base_uri,
                 base_time,
                 db,
+                limits,
                 parser,
+                template_cache,
                 vm,
-                vm_cache: LruMap::new(ByMemoryUsage::new(32 * 1024 * 1024)),
-                template_cache: LruMap::new(ByMemoryUsage::new(32 * 1024 * 1024)),
+                vm_cache: LruMap::new(schnellru::UnlimitedCompact),
             };
 
             for In { command, tx } in rx {
@@ -263,12 +274,9 @@ fn render(
     {
         let tpl_mem = {
             let cache = &state.statics.template_cache;
-            cache.limiter().heap_usage() + cache.memory_usage()
+            cache.read()?.limiter().heap_usage() + cache.read()?.memory_usage()
         };
-        let vm_mem = {
-            let cache = &state.statics.vm_cache;
-            cache.limiter().heap_usage() + cache.memory_usage()
-        };
+        let vm_mem = state.statics.vm.total_memory();
 
         log::debug!(
             "Caches:\n  Database: {:.2}KiB\n  Template: {:.2}KiB\n  VM: {:.2}KiB",

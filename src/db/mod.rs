@@ -110,6 +110,7 @@ impl RawDatabase<'_> {
     pub fn from_file(
         index_path: impl AsRef<Path>,
         articles_path: impl AsRef<Path>,
+        cache_size_limit: usize,
     ) -> Result<Self> {
         let time = Instant::now();
 
@@ -122,7 +123,7 @@ impl RawDatabase<'_> {
         Ok(Self {
             index,
             articles,
-            cache: RwLock::new(LruMap::new(ByMemoryUsage::new(32 * 1024 * 1024))),
+            cache: RwLock::new(LruMap::new(ByMemoryUsage::new(cache_size_limit))),
         })
     }
 

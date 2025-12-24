@@ -143,7 +143,7 @@
 //! </div>
 
 use crate::{
-    LoadMode,
+    Limits, LoadMode,
     db::{Article, Database},
     lru_limiter::ByMemoryUsage,
     lua::VmCacheEntry,
@@ -163,8 +163,7 @@ pub(crate) use stack::{CachedValue, Kv, StackFrame};
 use std::{
     borrow::Cow,
     collections::HashMap,
-    rc::Rc,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, PoisonError, RwLock},
     time::Duration,
 };
 pub(crate) use surrogate::Surrogate;
@@ -245,6 +244,10 @@ pub(crate) enum Error {
     #[error(transparent)]
     Peg(#[from] crate::wikitext::Error),
 
+    /// An [`RwLock`] guard was poisoned.
+    #[error("poisoned lock")]
+    Poison,
+
     /// Too many template calls.
     #[error("template stack overflow: {0}")]
     StackOverflow(String),
@@ -268,11 +271,21 @@ pub(crate) enum Error {
     Time(#[from] crate::php::DateTimeError),
 }
 
+impl<T> From<PoisonError<T>> for Error {
+    fn from(_: PoisonError<T>) -> Self {
+        Self::Poison
+    }
+}
+
 /// The standard result type used by all fallible renderer functions.
 pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 
 /// A unique scalar identifier for [`Article`]s.
 type ArticleId = u64;
+
+/// A template cache.
+type TemplateCache =
+    Arc<RwLock<LruMap<ArticleId, Arc<Output>, ByMemoryUsage<OutputSizeCalculator>>>>;
 
 /// Global variables which are used for the entire lifetime of a renderer
 /// thread.
@@ -283,14 +296,16 @@ pub(crate) struct Statics {
     pub base_uri: Uri,
     /// The article database.
     pub db: Arc<Database<'static>>,
+    /// Time and memory limits.
+    pub limits: Limits,
     /// The parser.
     pub parser: Parser<'static>,
     /// Parsed template cache.
-    template_cache: LruMap<ArticleId, Rc<Output>, ByMemoryUsage<OutputSizeCalculator>>,
+    template_cache: TemplateCache,
     /// The Lua interpreter.
     pub vm: Lua,
     /// VM module cache.
-    pub vm_cache: LruMap<ArticleId, VmCacheEntry, ByMemoryUsage<VmCacheEntry>>,
+    pub vm_cache: LruMap<ArticleId, VmCacheEntry, schnellru::UnlimitedCompact>,
 }
 
 /// A list of stripped extension tags.

@@ -95,10 +95,12 @@ impl PrefetchableDatabase<'_> {
     pub fn from_file(
         index_path: impl AsRef<Path>,
         articles_path: impl AsRef<Path>,
+        cache_size_limit: usize,
     ) -> Result<Self> {
         Ok(Self::from_db(Arc::new(Database::from_file(
             index_path,
             articles_path,
+            cache_size_limit,
         )?)))
     }
 

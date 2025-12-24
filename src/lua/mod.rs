@@ -2,25 +2,20 @@
 
 use crate::{
     db::{Article, Database},
-    lru_limiter::ByMemoryUsageCalculator,
     renderer::{Kv, StackFrame, State},
     title::Title,
     wikitext::Parser,
 };
 use axum::http::Uri;
 use core::ops::ControlFlow;
-use gc_arena::{Rootable, metrics::Pacing};
+use gc_arena::Rootable;
 use lualib::{LanguageLibrary, LuaEngine, TitleLibrary, UriLibrary};
 use piccolo::{
     Executor, ExecutorMode, ExternError, Fuel, Function, Lua, RuntimeError, StashedClosure,
     StashedString, StashedTable, TypeError, thread::BadExecutorMode,
 };
 use prelude::*;
-use std::{
-    pin::Pin,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{pin::Pin, sync::Arc, time::Instant};
 use time::UtcDateTime;
 
 mod lualib;
@@ -34,16 +29,6 @@ pub(crate) struct VmCacheEntry {
     module: StashedClosure,
     /// The module’s sandbox environment.
     env: StashedTable,
-    /// The approximate size of the module + data.
-    size: usize,
-}
-
-impl ByMemoryUsageCalculator for VmCacheEntry {
-    type Target = Self;
-
-    fn size_of(value: &Self::Target) -> usize {
-        value.size
-    }
 }
 
 /// A child frame created by a Lua script.
@@ -180,88 +165,58 @@ pub(super) fn run_vm(
 
             state.statics.vm.finish(&ex).map_err(RuntimeError::from)?;
 
-            state.statics.vm.gc_metrics().set_pacing(
-                Pacing::default()
-                    .with_min_sleep(0)
-                    .with_pause_factor(0.0)
-                    .with_timing_factor(0.0),
-            );
-            let old_size = {
-                let mut last_size = state.statics.vm.total_memory();
-                loop {
-                    state.statics.vm.gc_collect();
-                    let new_size = state.statics.vm.total_memory();
-                    if new_size == last_size {
-                        break new_size;
-                    }
-                    last_size = new_size;
-                }
-            };
-
-            let result = state.statics.vm.try_enter(|ctx| {
+            // Too many modules rely on their closure being re-executed on every
+            // invocation, so that is what `mw.executeFunction` does. Some
+            // modules also expect that `packageCache` will be reset, but
+            // wiki.rs does *not* do that and instead gives those modules some
+            // free therapy in `crate::db::HACKS` until they learn to work well
+            // with others
+            let (module, env) = state.statics.vm.try_enter(|ctx| {
                 let env = ctx.fetch(&ex).take_result::<Table<'_>>(ctx)??;
                 let module =
                     Closure::load_with_env(ctx, Some(sp.name.key()), code.body.as_bytes(), env)?;
 
                 Ok((ctx.stash(module), ctx.stash(env)))
-            });
+            })?;
 
-            // TODO: The GC does not seem to be deterministic enough to
-            // learn the size of a module by forcing GC, recording size,
-            // loading the module, forcing another GC, and recording the
-            // delta. When doing this, sometimes the delta ends up being
-            // negative, which should be impossible.
-            let new_size = {
-                let mut last_size = state.statics.vm.total_memory();
-                loop {
-                    state.statics.vm.gc_collect();
-                    let new_size = state.statics.vm.total_memory();
-                    if new_size == last_size {
-                        break new_size;
-                    }
-                    last_size = new_size;
-                }
-            };
-
-            state.statics.vm.gc_metrics().set_pacing(Pacing::default());
-
-            let size = new_size - old_size;
-            let (module, env) = result?;
-            let entry = VmCacheEntry { module, env, size };
+            let entry = VmCacheEntry { module, env };
             state.statics.vm_cache.insert(code.id, entry.clone());
+
+            if memory_exceeded(state) {
+                return Err(RuntimeError::new(anyhow::anyhow!("memory limit exceeded")).into());
+            }
+
             entry
         };
 
-    let (old_sp, ex) = state.statics.vm.try_enter(|ctx| {
+    let mut state = {
+        let old_sp = state.statics.vm.enter(|ctx| {
+            let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
+            // SAFETY: So long as `old_sp` makes it into the scope guard, it
+            // will be removed when this call returns.
+            engine.set_sp(Some(unsafe {
+                core::mem::transmute::<Pin<&StackFrame<'_>>, Pin<&'static StackFrame<'static>>>(sp)
+            }))
+        });
+        scopeguard::guard(state, move |state| {
+            state.statics.vm.enter(|ctx| {
+                let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
+                engine.set_sp(old_sp);
+            });
+        })
+    };
+
+    let ex = state.statics.vm.try_enter(|ctx| {
         let module = ctx.fetch(&module);
         let env = ctx.fetch(&env);
         let mw = ctx.get_global::<Table<'_>>("mw")?;
         let mw_exec = mw.get::<_, Function<'_>>(ctx, "executeFunction")?;
-
-        let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
-        // SAFETY: After this point, there can be no early returns, since
-        // `old_sp` needs to make it into the scope guard or else we have
-        // a dangling reference.
-        let old_sp = engine.set_sp(Some(unsafe {
-            core::mem::transmute::<Pin<&StackFrame<'_>>, Pin<&'static StackFrame<'static>>>(sp)
-        }));
-
-        Ok((
-            old_sp,
-            ctx.stash(Executor::start(
-                ctx,
-                mw_exec,
-                (module, ctx.intern(fn_name.trim().as_bytes()), env),
-            )),
-        ))
+        Ok(ctx.stash(Executor::start(
+            ctx,
+            mw_exec,
+            (module, ctx.intern(fn_name.trim().as_bytes()), env),
+        )))
     })?;
-
-    let mut state = scopeguard::guard(state, |state| {
-        state.statics.vm.enter(|ctx| {
-            let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
-            engine.set_sp(old_sp);
-        });
-    });
 
     // TODO: This time limit should probably exclude time spent loading from the
     // database.
@@ -279,13 +234,13 @@ pub(super) fn run_vm(
             {
                 Ok(true) => break,
                 Ok(false) => {
-                    if state.statics.vm.total_memory() > 128 * 1_048_576 {
+                    if memory_exceeded(&mut state) {
                         return Err(
                             RuntimeError::new(anyhow::anyhow!("memory limit exceeded")).into()
                         );
                     }
 
-                    if start.elapsed() > Duration::new(10, 0) {
+                    if start.elapsed() > state.statics.limits.vm_time {
                         return Err(
                             RuntimeError::new(anyhow::anyhow!("time limit exceeded")).into()
                         );
@@ -334,4 +289,30 @@ pub(super) fn run_vm(
             ControlFlow::Break(result) => break Ok(result),
         }
     }
+}
+
+/// Naïvely reduces memory pressure on the VM if needed by running garbage
+/// collection and evicting cached modules. Returns true if the VM’s memory
+/// usage still exceeds the limit after doing everything possible to reduce
+/// memory.
+fn memory_exceeded(state: &mut State<'_>) -> bool {
+    let mut old_size = state.statics.vm.total_memory();
+
+    while old_size >= state.statics.limits.vm_total_mem {
+        state.statics.vm.gc_collect();
+        let new_size = state.statics.vm.total_memory();
+        if old_size == new_size {
+            break;
+        }
+        old_size = new_size;
+    }
+
+    while state.statics.vm.total_memory() >= state.statics.limits.vm_total_mem
+        && !state.statics.vm_cache.is_empty()
+    {
+        state.statics.vm_cache.pop_oldest();
+        state.statics.vm.gc_collect();
+    }
+
+    state.statics.vm.total_memory() >= state.statics.limits.vm_total_mem
 }

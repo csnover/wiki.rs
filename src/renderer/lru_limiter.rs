@@ -6,7 +6,7 @@ use crate::{
     wikitext::{Argument, LangFlags, LangVariant, Output, Spanned, Token, visit::Visitor},
 };
 use core::convert::Infallible;
-use std::{collections::HashSet, rc::Rc};
+use std::{collections::HashSet, sync::Arc};
 
 /// Calculates the in-memory size of a token tree.
 pub(super) struct OutputSizeCalculator {
@@ -15,7 +15,7 @@ pub(super) struct OutputSizeCalculator {
 }
 
 impl ByMemoryUsageCalculator for OutputSizeCalculator {
-    type Target = Rc<Output>;
+    type Target = Arc<Output>;
 
     fn size_of(value: &Self::Target) -> usize {
         let mut calculator = Self { size: 0 };
