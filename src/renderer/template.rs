@@ -376,8 +376,9 @@ fn split_target<'tt>(
 
     Ok(
         if is_function_call(arguments.is_empty(), has_colon, &callee_lower) {
-            // It is important to actually not pass a zeroth argument is there is
-            // not one because this changes the behaviour of variable get/set
+            // It is important to actually not pass a zeroth argument if there
+            // is not one because this changes behaviour (e.g. `{{VAR}}` gets
+            // `VAR`; `{{VAR:}}` calls `VAR` with an empty string)
             let first = has_colon
                 .then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
 

@@ -46,12 +46,23 @@
 //!       extension tag functions require this data.
 //!    4. Replace the extension tag in the source text with a “strip marker”.
 //!       Because the strip marker is exposed to Lua scripts and parser
-//!       functions, it MUST be a text sequence starting with ``\x7f'"`UNIQ-``
-//!       and ending with ``-QINU`"'\x7f``. The sequence MUST uniquely identify
-//!       this extension tag within the *entire* document. Because strip markers
-//!       may be deleted during template expansion, the extension tag function
-//!       SHOULD not be invoked until the extension tag is recovered from the
-//!       strip marker in the final processing step.
+//!       functions, it MUST match this format exactly:
+//!
+//!       1. The string ``\x7f'"`UNIQ-``;
+//!       2. The tag name of the extension tag;
+//!       3. The character `-`;
+//!       4. A lowercase hexadecimal ordinal which, in combination with the tag
+//!          name, is unique within the *entire* document;
+//!       5. The string ``-QINU`"'\x7f``.
+//!
+//!       Because strip markers may be deleted during template expansion, the
+//!       extension tag function SHOULD not be invoked until the extension tag
+//!       is recovered from the strip marker in the final processing step.
+//!
+//!    If the tag name ends with an inclusion control pseudo-XML tag, the tag
+//!    MUST NOT be treated as an extension tag, but instead MUST be treated as
+//!    an HTML tag if the extension tag name matches a legal HTML tag, or as
+//!    plain text otherwise (this is the “`<pre>` hack”).
 //!
 //! 3. Process inclusion control pseudo-XML tags (`<noinclude>`,
 //!    `<onlyinclude>`, and `<includeonly>`):
@@ -79,7 +90,10 @@
 //!
 //!    Conceptually, the result of a template expansion should be as-if the
 //!    plain text of the *fully expanded* template already existed in the
-//!    root document’s source text before parsing ever began.[^2]
+//!    root document’s source text before parsing ever began. Note that there
+//!    are special whitespace rules for template expansions; a naïve approach
+//!    which simply concatenates the result of a template expansion will result
+//!    in an incorrect final document.
 //!
 //!    If the expression is a template parameter, interpolate into the source
 //!    text:
@@ -103,37 +117,158 @@
 //!    5. If the target-part of the expression is a valid and existing template,
 //!       the result of expanding the template; otherwise
 //!    6. If the target-part of the expression is a valid but non-existing
-//!       template, the Wikitext expression `[[:Template:<target>]]`; otherwise
+//!       template according to the configurable list of allowed template target
+//!       characters, the Wikitext expression `[[:Template:<target>]]`;
+//!       otherwise
 //!    7. The template expression itself, as plain text.
+//!
+//!    If the template expression was not immediately following a new line or
+//!    the start of the file, and the result of the template expansion starts
+//!    with `"{|"`, `":"`, `";"`, `"#"`, or `"*"`, prefix the result value with
+//!    `"\n"`.
 //!
 //!    [^2]: Save mode, and therefore the other `subst` rules, are out of scope
 //!          for this project.
 //!
-//! 5. The Wikitext document is now “complete” and can be converted into a
-//!    syntax tree and/or emitted as HTML.
+//! 6. Replace any strip markers in the output string with the stored original
+//!    extension tag XML.
 //!
-//!    Conversions from Wikitext tokens to HTML look like this:
+//! 7. Parse the output string and generate a DOM:
 //!
-//!    * Template token: Emit as plain text.
-//!    * Wikitext heading, link, list, table, language conversion, or magic
-//!      link: convert to the corresponding HTML and emit the result.
-//!    * Wikitext text style: Accumulate all text styles until an end-of-line
-//!      token, then run the balancing algorithm to recover apostrophes, then
-//!      emit as HTML. The end-of-line token also implicitly closes any unclosed
-//!      text style tags.
-//!    * Strip marker or extension tag: emit the result of calling the
-//!      corresponding extension tag function. (TODO: It might be the case that
-//!      some as-yet unseen extension tag *requires* emitting Wikitext character
-//!      strings rather doing its own Wikitext conversions to HTML, in which
-//!      case this actually has to occur as a separate step. It is definitely
-//!      the case that extension tags are allowed to emit non-whitelisted HTML,
-//!      so it can’t be the case that they must *always* emit valid Wikitext.)
-//!    * Whitelisted HTML tag: parse using the special Wikitext HTML attribute
-//!      error correction algorithm[^3] and emit as HTML.
-//!    * A valid HTML entity[^4] other than `&amp;` `&lt;` `&gt;` and `&quot;`:
-//!      Decode the entity and emit the decoded value.
-//!    * A character `['<'|'>'|'&'|'"']`: entity-encode the character and emit
-//!      the entity-encoded value.
+//!    When emitting tags:
+//!
+//!    TODO.
+//!
+//!    When emitting text:
+//!
+//!    1. For a valid HTML entity[^4] other than `&amp;`, `&lt;`, `&gt;`, or
+//!       `&quot;`, decode the entity and emit the decoded value; otherwise
+//!    2. For a character `['<'|'>'|'&'|'"']`, entity-encode the character and
+//!       emit the entity-encoded value; otherwise
+//!    3. For a character `\n`, emit nothing and run the apostrophe balancing
+//!       algorithm and block wrapping algorithms; otherwise
+//!    4. Emit the character.
+//!
+//!    When parsing attributes:
+//!
+//!    * Value parsing uses a non-standard parse where `>` or `/>` are
+//!      terminators for attribute values, even if they are inside a quoted-text
+//!      part. This violates the XML and HTML standards.
+//!    * If the attribute name is not whitelisted for the tag where it appears,
+//!      ignore the whole attribute.
+//!    * If the attribute name is `style`, decode CSS escapes in the value, then
+//!      sanitise the value.
+//!    * For other attribute values, sanitise the value according to unspecified
+//!      rules.
+//!
+//!    When parsing Wikitext table attributes:
+//!
+//!    * If the attribute name is actually a whitelisted HTML tag, discard the
+//!      `<`, tag name, and `>`, and act as-if only the tag’s attributes were
+//!      present in the source.
+//!
+//!    When running the apostrophe balancing algorithm:
+//!
+//!    TODO
+//!
+//!    When running the block wrapping algorithm:
+//!
+//!    TODO
+//!
+//!    For each Wikitext expression encountered during parsing:
+//!
+//!    * Template expression: Emit as plain text.
+//!
+//!    * Extension tag expression: Invoke the extension tag function and emit
+//!      the result. The output of the extension tag function is
+//!      implementation-specific, but will typically be a well-formed HTML
+//!      fragment which is injected at the position where the extension tag is
+//!      invoked. The output of an extension tag is opaque to the apostrophe
+//!      balancing algorithm and the block wrapping algorithm (probably?).
+//!
+//!    * Wikitext internal link expression:
+//!
+//!      1. If the target’s namespace is of type Category, emit nothing and
+//!         delete any run of whitespace which preceded the link and matches
+//!         the regular expression `\n\s*$`; otherwise
+//!      2. If the target’s namespace is of type File, treat the link content as
+//!         a list of media parameters and emit HTML appropriate for displaying
+//!         the media; otherwise
+//!      3. Build the link content:
+//!         1. If the link expression has a content-part, use it as the content;
+//!            otherwise
+//!         2. Use the target-part as the content, trimming any leading `':'`;
+//!            then
+//!         3. If the link expression is suffixed by text which matches the
+//!            link-trail regular expression, move that text into the link
+//!            content;
+//!         4. Run the apostrophe balancing algorithm on the content.
+//!      4. Build the link target:
+//!         1. Resolve the target according to the target-part using a default
+//!            namespace of type Main;
+//!         2. If the link target is the current page, and the target URI has no
+//!            fragment-part, emit the content only instead of creating a
+//!            hyperlink.
+//!      5. Emit the link as HTML.
+//!
+//!    * Wikilink external link expression:
+//!
+//!      1. If the target is not a valid URI with a whitelisted protocol, emit
+//!         as plain text; otherwise
+//!      2. Emit the link as HTML.
+//!
+//!    * Table start expression:
+//!
+//!      1. Collect the attributes by running the Wikitext table attribute
+//!         algorithm;
+//!      2. Emit an HTML `<table>` tag using the sanitised attributes;
+//!      2. Increase the Wikitext table count by 1;
+//!      3. Increase the HTML table count by 1.
+//!
+//!    * HTML table start tag:
+//!
+//!      1. Emit the tag;
+//!      2. Increase the HTML table count by 1.
+//!
+//!    * Table end expression:
+//!
+//!      1. If the Wikitext table count is zero, emit as plain text;
+//!         otherwise
+//!      2. If the HTML table count is zero, decrease the Wikitext table
+//!         count by 1 and emit nothing; otherwise
+//!      3. Decrease both the Wikitext table count and HTML table count by 1,
+//!         then emit `</table>`.
+//!
+//!    * HTML table end tag:
+//!
+//!      1. If the HTML table count is zero, emit nothing; otherwise
+//!      2. Decrease the HTML table count by 1, run the inner element closing
+//!         algorithm, then emit `</table>`.
+//!
+//!    * Table caption, row, heading, or cell expression:
+//!
+//!      1. If the Wikitext table count is zero, emit as plain text; otherwise
+//!      2. If the HTML table count is zero, emit nothing; otherwise
+//!      3. If the expression is a table row expression, and the next expression
+//!         is also a table row expression, emit nothing; otherwise
+//!      4. Collect the attributes by running the Wikitext table attribute
+//!         algorithm;
+//!      5. Emit an appropriate HTML tag (`<caption>`, `<tr>`, etc.) using the
+//!         sanitised attributes.
+//!
+//!    * Wikitext heading, list, language conversion, or magic link expressions:
+//!      Emit an appropriate HTML tag.
+//!
+//!    * Wikitext text style expressions: Add the output position to the
+//!      accumulator for the apostrophe balancing algorithm.
+//!
+//!    * Whitelisted HTML tag expressions: Parse using the special Wikitext HTML
+//!      attribute error correction algorithm[^3] and emit as HTML.
+//!
+//!    * Text expressions: Emit as plain text.
+//!
+//! 8. Run the paragraph wrapping algorithm on the resulting DOM. TODO: Document
+//!    this additional insane thing whenever procrastination strikes again.
 //!
 //!    [^3]: In Wikitext, `/>` and `>` are treated as terminators for any quoted
 //!          attribute value, which is not true in HTML5.
