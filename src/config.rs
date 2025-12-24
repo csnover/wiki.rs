@@ -526,6 +526,11 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     },
     language_conversion_enabled: true,
     link_trail: r"/^([a-z]+)(.*)$/sD",
+    magic_links: MagicLinks {
+        isbn: false,
+        pmid: false,
+        rfc: false,
+    },
     protocols: phf::phf_set! {
         "//",
         "bitcoin:",
@@ -559,11 +564,7 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "xmpp:",
     },
     redirect_magic_words: phf::phf_set! { "#redirect" },
-    magic_links: MagicLinks {
-        isbn: false,
-        pmid: false,
-        rfc: false,
-    },
+    valid_title_bytes: r#" %!"$&'()*,\-./0-9:;=?@A-Z\\^_`a-z~\x80-\xFF+"#,
     variables: phf::phf_set! {
         "!",
         "=",

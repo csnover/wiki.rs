@@ -57,6 +57,10 @@ pub(crate) struct ConfigurationSource {
     /// Magic words that can be used for redirects, lowercased.
     pub redirect_magic_words: Set<&'static str>,
 
+    /// The list of allowable bytes in an article title, in a format suitable
+    /// for interpolation into a PHP PCRE character set pattern.
+    pub valid_title_bytes: &'static str,
+
     /// Registered variables, lowercased.
     pub variables: Set<&'static str>,
 }
@@ -72,6 +76,8 @@ pub(crate) struct Configuration {
     pub(super) magic_links: MagicLinks,
     /// Configuration source.
     source: &'static ConfigurationSource,
+    /// A lookup table for valid title bytes.
+    pub valid_title_bytes: BitMap,
 }
 
 impl core::ops::Deref for Configuration {
@@ -87,13 +93,101 @@ impl Configuration {
     /// specific configuration.
     #[must_use]
     pub fn new(source: &'static ConfigurationSource) -> Self {
+        let valid_title_bytes = char_class_to_bitmap(source.valid_title_bytes.bytes());
+
         Self {
             link_trail_pattern: link_trail_regex(source.link_trail),
             #[cfg(test)]
             magic_links: source.magic_links,
             source,
+            valid_title_bytes,
         }
     }
+}
+
+/// A simple bitmap.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct BitMap([u8; 32]);
+
+impl BitMap {
+    /// Returns true if the bitmap contains the given byte.
+    pub fn contains(&self, byte: u8) -> bool {
+        self.0[usize::from(byte / 8)] & (1 << (byte & 7)) != 0
+    }
+}
+
+/// Converts a PCRE character class to a bitmap.
+fn char_class_to_bitmap(bytes: impl Iterator<Item = u8>) -> BitMap {
+    #[inline]
+    fn nibble(b: u8) -> u8 {
+        (b & 0xf) + 9 * (b >> 6)
+    }
+
+    fn unescape(iter: &mut core::iter::Peekable<impl Iterator<Item = u8>>) -> u8 {
+        match iter.next() {
+            None => b'\\',
+            Some(b'x') => {
+                if iter.next_if(|b| b == &b'{').is_some() {
+                    unimplemented!()
+                } else if let Some(hi) = iter.next_if(u8::is_ascii_hexdigit)
+                    && let Some(lo) = iter.next_if(u8::is_ascii_hexdigit)
+                {
+                    nibble(hi) << 4 | nibble(lo)
+                } else {
+                    b'x'
+                }
+            }
+            Some(b'a') => 0x7,
+            Some(b'c') => unimplemented!(),
+            Some(b'e') => 0x1b,
+            Some(b'f') => 0x0c,
+            Some(b'n') => b'\n',
+            Some(b'r') => b'\r',
+            Some(b't') => b'\t',
+            Some(b'u') => unimplemented!(),
+            Some(b'v') => 0x0b,
+            Some(b) if b.is_ascii_digit() => {
+                let mut value = b & 7;
+                let mut i = 0;
+                while i < 2
+                    && let Some(b) = iter.next_if(u8::is_ascii_digit)
+                {
+                    value <<= 3;
+                    value += b & 7;
+                    i += 1;
+                }
+                value
+            }
+            Some(b) => b,
+        }
+    }
+
+    fn value(iter: &mut core::iter::Peekable<impl Iterator<Item = u8>>) -> Option<u8> {
+        match iter.next() {
+            None => None,
+            Some(b'\\') => Some(unescape(iter)),
+            Some(b) => Some(b),
+        }
+    }
+
+    let mut bits = [0; 32];
+    let mut set = |b| bits[usize::from(b / 8)] |= 1_u8 << (b & 7);
+    let mut iter = bytes.peekable();
+
+    while let Some(b) = value(&mut iter) {
+        set(b);
+        if iter.next_if(|b| *b == b'-').is_some() {
+            if let Some(next) = value(&mut iter) {
+                for b in b..=next {
+                    set(b);
+                }
+            } else {
+                set(b'-');
+            }
+        }
+    }
+
+    BitMap(bits)
 }
 
 /// Creates a link trail regular expression from the given string.

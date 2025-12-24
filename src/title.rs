@@ -1,6 +1,9 @@
 //! Types and functions for parsing and formatting MediaWiki title strings.
 
-use crate::common::{decode_html, url_encode};
+use crate::{
+    common::{decode_html, url_encode},
+    config::CONFIG,
+};
 use percent_encoding::PercentEncode;
 use std::{borrow::Cow, fmt::Write as _};
 
@@ -364,6 +367,47 @@ impl Title {
     /// ```
     pub(crate) fn full_text(&self) -> &str {
         &self.text
+    }
+
+    /// Returns true if all the bytes in the given string are valid for use in
+    /// a title.
+    pub(crate) fn is_valid(maybe_title: &str) -> bool {
+        #[inline]
+        fn is_html_entity(bytes: &[u8]) -> bool {
+            bytes[0] == b'&'
+                && bytes[1..]
+                    .iter()
+                    .position(|b| *b == b';')
+                    .is_some_and(|end| {
+                        bytes[1..end]
+                            .iter()
+                            .all(|b| b.is_ascii_alphanumeric() || *b >= 0x80)
+                    })
+        }
+
+        #[inline]
+        fn is_percent_encoding(bytes: &[u8]) -> bool {
+            bytes[0] == b'%'
+                && bytes
+                    .get(1..2)
+                    .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_hexdigit))
+        }
+
+        #[inline]
+        fn valid_byte(b: u8) -> bool {
+            CONFIG.valid_title_bytes.contains(b)
+        }
+
+        let bytes = maybe_title.as_bytes();
+        for pos in 0..maybe_title.len() {
+            if !valid_byte(bytes[pos])
+                || is_percent_encoding(&bytes[pos..])
+                || is_html_entity(&bytes[pos..])
+            {
+                return false;
+            }
+        }
+        true
     }
 }
 

@@ -387,27 +387,13 @@ fn split_target<'tt>(
             }
         } else {
             let callee = &sp.eval(state, target)?;
-            // TODO: The correct condition for this fallback is anything which
-            // is not a valid title string, and anything which is an interwiki
-            // link which does not exist. Things which are *invalid* in a title
-            // are:
-            // 1. Anything with an invalid HTML entity (the string is
-            //    entity-decoded before being checked);
-            // 2. A valid percent-encoding sequence;
-            // 3. Anything not in the list of `$wgLegalTitleChars`, which is
-            //    actually a regular expression (of course) and something which
-            //    must actually come from the wiki configuration (also of
-            //    course). The default for MediaWiki 1.39+ is:
-            //    '/ %!"$&\'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+/'
-            //
-            // For now, notice which *notable* characters are missing from that
-            // list and just check those ones…
-            if callee.contains(['<', '\x7f', '[', ']', '{', '}']) {
-                Target::Text
-            } else {
+            let callee = callee.trim_ascii();
+            if Title::is_valid(callee) {
                 let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
                 let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
                 Target::Template { callee, arguments }
+            } else {
+                Target::Text
             }
         },
     )

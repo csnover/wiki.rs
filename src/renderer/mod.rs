@@ -14,6 +14,7 @@
 //! * Namespace names and case rule
 //! * Magic links flags
 //! * Link trail regular expression
+//! * Valid title regular expression character class
 //!
 //! When processing a Wikitext document, the smallest atom is a Wikitext token,
 //! but that the smallest atom that a template can produce is a *character*.
