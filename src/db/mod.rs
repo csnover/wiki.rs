@@ -89,9 +89,7 @@ pub(crate) enum Error {
 /// proper parameters, and those templates try to unconditionally use parameters
 /// to load their own child templates, it is necessary to not merely cache just
 /// articles which exist, but also requests to articles which *do not* exist, to
-/// avoid very slow full table scans over and over again for these clearly
-/// intentional (the module calls `string.find(s,"^%{%{ *%{%{%{1")` to decide
-/// that it got what it wanted! FFS!) but bogus requests.
+/// avoid very slow full table scans over and over again.
 type CacheableArticle = Option<Arc<Article>>;
 
 /// A MediaWiki multistream database reader.

@@ -598,8 +598,6 @@ pub(crate) enum Kv<'a> {
     ///              ^^^^^ ^^^^^^^^^^^^^
     /// ```
     Argument(&'a Spanned<Argument>),
-    /// A borrowed string.
-    Borrowed(&'a str),
     /// A list of borrowed tokens from a template target.
     ///
     /// ```wikitext
@@ -625,7 +623,6 @@ impl Kv<'_> {
     ) -> Result<Cow<'a, str>> {
         match self {
             Kv::Argument(argument) => sp.eval(state, &argument.content),
-            Kv::Borrowed(value) => Ok(Cow::Borrowed(value)),
             Kv::Partial(nodes) => {
                 if nodes.len() == 1 {
                     sp.eval(state, slice::from_ref(nodes[0]))
@@ -658,7 +655,7 @@ impl Kv<'_> {
         sp: &'a StackFrame<'_>,
     ) -> Result<Option<Cow<'a, str>>> {
         match self {
-            Kv::Partial(_) | Kv::Borrowed(_) => {
+            Kv::Partial(_) => {
                 log::warn!("The thing that should never happen, happened");
                 Ok(None)
             }

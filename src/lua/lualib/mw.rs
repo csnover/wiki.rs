@@ -116,6 +116,12 @@ impl LuaEngine {
         let (frame_id, title, args) =
             stack.consume::<(VmString<'_>, VmString<'_>, Table<'_>)>(ctx)?;
         // log::trace!("mw.expandTemplate({frame_id:?}, {title:?}, {args:?})");
+
+        let title_str = title.to_str()?;
+        if !Title::is_valid(title_str) {
+            return Err(anyhow::anyhow!(r#"expandTemplate: invalid title "{title_str}""#).into());
+        }
+
         stack.replace(
             ctx,
             UserData::new_static(

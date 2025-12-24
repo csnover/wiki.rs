@@ -168,11 +168,6 @@ pub(super) fn render_parameter(
         // because if the parameter contained inclusion control tags, e.g.
         // `{{{1<noinclude>|default</noinclude>}}}` then the wrong result
         // will be emitted.
-        //
-        // If you are here because you saw some attempt (or many, many
-        // attempts) to load a template named like `{{{1}}}`, this could be
-        // *intentional*! Pour a drink and go read
-        // [`crate::db::CacheableArticle`].
         let fragment = Span::new(span.start, span.start + 3);
         out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
         for token in name {
@@ -353,8 +348,56 @@ fn split_target<'tt>(
             sp.eval(state, core::slice::from_ref(part))?
         };
 
-        if let Some((lhs, rhs)) = text.split_once(':') {
+        if let Some((lhs, mut rhs)) = text.split_once(':') {
             callee += lhs;
+
+            // Normally, template expressions are saved in the Wikitext and
+            // expanded at the time a page is rendered; `subst` and `safesubst`
+            // both cause the expression to be expanded at save time instead.
+            //
+            // `subst` does not expand recursively, so if a template *evaluates*
+            // to `{{subst:foo}}` (i.e. contains a horror like
+            // `{{{{{|subst:}}}foo}}` which prevents it from being expanded at
+            // the template’s own save time), the expanded text in the caller
+            // will be `{{subst:foo}}`.
+            //
+            // `safesubst` *does* expand recursively, so if a template evaluates
+            // to `{{safesubst:foo}}` (again by e.g.
+            // `{{{{{|safesubst:}}}foo}}`), the text in the caller will be the
+            // same as if it were written as `{{foo}}`.
+            //
+            // Parent          | Child                      | Output
+            // ----------------+----------------------------+-------------------
+            //   At render time:
+            // -----------------------------------------------------------------
+            // `{{foo}}`       | `{{bar}}`                  | content of bar
+            // `{{foo}}`       | `{{{{{|subst:}}}bar}}`     | `{{subst:bar}}`
+            // `{{foo}}`       | `{{{{{|safesubst:}}}bar}}` | content of bar
+            // ----------------+----------------------------+-------------------
+            //   At save time:
+            // ----------------+----------------------------+-------------------
+            // `{{subst:foo}}` | `{{bar}}`                  | `{{bar}}`
+            // `{{subst:foo}}` | `{{{{{|subst:}}}bar}}`     | content of bar
+            // `{{subst:foo}}` | `{{{{{|safesubst:}}}bar}}` | content of bar
+            let trimmed = callee.trim_ascii();
+            if trimmed.eq_ignore_ascii_case("subst") {
+                // Since wiki.rs is never in save mode, subst will always just
+                // emit the original text
+                return Ok(Target::Text);
+            } else if trimmed.eq_ignore_ascii_case("safesubst") {
+                callee.clear();
+
+                if let Some((lhs, rest)) = rhs.split_once(':') {
+                    // `safesubst:foo:...`
+                    callee += lhs;
+                    rhs = rest;
+                } else {
+                    // `safesubst:...`
+                    callee += rhs;
+                    continue;
+                }
+            }
+
             has_colon = true;
             if !rhs.is_empty() {
                 *first = Some(Spanned {
@@ -369,10 +412,9 @@ fn split_target<'tt>(
     }
     let rest = rest.as_slice();
 
-    let callee = callee.trim_ascii();
-    let callee_lower = callee.to_lowercase();
+    let callee_lower = callee.trim_ascii().to_lowercase();
 
-    // eprintln!("{callee} / {first:?} / {rest:?}");
+    // eprintln!("{callee_lower} / {first:?} / {rest:?}");
 
     Ok(
         if is_function_call(arguments.is_empty(), has_colon, &callee_lower) {
@@ -392,7 +434,11 @@ fn split_target<'tt>(
                 arguments,
             }
         } else {
-            let callee = &sp.eval(state, target)?;
+            #[rustfmt::skip]
+            if let Some(Spanned { node: Token::Generated(first), .. }) = first {
+                callee += first;
+            };
+            callee += &sp.eval(state, rest)?;
             let callee = callee.trim_ascii();
             if Title::is_valid(callee) {
                 let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
@@ -487,7 +533,7 @@ pub(crate) fn call_template(
 }
 
 /// Returns true if the given template target is a variable or parser function.
-pub(super) fn is_function_call(empty_arguments: bool, has_colon: bool, callee_lower: &str) -> bool {
+fn is_function_call(empty_arguments: bool, has_colon: bool, callee_lower: &str) -> bool {
     // We can just assume that if it starts with a '#' then it is a parser
     // function since the way MediaWiki URLs work mean these cannot be
     // templates, and the list of function hooks from the MediaWiki API does

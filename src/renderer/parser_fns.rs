@@ -9,7 +9,7 @@
 use super::{
     Error, Result, State, StripMarkers, extension_tags,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
-    template::{call_module, call_template, is_function_call},
+    template::call_module,
 };
 use crate::{
     common::{
@@ -802,103 +802,6 @@ mod string {
     }
 }
 
-mod subst {
-    //! Substitution pseudo-functions.
-
-    use super::*;
-
-    /// `{{safesubst: template name [| ...] }}`
-    ///
-    /// Normally, template expressions are saved in the Wikitext and expanded
-    /// at the time a page is rendered; `subst` and `safesubst` both cause
-    /// the expression to be expanded at save time instead.
-    ///
-    /// `subst` does not expand recursively, so if a template *evaluates* to
-    /// `{{subst:foo}}` (i.e. contains a horror like `{{{{{|subst:}}}foo}}`
-    /// which prevents it from being expanded at the template’s own save
-    /// time), the expanded text in the caller will be `{{subst:foo}}`.
-    ///
-    /// `safesubst` *does* expand recursively, so if a template evaluates to
-    /// `{{safesubst:foo}}` (again by e.g. `{{{{{|safesubst:}}}foo}}`), the
-    /// text in the caller will be the same as if it were written as
-    /// `{{foo}}`.
-    ///
-    /// Parent          | Child                      | Output
-    /// ----------------+----------------------------+-----------------------
-    ///   At render time:
-    /// ---------------------------------------------------------------------
-    /// `{{foo}}`       | `{{bar}}`                  | content of bar
-    /// `{{foo}}`       | `{{{{{|subst:}}}bar}}`     | `{{subst:bar}}`
-    /// `{{foo}}`       | `{{{{{|safesubst:}}}bar}}` | content of bar
-    /// ----------------+----------------------------+-----------------------
-    ///   At save time:
-    /// ----------------+----------------------------+-----------------------
-    /// `{{subst:foo}}` | `{{bar}}`                  | `{{bar}}`
-    /// `{{subst:foo}}` | `{{{{{|subst:}}}bar}}`     | content of bar
-    /// `{{subst:foo}}` | `{{{{{|safesubst:}}}bar}}` | content of bar
-    pub fn safesubst(
-        out: &mut String,
-        state: &mut State<'_>,
-        arguments: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
-        if let Some(target) = arguments.eval(state, 0)? {
-            let target = target.trim_ascii();
-            let (callee, rest) = target
-                .split_once(':')
-                .map_or((target, None), |(callee, rest)| (callee, Some(rest)));
-            let callee_lower = callee.to_lowercase();
-
-            let use_function_hook =
-                is_function_call(arguments.len() == 1, rest.is_some(), &callee_lower);
-
-            if use_function_hook {
-                // TODO: There has got to be a better way to do this. Maybe the
-                // first argument is just always passed into `call_parser_fn`
-                // separately since it is the source of all of these problems.
-                let args = rest
-                    .map(Kv::Borrowed)
-                    .into_iter()
-                    .chain(arguments.arguments[1..].iter().cloned())
-                    .collect::<Vec<_>>();
-
-                call_parser_fn(
-                    out,
-                    state,
-                    arguments.sp,
-                    arguments.span,
-                    &callee_lower,
-                    &args,
-                )?;
-            } else {
-                call_template(
-                    out,
-                    state,
-                    arguments.sp,
-                    Title::new(target, Namespace::find_by_id(Namespace::TEMPLATE)),
-                    &arguments.arguments[1..],
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// `{{subst: template name [| ...] }}`
-    ///
-    /// Since wiki.rs is never in save mode, this will always just emit the
-    /// original text.
-    pub fn subst(
-        out: &mut String,
-        _: &mut State<'_>,
-        IndexedArgs { sp, span, .. }: &IndexedArgs<'_, '_, '_>,
-    ) -> Result {
-        if let Some(span) = span {
-            write!(out, "{}", &sp.source[span.into_range()])?;
-        }
-        Ok(())
-    }
-}
-
 // TODO: All the 'current' times should be UTC, and 'local' in the local time,
 // and they should be relative to the database dump time.
 mod time {
@@ -1263,9 +1166,6 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "uc" => string::uc,
     "ucfirst" => string::uc_first,
     "urlencode" => string::url_encode,
-
-    "safesubst" => subst::safesubst,
-    "subst" => subst::subst,
 
     "currentday" => time::day,
     "currentday2" => time::day_lz,
