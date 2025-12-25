@@ -3445,7 +3445,14 @@ fn make_attribute(name: Vec<Spanned<Token>>, value: Option<AttributeValue>) -> A
 fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token>> {
     let mut v = Vec::<Spanned<Token>>::new();
     let mut iter = t.into_iter().peekable();
+    let mut table_count = 0_u32;
     while let Some(token) = iter.next() {
+        if matches!(token.node, Token::TableStart { .. }) {
+            table_count += 1;
+        } else if matches!(token.node, Token::TableEnd) {
+            table_count = table_count.saturating_sub(1);
+        }
+
         if matches!(token.node, Token::Text)
             && let Some(Spanned { span: text_span, node: Token::Text }) = v.last_mut()
             // Text spans may be discontiguous if they are split by a discarded
@@ -3453,31 +3460,64 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
             && text_span.end == token.span.start
         {
             *text_span = text_span.merge(token.span);
-        } else if matches!(token.node, Token::NewLine)
-            && let Some(Spanned {
-                node: Token::TableRow { .. },
+        } else if let Some(
+            last @ Spanned {
+                node: Token::TableStart { .. } | Token::TableRow { .. },
                 ..
-            }) = v.last()
-            && !matches!(
-                iter.peek(),
-                None | Some(Spanned {
-                    node: Token::TableData { .. }
+            },
+        ) = v.last_mut()
+        {
+            // MW does insane things when content is in an invalid position. The
+            // content is fostered out of the table, but then some weirdo
+            // whitespace rules are applied where p-wrapping will start if a
+            // block-level element is encountered, but newlines do not trigger
+            // p-wrapping like they usually do. This code does not do that;
+            // instead, it simply blasts any content that is in an illegal
+            // position between elements that can actually contain content.
+            // I am sure this will end up breaking something or another, but it
+            // fixes more than it breaks, since templates routinely generate
+            // bogus table row tokens with large amounts of whitespace in
+            // between.
+            if matches!(token.node, Token::TableRow { .. } | Token::TableEnd) {
+                if matches!(last.node, Token::TableStart { .. }) {
+                    // This is a valid production.
+                    v.push(token);
+                } else {
+                    // Earlier Wikitext table rows are ignored by MW if they are
+                    // immediately followed by a table row.
+                    let start = last.span.start;
+                    let is_contiguous = last.span.end == token.span.start;
+                    *last = token;
+                    if is_contiguous {
+                        last.span.start = start;
+                    }
+                }
+            } else if table_count == 0
+                || matches!(
+                    token.node,
+                    Token::TableCaption { .. }
+                        | Token::TableData { .. }
                         | Token::TableHeading { .. }
                         | Token::Template { .. }
-                        | Token::Parameter { .. }
-                        | Token::Comment { .. }
-                        | Token::NewLine,
-                    ..
-                })
-            )
-        {
-            // Wikitext table rows are ignored by MW if they are not followed by
-            // a table data or table heading token. Also, if there is some
-            // template in the middle, it is ambiguous what the next token will
-            // be, and so the row needs to be retained until the final pass when
-            // all templates have been expanded. This newline should also be
-            // discarded or else it can cause unexpected graf breaks.
-            v.pop();
+                        | Token::Parameter { .. },
+                )
+            {
+                // Templates and parameters are opaque and may produce a table
+                // element later, and table row tokens that are not inside
+                // tables may not actually be table rows
+                v.push(token);
+            } else {
+                // Everything else that is not a table element is in an invalid
+                // position and needs to GO AWAY. To comply exactly with MW this
+                // should foster the content by dumping it before the nearest
+                // table start tag, but there is also the possibility that the
+                // thing that looked like a table row was actually plain text
+                // so TODO: it is not good enough to just delete the content
+                // outright…
+                if token.span.start == last.span.end {
+                    last.span.end = token.span.end;
+                }
+            }
         } else if matches!(token.node, Token::NewLine)
             && let (
                 Some(Spanned {
