@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     LoadMode,
-    common::make_url,
+    common::{make_url, title_decode},
     config::CONFIG,
     db::PrefetchPriority,
     lua::run_vm,
@@ -607,11 +607,11 @@ impl Surrogate<Error> for DbPrefetch {
             },
         ] = target
         {
-            let target = &sp.source[span.into_range()];
+            let target = title_decode(&sp.source[span.into_range()]);
             state
                 .statics
                 .db
-                .prefetch(Title::new(target, None), PrefetchPriority::Low);
+                .prefetch(Title::new(&target, None), PrefetchPriority::Low);
         }
 
         for argument in content {

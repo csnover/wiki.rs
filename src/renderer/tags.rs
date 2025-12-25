@@ -2,7 +2,7 @@
 
 use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use crate::{
-    common::{anchor_encode, decode_html},
+    common::{anchor_encode, decode_html, title_decode},
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
@@ -83,7 +83,10 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     content: &[Spanned<Argument>],
     trail: Option<&str>,
 ) -> Result<(), Error> {
-    let title = Title::new(&sp.eval(state, target)?, None);
+    let target = sp.eval(state, target)?;
+    let target = title_decode(&target);
+
+    let title = Title::new(&target, None);
     match title.namespace().id {
         Namespace::CATEGORY => {
             state.globals.categories.insert(title.key().to_string());
@@ -98,7 +101,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
             }
         }
         _ => {
-            render_internal_link(out, state, sp, target, content, trail, title)?;
+            render_internal_link(out, state, sp, &target, content, trail, title)?;
         }
     }
     Ok(())
@@ -109,12 +112,12 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     out: &mut W,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
-    target: &[Spanned<Token>],
+    target: &str,
     content: &[Spanned<Argument>],
     trail: Option<&str>,
     title: Title,
 ) -> Result<(), Error> {
-    if title.fragment().is_empty() && sp.root().name.key() == title.key() {
+    if title.fragment().is_empty() && sp.root().name == title {
         render_runtime(out, state, sp, |_, source| {
             token!(
                 source,
@@ -130,9 +133,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     }
 
     if content.is_empty() {
-        let target = sp.eval(state, target)?;
-        let target = decode_html(target.trim_start_matches(':'));
-        out.adopt_generated(state, sp, None, &target)?;
+        out.adopt_generated(state, sp, None, &decode_html(target.trim_start_matches(':')))?;
     } else {
         render_single_attribute(out, state, sp, content)?;
     }

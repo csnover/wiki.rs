@@ -274,6 +274,26 @@ pub fn parse_formatted_number(s: &str) -> Cow<'_, str> {
     }
 }
 
+/// Decodes a possibly URL-encoded title from a Wikitext link target.
+pub(super) fn title_decode(target: &str) -> Cow<'_, str> {
+    let mut target = Cow::Borrowed(target);
+    if target.contains('%') {
+        if let Cow::Owned(text) = url_decode(&target) {
+            target = Cow::Owned(text);
+        }
+        if let Cow::Owned(text) = strtr(&target, &[("<", "&lt;"), (">", "&gt;")]) {
+            target = Cow::Owned(text);
+        }
+    }
+    target
+}
+
+/// Percent-decodes a URL part.
+#[inline]
+pub fn url_decode(input: &str) -> Cow<'_, str> {
+    percent_encoding::percent_decode_str(input).decode_utf8_lossy()
+}
+
 /// Percent-encodes a URL part.
 #[inline]
 pub fn url_encode(input: &str) -> percent_encoding::PercentEncode<'_> {
