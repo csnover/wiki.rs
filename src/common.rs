@@ -144,8 +144,9 @@ where
 {
     let mut last = R::default();
     for key in keys {
+        let lower = key.as_ref().to_lowercase();
         if let Some(message) = MESSAGES
-            .get(key.as_ref().to_lowercase())
+            .get(&lower)
             .and_then(serde_json::Value::as_str)
             .filter(|message| !matches!(*message, "" | "-"))
         {
@@ -153,7 +154,7 @@ where
         // TODO: This is not in the default MW dictionary, it is in some other
         // dictionary from mediawiki-gadgets-ConvenientDiscussions, but that one
         // is lowercase. This is used by 'Template:Ambox'
-        } else if key.as_ref() == "dot-separator" {
+        } else if lower == "dot-separator" {
             return Ok(Cow::Borrowed("&nbsp;<b>·</b>&#32;"));
         }
         last = key;
