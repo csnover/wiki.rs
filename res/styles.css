@@ -1186,6 +1186,7 @@ th {
     .reference {
         font-family: var(--sans);
         font-size: 75%;
+        font-stretch: normal;
         font-variant-numeric: normal;
         inset-block-start: -.5em;
         position: relative;
@@ -1857,7 +1858,7 @@ th {
         margin-block-end: 0;
         padding-inline-start: 0;
 
-        :is(h2, h3, h4, h5) + &,
+        :is(h2, h3, h4, h5, dl:has(> dt:first-child:last-child)) + &,
         .hatnote + &,
         .hatnote + .mw-halign-right + & {
             margin-block-start: 0;
@@ -2210,6 +2211,7 @@ th {
             border-block: thin solid var(--fg) !important;
             border-block-end: 0 !important;
             padding-block: var(--side-margin);
+            text-align: center;
         }
 
         .infobox-data {
@@ -2219,11 +2221,6 @@ th {
         .infobox-full-data {
             font-stretch: var(--side-body-stretch);
 
-            /* 'Winston Churchill' */
-            :has(> &:empty) {
-                display: none;
-            }
-
             &:has(> .infobox) {
                 border-block-end: thin solid var(--fg);
                 padding-block-start: var(--side-margin);
@@ -2231,6 +2228,11 @@ th {
                 > .infobox > tbody > tr:first-child > * {
                     padding-block-start: var(--side-margin);
                 }
+            }
+
+            &:empty:empty {
+                border-block-start: 0;
+                padding-block-start: 0;
             }
         }
 
@@ -2254,8 +2256,8 @@ th {
             font-size: var(--side-head-font-size) !important;
             font-stretch: var(--side-body-stretch);
             font-weight: var(--bold);
-            line-height: calc(var(--side-line-height) / var(--side-head-font-size));
-            padding-block: 0;
+            line-height: var(--side-title-lh) !important;
+            padding-block: 0 var(--side-title-lh-adjust);
             padding-inline: 0 !important;
             text-align: start;
 
@@ -2267,6 +2269,7 @@ th {
 
         .infobox-header {
             border-block-start: thin solid var(--fg);
+            padding-block-start: var(--side-margin);
         }
 
         .infobox-image,
@@ -2296,6 +2299,15 @@ th {
             /* keep first baseline alignment w/ reduced line height */
             /* TODO: CSS is missing logical translate */
             transform: translateY(var(--label-baseline-align));
+        }
+
+        .infobox-navbar,
+        .sidebar-navbar {
+            text-align: end;
+
+            > .navbar-mini {
+                font-stretch: var(--side-title-stretch);
+            }
         }
 
         .infobox-subheader {
@@ -2347,10 +2359,6 @@ th {
             padding-inline: 0;
         }
 
-        .sidebar-navbar > .navbar-mini {
-            font-stretch: var(--side-title-stretch);
-        }
-
         /* This always comes before a .sidebar-title-with-pretitle */
         .sidebar-pretitle {
             background: transparent !important;
@@ -2364,7 +2372,7 @@ th {
 
         /* This always comes after a .sidebar-pretitle */
         .sidebar-title-with-pretitle {
-            border-block-start: 0;
+            border-block-start: 0 !important;
             padding-block-start: 0 !important;
         }
 
@@ -2531,18 +2539,23 @@ th {
             }
         }
 
+        /*******************************************/
+        /* Template:Infobox element/periodic table */
+        /*******************************************/
+
+        .periodictable > tbody > tr:first-child > td > div [style*=background-color] {
+            background-blend-mode: overlay;
+            background-image: var(--bar-fill) !important;
+            background-size: 4px 4px !important;
+        }
+
         /**********************************/
         /* Template:Infobox football club */
         /**********************************/
 
         /* lol :-( */
-        > tbody > tr:has(+ tr:has(> :empty) + tr > td > table > tbody > tr > td > [data-wiki-rs~=template-football-kit]) > * {
-            padding-block-end: var(--side-margin);
-        }
-
         > tbody > tr > td:has(> table > tbody > tr > td > [data-wiki-rs~=template-football-kit]) {
             border: 0 !important;
-            padding-block-start: var(--side-margin) !important;
 
             [data-wiki-rs~=template-football-kit] {
                 border: 0 !important;
@@ -2652,7 +2665,7 @@ th {
                     > tbody > tr:first-child > th {
                         border: 0 !important;
                         padding-inline: 0 !important;
-                        padding-block: var(--side-margin) !important;
+                        padding-block: var(--side-margin) 0 !important;
                     }
                 }
             }
@@ -2725,6 +2738,17 @@ th {
             border-collapse: collapse;
         }
 
+        .ib-tv-channel-availability {
+            > .infobox-header {
+                font-stretch: normal;
+                text-align: center;
+            }
+
+            + tr:has(> .infobox-full-data:empty) {
+                display: none;
+            }
+        }
+
         /***************************/
         /* Template:Sidebar person */
         /***************************/
@@ -2762,13 +2786,12 @@ th {
                 margin-inline: 0 !important;
             }
 
-            .hidden-content {
-                text-align: start !important;
+            .sidebar-content > hr:first-child + .hidden-begin > .hidden-title {
+                margin-block-start: 0 !important;
             }
 
-
-            .sidebar-navbar {
-                text-align: end;
+            .hidden-content {
+                text-align: start !important;
             }
         }
 
@@ -3364,7 +3387,13 @@ th {
         padding: 0;
     }
 
-    /* TODO: Just force the colours to be the sequence of pretty ones always */
+    /* TODO: Just force the colours to be the sequence of pretty ones always.
+       This is not possible in CSS alone because sometimes one slice is actually
+       drawn using multiple elements.
+       As a side-note, the best looking output relies on filter creating wide
+       gamut colours that get blended and then clamped into sRGB range since it
+       allows some slices to be patterned and others to be solid with the same
+       colour based on the intensity of the filter. */
     .smooth-pie,
     .smooth-pie-legend .l-color {
         filter: saturate(200%) contrast(200%) brightness(200%) hue-rotate(50deg);

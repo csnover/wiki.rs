@@ -906,6 +906,11 @@ impl Node {
                     children.contains(&tag)
                 } else if matches!(parent.as_ref(), "td" | "th" | "caption") {
                     !matches!(tag, "tr" | "td" | "th" | "caption")
+                } else if parent == "span" && tag == "div" {
+                    // 'Template:Infobox element' thinks it can put a div in a
+                    // span. And technically it works in browsers, even though
+                    // it is illegal in HTML.
+                    true
                 } else if PHRASING_TAGS.contains(parent) {
                     PHRASING_TAGS.contains(tag)
                 } else {
