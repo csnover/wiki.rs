@@ -626,6 +626,7 @@ th {
         blockquote,
         .documentation,
         .excerpt,
+        .excerpt-block,
         .templatedata-header
     ) > * + * {
         margin-block-start: var(--box-margin);
@@ -687,7 +688,7 @@ th {
         margin-block-start: calc(var(--box-margin) * 1.5);
 
         /* Allow many cute things to cuddle up to the heading */
-        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right),
+        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block),
         /* This is for containers that show up sometimes like `.excerpt` */
         + :not(blockquote):has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
         /* Things which take themselves out of the flow by float mean the next
@@ -771,7 +772,8 @@ th {
         font-weight: var(--normal-weight);
     }
 
-    .floatleft {
+    .floatleft,
+    .tleft /* 'Template:Thumb image' */ {
         clear: inline-start;
         float: inline-start;
         margin-block-end: var(--figure-margin);
@@ -1809,7 +1811,7 @@ th {
     /********************/
 
     /* This is a viewer, so no reason to show edit links */
-    .mw-editsection-like {
+    .excerpt-hat .mw-editsection-like {
         display: none;
     }
 
@@ -2042,7 +2044,8 @@ th {
             text-align: inherit;
         }
 
-        * + dt {
+        * + dt,
+        * + li {
             margin-block-start: 0;
         }
 
@@ -2174,8 +2177,9 @@ th {
         &.vevent > tbody > tr:first-child > *
         {
             background: transparent !important;
-            border-block: thin solid var(--fg);
-            border-block-start-width: 3px;
+            border-block: thin solid var(--fg) !important;
+            border-block-start-width: 3px !important;
+            border-inline: 0 !important;
             color: var(--fg) !important;
             font-size: var(--big-caption) !important;
             font-stretch: var(--side-title-stretch);
@@ -2215,7 +2219,8 @@ th {
         .infobox-full-data {
             font-stretch: var(--side-body-stretch);
 
-            &:empty {
+            /* 'Winston Churchill' */
+            :has(> &:empty) {
                 display: none;
             }
 
@@ -2280,7 +2285,8 @@ th {
             }
         }
 
-        .infobox-label {
+        .infobox-label,
+        &:is(.biota, .ib-chembox) > tbody > tr > td:first-child:not(:last-child) {
             font-stretch: var(--side-body-stretch);
             font-weight: var(--bold);
             line-height: var(--side-title-lh);
@@ -2362,6 +2368,105 @@ th {
             padding-block-start: 0 !important;
         }
 
+        /********************/
+        /* Template:Chembox */
+        /********************/
+
+        &.ib-chembox {
+            > tbody > tr {
+                &:first-child > [colspan]:has(> img, > * > img) {
+                    padding-block: var(--side-margin) !important;
+                    padding-inline: 0 !important;
+                }
+
+                > :is(td, th) {
+                    border: 0;
+                }
+
+                &:has(+ tr > th[colspan]) > * {
+                    padding-block-end: var(--side-margin);
+                }
+
+                &:has(> th[colspan]) + tr > * {
+                    padding-block-start: var(--side-margin);
+                }
+
+                > th[colspan] {
+                    background: transparent !important;
+                    border-block: thin solid var(--fg);
+                    color: var(--fg) !important;
+                    padding-block: var(--side-margin);
+                }
+
+                &:first-child > th[colspan] {
+                    border-block-start: 0;
+                }
+
+                &:has(> td[colspan] > [style*=padding-left]) + tr > td[colspan]:has(> [style*=padding-left]) {
+                    padding-block-start: var(--side-margin);
+                }
+
+                > td[colspan] {
+                    font-stretch: var(--side-body-stretch);
+
+                    &:has(> [style*=word-wrap]) {
+                        font-weight: var(--bold);
+                    }
+
+                    &.borderless {
+                        td {
+                            border: 0 !important;
+                        }
+                    }
+
+                    > :not(.plainlist)[style*=padding-left] {
+                        font-weight: var(--normal-weight);
+                        padding-inline: 0 !important;
+                    }
+
+                    > .mw-collapsible {
+                        > :not(.mw-collapsible-content) {
+                            font-weight: var(--bold) !important;
+                        }
+
+                        > .mw-collapsible-content {
+                            font-family: var(--mono);
+                            font-weight: var(--normal-weight);
+
+                            &:is(ul):has(:nth-child(2)) {
+                                list-style: decimal !important;
+                                padding-left: .83em;
+
+                                > *::marker {
+                                    font-family: var(--sans);
+                                    font-stretch: normal;
+                                    font-size: .83em;
+                                    font-variant-numeric: tabular-nums;
+                                }
+                            }
+
+                            [style*=border] {
+                                border: 0 !important;
+                            }
+
+                            [style*=padding] {
+                                padding: 0 !important;
+                            }
+
+                            [style*=font-size] {
+                                font-size: inherit !important;
+                            }
+
+                            [style*=text-indent] {
+                                padding-inline-start: 1em !important;
+                                text-indent: -1em !important;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         /****************************/
         /* Template:Infobox country */
         /****************************/
@@ -2423,6 +2528,28 @@ th {
                         padding-block-end: calc(var(--side-margin) + var(--label-baseline-align));
                     }
                 }
+            }
+        }
+
+        /**********************************/
+        /* Template:Infobox football club */
+        /**********************************/
+
+        /* lol :-( */
+        > tbody > tr:has(+ tr:has(> :empty) + tr > td > table > tbody > tr > td > [data-wiki-rs~=template-football-kit]) > * {
+            padding-block-end: var(--side-margin);
+        }
+
+        > tbody > tr > td:has(> table > tbody > tr > td > [data-wiki-rs~=template-football-kit]) {
+            border: 0 !important;
+            padding-block-start: var(--side-margin) !important;
+
+            [data-wiki-rs~=template-football-kit] {
+                border: 0 !important;
+                inline-size: auto !important;
+                margin-block: var(--side-margin) !important;
+                margin-inline: 0 !important;
+                padding: 0 !important;
             }
         }
 
@@ -2549,6 +2676,7 @@ th {
             }
 
             &.ib-settlement-official > * {
+                font-size: var(--caption-size);
                 border-block-start: 0;
                 padding-block-start: 0;
             }
@@ -2672,6 +2800,59 @@ th {
             .vcard {
                 font-stretch: var(--side-title-stretch);
                 font-weight: var(--bold);
+            }
+        }
+
+        /***********************/
+        /* Template:Speciesbox */
+        /***********************/
+
+        &.biota {
+            [data-wiki-rs~=template-phanerozoic-220px] {
+                font-size: inherit !important;
+
+                + br {
+                    display: none;
+                }
+            }
+
+            > tbody > tr {
+                > th {
+                    background: transparent !important;
+
+                    &[colspan] {
+                        border-block: thin solid var(--fg);
+                        border-block-end-color: var(--border-th);
+                        padding-block: var(--side-margin);
+                    }
+                }
+
+                &:first-child > th {
+                    background: transparent !important;
+                    border-block-end: thin solid var(--fg);
+                    color: var(--fg);
+                    font-size: var(--big-caption);
+                    font-stretch: var(--side-title-stretch);
+                    padding-block: var(--side-margin);
+
+                    > div {
+                        border-block-start: thin solid var(--fg);
+                        font-size: 1rem;
+                        font-stretch: normal;
+                        font-weight: var(--normal-weight);
+                        margin-block-start: var(--side-margin);
+                        padding-block-start: var(--side-margin);
+                    }
+                }
+
+                &:has(> th[colspan]) + tr > * {
+                    padding-block-start: var(--side-margin);
+                }
+
+                &:has(+ tr > th[colspan]) > *,
+                &:last-child > * {
+                    padding-block-end: var(--side-margin);
+                }
             }
         }
     }
@@ -2824,7 +3005,7 @@ th {
         }
 
         :is(.mw-parser-output, .documentation) > * + &,
-        .excerpt > & {
+        :is(.excerpt, .excerpt-block) > & {
             margin-block-start: var(--box-margin);
         }
     }
