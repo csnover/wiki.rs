@@ -231,15 +231,21 @@ fn gallery(
         r#"<ul class="gallery mw-gallery-{mode} {class}"{attrs}>"#
     )?;
     for image in arguments.body().lines() {
-        if image.as_bytes().iter().all(u8::is_ascii_whitespace) {
+        let Some((target, rest)) = image.split_once('|') else {
+            continue;
+        };
+
+        let target = percent_encoding::percent_decode_str(target).decode_utf8_lossy();
+        if !Title::is_valid(&target) {
             continue;
         }
 
-        let sp = arguments.sp.clone_with_source(FileMap::new(image));
-        let (target, media_args) = state.statics.parser.parse_gallery_media(&sp.source)?;
-        let target = percent_encoding::percent_decode_str(target).decode_utf8_lossy();
         let title = Title::new(&target, Namespace::find_by_id(Namespace::FILE));
-        let options = image::media_options(state, &sp, title, &media_args, defaults.clone())?;
+
+        let args = preprocess_frame(state, arguments.sp, rest)?;
+        let sp = arguments.sp.clone_with_source(FileMap::new(&args));
+        let args = state.statics.parser.parse_gallery_media(&sp.source)?;
+        let options = image::media_options(state, &sp, title, &args, defaults.clone())?;
 
         let mut inner = Document::new(true);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
@@ -1021,18 +1027,19 @@ pub(super) fn render_extension_tag(
 /// Evaluates a Wikitext string as a document fragment, returning the rendered
 /// fragment.
 fn eval_string(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> Result<String> {
-    let source = FileMap::new(text);
-    let sp = sp.clone_with_source(source);
-    let root = state.statics.parser.parse(&sp.source, false)?;
-
-    let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
-    preprocessor.adopt_output(state, &sp, &root)?;
-    let source = preprocessor.finish();
-
+    let source = preprocess_frame(state, sp, text)?;
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
-
     let mut out = Document::new(true);
     out.adopt_output(state, &sp, &root)?;
     out.finish()
+}
+
+/// Preprocesses the given text in a root document scope.
+fn preprocess_frame(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> Result<String> {
+    let sp = sp.clone_with_source(FileMap::new(text));
+    let root = state.statics.parser.parse(&sp.source, false)?;
+    let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
+    preprocessor.adopt_output(state, &sp, &root)?;
+    Ok(preprocessor.finish())
 }

@@ -2248,26 +2248,22 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///
     /// ```wikitext
     /// Target|extra|arguments
+    ///        ^^^^^^^^^^^^^^^
     /// ```
-    pub rule gallery_image_options() -> (&'input str, Vec<Spanned<Argument>>)
-    = ctx:({ Context::default().with_template_arg() })
-      target:$([^'|']+)
-      "|"?
-      content:spanned(<
+    pub rule gallery_image_options() -> Vec<Spanned<Argument>>
+    = ctx:({ Context::default().with_after_expansion().with_template_arg() })
+      args:spanned(<
         !eof()
         nd:(
           t:template_arg_name(&ctx)
           d:spanned(<"=" space()* { Token::Text }>)
           { (t, d) }
         )?
-        value:wikilink_content_text(&ctx.without_equal())?
-        end:(
-            t:spanned(<"|" { Token::Text }>) { Some(t) }
-          / eof() { None }
-        )
+        value:wikilink_content_text(&ctx)?
+        end:(t:spanned(<"|" { Token::Text }>) { Some(t) } / eof() { None })
         { make_argument(nd, value, end) }
       >)*
-    { (target, content) }
+    { args }
 
     /// A single expanded wikilink optionally prefixed by whitespace and strip
     /// markers.

@@ -89,12 +89,9 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a `<gallery>` media item.
-    pub fn parse_gallery_media<'s>(
-        &self,
-        image: &'s str,
-    ) -> Result<(&'s str, Vec<Spanned<Argument>>), Error> {
+    pub fn parse_gallery_media(&self, options: &str) -> Result<Vec<Spanned<Argument>>, Error> {
         parser::wikitext::gallery_image_options(
-            image,
+            options,
             self,
             &Globals {
                 including: true,
