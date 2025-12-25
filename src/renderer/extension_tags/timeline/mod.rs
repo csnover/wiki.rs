@@ -754,7 +754,7 @@ impl<'input> TextSpan<'input> {
                 fallback.map(|target| LinkKind::External(target.into())),
             ),
         };
-        (text, link.map(|link| link.to_string(base_uri)))
+        (text, link.map(|link| link.to_string(base_uri, None)))
     }
 }
 

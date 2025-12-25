@@ -125,7 +125,7 @@ impl TitleLibrary {
         log::trace!("mw.title.getContent({full_text:?})");
         let title = Title::new(full_text.to_str()?, None);
         let db = self.db.get().unwrap();
-        Ok(db.get(title.key()).map_or(Value::Nil, |article| {
+        Ok(db.get(&title).map_or(Value::Nil, |article| {
             Value::String(ctx.intern(article.body.as_bytes()))
         }))
     }
@@ -138,7 +138,7 @@ impl TitleLibrary {
     ) -> Result<Table<'gc>, VmError<'gc>> {
         // log::trace!("getExpensiveData({text:?})");
         let title = Title::new(text.to_str()?, None);
-        let article = self.db.get().unwrap().get(title.key()).ok();
+        let article = self.db.get().unwrap().get(&title).ok();
         let article = article.as_deref();
 
         Ok(table! {
@@ -298,7 +298,7 @@ impl TitleLibrary {
             .db
             .get()
             .unwrap()
-            .get(Title::new(text.to_str()?, None).key())
+            .get(&Title::new(text.to_str()?, None))
             && let Some(target) = &target.redirect
         {
             let title = Title::new(target, None);

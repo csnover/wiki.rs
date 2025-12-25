@@ -5,6 +5,7 @@ use crate::{
     config::CONFIG,
     db,
     renderer::{self, RenderOutput},
+    title::Title,
     wikitext::{FileMap, Parser, inspect},
 };
 use axum::{
@@ -137,7 +138,7 @@ pub(crate) async fn article(
         name
     };
 
-    let article = state.database.get(&name)?;
+    let article = state.database.get(&Title::new(&name, None))?;
     let redirect = redirect.as_deref() != Some("no");
     let canonical = if redirect && let Some(title) = &article.redirect {
         title
@@ -480,9 +481,8 @@ pub(crate) async fn source(
     Path(name): Path<String>,
     Query(SourceQuery { mode, include }): Query<SourceQuery>,
 ) -> Result<impl IntoResponse, Error> {
-    let name = name.replace('_', " ");
-
-    let article = state.database.get(&name).map_err(Error::Database)?;
+    let title = Title::new(&name, None);
+    let article = state.database.get(&title).map_err(Error::Database)?;
 
     match mode {
         None | Some(SourceMode::Raw) => {

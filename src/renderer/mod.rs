@@ -283,7 +283,7 @@ use crate::{
     lru_limiter::ByMemoryUsage,
     lua::VmCacheEntry,
     php::DateTime,
-    renderer::lru_limiter::OutputSizeCalculator,
+    title::Title,
     wikitext::{LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, Parser},
 };
 use axum::http::Uri;
@@ -419,8 +419,7 @@ pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 type ArticleId = u64;
 
 /// A template cache.
-type TemplateCache =
-    Arc<RwLock<LruMap<ArticleId, Arc<Output>, ByMemoryUsage<OutputSizeCalculator>>>>;
+type TemplateCache = Arc<RwLock<LruMap<ArticleId, Arc<Output>, ByMemoryUsage>>>;
 
 /// Global variables which are used for the entire lifetime of a renderer
 /// thread.
@@ -660,7 +659,7 @@ pub fn resolve_redirects(
     for _ in 0..2 {
         if let Some(target) = &article.redirect {
             // log::trace!("Redirection #{} to {target}", attempt + 1);
-            article = db.get(target)?;
+            article = db.get(&Title::new(target, None))?;
         } else {
             break;
         }

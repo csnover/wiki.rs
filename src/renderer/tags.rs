@@ -149,7 +149,14 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     sp: &StackFrame<'_>,
     link: &LinkKind<'_>,
 ) -> Result {
-    let href = link.to_string(&state.statics.base_uri);
+    let query = if let LinkKind::Internal(title) = link
+        && !state.statics.db.contains(title)
+    {
+        Some("mode=edit&redlink=1")
+    } else {
+        None
+    };
+    let href = link.to_string(&state.statics.base_uri, query);
 
     render_runtime(out, state, sp, |_, source| {
         token!(
@@ -191,7 +198,7 @@ pub(super) enum LinkKind<'a> {
 impl LinkKind<'_> {
     /// Converts the link to a URI-encoded string suitable for use in an HTML
     /// `href` attribute.
-    pub fn to_string(&self, base_uri: &Uri) -> String {
+    pub fn to_string(&self, base_uri: &Uri, query: Option<&str>) -> String {
         match self {
             LinkKind::External(url) => {
                 // TODO: Hack together some URL parsing good enough that there is an
@@ -207,6 +214,10 @@ impl LinkKind<'_> {
                     format!("#{}", anchor_encode(title.fragment()))
                 } else {
                     let mut link = format!("{}/article/{}", base_uri.path(), title.partial_url());
+                    if let Some(query) = query {
+                        link.push('?');
+                        link += query;
+                    }
                     if !title.fragment().is_empty() {
                         link.push('#');
                         link += &anchor_encode(title.fragment());

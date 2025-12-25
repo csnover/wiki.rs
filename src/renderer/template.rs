@@ -12,6 +12,7 @@ use crate::{
     LoadMode,
     common::make_url,
     config::CONFIG,
+    db::PrefetchPriority,
     lua::run_vm,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token},
@@ -90,7 +91,7 @@ pub(super) fn call_module(
 
     let callee = Title::new(&callee, Namespace::find_by_id(Namespace::MODULE));
 
-    let code = match state.statics.db.get(callee.key()) {
+    let code = match state.statics.db.get(&callee) {
         Ok(code) => resolve_redirects(&state.statics.db, code)?,
         Err(err) => {
             log::warn!("could not load module {callee}: {err}");
@@ -460,20 +461,9 @@ pub(crate) fn call_template(
     callee: Title,
     arguments: &[Kv<'_>],
 ) -> Result<Option<String>> {
-    let Ok(template) = state.statics.db.get(callee.key()) else {
+    let Ok(template) = state.statics.db.get(&callee) else {
         log::warn!("No template found for '{callee}'");
-        write!(
-            out,
-            "[{} {}]",
-            make_url(
-                None,
-                &state.statics.base_uri,
-                callee.key(),
-                Some("action=edit&redlink=1"),
-                false
-            )?,
-            callee
-        )?;
+        write!(out, "[[{}]]", callee.key())?;
         return Ok(None);
     };
 
@@ -606,6 +596,24 @@ impl Surrogate<Error> for DbPrefetch {
         _trail: Option<Spanned<&str>>,
     ) -> Result<(), Error> {
         self.adopt_tokens(state, sp, target)?;
+
+        // Prefetching targets from the index is for redlinks.
+        // TODO: Allow redlinks to be configurable, to make things faster, with
+        // the downside that you might click on a dead link.
+        if let [
+            Spanned {
+                node: Token::Text,
+                span,
+            },
+        ] = target
+        {
+            let target = &sp.source[span.into_range()];
+            state
+                .statics
+                .db
+                .prefetch(Title::new(target, None), PrefetchPriority::Low);
+        }
+
         for argument in content {
             self.adopt_tokens(state, sp, &argument.content)?;
         }
@@ -727,7 +735,9 @@ impl Surrogate<Error> for DbPrefetch {
     ) -> Result<(), Error> {
         let mut first = None;
         match split_target(state, sp, &mut first, target, arguments)? {
-            Target::Template { callee, .. } => state.statics.db.prefetch(callee.key()),
+            Target::Template { callee, .. } => {
+                state.statics.db.prefetch(callee, PrefetchPriority::High);
+            }
             Target::ParserFn { callee, arguments } => {
                 if callee == "safesubst" {
                     let target = arguments[0].eval(state, sp)?;
@@ -738,13 +748,13 @@ impl Surrogate<Error> for DbPrefetch {
                     let callee_lower = callee.to_lowercase();
                     if !is_function_call(arguments.len() == 1, rest.is_some(), &callee_lower) {
                         let title = Title::new(target, Namespace::find_by_id(Namespace::TEMPLATE));
-                        state.statics.db.prefetch(title.key());
+                        state.statics.db.prefetch(title, PrefetchPriority::High);
                     }
                 } else if callee == "#invoke" || callee == "invoke" {
                     let target = arguments[0].eval(state, sp)?;
                     let target = target.trim_ascii();
                     let title = Title::new(target, Namespace::find_by_id(Namespace::MODULE));
-                    state.statics.db.prefetch(title.key());
+                    state.statics.db.prefetch(title, PrefetchPriority::High);
                 }
             }
             Target::Text => {

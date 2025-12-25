@@ -2,7 +2,7 @@
 //! dump.
 
 use super::{Error, Result, index::IndexEntry};
-use crate::{lru_limiter::ByMemoryUsageCalculator, title::NamespaceCase};
+use crate::title::NamespaceCase;
 use bzip2_rs::DecoderReader;
 use memmap2::Mmap;
 use minidom::Element;
@@ -11,7 +11,6 @@ use std::{
     fs::File,
     io::{self, BufReader, Read},
     path::Path,
-    sync::Arc,
 };
 use time::{UtcDateTime, format_description::well_known::Iso8601};
 
@@ -35,19 +34,6 @@ pub(crate) struct Article {
     /// If this article is a redirection to another article, the title of the
     /// destination article.
     pub redirect: Option<String>,
-}
-
-impl ByMemoryUsageCalculator for Option<Arc<Article>> {
-    type Target = Self;
-
-    fn size_of(value: &Self::Target) -> usize {
-        value.as_ref().map_or(0, |value| {
-            value.title.capacity()
-                + value.body.capacity()
-                + value.model.capacity()
-                + value.redirect.as_ref().map_or(0, String::capacity)
-        })
-    }
 }
 
 /// A database namespace.

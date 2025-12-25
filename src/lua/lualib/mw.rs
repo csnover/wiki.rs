@@ -269,7 +269,7 @@ impl LuaEngine {
 
         let title = Title::new(name.to_str()?, Namespace::find_by_id(Namespace::MODULE));
 
-        if let Ok(article) = self.db.get().unwrap().get(title.key())
+        if let Ok(article) = self.db.get().unwrap().get(&title)
             && article.model == "Scribunto"
         {
             Closure::load_with_env(
@@ -327,7 +327,7 @@ impl LuaEngine {
     ) -> Result<Value<'gc>, VmError<'gc>> {
         let title = title.to_str()?;
         let title_obj = Title::new(title, None);
-        let Ok(article) = self.db.get().unwrap().get(title_obj.key()) else {
+        let Ok(article) = self.db.get().unwrap().get(&title_obj) else {
             return Err(anyhow::anyhow!(
                 "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
             ))?;

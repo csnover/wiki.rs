@@ -2,26 +2,24 @@
 //! its total size in bytes.
 
 use crate::{
-    lru_limiter::ByMemoryUsageCalculator,
+    lru_limiter::HeapUsageCalculator,
     wikitext::{Argument, LangFlags, LangVariant, Output, Spanned, Token, visit::Visitor},
 };
 use core::convert::Infallible;
 use std::{collections::HashSet, sync::Arc};
 
+impl HeapUsageCalculator for Arc<Output> {
+    fn size_of(&self) -> usize {
+        let mut calculator = OutputSizeCalculator { size: 0 };
+        let _ = calculator.visit_output(self);
+        calculator.size
+    }
+}
+
 /// Calculates the in-memory size of a token tree.
 pub(super) struct OutputSizeCalculator {
     /// The calculated size.
     size: usize,
-}
-
-impl ByMemoryUsageCalculator for OutputSizeCalculator {
-    type Target = Arc<Output>;
-
-    fn size_of(value: &Self::Target) -> usize {
-        let mut calculator = Self { size: 0 };
-        let _ = calculator.visit_output(value);
-        calculator.size
-    }
 }
 
 impl OutputSizeCalculator {

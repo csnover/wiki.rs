@@ -858,7 +858,7 @@ impl Styles {
         }
 
         let title = Title::new(src, Namespace::find_by_id(Namespace::TEMPLATE));
-        if let Ok(css) = db.get(title.key()) {
+        if let Ok(css) = db.get(&title) {
             if let Some(wrapper) = wrapper {
                 writeln!(self.text, "{wrapper} {{ {} }}", &css.body)?;
             } else {

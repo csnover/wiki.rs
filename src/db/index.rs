@@ -1,12 +1,15 @@
 //! Types and functions for reading a multistream dump text index.
 
-use core::marker::PhantomData;
+use crate::lru_limiter::{ByMemoryUsage, HeapUsageCalculator};
+use core::{marker::PhantomData, num::NonZeroU64};
 use html_escape::encode_double_quoted_attribute;
 use memmap2::Mmap;
 use rayon::prelude::*;
+use schnellru::LruMap;
 use std::{
     fs::File,
     path::{Path, PathBuf},
+    sync::RwLock,
 };
 
 /// Errors that may occur when reading the dump index.
@@ -53,19 +56,29 @@ pub(crate) enum Error {
 }
 
 /// An index entry.
+#[derive(Clone, Copy, Debug)]
 pub(super) struct IndexEntry {
     /// The canonical ID of the article.
-    pub(super) id: u64,
+    pub(super) id: NonZeroU64,
 
     /// The offset, in bytes, of an XML chunk which should contain the given
     /// article.
     pub(super) offset: u64,
 }
 
+impl HeapUsageCalculator for Option<IndexEntry> {
+    fn size_of(&self) -> usize {
+        0
+    }
+}
+
 /// A structured form of the `index.txt` database.
 pub(super) struct Index<'a> {
     /// The read-only memory-mapped `index.txt` file.
     _data: Mmap,
+
+    /// A small fixed-size cache for existence checks.
+    cache: RwLock<LruMap<String, Option<IndexEntry>, ByMemoryUsage>>,
 
     /// Offsets of the *title text* for each line in the index.
     entries: Vec<PackedOffset<'a>>,
@@ -155,6 +168,7 @@ impl Index<'_> {
 
         Ok(Self {
             _data: data,
+            cache: RwLock::new(LruMap::new(ByMemoryUsage::new(4 * 1_048_576))),
             entries,
             view,
         })
@@ -171,12 +185,19 @@ impl Index<'_> {
 
     /// Finds a single entry in the index with the given article title.
     pub(super) fn find_article(&self, title: &str) -> Option<IndexEntry> {
-        // " and & are entity-encoded in the index; < and > are disallowed.
-        let name = encode_double_quoted_attribute(title);
-        self.entries.par_iter().find_map_any(|title| {
-            let title = title.into_str();
-            (title == name).then(|| make_index(self.view, title))
-        })
+        self.cache
+            .write()
+            .unwrap()
+            .get_or_insert(title, || {
+                // " and & are entity-encoded in the index; < and > are disallowed.
+                let name = encode_double_quoted_attribute(title);
+                self.entries.par_iter().find_map_any(|title| {
+                    let title = title.into_str();
+                    (title == name).then(|| make_index(self.view, title))
+                })
+            })
+            .copied()
+            .flatten()
     }
 
     /// The total number of articles in the index.
@@ -251,5 +272,8 @@ fn make_index(view: &str, title: &str) -> IndexEntry {
         (offset, id)
     };
 
-    IndexEntry { id, offset }
+    IndexEntry {
+        id: NonZeroU64::new(id).expect("non-zero page id"),
+        offset,
+    }
 }

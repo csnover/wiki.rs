@@ -43,6 +43,12 @@ pub(crate) struct Namespace {
     pub aliases: &'static [&'static str],
 }
 
+impl core::hash::Hash for Namespace {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl PartialEq for Namespace {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
@@ -178,9 +184,16 @@ pub(crate) struct Title {
     text: String,
 }
 
+impl core::hash::Hash for Title {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.namespace.hash(state);
+        self.text().hash(state);
+    }
+}
+
 impl PartialEq for Title {
     fn eq(&self, other: &Self) -> bool {
-        self.text == other.text
+        self.namespace == other.namespace && self.text() == other.text()
     }
 }
 

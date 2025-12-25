@@ -1,11 +1,15 @@
 //! Types and functions for interacting with a MediaWiki compressed multistream
 //! database dump.
 
-use crate::{lru_limiter::ByMemoryUsage, php::strtr};
+use crate::{
+    lru_limiter::{ByMemoryUsage, HeapUsageCalculator},
+    php::strtr,
+    title::{Namespace, Title},
+};
 use article::ArticleDatabase;
 pub(crate) use article::{Article, DatabaseNamespace};
 use index::Index;
-pub(crate) use prefetch::PrefetchableDatabase as Database;
+pub(crate) use prefetch::{PrefetchableDatabase as Database, Priority as PrefetchPriority};
 use rayon::iter::ParallelIterator;
 use schnellru::LruMap;
 use std::{
@@ -92,6 +96,17 @@ pub(crate) enum Error {
 /// avoid very slow full table scans over and over again.
 type CacheableArticle = Option<Arc<Article>>;
 
+impl HeapUsageCalculator for CacheableArticle {
+    fn size_of(&self) -> usize {
+        self.as_ref().map_or(0, |value| {
+            value.title.capacity()
+                + value.body.capacity()
+                + value.model.capacity()
+                + value.redirect.as_ref().map_or(0, String::capacity)
+        })
+    }
+}
+
 /// A MediaWiki multistream database reader.
 pub(crate) struct RawDatabase<'a> {
     /// The uncompressed text index part of the database.
@@ -99,7 +114,7 @@ pub(crate) struct RawDatabase<'a> {
     /// The compressed XML part of the database.
     articles: ArticleDatabase,
     /// A decompressed article LRU cache.
-    cache: RwLock<LruMap<String, CacheableArticle, ByMemoryUsage<CacheableArticle>>>,
+    cache: RwLock<LruMap<String, CacheableArticle, ByMemoryUsage>>,
 }
 
 impl RawDatabase<'_> {
@@ -132,13 +147,24 @@ impl RawDatabase<'_> {
     }
 
     /// Returns true if the database contains an article with the given title.
-    pub fn contains(&self, title: &str) -> bool {
-        self.cache.read().unwrap().peek(title).is_some() || self.index.find_article(title).is_some()
+    pub fn contains(&self, title: &Title) -> bool {
+        if !self.contains_ns(title) {
+            false
+        } else if let Some(entry) = self.cache.read().unwrap().peek(title.key()) {
+            entry.is_some()
+        } else {
+            self.index.find_article(title.key()).is_some()
+        }
     }
 
     /// Gets an article with the given title from the database. The article will
     /// be cached in memory.
-    pub fn get(&self, title: &str) -> Result<Arc<Article>> {
+    pub fn get(&self, title: &Title) -> Result<Arc<Article>> {
+        if !self.contains_ns(title) {
+            return Err(Error::NotFound);
+        }
+
+        let title = title.key();
         self.cache
             .write()
             .unwrap()
@@ -182,6 +208,13 @@ impl RawDatabase<'_> {
     /// Finds articles in the index whose titles match the given query.
     pub fn search(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str> {
         self.index.find_articles(query)
+    }
+
+    /// Returns true if the database contains data for the namespace of the
+    /// given title.
+    fn contains_ns(&self, title: &Title) -> bool {
+        title.namespace().id != Namespace::SPECIAL
+            && self.namespaces().contains_key(&title.namespace().id)
     }
 
     /// Gets an article directly from the database.

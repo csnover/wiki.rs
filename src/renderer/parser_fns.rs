@@ -344,7 +344,7 @@ mod page {
         let exists = arguments
             .eval(state, 1)?
             .map(trim)
-            .is_none_or(|page_name| state.statics.db.contains(&page_name));
+            .is_none_or(|page_name| state.statics.db.contains(&Title::new(&page_name, None)));
         if exists {
             write!(out, "infinity")?;
         }
@@ -996,7 +996,7 @@ mod title {
         let exists = arguments
             .eval(state, 0)?
             .map(trim)
-            .is_some_and(|value| state.statics.db.contains(Title::new(&value, None).key()));
+            .is_some_and(|value| state.statics.db.contains(&Title::new(&value, None)));
         if let Some(value) = arguments.eval(state, 1 + usize::from(!exists))?.map(trim) {
             write!(out, "{value}")?;
         }

@@ -1,37 +1,29 @@
 //! A limiter for [`schnellru`] which limits the size of the cache according to
 //! its total size in bytes, including heap allocations.
 
-use core::marker::PhantomData;
-
 /// A trait for implementing generic heap size calculations for a
 /// [`ByMemoryUsage`] limiter.
-pub(crate) trait ByMemoryUsageCalculator {
-    /// The target type to size.
-    type Target;
-
+pub(crate) trait HeapUsageCalculator {
     /// Calculates the amount of *heap* memory used by `value`.
-    fn size_of(value: &Self::Target) -> usize;
+    fn size_of(&self) -> usize;
 }
 
 /// A limiter for a map which is limited by memory usage.
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct ByMemoryUsage<T: ByMemoryUsageCalculator> {
+pub(crate) struct ByMemoryUsage {
     /// Current *heap* memory usage.
     heap_size: usize,
     /// Maximum *total* (heap + map) allowed usage.
     max_bytes: usize,
-    /// [`PhantomData`] for the generic item size calculator.
-    __: PhantomData<T>,
 }
 
-impl<T: ByMemoryUsageCalculator> ByMemoryUsage<T> {
+impl ByMemoryUsage {
     /// Creates a new memory usage limiter with a given *total* memory limit in
     /// bytes.
     pub const fn new(max_bytes: usize) -> Self {
         Self {
             max_bytes,
             heap_size: 0,
-            __: PhantomData,
         }
     }
 
@@ -43,29 +35,23 @@ impl<T: ByMemoryUsageCalculator> ByMemoryUsage<T> {
 
     /// Calculates the amount of *heap* memory used by `value`.
     #[inline]
-    fn size_of(value: &T::Target) -> usize {
-        T::size_of(value)
+    fn size_of<K: HeapUsageCalculator, V: HeapUsageCalculator>(key: &K, value: &V) -> usize {
+        K::size_of(key) + V::size_of(value)
     }
 }
 
-impl<T: ByMemoryUsageCalculator, K> schnellru::Limiter<K, T::Target> for ByMemoryUsage<T> {
+impl<K: HeapUsageCalculator, V: HeapUsageCalculator> schnellru::Limiter<K, V> for ByMemoryUsage {
     type KeyToInsert<'a> = K;
     type LinkType = u32;
 
     #[inline]
     fn is_over_the_limit(&self, length: usize) -> bool {
-        length * (size_of::<Self::KeyToInsert<'_>>() + size_of::<T::Target>()) + self.heap_size
-            > self.max_bytes
+        length * (size_of::<K>() + size_of::<V>()) + self.heap_size > self.max_bytes
     }
 
     #[inline]
-    fn on_insert(
-        &mut self,
-        _: usize,
-        key: Self::KeyToInsert<'_>,
-        value: T::Target,
-    ) -> Option<(K, T::Target)> {
-        let new_size = Self::size_of(&value);
+    fn on_insert(&mut self, _: usize, key: Self::KeyToInsert<'_>, value: V) -> Option<(K, V)> {
+        let new_size = Self::size_of(&key, &value);
         if new_size <= self.max_bytes {
             self.heap_size += new_size;
             Some((key, value))
@@ -78,14 +64,14 @@ impl<T: ByMemoryUsageCalculator, K> schnellru::Limiter<K, T::Target> for ByMemor
     fn on_replace(
         &mut self,
         _: usize,
-        _: &mut K,
-        _: K,
-        old_value: &mut T::Target,
-        new_value: &mut T::Target,
+        old_key: &mut K,
+        new_key: K,
+        old_value: &mut V,
+        new_value: &mut V,
     ) -> bool {
-        let new_size = Self::size_of(new_value);
+        let new_size = Self::size_of(&new_key, new_value);
         if new_size <= self.max_bytes {
-            self.heap_size = self.heap_size - Self::size_of(old_value) + new_size;
+            self.heap_size = self.heap_size - Self::size_of(old_key, old_value) + new_size;
             true
         } else {
             false
@@ -93,8 +79,8 @@ impl<T: ByMemoryUsageCalculator, K> schnellru::Limiter<K, T::Target> for ByMemor
     }
 
     #[inline]
-    fn on_removed(&mut self, _: &mut K, value: &mut T::Target) {
-        self.heap_size -= Self::size_of(value);
+    fn on_removed(&mut self, key: &mut K, value: &mut V) {
+        self.heap_size -= Self::size_of(key, value);
     }
 
     #[inline]
@@ -108,8 +94,14 @@ impl<T: ByMemoryUsageCalculator, K> schnellru::Limiter<K, T::Target> for ByMemor
     }
 }
 
-impl<T: ByMemoryUsageCalculator> From<usize> for ByMemoryUsage<T> {
-    fn from(max_bytes: usize) -> Self {
-        Self::new(max_bytes)
+impl HeapUsageCalculator for String {
+    fn size_of(&self) -> usize {
+        self.capacity()
+    }
+}
+
+impl HeapUsageCalculator for u64 {
+    fn size_of(&self) -> usize {
+        0
     }
 }
