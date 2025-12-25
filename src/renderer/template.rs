@@ -436,6 +436,7 @@ fn split_target<'tt>(
         } else {
             #[rustfmt::skip]
             if let Some(Spanned { node: Token::Generated(first), .. }) = first {
+                callee.push(':');
                 callee += first;
             };
             callee += &sp.eval(state, rest)?;
