@@ -133,7 +133,12 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     }
 
     if content.is_empty() {
-        out.adopt_generated(state, sp, None, &decode_html(target.trim_start_matches(':')))?;
+        out.adopt_generated(
+            state,
+            sp,
+            None,
+            &decode_html(target.trim_start_matches(':')),
+        )?;
     } else {
         render_single_attribute(out, state, sp, content)?;
     }
