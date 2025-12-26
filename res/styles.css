@@ -2304,10 +2304,6 @@ th {
         .infobox-navbar,
         .sidebar-navbar {
             text-align: end;
-
-            > .navbar-mini {
-                font-stretch: var(--side-title-stretch);
-            }
         }
 
         .infobox-subheader {
@@ -3065,6 +3061,10 @@ th {
     /*******************/
     /* Template:Navbar */
     /*******************/
+
+    .navbar-mini {
+        font-stretch: var(--side-title-stretch);
+    }
 
     .navbar-ct-full,
     .navbar-ct-mini {
