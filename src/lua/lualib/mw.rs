@@ -545,7 +545,7 @@ fn expand_template(
             &mut result,
             state,
             sp,
-            Title::new(&title, Namespace::find_by_id(Namespace::TEMPLATE)),
+            &Title::new(&title, Namespace::find_by_id(Namespace::TEMPLATE)),
             &arguments,
         )?;
         Ok(state

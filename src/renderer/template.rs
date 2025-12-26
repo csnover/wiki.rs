@@ -246,7 +246,7 @@ pub(super) fn render_template<'tt>(
         }
 
         Target::Template { arguments, callee } => {
-            call_template(&mut partial, state, sp, callee.clone(), &arguments)?
+            call_template(&mut partial, state, sp, &callee, &arguments)?
         }
 
         Target::Text => {
@@ -458,10 +458,10 @@ pub(crate) fn call_template(
     out: &mut String,
     state: &mut State<'_>,
     sp: &StackFrame<'_>,
-    callee: Title,
+    callee: &Title,
     arguments: &[Kv<'_>],
 ) -> Result<Option<String>> {
-    let Ok(template) = state.statics.db.get(&callee) else {
+    let Ok(template) = state.statics.db.get(callee) else {
         log::warn!("No template found for '{callee}'");
         write!(out, "[[{}]]", callee.key())?;
         return Ok(None);
@@ -492,9 +492,13 @@ pub(crate) fn call_template(
     let now = Instant::now();
     let mut expansion = ExpandTemplates::new(ExpandMode::Include);
 
-    // TODO: What is supposed to happen if there was a redirect? Is the callee
-    // name supposed to change?
-    let sp = sp.chain(callee, FileMap::new(&template.body), arguments)?;
+    // The 'Module:Arguments' wrapper argument requires that redirects are
+    // using the final name, not a redirect alias
+    let sp = sp.chain(
+        Title::new(&template.title, None),
+        FileMap::new(&template.body),
+        arguments,
+    )?;
     // For now, just assume that the cache will always be big enough and unwrap
     let root = Arc::clone(
         state
