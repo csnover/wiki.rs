@@ -231,15 +231,16 @@ impl Surrogate<Error> for ExpandTemplates {
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
+        let name = name.to_ascii_lowercase();
         match extension_tags::render_extension_tag(
             state,
             sp,
             Some(span),
-            name,
+            &name,
             &extension_tags::InArgs::Wikitext(attributes),
             content,
         )? {
-            Some(Either::Left(marker)) => state.strip_markers.push(&mut self.out, name, marker),
+            Some(Either::Left(marker)) => state.strip_markers.push(&mut self.out, &name, marker),
             Some(Either::Right(raw)) => write!(self.out, "{raw}")?,
             None => {}
         }

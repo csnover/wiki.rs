@@ -433,17 +433,18 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
+        let name = name.to_ascii_lowercase();
         match extension_tags::render_extension_tag(
             state,
             sp,
             Some(span),
-            name,
+            &name,
             &extension_tags::InArgs::Wikitext(attributes),
             content,
         )? {
             Some(Either::Left(marker)) => {
                 if self.fragment {
-                    state.strip_markers.push(&mut self.html, name, marker);
+                    state.strip_markers.push(&mut self.html, &name, marker);
                 } else {
                     self.write_strip_marker(&marker)?;
                 }
