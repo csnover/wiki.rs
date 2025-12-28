@@ -159,7 +159,7 @@ pub(crate) struct Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///                                   ^
     /// ```
-    fragment_delimiter: Option<usize>,
+    fragment_delimiter: Option<u16>,
 
     /// The location of the interwiki delimiter in the title, if one exists.
     ///
@@ -167,7 +167,7 @@ pub(crate) struct Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///          ^
     /// ```
-    iw_delimiter: Option<usize>,
+    iw_delimiter: Option<u16>,
 
     /// The namespace of the title.
     namespace: &'static Namespace,
@@ -178,7 +178,7 @@ pub(crate) struct Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///                    ^
     /// ```
-    ns_delimiter: Option<usize>,
+    ns_delimiter: Option<u16>,
 
     /// The full title text.
     text: String,
@@ -186,6 +186,7 @@ pub(crate) struct Title {
 
 impl core::hash::Hash for Title {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.interwiki().unwrap_or_default().hash(state);
         self.namespace.hash(state);
         self.text().hash(state);
     }
@@ -193,7 +194,9 @@ impl core::hash::Hash for Title {
 
 impl PartialEq for Title {
     fn eq(&self, other: &Self) -> bool {
-        self.namespace == other.namespace && self.text() == other.text()
+        self.interwiki().unwrap_or_default() == other.interwiki().unwrap_or_default()
+            && self.namespace == other.namespace
+            && self.text() == other.text()
     }
 }
 
@@ -212,7 +215,7 @@ impl Title {
                 let interwiki = normalize(interwiki);
                 let iw_delimiter = interwiki.len();
                 write!(text, "{interwiki}:")?;
-                Ok(iw_delimiter)
+                Ok(u16::try_from(iw_delimiter).unwrap())
             })
             .transpose()?;
 
@@ -220,7 +223,7 @@ impl Title {
             .then(|| {
                 let ns_delimiter = text.len() + namespace.name.len();
                 write!(text, "{}:", namespace.name)?;
-                Ok(ns_delimiter)
+                Ok(u16::try_from(ns_delimiter).unwrap())
             })
             .transpose()?;
 
@@ -239,7 +242,7 @@ impl Title {
             .map(|fragment| {
                 let fragment_delimiter = text.len();
                 write!(text, "#{}", normalize(fragment))?;
-                Ok(fragment_delimiter)
+                Ok(u16::try_from(fragment_delimiter).unwrap())
             })
             .transpose()?;
 
@@ -258,13 +261,27 @@ impl Title {
     /// In MediaWiki, this is like `newFromText`.
     pub fn new(text: &str, ns: Option<&'static Namespace>) -> Self {
         let text = normalize(text);
+        let text = &*text;
 
-        // TODO: Interwiki
-        let (ns, text) = text.split_once(':').map_or((ns, &*text), |(lhs, rhs)| {
+        // TODO: Technically this is supposed to look at a list of known
+        // interwiki prefixes, just like namespaces
+        let (iw, text) = text.split_once(':').map_or((None, text), |(lhs, rhs)| {
+            let lhs = lhs.trim_end();
+            let rhs = rhs.trim_start();
+            if lhs.is_empty() {
+                (None, rhs)
+            } else if Namespace::find_by_name(lhs.trim_end()).is_none() {
+                (Some(lhs), rhs.trim_start())
+            } else {
+                (None, text)
+            }
+        });
+
+        let (ns, text) = text.split_once(':').map_or((ns, text), |(lhs, rhs)| {
             if let Some(ns) = Namespace::find_by_name(lhs.trim_end()) {
                 (Some(ns), rhs.trim_start())
             } else {
-                (ns, &*text)
+                (ns, text)
             }
         });
         let ns = ns.unwrap_or_else(Namespace::main);
@@ -273,7 +290,7 @@ impl Title {
             .split_once('#')
             .map_or((text, None), |(text, frag)| (text.trim_end(), Some(frag)));
 
-        Self::from_parts(ns, text, fragment, None).unwrap()
+        Self::from_parts(ns, text, fragment, iw).unwrap()
     }
 
     /// The parent path of the page.
@@ -296,7 +313,9 @@ impl Title {
     /// ```
     #[inline]
     pub fn fragment(&self) -> &str {
-        let start_at = self.fragment_delimiter.map_or(self.text.len(), |d| d + 1);
+        let start_at = self
+            .fragment_delimiter
+            .map_or(self.text.len(), |d| usize::from(d) + 1);
         &self.text[start_at..]
     }
 
@@ -308,7 +327,7 @@ impl Title {
     /// ```
     #[inline]
     pub fn interwiki(&self) -> &str {
-        let end_at = self.iw_delimiter.unwrap_or(0);
+        let end_at = usize::from(self.iw_delimiter.unwrap_or(0));
         &self.text[..end_at]
     }
 
@@ -320,8 +339,8 @@ impl Title {
     /// ```
     #[inline]
     pub fn key(&self) -> &str {
-        let start_at = self.iw_delimiter.map_or(0, |d| d + 1);
-        let end_at = self.fragment_delimiter.unwrap_or(self.text.len());
+        let start_at = usize::from(self.iw_delimiter.map_or(0, |d| d + 1));
+        let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
         &self.text[start_at..end_at]
     }
 
@@ -375,8 +394,11 @@ impl Title {
     /// ```
     #[inline]
     pub fn text(&self) -> &str {
-        let start_at = self.ns_delimiter.map_or(0, |d| d + 1);
-        let end_at = self.fragment_delimiter.unwrap_or(self.text.len());
+        let start_at = self
+            .ns_delimiter
+            .or(self.iw_delimiter)
+            .map_or(0, |d| usize::from(d) + 1);
+        let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
         &self.text[start_at..end_at]
     }
 
@@ -503,6 +525,28 @@ fn trimmable(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_iw() {
+        let title = Title::new(":File:A.png", None);
+        assert_eq!(title.interwiki(), "");
+        assert_eq!(title.namespace().id, Namespace::FILE);
+        assert_eq!(title.key(), "File:A.png");
+    }
+
+    #[test]
+    fn from_str() {
+        let title = Title::new("Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
+        assert_eq!(title.namespace().id, Namespace::TALK);
+        assert_eq!(title.base_text(), "Aa/Bb");
+        assert_eq!(title.fragment(), "Dd/Ee/Ff");
+        assert_eq!(title.full_text(), "Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
+        assert_eq!(title.interwiki(), "Iw");
+        assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
+        assert_eq!(title.root_text(), "Aa");
+        assert_eq!(title.subpage_text(), "Cc");
+        assert_eq!(title.text(), "Aa/Bb/Cc");
+    }
 
     #[test]
     fn normalize() {
