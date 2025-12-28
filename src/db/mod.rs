@@ -97,6 +97,7 @@ pub(crate) enum Error {
 type CacheableArticle = Option<Arc<Article>>;
 
 impl HeapUsageCalculator for CacheableArticle {
+    #[inline]
     fn size_of(&self) -> usize {
         self.as_ref().map_or(0, |value| {
             value.title.capacity()
@@ -141,6 +142,7 @@ impl RawDatabase<'_> {
     }
 
     /// Returns the current memory usage of the cache, in bytes.
+    #[inline]
     pub fn cache_size(&self) -> usize {
         let cache = self.cache.read().unwrap();
         cache.limiter().heap_usage() + cache.memory_usage()
@@ -191,21 +193,25 @@ impl RawDatabase<'_> {
     }
 
     /// The site name from the database.
+    #[inline]
     pub fn name(&self) -> &str {
         &self.articles.metadata().site_name
     }
 
     /// The registered namespaces in the database.
+    #[inline]
     pub fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace> {
         &self.articles.metadata().namespaces
     }
 
     /// The total number of articles in the database.
+    #[inline]
     pub fn len(&self) -> usize {
         self.index.len()
     }
 
     /// Finds articles in the index whose titles match the given query.
+    #[inline]
     pub fn search(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str> {
         self.index.find_articles(query)
     }

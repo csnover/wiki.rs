@@ -95,12 +95,14 @@ impl<K: HeapUsageCalculator, V: HeapUsageCalculator> schnellru::Limiter<K, V> fo
 }
 
 impl HeapUsageCalculator for String {
+    #[inline]
     fn size_of(&self) -> usize {
         self.capacity()
     }
 }
 
 impl HeapUsageCalculator for u64 {
+    #[inline]
     fn size_of(&self) -> usize {
         0
     }

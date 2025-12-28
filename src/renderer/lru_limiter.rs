@@ -9,6 +9,7 @@ use core::convert::Infallible;
 use std::{collections::HashSet, sync::Arc};
 
 impl HeapUsageCalculator for Arc<Output> {
+    #[inline]
     fn size_of(&self) -> usize {
         let mut calculator = OutputSizeCalculator { size: 0 };
         let _ = calculator.visit_output(self);

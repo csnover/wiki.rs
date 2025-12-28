@@ -67,6 +67,7 @@ pub(super) struct IndexEntry {
 }
 
 impl HeapUsageCalculator for Option<IndexEntry> {
+    #[inline]
     fn size_of(&self) -> usize {
         0
     }
@@ -201,6 +202,7 @@ impl Index<'_> {
     }
 
     /// The total number of articles in the index.
+    #[inline]
     pub(super) fn len(&self) -> usize {
         self.entries.len()
     }
@@ -218,6 +220,7 @@ impl<'a> PackedOffset<'a> {
     const DATA_MASK: u64 = (1 << Self::DATA_SIZE) - 1;
 
     /// Creates a new [`PackedOffset`].
+    #[inline]
     fn new(s: &str) -> Self {
         let data = s.as_ptr() as u64;
         let len = s.len() as u64;
@@ -227,6 +230,7 @@ impl<'a> PackedOffset<'a> {
     }
 
     /// Converts the [`PackedOffset`] into a string reference.
+    #[inline]
     fn into_str(self) -> &'a str {
         let data = (self.0 & Self::DATA_MASK) as *const u8;
         let len = (self.0 >> Self::DATA_SIZE) as usize;

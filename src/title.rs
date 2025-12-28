@@ -282,6 +282,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///                     ^^^^^^^^^
     /// ```
+    #[inline]
     pub fn base_text(&self) -> &str {
         let text = self.text();
         text.rsplit_once('/').map_or(text, |(base, _)| base)
@@ -293,6 +294,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///                                    ^^^^^^^^
     /// ```
+    #[inline]
     pub fn fragment(&self) -> &str {
         let start_at = self.fragment_delimiter.map_or(self.text.len(), |d| d + 1);
         &self.text[start_at..]
@@ -304,7 +306,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     /// ^^^^^^^^^
     /// ```
-    #[allow(clippy::unused_self)]
+    #[inline]
     pub fn interwiki(&self) -> &str {
         let end_at = self.iw_delimiter.unwrap_or(0);
         &self.text[..end_at]
@@ -316,6 +318,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///           ^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
+    #[inline]
     pub fn key(&self) -> &str {
         let start_at = self.iw_delimiter.map_or(0, |d| d + 1);
         let end_at = self.fragment_delimiter.unwrap_or(self.text.len());
@@ -323,6 +326,7 @@ impl Title {
     }
 
     /// The title’s namespace object.
+    #[inline]
     pub fn namespace(&self) -> &'static Namespace {
         self.namespace
     }
@@ -334,6 +338,7 @@ impl Title {
     ///           ^^^^^^^^^^^^^^^^^^^^^^^^
     ///       (Namespace%3ATitle%25Sub%25Page)
     /// ```
+    #[inline]
     pub fn partial_url(&self) -> PercentEncode<'_> {
         url_encode(self.key())
     }
@@ -344,6 +349,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///                     ^^^^^
     /// ```
+    #[inline]
     pub fn root_text(&self) -> &str {
         let text = self.text();
         text.split_once('/').map_or(text, |(root, _)| root)
@@ -355,6 +361,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///                               ^^^^
     /// ```
+    #[inline]
     pub fn subpage_text(&self) -> &str {
         let text = self.text();
         text.rsplit_once('/').map_or(text, |(_, sub)| sub)
@@ -366,6 +373,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     ///                     ^^^^^^^^^^^^^^
     /// ```
+    #[inline]
     pub fn text(&self) -> &str {
         let start_at = self.ns_delimiter.map_or(0, |d| d + 1);
         let end_at = self.fragment_delimiter.unwrap_or(self.text.len());
@@ -378,6 +386,7 @@ impl Title {
     /// Interwiki:Namespace:Title/Sub/Page#Fragment
     /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
+    #[inline]
     pub(crate) fn full_text(&self) -> &str {
         &self.text
     }
@@ -432,6 +441,7 @@ impl core::fmt::Display for Title {
 
 /// Returns true if the given character `c` is a bidirectional text control
 /// character.
+#[inline]
 fn bidi(c: char) -> bool {
     ('\u{200e}'..='\u{200f}').contains(&c) || ('\u{202a}'..='\u{202e}').contains(&c)
 }
@@ -479,11 +489,13 @@ pub fn normalize(text: &str) -> Cow<'_, str> {
 
 /// Returns true if the character `c` is considered like whitespace in title
 /// text.
+#[inline]
 fn spacelike(c: char) -> bool {
     c == '_' || c.is_whitespace()
 }
 
 /// Returns true if the character `c` is trimmable in title text.
+#[inline]
 fn trimmable(c: char) -> bool {
     bidi(c) || spacelike(c)
 }

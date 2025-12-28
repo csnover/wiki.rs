@@ -95,6 +95,7 @@ impl ArticleDatabase {
     }
 
     /// Returns the metadata for this database.
+    #[inline]
     pub(super) fn metadata(&self) -> &Metadata {
         &self.metadata
     }
@@ -199,12 +200,14 @@ impl ArticleDatabase {
 
 /// Tries to get a child element by name and returns an [`Error`] if it does not
 /// exist.
+#[inline]
 fn try_get_child<'a>(element: &'a Element, name: &str) -> Result<&'a Element> {
     try_get_child_ns(element, name, "")
 }
 
 /// Tries to get a child element by name and namespace and returns an [`Error`]
 /// if it does not exist.
+#[inline]
 fn try_get_child_ns<'a>(element: &'a Element, name: &str, ns: &str) -> Result<&'a Element> {
     let child = element.get_child(name, ns);
     child.ok_or_else(|| Error::XmlProperty(name.into()))
