@@ -9,15 +9,11 @@ use crate::{
 use article::ArticleDatabase;
 pub(crate) use article::{Article, DatabaseNamespace};
 use index::Index;
-pub(crate) use prefetch::{PrefetchableDatabase as Database, Priority as PrefetchPriority};
+use parking_lot::RwLock;
+pub(crate) use prefetch::PrefetchableDatabase as Database;
 use rayon::iter::ParallelIterator;
 use schnellru::LruMap;
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::{Arc, RwLock},
-    time::Instant,
-};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 use time::UtcDateTime;
 
 mod article;
@@ -108,6 +104,9 @@ impl HeapUsageCalculator for CacheableArticle {
     }
 }
 
+/// The type of the article cache.
+type ArticleCache = LruMap<String, CacheableArticle, ByMemoryUsage>;
+
 /// A MediaWiki multistream database reader.
 pub(crate) struct RawDatabase<'a> {
     /// The uncompressed text index part of the database.
@@ -115,7 +114,7 @@ pub(crate) struct RawDatabase<'a> {
     /// The compressed XML part of the database.
     articles: ArticleDatabase,
     /// A decompressed article LRU cache.
-    cache: RwLock<LruMap<String, CacheableArticle, ByMemoryUsage>>,
+    cache: RwLock<ArticleCache>,
 }
 
 impl RawDatabase<'_> {
@@ -144,52 +143,70 @@ impl RawDatabase<'_> {
     /// Returns the current memory usage of the cache, in bytes.
     #[inline]
     pub fn cache_size(&self) -> usize {
-        let cache = self.cache.read().unwrap();
+        let cache = self.cache.read();
         cache.limiter().heap_usage() + cache.memory_usage()
     }
 
-    /// Returns true if the database contains an article with the given title.
-    pub fn contains(&self, title: &Title) -> bool {
-        if !self.contains_ns(title) {
-            false
-        } else if let Some(entry) = self.cache.read().unwrap().peek(title.key()) {
-            entry.is_some()
+    /// Returns `Some(true)` if the database contains an article with the given
+    /// title, `Some(false)` if it does not, and `None` if it is unknown.
+    #[inline]
+    fn contains_cached(&self, title: &Title, key: &str) -> Option<bool> {
+        if !self.may_exist(title) {
+            Some(false)
+        } else if HACKS.contains_key(key) {
+            Some(true)
+        } else if let Some(entry) = self.cache.read().peek(key) {
+            Some(entry.is_some())
         } else {
-            self.index.find_article(title.key()).is_some()
+            self.index.is_cached(key).map(|entry| entry.is_some())
         }
     }
 
     /// Gets an article with the given title from the database. The article will
     /// be cached in memory.
     pub fn get(&self, title: &Title) -> Result<Arc<Article>> {
-        if !self.contains_ns(title) {
+        if !self.may_exist(title) {
             return Err(Error::NotFound);
         }
 
-        let title = title.key();
-        self.cache
-            .write()
-            .unwrap()
-            .get_or_insert_fallible(title, || {
-                log::trace!("Loading article {title}");
-                self.fetch_article(title).map_or_else(
-                    |err| {
-                        if matches!(err, Error::NotFound) {
-                            Ok(None)
-                        } else {
-                            Err(err)
-                        }
-                    },
-                    |article| Ok(Some(Arc::new(article))),
-                )
-            })
-            .and_then(|article| {
-                if let Some(Some(article)) = article {
-                    Ok(Arc::clone(article))
+        let key = title.key();
+
+        if let Some(&Hack::Lobotomy(body)) = HACKS.get(key) {
+            log::warn!("Replacing {key} from hacks");
+            return Ok(Arc::new(Article {
+                id: 0xdead_beef,
+                title: key.to_string(),
+                body: (*body).to_string(),
+                date: UtcDateTime::now(),
+                redirect: None,
+                model: if key.starts_with("Module:") {
+                    "Scribunto"
                 } else {
-                    Err(Error::NotFound)
+                    "wikitext"
                 }
-            })
+                .into(),
+            }));
+        }
+
+        // Do not use `get_or_insert` and hold the write lock during article
+        // fetching or it will stall the prefetcher
+        let article = if let Some(article) = self.cache.write().get(key).cloned() {
+            article
+        } else {
+            log::trace!("Loading article {key}");
+            let article = self.fetch_article(key).map_or_else(
+                |err| {
+                    matches!(err, Error::NotFound)
+                        .then_some(Ok(None))
+                        .unwrap_or(Err(err))
+                },
+                |article| Ok(Some(Arc::new(article))),
+            )?;
+            self.cache.write().insert(key.to_string(), article.clone());
+            article
+        };
+
+        article.ok_or(Error::NotFound)
     }
 
     /// The site name from the database.
@@ -216,52 +233,52 @@ impl RawDatabase<'_> {
         self.index.find_articles(query)
     }
 
-    /// Returns true if the database contains data for the namespace of the
-    /// given title.
-    fn contains_ns(&self, title: &Title) -> bool {
-        title.namespace().id != Namespace::SPECIAL
-            && self.namespaces().contains_key(&title.namespace().id)
+    /// Extracts an article from the compressed database using the given title
+    /// and index entry.
+    fn extract_article(&self, title: &str, entry: index::IndexEntry) -> Result<Article> {
+        let time = Instant::now();
+        let mut article = self.articles.get_article(&entry);
+        log::trace!("Extracted article in {:.2?}", time.elapsed());
+
+        if let (Ok(article), Some(Hack::HorsePills(hacks))) = (article.as_mut(), HACKS.get(title)) {
+            log::info!("Modifying {title} using hacks");
+            article.body = strtr(&article.body, hacks).into_owned();
+        }
+
+        article
     }
 
     /// Gets an article directly from the database.
     fn fetch_article(&self, title: &str) -> Result<Article> {
-        let hack = HACKS.get(title).copied();
-
-        if let Some(&Hack::Lobotomy(body)) = hack {
-            log::warn!("Replacing {title} from hacks");
-            return Ok(Article {
-                id: 0xdead_beef,
-                title: title.to_string(),
-                body: body.to_string(),
-                date: UtcDateTime::now(),
-                redirect: None,
-                model: if title.starts_with("Module:") {
-                    "Scribunto"
-                } else {
-                    "wikitext"
-                }
-                .into(),
-            });
-        }
-
         let time = Instant::now();
         self.index
             .find_article(title)
             .ok_or(Error::NotFound)
             .and_then(|entry| {
                 log::trace!("Located article in {:.2?}", time.elapsed());
-                let time = Instant::now();
-                let mut article = self.articles.get_article(&entry);
-                log::trace!("Extracted article in {:.2?}", time.elapsed());
-
-                if let (Ok(article), Some(Hack::HorsePills(hacks))) = (article.as_mut(), hack) {
-                    log::info!("Modifying {title} using hacks");
-                    article.body = strtr(&article.body, hacks).into_owned();
-                }
-
-                article
+                self.extract_article(title, entry)
             })
     }
+
+    /// Returns true if this article database might contain data for the given
+    /// title.
+    #[inline]
+    fn may_exist(&self, title: &Title) -> bool {
+        let ns_id = title.namespace().id;
+        title.interwiki().is_empty()
+            && !matches!(
+                ns_id,
+                Namespace::SPECIAL | Namespace::FILE | Namespace::MEDIA
+            )
+            && self.namespaces().contains_key(&ns_id)
+    }
+}
+
+/// Returns true if a title was given a lobotomy so doesn’t need the crutch of
+/// database access to live its best life.
+#[inline]
+fn is_lobotomised(title: &str) -> bool {
+    matches!(HACKS.get(title), Some(Hack::Lobotomy(..)))
 }
 
 /// Sometimes, modules will not work. Sometimes, we can fix that with

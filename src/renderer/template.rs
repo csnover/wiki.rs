@@ -12,12 +12,12 @@ use crate::{
     LoadMode,
     common::{make_url, title_decode},
     config::CONFIG,
-    db::PrefetchPriority,
     lua::run_vm,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, MARKER_PREFIX, MARKER_SUFFIX, Span, Spanned, Token},
 };
 use core::fmt::{self, Write as _};
+use indexmap::IndexSet;
 use memchr::memmem::FinderRev;
 use std::{
     borrow::Cow,
@@ -562,9 +562,22 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     Ok(())
 }
 
-/// Attempts to prefetch templates that are immediately resolvable to
-/// allow for parallel decoding of database entries whilst the renderer is busy.
-pub(crate) struct DbPrefetch;
+/// Scans for templates and links to allow database entries to be fetched whilst
+/// the renderer is busy doing its own thing.
+#[derive(Default)]
+pub(crate) struct DbPrefetch {
+    /// Template targets to prefetch.
+    templates: IndexSet<Title>,
+    /// Link targets to prefetch.
+    links: IndexSet<Title>,
+}
+
+impl DbPrefetch {
+    /// Executes the prefetch, consuming this prefetcher.
+    pub(super) fn finish(self, state: &mut State<'_>) {
+        state.statics.db.prefetch_all(self.templates, self.links);
+    }
+}
 
 impl Surrogate<Error> for DbPrefetch {
     fn adopt_autolink(
@@ -604,6 +617,8 @@ impl Surrogate<Error> for DbPrefetch {
         // Prefetching targets from the index is for redlinks.
         // TODO: Allow redlinks to be configurable, to make things faster, with
         // the downside that you might click on a dead link.
+        // TODO: Add a utility to rebuild the index so that binary search is
+        // possible.
         if let [
             Spanned {
                 node: Token::Text,
@@ -612,10 +627,7 @@ impl Surrogate<Error> for DbPrefetch {
         ] = target
         {
             let target = title_decode(&sp.source[span.into_range()]);
-            state
-                .statics
-                .db
-                .prefetch(Title::new(&target, None), PrefetchPriority::Low);
+            self.links.insert(Title::new(&target, None));
         }
 
         for argument in content {
@@ -740,25 +752,15 @@ impl Surrogate<Error> for DbPrefetch {
         let mut first = None;
         match split_target(state, sp, &mut first, target, arguments)? {
             Target::Template { callee, .. } => {
-                state.statics.db.prefetch(callee, PrefetchPriority::High);
+                self.templates.insert(callee);
             }
             Target::ParserFn { callee, arguments } => {
-                if callee == "safesubst" {
+                if callee == "#invoke" {
                     let target = arguments[0].eval(state, sp)?;
-                    let target = target.trim_ascii();
-                    let (callee, rest) = target
-                        .split_once(':')
-                        .map_or((target, None), |(callee, rest)| (callee, Some(rest)));
-                    let callee_lower = callee.to_lowercase();
-                    if !is_function_call(arguments.len() == 1, rest.is_some(), &callee_lower) {
-                        let title = Title::new(target, Namespace::find_by_id(Namespace::TEMPLATE));
-                        state.statics.db.prefetch(title, PrefetchPriority::High);
-                    }
-                } else if callee == "#invoke" || callee == "invoke" {
-                    let target = arguments[0].eval(state, sp)?;
-                    let target = target.trim_ascii();
-                    let title = Title::new(target, Namespace::find_by_id(Namespace::MODULE));
-                    state.statics.db.prefetch(title, PrefetchPriority::High);
+                    self.templates.insert(Title::new(
+                        target.trim_ascii(),
+                        Namespace::find_by_id(Namespace::MODULE),
+                    ));
                 }
             }
             Target::Text => {

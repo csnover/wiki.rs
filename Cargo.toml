@@ -18,11 +18,13 @@ env_logger = "0.11"
 fancy-regex = "0.16"
 gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "5a7534b883b703f23cfb8c3cfdf033460aa77ea9", features = ["allocator-api2", "hashbrown"] }
 html-escape = "0.2"
+indexmap = "2.12"
 log = "0.4"
 math-core = "0.1"
 memchr = "2.7"
 memmap2 = "0.9"
 minidom = "0.18"
+parking_lot = "0.12"
 peg = { git = "https://github.com/csnover/rust-peg.git", rev = "68a910801dbcf6acc19ba2f81c352435a9072cb4" }
 # urlencoding is smaller, but percent-encoding is already a sub-dependency
 percent-encoding = "2"

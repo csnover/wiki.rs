@@ -1,15 +1,19 @@
 //! Types and functions for reading a multistream dump text index.
 
-use crate::lru_limiter::{ByMemoryUsage, HeapUsageCalculator};
+use crate::{
+    lru_limiter::{ByMemoryUsage, HeapUsageCalculator},
+    title::Title,
+};
 use core::{marker::PhantomData, num::NonZeroU64};
 use html_escape::encode_double_quoted_attribute;
 use memmap2::Mmap;
+use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use schnellru::LruMap;
 use std::{
+    collections::HashMap,
     fs::File,
     path::{Path, PathBuf},
-    sync::RwLock,
 };
 
 /// Errors that may occur when reading the dump index.
@@ -186,25 +190,97 @@ impl Index<'_> {
 
     /// Finds a single entry in the index with the given article title.
     pub(super) fn find_article(&self, title: &str) -> Option<IndexEntry> {
-        self.cache
-            .write()
-            .unwrap()
-            .get_or_insert(title, || {
-                // " and & are entity-encoded in the index; < and > are disallowed.
-                let name = encode_double_quoted_attribute(title);
-                self.entries.par_iter().find_map_any(|title| {
-                    let title = title.into_str();
-                    (title == name).then(|| make_index(self.view, title))
-                })
-            })
-            .copied()
-            .flatten()
+        // `get_or_insert` cannot be used because holding the write lock during
+        // the index scan is, you know, bad for performance
+        if let Some(entry) = self.cache.write().get(title).copied() {
+            entry
+        } else {
+            // " and & are entity-encoded in the index; < and > are disallowed.
+            let name = encode_double_quoted_attribute(title);
+            let entry = self.entries.par_iter().find_map_any(|title| {
+                let title = title.into_str();
+                (title == name).then(|| make_index(self.view, title))
+            });
+            self.cache.write().insert(title.to_string(), entry);
+            entry
+        }
+    }
+
+    /// Finds a single entry in the index cache with the given article title.
+    ///
+    /// Does not update the LRU.
+    #[inline]
+    // Clippy: Really, this is the best interface for this for now, since
+    // consumers would just convert it back into this shape anyway.
+    #[allow(clippy::option_option)]
+    pub(super) fn is_cached(&self, title: &str) -> Option<Option<IndexEntry>> {
+        self.cache.read().peek(title).copied()
     }
 
     /// The total number of articles in the index.
     #[inline]
     pub(super) fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Preloads the list of article titles into the exists-cache, signalling
+    /// to the caller when each title is found.
+    pub(super) fn prefetch<F>(&self, titles: impl IntoIterator<Item = Title>, signal: F)
+    where
+        F: Fn(Title, Option<IndexEntry>) + Send + Sync,
+    {
+        let candidates = Mutex::new({
+            let cache = self.cache.read();
+            titles
+                .into_iter()
+                .filter_map(|title| {
+                    cache.peek(title.key()).is_none().then(|| {
+                        let encoded = encode_double_quoted_attribute(title.key());
+                        (encoded.into_owned(), title)
+                    })
+                })
+                .collect::<HashMap<_, _>>()
+        });
+
+        // TODO: For some reason, using `par_iter` here absolutely destroys
+        // performance whilst also pegging all the CPUs. We do want to peg those
+        // CPUs, but only when it is actually doing useful work. Probably this
+        // is due to using a thread pool that rayon is unaware of, so it can’t
+        // manage its own work properly? Unclear.
+        self.entries.iter().any(|title| {
+            let name = title.into_str();
+            let (title, done) = {
+                let mut candidates = candidates.lock();
+                let title = candidates.remove(name);
+                (title, candidates.is_empty())
+            };
+
+            if let Some(title) = title {
+                let key = title.key();
+                // For some reason it is faster on average for the renderer
+                // thread to do a full request when it wins the race. This means
+                // that the renderer thread may have also inserted to the cache
+                // before the prefetcher. Because the job queue deduplicates
+                // titles, the prefetcher will never insert twice (and if it
+                // does, it is a bug).
+                let value = self.cache.read().peek(key).copied();
+                let value = value.unwrap_or_else(|| {
+                    let value = Some(make_index(self.view, name));
+                    self.cache.write().insert(key.to_string(), value);
+                    value
+                });
+                signal(title, value);
+                done
+            } else {
+                false
+            }
+        });
+
+        let mut cache = self.cache.write();
+        for (_, title) in candidates.into_inner() {
+            cache.insert(title.key().to_string(), None);
+            signal(title, None);
+        }
     }
 }
 

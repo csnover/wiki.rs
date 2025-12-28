@@ -259,6 +259,10 @@ fn render(
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
 
+    let mut prefetcher = super::template::DbPrefetch::default();
+    prefetcher.adopt_output(&mut state, &sp, &root)?;
+    prefetcher.finish(&mut state);
+
     let mut renderer = Document::new(false);
     renderer.adopt_output(&mut state, &sp, &root)?;
     let mut content = renderer.finish()?;
