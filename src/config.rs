@@ -28,6 +28,9 @@ impl Namespace {
         NAMESPACES.iter().find(|ns| {
             ns.name.eq_ignore_ascii_case(name)
                 || ns
+                    .canonical
+                    .is_some_and(|canonical| name.eq_ignore_ascii_case(canonical))
+                || ns
                     .aliases
                     .iter()
                     .any(|alias| alias.eq_ignore_ascii_case(name))
