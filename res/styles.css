@@ -2353,6 +2353,7 @@ th {
         }
 
         .sidebar-list-title {
+            border-block-start: 0 !important; /* 'Template:Sidebar periodic table' */
             font-size: var(--side-head-font-size) !important;
             line-height: calc(1em / var(--side-head-font-size));
             font-weight: var(--bold);
@@ -2388,6 +2389,7 @@ th {
                 }
 
                 > :is(td, th) {
+                    background: transparent !important;
                     border: 0;
                 }
 
@@ -3341,6 +3343,118 @@ th {
     .documentation > * + .navbox.navbox {
         clear: both;
         margin-block-start: var(--footer-margin) !important;
+    }
+
+    /***********************************/
+    /* Template:Periodic table (micro) */
+    /***********************************/
+
+    [data-wiki-rs~=template-periodic-table--micro-] {
+        border-block: thin solid var(--fg) !important;
+        border-inline: 0 !important;
+        font-family: var(--sans);
+        padding-block: var(--side-margin) !important;
+        padding-inline: 0 !important;
+
+        &[style*="float:right"] {
+            margin-block-end: var(--figure-margin) !important;
+            margin-inline: var(--figure-margin) 0 !important;
+        }
+
+        * + & {
+            margin-block-start: var(--box-margin) !important;
+        }
+
+        table {
+            background: var(--bg) !important;
+            position: relative;
+
+            &::before {
+                background: var(--bar-fill);
+                content: '';
+                inset: 0;
+                mix-blend-mode: overlay;
+                opacity: .7;
+                pointer-events: none;
+                position: absolute;
+                z-index: 1;
+            }
+        }
+    }
+
+    #micro-periodic-table-title {
+        background: transparent !important;
+    }
+
+    #micro-periodic-table-caption {
+        padding-block-start: var(--side-margin);
+    }
+
+    /************************************/
+    /* Template:Periodic table (navbox) */
+    /************************************/
+
+    [aria-describedby="periodic-table-legend"] {
+        background-color: var(--bg);
+        border-collapse: separate;
+        border-spacing: 1px;
+        font-variant-numeric: normal;
+        position: relative !important;
+
+        div:has(> &) {
+            padding: 0 !important;
+        }
+
+        &::before {
+            background: var(--bar-fill);
+            content: '';
+            inset: 0;
+            mix-blend-mode: overlay;
+            opacity: .7;
+            pointer-events: none;
+            position: absolute;
+            z-index: 1;
+        }
+
+        > tbody > tr {
+            > td {
+                font-family: var(--sans);
+                font-stretch: var(--side-body-stretch);
+
+                .mw-selflink {
+                    font-stretch: normal;
+                }
+            }
+
+            > th,
+            > td > span {
+                position: relative;
+                z-index: 2;
+            }
+        }
+    }
+
+    #periodic-table-legend {
+        background: transparent !important;
+        border: 0 !important;
+        font-family: var(--sans);
+
+        div:has(> &) {
+            padding: 0 !important;
+        }
+
+        > div {
+            padding: 0 !important;
+
+            > table {
+                line-height: 1rlh !important;
+            }
+        }
+
+        td {
+            background-image: var(--bar-fill) !important;
+            background-blend-mode: overlay;
+        }
     }
 
     /******************************/

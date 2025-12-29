@@ -63,6 +63,7 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Historical populations",
     "Template:Largest cities",
     "Template:Markup",
+    "Template:Periodic table (micro)",
     "Template:Phanerozoic 220px",
     "Template:Tree chart",
     "Template:Tree chart/start",
