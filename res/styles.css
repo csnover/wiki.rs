@@ -814,6 +814,10 @@ th {
 
     .nowrap {
         white-space: nowrap;
+
+        .error {
+            white-space: wrap;
+        }
     }
 
     .selflink {
