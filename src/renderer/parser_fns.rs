@@ -418,7 +418,13 @@ mod page {
     ) -> Result {
         let title = &sp.root().name;
         if let Some(subject) = title.namespace().subject() {
-            write!(out, "{}:{}", subject.name, title.text())?;
+            write!(
+                out,
+                "{}{}{}",
+                subject.name,
+                if subject.name.is_empty() { "" } else { ":" },
+                title.text()
+            )?;
         }
         Ok(())
     }
@@ -431,7 +437,13 @@ mod page {
     ) -> Result {
         let title = &sp.root().name;
         if let Some(talk) = title.namespace().talk() {
-            write!(out, "{}:{}", talk.name, title.text())?;
+            write!(
+                out,
+                "{}{}{}",
+                talk.name,
+                if talk.name.is_empty() { "" } else { ":" },
+                title.text()
+            )?;
         }
         Ok(())
     }
