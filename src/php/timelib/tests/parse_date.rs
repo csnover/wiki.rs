@@ -110,10 +110,7 @@ fn bug37017_00() {
     assert_eq!(Some(12), t.time.hour);
     assert_eq!(Some(59), t.time.minute);
     assert_eq!(Some(59), t.time.second);
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/New_York")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/New_York")));
 }
 
 #[test]
@@ -125,10 +122,7 @@ fn bug37017_01() {
     assert_eq!(Some(13), t.time.hour);
     assert_eq!(Some(0), t.time.minute);
     assert_eq!(Some(0), t.time.second);
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/New_York")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/New_York")));
 }
 
 #[test]
@@ -140,10 +134,7 @@ fn bug37017_02() {
     assert_eq!(Some(13), t.time.hour);
     assert_eq!(Some(0), t.time.minute);
     assert_eq!(Some(1), t.time.second);
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/New_York")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/New_York")));
 }
 
 #[test]
@@ -5331,10 +5322,7 @@ fn tz_identifier_00() {
     assert_eq!(Some(0), t.time.minute);
     assert_eq!(Some(3), t.time.second);
     assert_eq!(Some(123_450), t.time.micros);
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("Europe/Amsterdam")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("Europe/Amsterdam")));
 }
 
 #[test]
@@ -5344,10 +5332,7 @@ fn tz_identifier_01() {
     assert_eq!(Some(0), t.time.minute);
     assert_eq!(Some(3), t.time.second);
     assert_eq!(Some(123_450), t.time.micros);
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/Indiana/Knox")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/Indiana/Knox")));
 }
 
 #[test]
@@ -5359,10 +5344,7 @@ fn tz_identifier_02() {
     assert_eq!(Some(22), t.time.hour);
     assert_eq!(Some(30), t.time.minute);
     assert_eq!(Some(41), t.time.second);
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/Los_Angeles")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/Los_Angeles")));
 }
 
 #[test]
@@ -5374,73 +5356,49 @@ fn tz_identifier_03() {
     assert_eq!(Some(22), t.time.hour);
     assert_eq!(Some(30), t.time.minute);
     assert_eq!(Some(41), t.time.second);
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/Los_Angeles")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/Los_Angeles")));
 }
 
 #[test]
 fn tz_identifier_04() {
     let t = test_parse("Africa/Dar_es_Salaam").state;
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("Africa/Dar_es_Salaam")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("Africa/Dar_es_Salaam")));
 }
 
 #[test]
 fn tz_identifier_05() {
     let t = test_parse("Africa/Porto-Novo").state;
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("Africa/Porto-Novo")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("Africa/Porto-Novo")));
 }
 
 #[test]
 fn tz_identifier_06() {
     let t = test_parse("America/Blanc-Sablon").state;
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/Blanc-Sablon")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/Blanc-Sablon")));
 }
 
 #[test]
 fn tz_identifier_07() {
     let t = test_parse("America/Port-au-Prince").state;
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/Port-au-Prince")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/Port-au-Prince")));
 }
 
 #[test]
 fn tz_identifier_08() {
     let t = test_parse("America/Port_of_Spain").state;
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("America/Port_of_Spain")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("America/Port_of_Spain")));
 }
 
 #[test]
 fn tz_identifier_09() {
     let t = test_parse("Antarctica/DumontDUrville").state;
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("Antarctica/DumontDUrville")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("Antarctica/DumontDUrville")));
 }
 
 #[test]
 fn tz_identifier_10() {
     let t = test_parse("Antarctica/McMurdo").state;
-    assert_eq!(
-        t.offset,
-        Some(Timezone::Named(Cow::Borrowed("Antarctica/McMurdo")))
-    );
+    assert_eq!(t.offset, Some(Timezone::Named("Antarctica/McMurdo")));
 }
 
 #[test]

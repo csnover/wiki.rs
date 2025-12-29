@@ -2,6 +2,7 @@
 
 use crate::{
     db::{Article, Database},
+    php::DateTime,
     renderer::{Kv, StackFrame, State},
     title::Title,
     wikitext::Parser,
@@ -16,7 +17,6 @@ use piccolo::{
 };
 use prelude::*;
 use std::{pin::Pin, sync::Arc, time::Instant};
-use time::UtcDateTime;
 
 mod lualib;
 mod prelude;
@@ -133,7 +133,7 @@ pub(super) fn new_vm(
 }
 
 /// Resets the Lua VM for the given `article`.
-pub(super) fn reset_vm(vm: &mut Lua, title: &Title, date: UtcDateTime) -> Result<(), ExternError> {
+pub(super) fn reset_vm(vm: &mut Lua, title: &Title, date: &DateTime) -> Result<(), ExternError> {
     vm.try_enter(|ctx| {
         let mw_title = ctx.singleton::<Rootable![TitleLibrary]>();
         mw_title.set_title(ctx, title)?;

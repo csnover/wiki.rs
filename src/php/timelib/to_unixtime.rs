@@ -105,7 +105,7 @@ impl<'a> DateTimeBuilder<'a> {
                 };
                 (
                     UtcOffset::from_whole_seconds(local.ut_offset())?,
-                    DateTimeZone::Named(name.to_string(), *tz),
+                    DateTimeZone::Named(name, *tz),
                 )
             }
             None => (UtcOffset::UTC, DateTimeZone::UTC),

@@ -26,8 +26,6 @@ pub(crate) struct Article {
     /// This is arbitrary text content which must be interpreted according to
     /// the article’s [data model](Self::model).
     pub body: String,
-    /// The time of the last edit.
-    pub date: UtcDateTime,
     /// The data model of the article. This is usually "wikitext", but can be
     /// "json" for JSON data, "Scribunto" for Lua modules, etc.
     pub model: String,
@@ -46,6 +44,8 @@ pub(crate) struct DatabaseNamespace {
 
 /// Information about the database.
 pub(crate) struct Metadata {
+    /// The date when the database was probably created.
+    pub creation_date: Option<UtcDateTime>,
     /// The namespaces from the database.
     pub namespaces: HashMap<i32, DatabaseNamespace>,
     /// The name of the site from the database.
@@ -74,7 +74,7 @@ impl ArticleDatabase {
             return Err(Error::Format(path.into()));
         }
 
-        let metadata = Self::database_info(&data)?;
+        let metadata = Self::database_info(path, &data)?;
 
         Ok(Self { data, metadata })
     }
@@ -115,7 +115,7 @@ impl ArticleDatabase {
 
     /// Parses basic information about the database from the `<siteinfo>` in the
     /// first chunk.
-    fn database_info(data: &[u8]) -> Result<Metadata> {
+    fn database_info(path: &Path, data: &[u8]) -> Result<Metadata> {
         // In case someone tries to load a non-multistream database, the number
         // of bytes read is limited to some amount well above the expected size
         // (the true expected data size is only ~2KiB).
@@ -161,7 +161,30 @@ impl ArticleDatabase {
                 Ok((key, DatabaseNamespace { case, name }))
             })
             .collect::<Result<_, _>>()?;
+
+        // As of the time this code was written, the database does not contain
+        // metadata that describes the date when the database was dumped, and as
+        // far as the bz2 format is documented, it does not document storing any
+        // metadata like this, and the bzip2 code appears to just copy the stat
+        // infile to outfile, which does not really persist over the internet.
+        // So the filename and stat data are the only things that are available
+        // without scanning the wholeeee database to find the latest article
+        // date. The date in the file name, if one exists, will be the most
+        // likely accurate thing.
+        let creation_date = path.to_str().and_then(|mut path| {
+            while let Some(start) = path.find(|c: char| c.is_ascii_digit()) {
+                if let Some(maybe_date) = path.get(start..start + 8)
+                    && let Ok(date) = time::Date::parse(maybe_date, &Iso8601::PARSING)
+                {
+                    return Some(UtcDateTime::new(date, time::Time::MIDNIGHT));
+                }
+                path = &path[start + 1..];
+            }
+            None
+        });
+
         Ok(Metadata {
+            creation_date,
             namespaces,
             site_name,
         })
@@ -173,10 +196,11 @@ impl ArticleDatabase {
         let title = try_get_child(article, "title")?.text();
         let revision = try_get_child(article, "revision")?;
         let body = try_get_child(revision, "text")?.text();
-        let date = UtcDateTime::parse(
-            &try_get_child(revision, "timestamp")?.text(),
-            &Iso8601::DEFAULT,
-        )?;
+        // TODO: This may be needed eventually, so remember it exists
+        // let date = UtcDateTime::parse(
+        //     &try_get_child(revision, "timestamp")?.text(),
+        //     &Iso8601::DEFAULT,
+        // )?;
         let model = try_get_child(revision, "model")?.text();
         let redirect = try_get_child(article, "redirect")
             .ok()
@@ -191,7 +215,6 @@ impl ArticleDatabase {
             id,
             title,
             body,
-            date,
             model,
             redirect,
         })

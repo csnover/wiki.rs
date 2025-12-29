@@ -1,9 +1,10 @@
 //! Lua 5.1-compatible OS standard library.
 
 use crate::{
-    lua::prelude::*,
+    lua::{LanguageLibrary, prelude::*},
     php::{DateTime, DateTimeZone},
 };
+use gc_arena::Rootable;
 use std::{io::Write as _, time::Instant};
 
 /// Loads the OS library.
@@ -32,7 +33,14 @@ pub fn load_os(ctx: Context<'_>) {
             };
 
             let time = time
-                .map_or(DateTime::now(), DateTime::from_unix_timestamp)?
+                .map_or_else(
+                    || {
+                        // TODO: This is silly and going in the opposite
+                        // direction from what it should be
+                        Ok(ctx.singleton::<Rootable![LanguageLibrary]>().date())
+                    },
+                    DateTime::from_unix_timestamp,
+                )?
                 .into_offset(offset)?;
 
             if format == "*t" || format == "!*t" {
@@ -155,7 +163,11 @@ pub fn load_os(ctx: Context<'_>) {
                     return Ok(os_time::time_slow(ctx, options));
                 }
             } else {
-                time::OffsetDateTime::now_local()?.unix_timestamp()
+                // TODO: This is silly and going in the opposite
+                // direction from what it should be
+                ctx.singleton::<Rootable![LanguageLibrary]>()
+                    .date()
+                    .unix_timestamp()
             };
             stack.replace(ctx, time);
             Ok(CallbackReturn::Return)

@@ -162,6 +162,12 @@ impl RawDatabase<'_> {
         }
     }
 
+    /// The guessed creation date of the database.
+    #[inline]
+    pub fn creation_date(&self) -> Option<UtcDateTime> {
+        self.articles.metadata().creation_date
+    }
+
     /// Gets an article with the given title from the database. The article will
     /// be cached in memory.
     pub fn get(&self, title: &Title) -> Result<Arc<Article>> {
@@ -177,7 +183,6 @@ impl RawDatabase<'_> {
                 id: 0xdead_beef,
                 title: key.to_string(),
                 body: (*body).to_string(),
-                date: UtcDateTime::now(),
                 redirect: None,
                 model: if key.starts_with("Module:") {
                     "Scribunto"

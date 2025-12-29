@@ -358,6 +358,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if let Some(date) = database.creation_date() {
+        log::info!("Database version (guessed from filename): {}", date.date());
+    } else {
+        // Some things, like 'Module:Selected recent additions', use the
+        // “current” date to look up articles that it assumes will always exist
+        // for the “current” month, so this needs to be mocked for those things
+        // to work properly
+        log::warn!(
+            "Could not determine the database creation date; some pages may be missing data"
+        );
+    }
+
     let renderer = r2d2::Builder::new()
         .max_size(limits.threads)
         .test_on_check_out(false)

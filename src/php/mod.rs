@@ -32,14 +32,14 @@ pub(crate) enum DateTimeFormatError {
 }
 
 /// A time zone.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum DateTimeZone {
     /// Offset from UTC.
     Offset(UtcOffset),
     /// Local time zone.
     Alias(tz::LocalTimeType),
     /// IANA time zone.
-    Named(String, tz::TimeZoneRef<'static>),
+    Named(&'static str, tz::TimeZoneRef<'static>),
 }
 
 impl DateTimeZone {
@@ -61,7 +61,7 @@ impl DateTimeZone {
 }
 
 /// A time with associated time zone.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct DateTime {
     /// The time.
     inner: OffsetDateTime,
@@ -81,8 +81,12 @@ impl DateTime {
 
     /// Creates a new `DateTime` object from a
     /// [PHP date format string](https://www.php.net/manual/en/datetime.formats.php).
-    pub fn new(text: &str, default_tz: Option<&DateTimeZone>) -> Result<Self, DateTimeError> {
-        timelib::new_datetime(text, default_tz).map_err(Into::into)
+    pub fn new(
+        text: &str,
+        default_tz: Option<&DateTimeZone>,
+        now: Option<&DateTime>,
+    ) -> Result<Self, DateTimeError> {
+        timelib::new_datetime(text, default_tz, now).map_err(Into::into)
     }
 
     /// Creates a new `DateTime` object for the current time, in local time.
@@ -204,7 +208,7 @@ impl DateTime {
         match &self.tz {
             DateTimeZone::Offset(offset) => Cow::Owned(offset.to_string()),
             DateTimeZone::Alias(alias) => Cow::Borrowed(alias.time_zone_designation()),
-            DateTimeZone::Named(name, _) => Cow::Borrowed(name.as_str()),
+            DateTimeZone::Named(name, _) => Cow::Borrowed(name),
         }
     }
 
@@ -234,7 +238,12 @@ impl DateTime {
     fn checked_to_offset(&self) {}
     #[allow(dead_code, clippy::missing_docs_in_private_items, clippy::unused_self)]
     fn replace_offset(&self) {}
-    #[allow(dead_code, clippy::missing_docs_in_private_items, clippy::unused_self)]
+    #[allow(
+        dead_code,
+        clippy::missing_docs_in_private_items,
+        clippy::unused_self,
+        clippy::wrong_self_convention
+    )]
     fn to_offset(&self) {}
 }
 

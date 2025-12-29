@@ -10,23 +10,27 @@
 use super::prelude::*;
 use crate::{
     common::{format_date, format_number, parse_formatted_number},
-    php::strval,
+    php::{DateTime, strval},
 };
 use std::cell::Cell;
-use time::UtcDateTime;
 
 /// The localisation support library.
 #[derive(gc_arena::Collect)]
 #[collect(require_static)]
 pub(crate) struct LanguageLibrary {
     /// The “current” time.
-    date: Cell<UtcDateTime>,
+    date: Cell<DateTime>,
 }
 
 impl LanguageLibrary {
+    /// Gets the date which is considered the current time.
+    pub(crate) fn date(&self) -> DateTime {
+        self.date.get()
+    }
+
     /// Sets the date which shall be considered the current time.
-    pub(crate) fn set_date(&self, date: UtcDateTime) {
-        self.date.set(date);
+    pub(crate) fn set_date(&self, date: &DateTime) {
+        self.date.set(*date);
     }
 
     mw_unimplemented! {
@@ -104,7 +108,7 @@ impl LanguageLibrary {
         ),
     ) -> Result<Value<'gc>, VmError<'gc>> {
         Ok(format_date(
-            &self.date.get().into(),
+            &self.date.get(),
             format.to_str()?,
             date.map(VmString::to_str).transpose()?,
             local == Some(true),
@@ -325,7 +329,7 @@ impl LanguageLibrary {
 impl Default for LanguageLibrary {
     fn default() -> Self {
         Self {
-            date: Cell::new(UtcDateTime::UNIX_EPOCH),
+            date: Cell::new(DateTime::from_unix_timestamp(0).unwrap()),
         }
     }
 }

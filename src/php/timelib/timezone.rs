@@ -11,7 +11,7 @@ pub(super) enum Timezone<'a> {
     /// A shorthand time zone alias, e.g. CEST, UTC, A.
     Alias(Cow<'a, str>),
     /// A full IANA time zone name.
-    Named(Cow<'a, str>),
+    Named(&'static str),
 }
 
 impl Timezone<'_> {

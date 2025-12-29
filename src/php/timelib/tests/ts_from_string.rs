@@ -8,11 +8,11 @@
 use super::super::{Timezone, parse_date::parse};
 
 #[track_caller]
-fn run_test(expected: i64, source: &str, reference_date: &str, reference_tz: &str) {
+fn run_test(expected: i64, source: &str, reference_date: &str, reference_tz: &'static str) {
     let t = parse(source).builder;
     let mut now = parse(reference_date).builder;
     if now.offset.is_none() && !reference_tz.is_empty() {
-        now.offset = Some(Timezone::Named(reference_tz.into()));
+        now.offset = Some(Timezone::Named(reference_tz));
     }
     let dt = t.build(Some(now)).unwrap();
     let actual = dt.unix_timestamp();

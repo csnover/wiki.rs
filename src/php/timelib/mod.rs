@@ -57,6 +57,7 @@ pub(crate) enum Error {
 pub(super) fn new_datetime(
     text: &str,
     default_tz: Option<&super::DateTimeZone>,
+    now: Option<&super::DateTime>,
 ) -> Result<super::DateTime, Error> {
     let state = match parse_date::parse(text) {
         parse_date::ParseResult {
@@ -68,7 +69,11 @@ pub(super) fn new_datetime(
         }
     };
 
-    let now = time::OffsetDateTime::now_local()?;
+    let now = if let Some(now) = now {
+        time::OffsetDateTime::from_unix_timestamp(now.unix_timestamp())?
+    } else {
+        time::OffsetDateTime::now_local()?
+    };
 
     let offset = Some(if let Some(default_tz) = default_tz {
         match default_tz {
@@ -76,7 +81,7 @@ pub(super) fn new_datetime(
             super::DateTimeZone::Alias(alias) => {
                 Timezone::Alias(alias.time_zone_designation().into())
             }
-            super::DateTimeZone::Named(name, _) => Timezone::Named(name.into()),
+            super::DateTimeZone::Named(name, _) => Timezone::Named(name),
         }
     } else {
         Timezone::Offset(now.offset().whole_seconds())

@@ -22,7 +22,6 @@ use crate::{
 use axum::http::Uri;
 use schnellru::LruMap;
 use std::sync::{Arc, RwLock, mpsc};
-use time::UtcDateTime;
 
 /// A renderer channel message command.
 pub(crate) enum Command {
@@ -98,8 +97,10 @@ impl r2d2::ManageConnection for RenderManager {
         let limits = self.limits;
         let template_cache = Arc::clone(&self.template_cache);
         // TODO: This date should be calculated from the database file.
-        let base_time = DateTime::now()?;
         let db = Arc::clone(&self.database);
+        let base_time = db.creation_date().map_or_else(DateTime::now, |date| {
+            DateTime::from_unix_timestamp(date.unix_timestamp())
+        })?;
         let parser = Parser::new(&CONFIG);
         std::thread::spawn(move || {
             let vm = new_vm(&base_uri, &db, &parser).unwrap();
@@ -185,7 +186,7 @@ fn render_article(
         FileMap::new(&article.body),
     );
 
-    render(statics, load_mode, article.date, &sp)
+    render(statics, load_mode, &sp)
 }
 
 /// Main renderer entrypoint for eval.
@@ -214,12 +215,11 @@ fn render_string(
         sp
     };
 
-    let date = UtcDateTime::now();
     let load_mode = LoadMode::Module;
     match mode {
-        EvalPp::Post => render(statics, load_mode, date, &sp),
+        EvalPp::Post => render(statics, load_mode, &sp),
         EvalPp::Pre | EvalPp::PreTree | EvalPp::Tree => {
-            let (state, source) = preprocess(statics, &sp, date, load_mode)?;
+            let (state, source) = preprocess(statics, &sp, load_mode)?;
             let mut content = if mode == EvalPp::Pre {
                 source
             } else if mode == EvalPp::PreTree {
@@ -248,13 +248,8 @@ fn render_string(
 }
 
 /// Main renderer entrypoint.
-fn render(
-    statics: &mut Statics,
-    load_mode: LoadMode,
-    date: UtcDateTime,
-    sp: &StackFrame<'_>,
-) -> Result<RenderOutput> {
-    let (mut state, source) = preprocess(statics, sp, date, load_mode)?;
+fn render(statics: &mut Statics, load_mode: LoadMode, sp: &StackFrame<'_>) -> Result<RenderOutput> {
+    let (mut state, source) = preprocess(statics, sp, load_mode)?;
 
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
@@ -309,12 +304,11 @@ fn render(
 fn preprocess<'a>(
     statics: &'a mut Statics,
     sp: &StackFrame<'_>,
-    date: UtcDateTime,
     load_mode: LoadMode,
 ) -> Result<(State<'a>, String)> {
     let root = statics.parser.parse(&sp.source, false)?;
 
-    reset_vm(&mut statics.vm, &sp.name, date)?;
+    reset_vm(&mut statics.vm, &sp.name, &statics.base_time)?;
 
     let mut state = State {
         globals: <_>::default(),

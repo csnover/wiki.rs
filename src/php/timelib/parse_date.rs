@@ -125,7 +125,7 @@ peg::parser! {grammar strtotime() for str {
     rule tz() -> Timezone<'input>
         = quiet!{
             n:$(upper() lower()+ (['_'|'/'|'-'] alpha()+)+)
-            { Timezone::Named(Cow::Borrowed(n)) }
+            {? static_tz(n).map(Timezone::Named) }
             / "("? n:$(alpha()*<1,6>) ")"?
             {
                 let value = if n.as_bytes().iter().all(u8::is_ascii_uppercase) {
@@ -972,6 +972,19 @@ impl DateTimeBuilder<'_> {
 fn add_checked(lhs: &mut i64, rhs: i64) -> Result<(), &'static str> {
     *lhs = lhs.checked_add(rhs).ok_or("non-overflowing number")?;
     Ok(())
+}
+
+/// Replaces a parsed named time zone with a static string from the timezone
+/// database.
+fn static_tz(parsed: &str) -> Result<&'static str, &'static str> {
+    tzdb_data::TZ_NAMES
+        .binary_search_by(|name| {
+            name.bytes()
+                .map(|b| b.to_ascii_lowercase())
+                .cmp(parsed.bytes().map(|b| b.to_ascii_lowercase()))
+        })
+        .map(|index| tzdb_data::TZ_NAMES[index])
+        .map_err(|_| "valid timezone name")
 }
 
 /// Converts the decimal part of a numeric string into a microseconds integer.

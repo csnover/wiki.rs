@@ -117,9 +117,9 @@ pub fn format_date(
             date.into()
         };
 
-        DateTime::new(&date, Some(&DateTimeZone::UTC))?
+        DateTime::new(&date, Some(&DateTimeZone::UTC), Some(now))?
     } else {
-        now.clone()
+        *now
     };
 
     let tz = if local {
