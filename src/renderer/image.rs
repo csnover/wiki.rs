@@ -3,6 +3,7 @@
 use super::{
     Result, StackFrame, State, WriteSurrogate,
     tags::{self, LinkKind},
+    text_run,
 };
 use crate::{
     common::url_encode,
@@ -231,10 +232,9 @@ pub(super) fn media_options<'s>(
     } else if let Some(caption) = options.caption.take() {
         let mut extractor = TextContent::new(&sp.source, String::new());
         extractor.visit_tokens(caption)?;
-        let title = extractor.finish();
-        options
-            .attrs
-            .insert("title".into(), title.trim_ascii().to_string().into());
+        let mut title = String::new();
+        text_run(&mut title, '\n', extractor.finish().trim_ascii(), false)?;
+        options.attrs.insert("title".into(), title.into());
     }
 
     Ok(options)
