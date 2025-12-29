@@ -118,6 +118,8 @@ pub(crate) async fn article(
     struct ArticleTemplate<'a> {
         /// The base path for URLs.
         base_path: &'a str,
+        /// The base URI for URLs.
+        base_uri: &'a str,
         /// The canonical URL of the article.
         canonical: &'a str,
         /// The title of the article.
@@ -145,7 +147,8 @@ pub(crate) async fn article(
     } else {
         &name
     };
-    let time = Instant::now();
+
+    let start = Instant::now();
     let load_mode = load_mode.unwrap_or(state.load_mode);
 
     let command = renderer::Command::Article {
@@ -156,10 +159,17 @@ pub(crate) async fn article(
 
     let output = call_renderer(&state, command)?;
 
-    log::trace!("Rendered article in {:.2?}", time.elapsed());
+    log::trace!("Rendered article in {:.2?}", start.elapsed());
+
+    let base_uri = if state.base_uri.scheme_str().is_some() {
+        state.base_uri.to_string()
+    } else {
+        format!("http://{}", state.base_uri)
+    };
 
     ArticleTemplate {
         base_path: state.base_uri.path(),
+        base_uri: &base_uri,
         canonical,
         title: &article.title,
         output: &output,

@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="content-security-policy" content="img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
+        <meta http-equiv="content-security-policy" content="script-src-elem 'sha256-dZYu6/sQh99NrfqVUODJhu3AiSIsfAsYd6UUlNDYE7I='; img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
         <title><%= canonical %> — <%= site %></title>
         <style>.mw-parser-output {
             <%= crate::pages::filter::css(&output.styles) %>
@@ -11,7 +11,8 @@
         <% /* wiki.rs styles come second for last-rule-wins equal specificity
               resolution */ %>
         <link rel="stylesheet" href="<%= base_path %>/styles.css">
-        <link rel="canonical" href="<%= base_path %>/article/<%= canonical %>">
+        <link rel="canonical" href="<%= base_uri %>/article/<%= canonical %>">
+        <script>history.replaceState(null, "", document.querySelector("[rel=canonical]").href + location.hash)</script>
     </head>
     <body class="wiki-rs-body">
         <div class="wiki-rs-nav">
