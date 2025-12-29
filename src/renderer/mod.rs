@@ -258,7 +258,35 @@
 //!      5. Emit an appropriate HTML tag (`<caption>`, `<tr>`, etc.) using the
 //!         sanitised attributes.
 //!
-//!    * Wikitext heading, list, language conversion, or magic link expressions:
+//!    * Wikitext list:
+//!
+//!      1. If the list item starts with one or more ':', and the first
+//!         expression in the list item is a table start expression:
+//!
+//!         1. Close any previous list;
+//!         2. Open a new list;
+//!         3. Continue emitting until a table end expression;
+//!         4. Close the definition list; otherwise
+//!
+//!      2. For a list item starting with a sequence of one or more '*' '#' ';'
+//!         or ':' characters (the “bullet list”):
+//!
+//!         1. Calculate the longest common bullet list (LCD) between the
+//!            current item and the previous item;
+//!         2. For each bullet after the LCD in the previous item, from right
+//!            to left, close the list;
+//!         3. For each bullet after the LCD in the next item, from left to
+//!            right, open a new list;
+//!         4. Open a new list item.
+//!
+//!      3. Continue emitting expressions until a newline or end of file;
+//!      4. Run the apostrophe balancing algorithm;
+//!      5. Run the inner element closing algorithm;
+//!      6. Close the list item;
+//!      7. If the next expression is not a list item, for each bullet in the
+//!         current item, from right to left, close the list.
+//!
+//!    * Wikitext heading, language conversion, or magic link expressions:
 //!      Emit an appropriate HTML tag.
 //!
 //!    * Wikitext text style expressions: Add the output position to the
