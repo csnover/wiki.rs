@@ -655,30 +655,44 @@ fn preprocess(
 }
 
 /// The list of built-in Lua libraries.
-const BUILT_INS: &[(&str, &[u8])] = &[
-    ("bit32", include_bytes!("./modules/bit32.lua")),
-    ("libraryUtil", include_bytes!("./modules/libraryUtil.lua")),
-    ("package", include_bytes!("./modules/package.lua")),
-    ("strict", include_bytes!("./modules/strict.lua")),
-    ("ustring", include_bytes!("./modules/ustring/ustring.lua")),
-    (
-        "ustring/charsets",
-        include_bytes!("./modules/ustring/charsets.lua"),
-    ),
-    (
-        "ustring/lower",
-        include_bytes!("./modules/ustring/lower.lua"),
-    ),
-    (
-        "ustring/normalization-data",
-        include_bytes!("./modules/ustring/normalization-data.lua"),
-    ),
-    (
-        "ustring/string",
-        include_bytes!("./modules/ustring/string.lua"),
-    ),
-    (
-        "ustring/upper",
-        include_bytes!("./modules/ustring/upper.lua"),
-    ),
-];
+const BUILT_INS: &[(&str, &[u8])] = {
+    // Scribunto set up library paths such that luabit was a library path, and
+    // then also did path resolution converting '.' to '/'. Since wiki.rs does
+    // not do filesystem anything, just set library names that work effectively
+    // the same as if they were searching library paths by identifying these
+    // modules with both the bare name and dot-separated library name.
+    const LUABIT_BIT: &[u8] = include_bytes!("./modules/luabit/bit.lua");
+    const LUABIT_HEX: &[u8] = include_bytes!("./modules/luabit/hex.lua");
+
+    &[
+        ("bit", LUABIT_BIT),
+        ("bit32", include_bytes!("./modules/bit32.lua")),
+        ("hex", LUABIT_HEX),
+        ("libraryUtil", include_bytes!("./modules/libraryUtil.lua")),
+        ("luabit.bit", LUABIT_BIT),
+        ("luabit.hex", LUABIT_HEX),
+        ("package", include_bytes!("./modules/package.lua")),
+        ("strict", include_bytes!("./modules/strict.lua")),
+        ("ustring", include_bytes!("./modules/ustring/ustring.lua")),
+        (
+            "ustring/charsets",
+            include_bytes!("./modules/ustring/charsets.lua"),
+        ),
+        (
+            "ustring/lower",
+            include_bytes!("./modules/ustring/lower.lua"),
+        ),
+        (
+            "ustring/normalization-data",
+            include_bytes!("./modules/ustring/normalization-data.lua"),
+        ),
+        (
+            "ustring/string",
+            include_bytes!("./modules/ustring/string.lua"),
+        ),
+        (
+            "ustring/upper",
+            include_bytes!("./modules/ustring/upper.lua"),
+        ),
+    ]
+};
