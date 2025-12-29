@@ -61,6 +61,7 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Football kit",
     "Template:Fossil range/bar",
     "Template:Historical populations",
+    "Template:Infobox drug",
     "Template:Largest cities",
     "Template:Markup",
     "Template:Periodic table (micro)",

@@ -2094,10 +2094,14 @@ th {
             &:has(> :is(
                 .infobox-image,
                 .sidebar-image
-            )) + tr:not(:has(> :is(
+            )) + tr > :not(
                 .infobox-image,
                 .sidebar-image
-            ))) > * {
+            ),
+            /* This also applies to subheaders, but the interaction between a
+               subheader followed by an image means that the previous rule would
+               not work correctly if subheader were added to it */
+            &:has(> .infobox-subheader) + tr > :not(.infobox-subheader) {
                 border-block-start: thin solid var(--fg);
                 padding-block-start: var(--side-margin);
             }
@@ -2123,6 +2127,7 @@ th {
 
             /* Sidebar navbar has no top border, so anything before it should not
             have block-end padding so they flow together */
+            &:has(> .infobox-subheader):has(+ tr > .infobox-subheader) > *,
             &:has(+ tr > .sidebar-navbar) > * {
                 padding-block-end: 0;
             }
@@ -2381,7 +2386,8 @@ th {
         /* Template:Chembox */
         /********************/
 
-        &.ib-chembox {
+        &.ib-chembox,
+        &[data-wiki-rs~=template-infobox-drug] {
             > tbody > tr {
                 &:first-child > [colspan]:has(> img, > * > img) {
                     padding-block: var(--side-margin) !important;
@@ -2443,7 +2449,7 @@ th {
                             font-family: var(--mono);
                             font-weight: var(--normal-weight);
 
-                            &:is(ul):has(:nth-child(2)) {
+                            &:is(ul):has(> :nth-child(2)) {
                                 list-style: decimal !important;
                                 padding-left: .83em;
 
@@ -3029,8 +3035,7 @@ th {
             margin-inline: 0;
         }
 
-        :is(.mw-parser-output, .documentation) > * + &,
-        :is(.excerpt, .excerpt-block) > & {
+        :is(.mw-parser-output, .documentation, .excerpt, .excerpt-block) > & {
             margin-block-start: var(--box-margin);
         }
     }
