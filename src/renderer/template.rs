@@ -108,7 +108,7 @@ pub(super) fn call_module(
     let sp = sp.chain(callee, sp.source.clone(), &arguments[2..])?;
 
     // log::trace!("Invoking {}|{}", &code.title, fn_name);
-    let now = Instant::now();
+    let start = Instant::now();
     let result = run_vm(state, pin!(&sp), &code, &fn_name).map_err(|err| Error::Module {
         name: code.title.clone(),
         fn_name: fn_name.to_string(),
@@ -120,9 +120,9 @@ pub(super) fn call_module(
         .entry(sp.name.key().to_string())
         .and_modify(|(count, duration)| {
             *count += 1;
-            *duration += now.elapsed();
+            *duration += start.elapsed();
         })
-        .or_insert_with(|| (1, now.elapsed()));
+        .or_insert_with(|| (1, start.elapsed()));
 
     // 'Module:Maplink' absolutely relies on Wikidata, with no error guards,
     // relying on MW just emitting HTML whenever an error occurs instead of
@@ -491,7 +491,7 @@ pub(crate) fn call_template(
 
     log::trace!("Expanding {resolved_title}");
 
-    let now = Instant::now();
+    let start = Instant::now();
     let mut expansion = ExpandTemplates::new(ExpandMode::Include);
 
     // The 'Module:Arguments' wrapper argument requires that redirects are
@@ -522,9 +522,9 @@ pub(crate) fn call_template(
         .entry(sp.name.key().to_string())
         .and_modify(|(count, duration)| {
             *count += 1;
-            *duration += now.elapsed();
+            *duration += start.elapsed();
         })
-        .or_insert_with(|| (1, now.elapsed()));
+        .or_insert_with(|| (1, start.elapsed()));
 
     Ok(wrapper_key)
 }
