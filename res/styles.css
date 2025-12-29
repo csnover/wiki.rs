@@ -2184,7 +2184,7 @@ th {
         .infobox-title,
         .sidebar-title,
         .sidebar-title-with-pretitle,
-        &.vevent > tbody > tr:first-child > *
+        &.vevent:not(:has(> caption)) > tbody > tr:first-child > *
         {
             background: transparent !important;
             border-block: thin solid var(--fg) !important;
