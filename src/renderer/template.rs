@@ -69,6 +69,7 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Tree chart",
     "Template:Tree chart/start",
     "Template:Weather box",
+    "Wikipedia:Contents/TOC navbar",
 };
 
 /// Calls a Lua function.

@@ -594,6 +594,7 @@ th {
     --legend-valign: baseline;
     --legend-wh: calc(1ex + 2px);
 
+    --caption-size: .9rem;
     --big-caption: 1.1rem;
     --max-width: 70rem;
 
@@ -2014,7 +2015,6 @@ th {
 
     .infobox.infobox.infobox,
     .sidebar.sidebar {
-        --caption-size: .9rem;
         --label-baseline-align: var(--side-title-lh-adjust);
 
         background: transparent !important;
@@ -2789,7 +2789,7 @@ th {
                 font-size: var(--side-head-font-size) !important;
                 font-stretch: var(--side-body-stretch);
                 font-weight: var(--bold) !important;
-                line-height: calc(var(--side-line-height) / var(--side-font-size)) !important;
+                line-height: calc(var(--side-line-height) / var(--side-head-font-size)) !important;
                 margin-block: var(--side-margin) 0 !important;
                 margin-inline: 0 !important;
             }
@@ -3272,7 +3272,7 @@ th {
                 > div > p > b {
                     display: block;
                     font-size: var(--side-head-font-size);
-                    line-height: calc(var(--side-line-height) / var(--side-font-size));
+                    line-height: calc(var(--side-line-height) / var(--side-head-font-size));
                     padding-block-start: var(--side-margin);
                 }
             }
@@ -3314,10 +3314,12 @@ th {
             margin-inline: -.25em !important;
         }
 
-        /* !important: 'Template:New York City', and others */
+        /* !important: 'Template:New York City', 'Template:WikiProject Footer',
+           and others */
         [style*="box-shadow:"]:is(
             .navbox-abovebelow,
             .navbox-group,
+            .navbox-list-with-group,
             .navbox-title
         ) {
             box-shadow: none !important;
@@ -4311,5 +4313,130 @@ th {
 
     .example:not(.monospaced) {
         font-family: var(--serif) !important;
+    }
+
+    /*********************************/
+    /* Wikipedia:Contents/TOC navbar */
+    /*********************************/
+
+    [data-wiki-rs~=wikipedia-contents-toc-navbar] {
+        border-block-start: thin solid var(--fg);
+        padding-block-start: calc(var(--box-margin) * .5);
+
+        font-family: var(--sans);
+        font-size: var(--caption-size);
+
+        + & {
+            border: 0;
+            margin: 0 !important;
+            padding: 0;
+        }
+
+        + * {
+            margin-block-start: calc(var(--box-margin) * .5);
+        }
+    }
+
+    /***********************************/
+    /* Wikipedia:Contents/Types layout */
+    /***********************************/
+
+    .contentsPage--type {
+        background: transparent;
+        border: 0;
+
+        &.contentsPage--type > * {
+            background: transparent;
+            border: 0;
+            box-shadow: none;
+            padding: 0;
+
+            + * {
+                margin-block-start: var(--box-margin);
+            }
+        }
+    }
+
+    .contentsPage__intro,
+    .contentsPage__section {
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+    }
+
+    .contentsPage__intro > * + * {
+        margin-block-start: var(--box-margin);
+    }
+
+    .contentsPage__section,
+    .contentsPage__section > .div-col {
+        > :where(b, p):not(:first-child:last-child) {
+            font-family: var(--sans);
+            font-stretch: 150%;
+            text-transform: uppercase;
+        }
+
+        > dl > dd {
+            margin-inline-start: 0;
+        }
+
+        > * + :where(b, p) {
+            margin-block-start: var(--box-margin);
+        }
+    }
+
+    .contentsPage__title.contentsPage__title {
+        border-block: thin solid var(--fg);
+        border-block-start-width: 3px;
+        font-family: var(--sans);
+        font-size: 1.25em;
+        font-stretch: 120%;
+        font-weight: var(--bold);
+        padding: 0;
+    }
+
+    .contentsPage__heading.contentsPage__heading {
+        align-items: baseline;
+        border: 0;
+        display: flex;
+        font-family: var(--sans);
+        gap: calc(var(--box-margin) * .5);
+        padding: 0;
+
+        * + & {
+            margin-block-start: 5rem;
+        }
+
+        > :any-link:first-child {
+            order: 1;
+
+            img {
+                max-block-size: 1cap;
+            }
+        }
+
+        > h2 {
+            font-family: inherit;
+            font-size: 1.5rem;
+            font-stretch: semi-expanded;
+            line-height: 1rlh;
+            padding-block: .1rlh .4rlh;
+
+            + * {
+                align-items: baseline;
+                display: flex;
+                flex: 1;
+
+                &::before {
+                    content: '';
+                    flex: 1;
+                }
+            }
+        }
+
+        > :is(.contentsPage__sectionlinks, .contentsPage__xlink) {
+            font-size: inherit;
+            position: static;
+        }
     }
 }
