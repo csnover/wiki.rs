@@ -29,8 +29,8 @@ peg = { git = "https://github.com/csnover/rust-peg.git", rev = "68a910801dbcf6ac
 # urlencoding is smaller, but percent-encoding is already a sub-dependency
 percent-encoding = "2"
 phf = { version = "0.13.1", features = ["macros"] }
-piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "7c667ec9a649342ec92619688cf52bb69c5a7e31" }
-piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "7c667ec9a649342ec92619688cf52bb69c5a7e31" }
+piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
+piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
 pico-args = "0.5"
 r2d2 = "0.8"
 rayon = "1"

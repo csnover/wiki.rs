@@ -997,7 +997,7 @@ dependencies = [
 [[package]]
 name = "piccolo"
 version = "0.3.3"
-source = "git+https://github.com/csnover/piccolo.git?rev=7c667ec9a649342ec92619688cf52bb69c5a7e31#7c667ec9a649342ec92619688cf52bb69c5a7e31"
+source = "git+https://github.com/csnover/piccolo.git?rev=4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336#4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336"
 dependencies = [
  "ahash",
  "allocator-api2",
@@ -1011,7 +1011,7 @@ dependencies = [
 [[package]]
 name = "piccolo-util"
 version = "0.3.3"
-source = "git+https://github.com/csnover/piccolo.git?rev=7c667ec9a649342ec92619688cf52bb69c5a7e31#7c667ec9a649342ec92619688cf52bb69c5a7e31"
+source = "git+https://github.com/csnover/piccolo.git?rev=4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336#4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336"
 dependencies = [
  "gc-arena",
  "piccolo",
