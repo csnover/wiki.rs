@@ -305,6 +305,17 @@ impl Title {
         text.rsplit_once('/').map_or(text, |(base, _)| base)
     }
 
+    /// The full text of the title.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    pub(crate) fn full_text(&self) -> &str {
+        &self.text
+    }
+
     /// The page fragment.
     ///
     /// ```text
@@ -362,6 +373,18 @@ impl Title {
         url_encode(self.key())
     }
 
+    /// The prefixed text of the title.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    pub(crate) fn prefixed_text(&self) -> &str {
+        let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
+        &self.text[..end_at]
+    }
+
     /// The root path of the page.
     ///
     /// ```text
@@ -402,17 +425,6 @@ impl Title {
         &self.text[start_at..end_at]
     }
 
-    /// The full text of the title.
-    ///
-    /// ```text
-    /// Interwiki:Namespace:Title/Sub/Page#Fragment
-    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    /// ```
-    #[inline]
-    pub(crate) fn full_text(&self) -> &str {
-        &self.text
-    }
-
     /// Returns true if all the bytes in the given string are valid for use in
     /// a title.
     pub(crate) fn is_valid(maybe_title: &str) -> bool {
@@ -451,7 +463,38 @@ impl Title {
                 return false;
             }
         }
-        true
+        !maybe_title.is_empty()
+    }
+
+    /// Converts a page-relative title name to an absolute title name using the
+    /// given `base` as the base title.
+    pub(crate) fn join<'a>(&self, partial: &'a str) -> Cow<'a, str> {
+        if !self.namespace().subpages {
+            return Cow::Borrowed(partial);
+        }
+
+        let (target, fragment) = if let Some(p) = partial.rfind('#') {
+            partial.split_at(p)
+        } else {
+            (partial, "")
+        };
+        let target = target.trim_ascii();
+
+        // TODO: '/' at the end is supposed to do something to the output text
+        if target.starts_with('/') {
+            Cow::Owned(self.prefixed_text().to_string() + target.trim_end_matches('/') + fragment)
+        } else if target.starts_with("../") {
+            let suffix = target.trim_start_matches("../");
+            let count = (target.len() - suffix.len()) / "../".len();
+            self.prefixed_text()
+                .rsplitn(count + 1, '/')
+                .nth(count)
+                .map_or(<_>::default(), |last| {
+                    Cow::Owned(format!("{last}/{suffix}{fragment}"))
+                })
+        } else {
+            Cow::Borrowed(partial.trim_ascii())
+        }
     }
 }
 
@@ -527,6 +570,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn join() {
+        let base = Title::new("Talk:A/b/c", None);
+        assert_eq!(base.join("Absolute"), Cow::Borrowed("Absolute"));
+        assert_eq!(base.join("/d"), "Talk:A/b/c/d");
+        assert_eq!(base.join("/d#F"), "Talk:A/b/c/d#F");
+        assert_eq!(base.join("/d///"), "Talk:A/b/c/d");
+        assert_eq!(base.join("/d/#F"), "Talk:A/b/c/d#F");
+        assert_eq!(base.join("/d/e"), "Talk:A/b/c/d/e");
+        assert_eq!(base.join("../z"), "Talk:A/b/z");
+        assert_eq!(base.join("../../y"), "Talk:A/y");
+        assert_eq!(base.join("../../../x"), "");
+    }
+
+    #[test]
     fn from_str() {
         let title = Title::new("Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
         assert_eq!(title.namespace().id, Namespace::TALK);
@@ -535,6 +592,7 @@ mod tests {
         assert_eq!(title.full_text(), "Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
         assert_eq!(title.interwiki(), Some("Iw"));
         assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
+        assert_eq!(title.prefixed_text(), "Iw:Talk:Aa/Bb/Cc");
         assert_eq!(title.root_text(), "Aa");
         assert_eq!(title.subpage_text(), "Cc");
         assert_eq!(title.text(), "Aa/Bb/Cc");

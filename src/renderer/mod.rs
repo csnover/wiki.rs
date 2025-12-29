@@ -114,13 +114,15 @@
 //!    4. If the target-part of the expression contains a `:`, and the part
 //!       before the `:` matches a parser function, and calling the parser
 //!       function succeeds, the result of the parser function; otherwise
-//!    5. If the target-part of the expression is a valid and existing template,
+//!    5. If the target-part of the expression is a subpage title expression,
+//!       convert it to a fully qualified title, then;
+//!    6. If the target-part of the expression is a valid and existing template,
 //!       the result of expanding the template; otherwise
-//!    6. If the target-part of the expression is a valid but non-existing
+//!    7. If the target-part of the expression is a valid but non-existing
 //!       template according to the configurable list of allowed template target
 //!       characters, the Wikitext expression `[[:Template:<target>]]`;
 //!       otherwise
-//!    7. The template expression itself, as plain text.
+//!    8. The template expression itself, as plain text.
 //!
 //!    If the template expression was not immediately following a new line or
 //!    the start of the file, and the result of the template expansion starts

@@ -442,9 +442,9 @@ fn split_target<'tt>(
                 callee += first;
             };
             callee += &sp.eval(state, rest)?;
-            let callee = callee.trim_ascii();
-            if Title::is_valid(callee) {
-                let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
+            let callee = sp.name.join(&callee);
+            if Title::is_valid(&callee) {
+                let callee = Title::new(&callee, Namespace::find_by_id(Namespace::TEMPLATE));
                 let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
                 Target::Template { callee, arguments }
             } else {
@@ -551,7 +551,7 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     let href = make_url(
         None,
         &state.statics.base_uri,
-        sp.root().name.full_text(),
+        sp.root().name.prefixed_text(),
         Some("mode=module"),
         false,
     )?;
