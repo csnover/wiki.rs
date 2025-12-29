@@ -3446,7 +3446,7 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
     let mut v = Vec::<Spanned<Token>>::new();
     let mut iter = t.into_iter().peekable();
     let mut table_count = 0_u32;
-    while let Some(token) = iter.next() {
+    while let Some(mut token) = iter.next() {
         if matches!(token.node, Token::TableStart { .. }) {
             table_count += 1;
         } else if matches!(token.node, Token::TableEnd) {
@@ -3460,6 +3460,35 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
             && text_span.end == token.span.start
         {
             *text_span = text_span.merge(token.span);
+        } else if let Token::ListItem { content, .. } = &mut token.node
+            && matches!(
+                content.first(),
+                Some(Spanned {
+                    node: Token::TableStart { .. },
+                    ..
+                })
+            )
+        {
+            // Normally a newline at the end of a list item would trigger the
+            // end of the list item and close all the elements inside, but list
+            // items which start with a Wikitext table (which can only happen
+            // with the dt hack since "{|" is normally only valid at the start
+            // of a line) are yet one more super special snowflake production
+            // that needs to make like a Kirby and suck in everything until the
+            // end of the table. If there is no end of the table, guess what:
+            // unlike a normal production where this would cause tokens to decay
+            // to plain text, in this situation, *everything* gets to go in the
+            // table!
+            for token in iter.by_ref() {
+                let done = matches!(token.node, Token::TableEnd);
+                content.push(token);
+                if done {
+                    break;
+                }
+            }
+            *content = reduce_tree(core::mem::take(content));
+            token.span.end = content.last().unwrap().span.end;
+            v.push(token);
         } else if let Some(
             last @ Spanned {
                 node: Token::TableStart { .. } | Token::TableRow { .. },
@@ -3525,10 +3554,17 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
                     node: Token::ListItem { .. },
                 }),
                 Some(Spanned {
-                    node: Token::ListItem { .. },
+                    node: Token::ListItem { content, .. },
                     ..
                 }),
             ) = (v.last_mut(), iter.peek())
+            && !matches!(
+                content.first(),
+                Some(Spanned {
+                    node: Token::TableStart { .. },
+                    ..
+                })
+            )
         {
             // This fixup collapses contiguous list items separated by newlines.
             // Due to the way the `sol` rule is designed it is not possible to
@@ -3537,7 +3573,9 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
             // Keeping the token would make it ambiguous as an end-of-list
             // signal, requiring additional processing elsewhere, but it
             // still needs to be represented in the list item span to ensure
-            // list items can be reserialised properly
+            // list items can be reserialised properly. List items that start
+            // with tables are special and start new lists even if they are
+            // adjacent to other list items.
             li_span.end = token.span.end;
         } else if token.node != Token::Text || !token.span.is_empty() {
             v.push(token);
