@@ -265,7 +265,7 @@ impl RawDatabase<'_> {
     #[inline]
     fn may_exist(&self, title: &Title) -> bool {
         let ns_id = title.namespace().id;
-        title.interwiki().is_empty()
+        title.interwiki().is_none_or(str::is_empty)
             && !matches!(
                 ns_id,
                 Namespace::SPECIAL | Namespace::FILE | Namespace::MEDIA

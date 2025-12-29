@@ -88,13 +88,13 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
 
     let title = Title::new(&target, None);
     match title.namespace().id {
-        Namespace::CATEGORY => {
+        Namespace::CATEGORY if title.interwiki().is_none() => {
             state.globals.categories.insert(title.key().to_string());
             if let Some(trail) = trail {
                 out.adopt_generated(state, sp, None, trail)?;
             }
         }
-        Namespace::FILE => {
+        Namespace::FILE if title.interwiki().is_none() => {
             image::render_media(out, state, sp, title, content)?;
             if let Some(trail) = trail {
                 out.adopt_generated(state, sp, None, trail)?;

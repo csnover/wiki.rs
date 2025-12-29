@@ -269,7 +269,7 @@ impl Title {
             let lhs = lhs.trim_end();
             let rhs = rhs.trim_start();
             if lhs.is_empty() {
-                (None, rhs)
+                (Some(lhs), rhs)
             } else if Namespace::find_by_name(lhs.trim_end()).is_none() {
                 (Some(lhs), rhs.trim_start())
             } else {
@@ -326,9 +326,9 @@ impl Title {
     /// ^^^^^^^^^
     /// ```
     #[inline]
-    pub fn interwiki(&self) -> &str {
-        let end_at = usize::from(self.iw_delimiter.unwrap_or(0));
-        &self.text[..end_at]
+    pub fn interwiki(&self) -> Option<&str> {
+        self.iw_delimiter
+            .map(|end_at| &self.text[..usize::from(end_at)])
     }
 
     /// The local part of the title.
@@ -527,25 +527,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_iw() {
-        let title = Title::new(":File:A.png", None);
-        assert_eq!(title.interwiki(), "");
-        assert_eq!(title.namespace().id, Namespace::FILE);
-        assert_eq!(title.key(), "File:A.png");
-    }
-
-    #[test]
     fn from_str() {
         let title = Title::new("Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
         assert_eq!(title.namespace().id, Namespace::TALK);
         assert_eq!(title.base_text(), "Aa/Bb");
         assert_eq!(title.fragment(), "Dd/Ee/Ff");
         assert_eq!(title.full_text(), "Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
-        assert_eq!(title.interwiki(), "Iw");
+        assert_eq!(title.interwiki(), Some("Iw"));
         assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
         assert_eq!(title.root_text(), "Aa");
         assert_eq!(title.subpage_text(), "Cc");
         assert_eq!(title.text(), "Aa/Bb/Cc");
+    }
+
+    #[test]
+    fn interwiki() {
+        let title = Title::new(":File:A.png", None);
+        assert_eq!(title.interwiki(), Some(""));
+        assert_eq!(title.namespace().id, Namespace::FILE);
+        assert_eq!(title.key(), "File:A.png");
+
+        let title = Title::new("File:A.png", None);
+        assert_eq!(title.interwiki(), None);
+        assert_eq!(title.namespace().id, Namespace::FILE);
+        assert_eq!(title.key(), "File:A.png");
     }
 
     #[test]

@@ -454,7 +454,11 @@ fn update_title<'gc>(
 ) -> Result<(), RuntimeError> {
     table.set_field(ctx, "isCurrentTitle", is_current_title);
     table.set_field(ctx, "isLocal", true);
-    table.set_field(ctx, "interwiki", ctx.intern(title.interwiki().as_bytes()));
+    table.set_field(
+        ctx,
+        "interwiki",
+        ctx.intern(title.interwiki().unwrap_or_default().as_bytes()),
+    );
     table.set_field(ctx, "namespace", title.namespace().id);
     table.set_field(ctx, "nsText", title.namespace().name);
     table.set_field(ctx, "text", ctx.intern(title.text().as_bytes()));
