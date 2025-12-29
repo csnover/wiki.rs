@@ -137,7 +137,17 @@ impl MwInterface for SiteLibrary {
             scriptPath = "/",
             server = "",
             siteName = "wiki.rs",
-            stats = Table::new(&ctx),
+            stats = table! {
+                using ctx;
+
+                pages = 1,
+                articles = 1,
+                files = 0,
+                edits = 1,
+                users = 1,
+                activeUsers = 1,
+                admins = 1,
+            },
             stylePath = "/",
         })
     }
