@@ -228,10 +228,17 @@ mod lua {
 
                 (
                     if trim {
-                        buf[..len]
-                            .iter()
-                            .position(|c| *c != b'0' && *c != b'.')
-                            .unwrap_or(len)
+                        let mut start = len;
+                        for (index, c) in buf[..len].iter().enumerate() {
+                            if *c == b'.' {
+                                start = index + 1;
+                                break;
+                            } else if *c != b'0' {
+                                start = index;
+                                break;
+                            }
+                        }
+                        start
                     } else {
                         0
                     },
@@ -962,6 +969,7 @@ mod tests {
         assert_eq!(check_fmt_f64("%.2g", 1.15), "1.1");
         assert_eq!(check_fmt_f64("%.2g", 1.16), "1.2");
         assert_eq!(check_fmt_f64("%.3g", 10.15), "10.2");
+        assert_eq!(check_fmt_f64("%g", 10.0), "10");
     }
 
     #[test]
