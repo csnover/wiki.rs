@@ -2,13 +2,35 @@
 
 use crate::lua::prelude::*;
 use piccolo::{
-    TypeError,
+    Function, TypeError,
     meta_ops::{self, MetaResult},
 };
 
 /// Loads the maths library.
 pub fn load_math(ctx: Context<'_>) -> Result<(), TypeError> {
     let math = ctx.get_global::<Table<'_>>("math")?;
+
+    // Lua 5.4 does not allow implicit string conversion
+    for key in ["min", "max"] {
+        let function = ctx.stash(math.get::<_, Function<'_>>(ctx, key)?);
+        math.set_field(
+            ctx,
+            key,
+            Callback::from_fn(&ctx, move |ctx, _, mut stack| {
+                for op in 0..stack.len() {
+                    if matches!(stack[op], Value::String(_))
+                        && let Some(value) = stack[op].to_numeric()
+                    {
+                        stack[op] = value;
+                    }
+                }
+                Ok(CallbackReturn::Call {
+                    function: ctx.fetch(&function),
+                    then: None,
+                })
+            }),
+        );
+    }
 
     math.set_field(
         ctx,
