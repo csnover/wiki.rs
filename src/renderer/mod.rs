@@ -709,13 +709,13 @@ fn text_run<W: fmt::Write + ?Sized>(
 ) -> Result<char> {
     fn is_break(prev: char, next: Option<char>) -> bool {
         use unicode_general_category::{
-            GeneralCategory::{InitialPunctuation, OpenPunctuation},
+            GeneralCategory::{DashPunctuation, InitialPunctuation, OpenPunctuation},
             get_general_category,
         };
         prev.is_whitespace()
             || (matches!(
                 get_general_category(prev),
-                OpenPunctuation | InitialPunctuation
+                DashPunctuation | OpenPunctuation | InitialPunctuation
             ) && !next.is_some_and(char::is_whitespace))
     }
 
