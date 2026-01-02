@@ -720,7 +720,24 @@ fn text_run<W: fmt::Write + ?Sized>(
     }
 
     let mut chars = text.chars().peekable();
+    let mut dot_count = 0;
     while let Some(mut c) = chars.next() {
+        if c == '.' && !in_code && dot_count != 3 {
+            dot_count += 1;
+            continue;
+        }
+
+        if !in_code && dot_count == 3 {
+            out.write_char('…')?;
+            prev = '…';
+            dot_count = 0;
+        }
+
+        for _ in 0..dot_count {
+            out.write_char('.')?;
+            prev = '.';
+        }
+
         match c {
             '"' if !in_code => {
                 out.write_char(if is_break(prev, chars.peek().copied()) {
@@ -746,6 +763,17 @@ fn text_run<W: fmt::Write + ?Sized>(
             c => out.write_char(c)?,
         }
         prev = c;
+        dot_count = 0;
+    }
+
+    if dot_count == 3 {
+        out.write_char('…')?;
+        prev = '…';
+    } else {
+        for _ in 0..dot_count {
+            out.write_char('.')?;
+            prev = '.';
+        }
     }
 
     Ok(prev)
