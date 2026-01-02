@@ -1243,7 +1243,7 @@ th {
 
     .wiki-rs-timeline-main-axis,
     .wiki-rs-timeline-cross-axis {
-        font-variant-numeric: lining-nums;
+        font-variant-numeric: normal;
     }
 
     /*************************/
@@ -1596,7 +1596,7 @@ th {
         --heat-gradient: linear-gradient(to bottom, red 20%, blue 80%);
 
         border: none !important;
-        font-variant-numeric: lining-nums;
+        font-variant-numeric: normal;
         margin-block-end: var(--figure-margin) !important;
 
         &[style*="float: left"] {
@@ -1853,6 +1853,74 @@ th {
 
     > * + .mod-gallery {
         margin-block-start: var(--box-margin);
+    }
+
+    /*******************************/
+    /* Template:Graphical timeline */
+    /*******************************/
+
+    [data-wiki-rs~=template-graphical-timeline] {
+        font-family: var(--sans);
+        min-inline-size: 0 !important;
+
+        > tbody > tr:has(> #Navbox) + tr > * {
+            margin-block-start: var(--box-margin) !important;
+        }
+
+        &[style*="float\:right"] {
+            border: 0 !important;
+            font-stretch: var(--side-body-stretch);
+            margin-block: 0 var(--figure-margin) !important;
+            margin-inline: var(--figure-margin) 0 !important;
+            padding: 0 !important;
+        }
+
+        #Title {
+            border-block: thin solid var(--fg);
+            border-block-start-width: 3px;
+            padding: 0 !important;
+
+            > * {
+                background: transparent !important;
+                font-weight: var(--bold) !important;
+                padding: 0 !important;
+            }
+
+            [style*=color] {
+                color: inherit !important;
+            }
+        }
+
+        #Navbox {
+            border-block-end: thin solid var(--border-fg);
+            font-stretch: normal;
+            margin-block-end: var(--side-margin) !important;
+        }
+
+        #Scale {
+            font-variant-numeric: normal;
+            inline-size: 2em !important;
+        }
+
+        #Timeline {
+            border-block: thin solid var(--fg) !important;
+            overflow: hidden;
+
+            &::before {
+                background: var(--bar-fill);
+                content: '';
+                inset: 0;
+                mix-blend-mode: overlay;
+                pointer-events: none;
+                position: absolute;
+                z-index: 1;
+            }
+
+            span {
+                position: relative;
+                z-index: 2;
+            }
+        }
     }
 
     /********************/
@@ -2610,6 +2678,14 @@ th {
                 margin-inline: 0 !important;
                 padding: 0 !important;
             }
+        }
+
+        /***************************/
+        /* Template:Infobox genome */
+        /***************************/
+
+        &.ib-genome .infobox-image {
+            border-inline: 0;
         }
 
         /**************************************/
