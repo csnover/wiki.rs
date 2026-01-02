@@ -174,6 +174,9 @@ impl Document {
         self.graf_emitter.before_start_tag(&self.html, &name);
         write!(self.html, "<{name}")?;
         if !attributes.is_empty() {
+            // TODO: Attributes need to be manhandled. For example, anything
+            // that is an `id` attribute needs to be passed through
+            // `anchor_encode`
             self.stack.push(Node::Attribute);
             for attribute in attributes {
                 self.html.write_char(' ')?;
