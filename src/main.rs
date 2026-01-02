@@ -387,6 +387,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .route("/article/{*name}", get(pages::article))
         .route("/eval", get(pages::eval_get).post(pages::eval_post))
         .route("/external/{*target}", get(pages::external))
+        .route("/favicon.ico", get(pages::favicon))
         .route("/fonts/{*font}", get(pages::fonts))
         .route("/media/{*image}", get(pages::media))
         .route("/search", get(pages::search))

@@ -290,6 +290,17 @@ fn html_result(result: String) -> impl IntoResponse {
     )
 }
 
+/// The favicon resource route handler.
+pub(crate) async fn favicon() -> impl IntoResponse {
+    (
+        [
+            (header::CACHE_CONTROL, "max-age=604800, public"),
+            (header::CONTENT_TYPE, "image/svg+xml"),
+        ],
+        include_bytes!("../res/favicon.svg")
+    )
+}
+
 /// The font resource route handler.
 pub(crate) async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
     const FONTS: &[(&str, &[u8])] = &[
@@ -321,8 +332,8 @@ pub(crate) async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
     {
         Ok((
             [
-                (header::CONTENT_TYPE, "font/woff2"),
                 (header::CACHE_CONTROL, "max-age=806400, public, immutable"),
+                (header::CONTENT_TYPE, "font/woff2"),
             ],
             body,
         ))
@@ -335,8 +346,8 @@ pub(crate) async fn fonts(Path(font): Path<String>) -> impl IntoResponse {
 pub(crate) async fn media(Path(_): Path<String>) -> impl IntoResponse {
     (
         [
+            (header::CACHE_CONTROL, "max-age=604800, public, immutable"),
             (header::CONTENT_TYPE, "image/svg+xml"),
-            (header::CACHE_CONTROL, "max-age=806400, public, immutable"),
         ],
         include_str!("../res/placeholder.svg"),
     )
