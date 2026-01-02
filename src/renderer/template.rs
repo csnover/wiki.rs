@@ -66,6 +66,8 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
     "Template:Markup",
     "Template:Periodic table (micro)",
     "Template:Phanerozoic 220px",
+    "Template:Portal description",
+    "Template:Portals browsebar",
     "Template:Tree chart",
     "Template:Tree chart/start",
     "Template:Weather box",

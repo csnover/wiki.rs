@@ -52,8 +52,8 @@
     --ol-gutter: 1.5rem;
     /* Bad things happen to the baseline grid if this is not unitless */
     --rlh: 1.55;
-    --sans: archivo, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    --serif: source-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --sans: archivo, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --serif: source-serif, serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
     --shade-bg: #f9f9f9;
 
     font: 0.95rem/var(--rlh) var(--serif);
@@ -182,6 +182,7 @@ img {
 
 math {
     font-family: var(--serif);
+    font-weight: var(--normal-weight);
 }
 
 pre,
@@ -594,6 +595,7 @@ th {
     --legend-valign: baseline;
     --legend-wh: calc(1ex + 2px);
 
+    --doc-title-size: 1.25rem;
     --caption-size: .9rem;
     --big-caption: 1.1rem;
     --max-width: 70rem;
@@ -689,12 +691,12 @@ th {
         margin-block-start: calc(var(--box-margin) * 1.5);
 
         /* Allow many cute things to cuddle up to the heading */
-        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block),
+        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block, .tright),
         /* This is for containers that show up sometimes like `.excerpt` */
         + :not(blockquote):has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
         /* Things which take themselves out of the flow by float mean the next
            thing also needs to be cuddled */
-        + :is(.floatright, .mw-halign-left, .mw-halign-right) + * {
+        + :is(.floatright, .mw-halign-left, .mw-halign-right, .tright) + * {
             margin-block-start: 0;
         }
     }
@@ -1874,7 +1876,7 @@ th {
     /* Template:Hidden begin */
     /*************************/
 
-    .hidden-begin {
+    :not(.mbox-text-span) > .hidden-begin {
         border: 0 !important;
 
         &:has(+ .navbox-styles, + .navbox) {
@@ -1882,7 +1884,7 @@ th {
         }
     }
 
-    .hidden-title {
+    :not(.mbox-text-span) > .hidden-begin > .hidden-title {
         border-block-start: 3px solid var(--fg);
         border-block-end: thin solid var(--border-th);
         font-family: var(--sans);
@@ -2050,7 +2052,10 @@ th {
         }
 
         * + dt,
-        * + li {
+        * + li,
+        dl,
+        ol,
+        ul {
             margin-block-start: 0;
         }
 
@@ -2065,6 +2070,7 @@ th {
            padding. The DOM for a caption is special, so needs a special
            selector */
         > caption + tbody > tr:first-child > * {
+            border-block-start-width: 0 !important;
             padding-block-start: var(--side-margin);
         }
 
@@ -2082,6 +2088,7 @@ th {
                padding */
             &:has(> :is(
                 .infobox-above,
+                .infobox-header,
                 .infobox-title,
                 .sidebar-title,
                 .sidebar-title-with-pretitle
@@ -2215,11 +2222,17 @@ th {
             }
         }
 
+        > tbody > tr:first-child > .sidebar-title {
+            border-block-start: 0 !important;
+        }
+
         .infobox-below,
         .sidebar-below {
+            background: transparent !important;
             border-block: thin solid var(--fg) !important;
             border-block-end: 0 !important;
             padding-block: var(--side-margin);
+            padding-inline: 0 !important;
             text-align: center;
         }
 
@@ -2316,9 +2329,26 @@ th {
         }
 
         .infobox-subheader {
-            background-color: transparent;
+            background-color: transparent !important;
+            font-family: var(--sans);
+            font-size: inherit !important;
             padding-block-end: var(--side-margin);
             text-align: center;
+
+            [style*=font-size] {
+                font-size: inherit !important;
+            }
+        }
+
+        > tbody > tr:not(:has(> .infobox-subheader)) + tr > .infobox-subheader {
+            border-block-start: thin solid var(--fg);
+            padding-block-start: var(--side-margin);
+        }
+
+        > tbody > tr:first-child > .infobox-subheader {
+            font-size: var(--side-head-font-size) !important;
+            font-stretch: var(--side-title-stretch);
+            padding-block-start: var(--side-margin);
         }
 
         .mergedtoprow {
@@ -2354,15 +2384,23 @@ th {
         }
 
         .sidebar-heading {
+            border-block-end: 0 !important; /* 'Template:Close relationships' */
+            margin: 0 !important; /* 'Template:Close relationships' */
             padding-block-start: var(--side-margin);
         }
 
         .sidebar-list-title {
-            border-block-start: 0 !important; /* 'Template:Sidebar periodic table' */
+            background: transparent !important; /* 'Template:Close relationships' */
+            border-block: 0 !important; /* 'Template:Sidebar periodic table' */
             font-size: var(--side-head-font-size) !important;
             line-height: calc(1em / var(--side-head-font-size));
             font-weight: var(--bold);
-            padding-inline: 0;
+            padding-inline: 0 !important; /* 'Template:Discrimination sidebar' */
+            text-align: start !important; /* 'Template:Close relationships' */
+        }
+
+        .sidebar-list-content {
+            border-block-end: 0 !important; /* 'Template:Close relationships' */
         }
 
         /* This always comes before a .sidebar-title-with-pretitle */
@@ -2451,7 +2489,7 @@ th {
 
                             &:is(ul):has(> :nth-child(2)) {
                                 list-style: decimal !important;
-                                padding-left: .83em;
+                                padding-inline-start: .83em;
 
                                 > *::marker {
                                     font-family: var(--sans);
@@ -2886,6 +2924,17 @@ th {
                 }
             }
         }
+    }
+
+    /**********************/
+    /* Template:Key press */
+    /**********************/
+
+    .keyboard-key {
+        border-color: var(--fg);
+        font-family: var(--sans);
+        font-variant-numeric: normal;
+        margin-inline: 0.05em;
     }
 
     /***************************/
@@ -4316,15 +4365,25 @@ th {
     }
 
     /*********************************/
+    /* Template:Portals browsebar    */
     /* Wikipedia:Contents/TOC navbar */
     /*********************************/
 
+    hr[data-wiki-rs~=template-portals-browsebar] {
+        display: none;
+    }
+
+    [data-wiki-rs~=template-portals-browsebar],
     [data-wiki-rs~=wikipedia-contents-toc-navbar] {
         border-block-start: thin solid var(--fg);
-        padding-block-start: calc(var(--box-margin) * .5);
-
+        clear: both;
         font-family: var(--sans);
         font-size: var(--caption-size);
+        padding-block-start: calc(var(--box-margin) * .5);
+
+        p {
+            text-align: center;
+        }
 
         + & {
             border: 0;
@@ -4341,11 +4400,12 @@ th {
     /* Wikipedia:Contents/Types layout */
     /***********************************/
 
-    .contentsPage--type {
+    .contentsPage {
         background: transparent;
         border: 0;
+        position: relative;
 
-        &.contentsPage--type > * {
+        &.contentsPage > * {
             background: transparent;
             border: 0;
             box-shadow: none;
@@ -4364,24 +4424,72 @@ th {
         padding: 0;
     }
 
-    .contentsPage__intro > * + * {
-        margin-block-start: var(--box-margin);
+    .contentsPage__intro {
+        position: static;
+
+        > .contentsPage__sectionlinks {
+            font-family: var(--sans);
+            font-size: 1rem;
+            inset: auto;
+            inset-block-start: calc(var(--doc-title-size) / 1 - .5lh);
+            inset-inline-end: 0;
+        }
+
+        > * + * {
+            margin-block-start: var(--box-margin);
+
+            &[style*=margin] {
+                margin-block-start: var(--box-margin) !important;
+            }
+        }
+    }
+
+    .contentsPage__toc.contentsPage__toc {
+        border-block: thin solid var(--border-fg);
+        font-family: var(--sans);
+        font-weight: var(--normal-weight) !important;
+
+        dt {
+            font-weight: var(--bold) !important;
+        }
     }
 
     .contentsPage__section,
     .contentsPage__section > .div-col {
+        margin-block-end: 0;
+
         > :where(b, p):not(:first-child:last-child) {
             font-family: var(--sans);
             font-stretch: 150%;
+            text-align: start;
             text-transform: uppercase;
+        }
+
+        > b:not(:first-child:last-child) {
+            &::before {
+                display: block;
+                content: '';
+            }
         }
 
         > dl > dd {
             margin-inline-start: 0;
+
+            > b:first-child {
+                font-family: var(--sans);
+
+                + dl > dd {
+                    margin: 0;
+                }
+            }
+
+            + dd {
+                margin-block-start: var(--box-margin);
+            }
         }
 
         > * + :where(b, p) {
-            margin-block-start: var(--box-margin);
+            margin-block-start: calc(var(--box-margin) * 1.5);
         }
     }
 
@@ -4389,7 +4497,7 @@ th {
         border-block: thin solid var(--fg);
         border-block-start-width: 3px;
         font-family: var(--sans);
-        font-size: 1.25em;
+        font-size: var(--doc-title-size);
         font-stretch: 120%;
         font-weight: var(--bold);
         padding: 0;
@@ -4438,5 +4546,51 @@ th {
             font-size: inherit;
             position: static;
         }
+    }
+
+    .contents-pages-footer {
+        background: transparent !important;
+        border-block: thin solid var(--fg) !important;
+        border-block-start-width: 3px !important;
+        border-inline: 0;
+        display: grid;
+        font-size: .88rem;
+        grid-template-columns: fit-content(20%) auto;
+        margin-block-start: var(--footer-margin);
+        padding: 0;
+        text-align: start;
+
+        > * + * {
+            border-block-start: thin solid var(--border-fg);
+            line-height: 1.4;
+            padding: var(--side-margin);
+        }
+
+        > p {
+            align-items: center;
+            display: flex;
+            grid-column: 1 / 2;
+            justify-content: end;
+            padding-inline-end: 0;
+        }
+
+        > .hlist {
+            grid-column: 2 / 3;
+            padding-inline-start: var(--box-margin);
+        }
+
+        [role=heading] {
+            font-family: var(--sans);
+        }
+    }
+
+    .contents-pages-footer-title {
+        font-family: var(--sans);
+        font-size: 1rem;
+        font-stretch: var(--side-title-stretch);
+        font-weight: var(--bold);
+        grid-column: 1 / 3;
+        padding-block: var(--side-margin);
+        text-align: center;
     }
 }
