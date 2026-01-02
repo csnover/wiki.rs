@@ -297,7 +297,7 @@ pub(crate) async fn favicon() -> impl IntoResponse {
             (header::CACHE_CONTROL, "max-age=604800, public"),
             (header::CONTENT_TYPE, "image/svg+xml"),
         ],
-        include_bytes!("../res/favicon.svg")
+        include_bytes!("../res/favicon.svg"),
     )
 }
 
