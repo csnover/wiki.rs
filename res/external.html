@@ -32,7 +32,7 @@
             <!-- SPDX-SnippetEnd -->
             <div>
                 <p>Click to continue to:</p>
-                <p><a href="<%= target %>"><%= target %></a></p>
+                <p><a href="<%= target %>" referrerpolicy="no-referrer"><%= target %></a></p>
                 <% if let Some(referrer) = referrer { %>
                     <hr>
                     <p>or <a href="<%= referrer %>">return to the previous page</a></p>
