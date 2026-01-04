@@ -47,6 +47,11 @@ pub(crate) enum Command {
         /// The root page name.
         page_name: String,
     },
+    /// Extract the redirect target from an article.
+    Redirect {
+        /// The redirect source article.
+        article: Arc<Article>,
+    },
 }
 
 /// The input format for a renderer channel message.
@@ -136,6 +141,16 @@ impl r2d2::ManageConnection for RenderManager {
                         mode,
                         markers,
                     ),
+                    Command::Redirect { article } => statics
+                        .parser
+                        .parse_redirect(&article.body)
+                        .map(|redirect| RenderOutput {
+                            content: redirect.to_string(),
+                            indicators: <_>::default(),
+                            outline: <_>::default(),
+                            styles: <_>::default(),
+                        })
+                        .map_err(Error::from),
                 };
                 let _ = tx.send(output);
                 statics.vm.gc_collect();

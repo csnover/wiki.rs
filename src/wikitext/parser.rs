@@ -191,6 +191,22 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     // Block-level items //
     ///////////////////////
 
+    #[no_eof]
+    pub rule single_redirect() -> &'input str
+    = r:redirect(&Context::default())
+      r:({?
+        if let Token::Redirect { link } = r.node
+          && let Token::Link { target, .. } = link.node
+          && let [ Spanned { node: Token::Text, span } ] = target.as_slice()
+        {
+          Ok(*span)
+        } else {
+          Err("non-complex wikitext link")
+        }
+      })
+      r:#{|input, pos| RuleResult::Matched(pos, &input[r.into_range()]) }
+    { r }
+
     /// An article redirect block with optional trailing content and a single
     /// extra block line.
     ///

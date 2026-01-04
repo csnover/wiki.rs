@@ -556,7 +556,7 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     let href = make_url(
         None,
         &state.statics.base_uri,
-        sp.root().name.prefixed_text(),
+        &sp.root().name,
         Some("mode=module"),
         false,
     )?;

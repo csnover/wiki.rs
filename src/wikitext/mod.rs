@@ -117,6 +117,18 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses a single redirect and returns its target.
+    pub fn parse_redirect<'s>(&self, source: &'s str) -> Result<&'s str, Error> {
+        parser::wikitext::single_redirect(
+            source,
+            self,
+            &Globals {
+                including: false,
+                ..Default::default()
+            },
+        )
+    }
+
     /// Parses a single expanded wikilink and returns its target.
     pub fn parse_wikilink<'s>(&self, source: &'s str) -> Result<(usize, &'s str), Error> {
         parser::wikitext::wikilink_single_target(

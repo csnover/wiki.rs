@@ -2,6 +2,7 @@
 
 use crate::{
     AppState, LoadMode,
+    common::make_url,
     config::CONFIG,
     db,
     renderer::{self, RenderOutput},
@@ -96,6 +97,9 @@ pub(crate) struct ArticleQuery {
     #[serde(rename(deserialize = "action"))]
     _action: Option<ArticleAction>,
 
+    /// The redirect source.
+    from: Option<String>,
+
     /// The load strategy.
     mode: Option<LoadMode>,
 
@@ -109,6 +113,7 @@ pub(crate) async fn article(
     Path(name): Path<String>,
     Query(ArticleQuery {
         _action,
+        from,
         mode: load_mode,
         redirect,
     }): Query<ArticleQuery>,
@@ -118,35 +123,31 @@ pub(crate) async fn article(
     struct ArticleTemplate<'a> {
         /// The base path for URLs.
         base_path: &'a str,
-        /// The base URI for URLs.
-        base_uri: &'a str,
-        /// The canonical URL of the article.
-        canonical: &'a str,
-        /// The title of the article.
-        title: &'a str,
+        /// The redirect source of the article.
+        from: Option<&'a str>,
         /// The Wikitext renderer output.
         output: &'a RenderOutput,
         /// The name of the wiki.
         site: &'a str,
+        /// The title of the article.
+        title: &'a str,
     }
 
-    let name = name.replace('_', " ");
-    let mut iter = name.chars();
-    let first = iter.next();
-    let rest = iter.as_str();
-    let name = if let Some(first) = first {
-        first.to_uppercase().to_string() + rest
-    } else {
-        name
-    };
+    let title = Title::new(&name, None);
+    let article = state.database.get(&title)?;
 
-    let article = state.database.get(&Title::new(&name, None))?;
     let redirect = redirect.as_deref() != Some("no");
-    let canonical = if redirect && let Some(title) = &article.redirect {
-        title
-    } else {
-        &name
-    };
+    if redirect && article.redirect.is_some() {
+        // Of course, the recorded redirect target is missing any fragment-part
+        // so it is necessary to parse the article to actually get that.
+        let target = call_renderer(&state, renderer::Command::Redirect { article })?;
+        let target = Title::new(&target.content, None);
+        let query = format!("from={}", title.partial_url());
+        return make_url(None, &state.base_uri, &target, Some(&query), true)
+            .map(|s| axum::response::Redirect::permanent(&s))
+            .map(IntoResponse::into_response)
+            .map_err(Into::into);
+    }
 
     let start = Instant::now();
     let load_mode = load_mode.unwrap_or(state.load_mode);
@@ -161,16 +162,9 @@ pub(crate) async fn article(
 
     log::trace!("Rendered article in {:.2?}", start.elapsed());
 
-    let base_uri = if state.base_uri.scheme_str().is_some() {
-        state.base_uri.to_string()
-    } else {
-        format!("http://{}", state.base_uri)
-    };
-
     ArticleTemplate {
         base_path: state.base_uri.path(),
-        base_uri: &base_uri,
-        canonical,
+        from: from.as_deref(),
         title: &article.title,
         output: &output,
         site: state.database.name(),

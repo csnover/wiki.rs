@@ -3,16 +3,14 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="content-security-policy" content="script-src-elem 'sha256-dZYu6/sQh99NrfqVUODJhu3AiSIsfAsYd6UUlNDYE7I='; img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
-        <title><%= canonical %> — <%= site %></title>
+        <meta http-equiv="content-security-policy" content="img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
+        <title><%= title %> — <%= site %></title>
         <style>.mw-parser-output {
             <%= crate::pages::filter::css(&output.styles) %>
         }</style>
         <% /* wiki.rs styles come second for last-rule-wins equal specificity
               resolution */ %>
         <link rel="stylesheet" href="<%= base_path %>/styles.css">
-        <link rel="canonical" href="<%= base_uri %>/article/<%= canonical %>">
-        <script>history.replaceState(null, "", document.querySelector("[rel=canonical]").href + location.hash)</script>
     </head>
     <body class="wiki-rs-body">
         <div class="wiki-rs-nav">
@@ -24,12 +22,12 @@
             <nav class="wiki-rs-toc"><%- output.outline | disp %></nav>
         </div>
         <div class="wiki-rs-title">
-            <h1><%= canonical %></h1>
+            <h1><%= title %></h1>
             <%- output.indicators | disp %>
         </div>
         <article class="wiki-rs-content mw-parser-output">
-            <% if title != canonical { %>
-                <p class="mw-redirectedfrom">Redirected from <a href="<%= base_path %>/article/<%= title %>?redirect=no"><%= title %></a></p>
+            <% if let Some(from) = from { %>
+                <p class="mw-redirectedfrom">Redirected from <a href="<%= base_path %>/article/<%= from %>?redirect=no"><%= from %></a></p>
             <% } %>
             <%- output.content %>
         </article>

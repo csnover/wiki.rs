@@ -225,7 +225,8 @@ impl TitleLibrary {
             _ => return Err("invalid 'which' argument".into_value(ctx).into()),
         };
 
-        let url = make_url(proto, &base_uri, text.to_str()?, query.as_deref(), is_local)?;
+        let title = Title::new(text.to_str()?, None);
+        let url = make_url(proto, &base_uri, &title, query.as_deref(), is_local)?;
         Ok(url.into_value(ctx))
     }
 

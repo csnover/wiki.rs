@@ -231,11 +231,10 @@ where
 pub fn make_url(
     proto: Option<&str>,
     base_uri: &Uri,
-    title: &str,
+    title: &Title,
     query: Option<&str>,
     is_local: bool,
 ) -> Result<String, fmt::Error> {
-    let title = Title::new(title, None);
     let mut url = String::new();
     if let Some(proto) = proto {
         url += proto;
@@ -261,6 +260,9 @@ pub fn make_url(
     write!(url, "/article/{}", title.partial_url())?;
     if let Some(query) = query {
         write!(url, "?{query}")?;
+    }
+    if !title.fragment().is_empty() {
+        write!(url, "#{}", anchor_encode(title.fragment()))?;
     }
     Ok(url)
 }

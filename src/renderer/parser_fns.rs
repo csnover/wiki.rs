@@ -988,11 +988,16 @@ mod title {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let url = make_url(None, &state.statics.base_uri, &value, None, false)?;
+            let query = arguments.eval(state, 1)?.map(trim);
+            let title = Title::new(&value, None);
+            let url = make_url(
+                None,
+                &state.statics.base_uri,
+                &title,
+                query.as_deref(),
+                false,
+            )?;
             write!(out, "{url}")?;
-            if let Some(query) = arguments.eval(state, 1)?.map(trim) {
-                write!(out, "?{query}")?;
-            }
         }
 
         Ok(())
@@ -1023,11 +1028,16 @@ mod title {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let url = make_url(None, &state.statics.base_uri, &value, None, true)?;
+            let title = Title::new(&value, None);
+            let query = arguments.eval(state, 1)?.map(trim);
+            let url = make_url(
+                None,
+                &state.statics.base_uri,
+                &title,
+                query.as_deref(),
+                true,
+            )?;
             write!(out, "{url}")?;
-            if let Some(query) = arguments.eval(state, 1)?.map(trim) {
-                write!(out, "?{query}")?;
-            }
         }
 
         Ok(())
