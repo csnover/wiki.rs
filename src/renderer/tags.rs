@@ -7,48 +7,7 @@ use crate::{
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
 use axum::http::Uri;
-use either::Either;
 use std::borrow::Cow;
-
-/// Renders an HTML attribute.
-pub(super) fn render_attribute<W: WriteSurrogate + ?Sized>(
-    out: &mut W,
-    state: &mut State<'_>,
-    sp: &StackFrame<'_>,
-    name: Option<Either<&str, &[Spanned<Token>]>>,
-    value: Either<&str, &[Spanned<Token>]>,
-) -> Result {
-    // At least 'Template:Skip to top and bottom' contains invalid HTML
-    // where an attribute is missing a close quote, and this is error
-    // corrected differently in HTML5 versus the MW parser, so it is
-    // necessary to handle the key and value parts separately and always
-    // make sure the value is quoted or most of the page content ends up
-    // in the attribute.
-    if let Some(name) = name {
-        render_either(out, state, sp, name)?;
-        if !value.either(str::is_empty, <[_]>::is_empty) {
-            out.write_str("=\"")?;
-            render_either(out, state, sp, value)?;
-            out.write_str("\"")?;
-        }
-    } else {
-        render_either(out, state, sp, value)?;
-    }
-    Ok(())
-}
-
-/// Renders a possibly generated attribute subpart.
-fn render_either<W: WriteSurrogate + ?Sized>(
-    out: &mut W,
-    state: &mut State<'_>,
-    sp: &StackFrame<'_>,
-    value: Either<&str, &[Spanned<Token>]>,
-) -> Result {
-    match value {
-        Either::Left(s) => out.adopt_generated(state, sp, None, s),
-        Either::Right(t) => out.adopt_tokens(state, sp, t),
-    }
-}
 
 /// Renders an external web site link.
 pub(super) fn render_external_link<W: WriteSurrogate>(
@@ -254,32 +213,6 @@ pub(super) fn render_single_attribute<W: WriteSurrogate + ?Sized>(
         out.adopt_text(state, sp, span, &sp.source[span.into_range()])?;
         out.adopt_tokens(state, sp, &curr.content)?;
     }
-    Ok(())
-}
-
-/// Renders an HTML start tag node.
-pub(super) fn render_start_tag<W: WriteSurrogate + ?Sized>(
-    out: &mut W,
-    state: &mut State<'_>,
-    sp: &StackFrame<'_>,
-    name: &str,
-    attributes: &[Spanned<Argument>],
-    self_closing: bool,
-) -> Result {
-    write!(out, "<{name}")?;
-    for attr in attributes {
-        out.write_char(' ')?;
-        out.adopt_attribute(
-            state,
-            sp,
-            attr.name().map(Either::Right),
-            Either::Right(attr.value()),
-        )?;
-    }
-    if self_closing {
-        out.write_char('/')?;
-    }
-    out.write_char('>')?;
     Ok(())
 }
 

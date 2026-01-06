@@ -16,7 +16,6 @@ use crate::wikitext::{
     AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
     Spanned, TextStyle, Token,
 };
-use either::Either;
 
 /// A trait for implementing token tree walkers.
 // TODO: This would be better where `state` and `sp` are given as a GAT, but
@@ -25,18 +24,6 @@ use either::Either;
 // no way to express reborrowing in the type system (and I did try the
 // `reborrow` crate).
 pub trait Surrogate<E> {
-    /// Visits an [`Argument`] in attribute form.
-    #[inline]
-    fn adopt_attribute(
-        &mut self,
-        _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _name: Option<Either<&str, &[Spanned<Token>]>>,
-        _value: Either<&str, &[Spanned<Token>]>,
-    ) -> Result<(), E> {
-        Ok(())
-    }
-
     /// Visits a [`Token::Autolink`].
     #[inline]
     fn adopt_autolink(

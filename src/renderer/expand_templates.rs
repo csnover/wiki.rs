@@ -143,16 +143,6 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
-    fn adopt_attribute(
-        &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        name: Option<either::Either<&str, &[Spanned<Token>]>>,
-        value: either::Either<&str, &[Spanned<Token>]>,
-    ) -> Result {
-        tags::render_attribute(self, state, sp, name, value)
-    }
-
     fn adopt_behavior_switch(
         &mut self,
         _state: &mut State<'_>,
@@ -449,7 +439,28 @@ impl Surrogate<Error> for ExpandTemplates {
         attributes: &[Spanned<Argument>],
         self_closing: bool,
     ) -> Result {
-        tags::render_start_tag(self, state, sp, name, attributes, self_closing)
+        // Attributes may contain templates, so start tags must be reconstructed
+        // instead of copied directly into the output
+        write!(self.out, "<{name}")?;
+        for attr in attributes {
+            self.out.write_char(' ')?;
+            if let Some(name) = attr.name() {
+                self.adopt_tokens(state, sp, name)?;
+                let value = attr.value();
+                if !value.is_empty() {
+                    self.out.write_str("=\"")?;
+                    self.adopt_tokens(state, sp, value)?;
+                    self.out.write_str("\"")?;
+                }
+            } else {
+                self.adopt_tokens(state, sp, attr.value())?;
+            }
+        }
+        if self_closing {
+            self.out.write_char('/')?;
+        }
+        self.out.write_char('>')?;
+        Ok(())
     }
 
     fn adopt_strip_marker(

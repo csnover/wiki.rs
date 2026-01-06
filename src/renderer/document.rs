@@ -11,7 +11,7 @@ use super::{
     trim::Trim,
 };
 use crate::{
-    common::decode_html,
+    common::{anchor_encode, decode_html},
     wikitext::{
         AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
         MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
@@ -68,7 +68,7 @@ impl Document {
         }
     }
 
-    /// Ends an HTML element with the given tag name and attributes.
+    /// Ends an HTML element with the given tag name.
     fn end_tag(&mut self, name: &str) -> Result<(), Error> {
         // TODO: Avoid ownership
         let name = Cow::Owned(name.to_ascii_lowercase());
@@ -109,6 +109,50 @@ impl Document {
         self.text_style_emitter.finish(&mut self.html)?;
         self.graf_emitter.end_line(&mut self.html);
         self.last_char = '\n';
+        Ok(())
+    }
+
+    /// Transforms and writes an attribute.
+    fn attribute(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        attribute: &Spanned<Argument>,
+    ) -> Result {
+        let (name, value) = if let Some(name) = attribute.name() {
+            (sp.eval(state, name)?, Some(attribute.value()))
+        } else {
+            (sp.eval(state, attribute.value())?, None)
+        };
+        debug_assert!(
+            matches!(name, Cow::Borrowed(_)),
+            "plain text name with no entities"
+        );
+        write!(self.html, " {}", name.trim_ascii())?;
+        if let Some(value) = value {
+            let value = if name.eq_ignore_ascii_case("id") {
+                Either::Left(anchor_encode(&decode_html(&sp.eval(state, value)?)))
+            } else if name.eq_ignore_ascii_case("style") {
+                // TODO: Translate properties into variables so that
+                // stylesheets can avoid having to use !important
+                Either::Right(value)
+            } else {
+                Either::Right(value)
+            };
+
+            // At least 'Template:Skip to top and bottom' contains invalid HTML
+            // where an attribute is missing a close quote, and this is error
+            // corrected differently in HTML5 versus the MW parser, so it is
+            // necessary to handle the key and value parts separately and always
+            // make sure the value is quoted or most of the page content ends up
+            // in the attribute.
+            write!(self.html, r#"=""#)?;
+            match value {
+                Either::Left(value) => self.text_run(&value)?,
+                Either::Right(value) => self.adopt_tokens(state, sp, value)?,
+            }
+            self.html.write_char('"')?;
+        }
         Ok(())
     }
 
@@ -174,19 +218,9 @@ impl Document {
         self.graf_emitter.before_start_tag(&self.html, &name);
         write!(self.html, "<{name}")?;
         if !attributes.is_empty() {
-            // TODO: Attributes need to be manhandled. For example, anything
-            // that is an `id` attribute needs to be passed through
-            // `anchor_encode`
             self.stack.push(Node::Attribute);
             for attribute in attributes {
-                self.html.write_char(' ')?;
-                tags::render_attribute(
-                    self,
-                    state,
-                    sp,
-                    attribute.name().map(Either::Right),
-                    Either::Right(attribute.value()),
-                )?;
+                self.attribute(state, sp, attribute)?;
             }
             self.stack
                 .pop_if(|e| matches!(e, Node::Attribute))
@@ -321,21 +355,6 @@ impl Surrogate<Error> for Document {
             // content
             if content.is_empty() { target } else { content },
         )
-    }
-
-    fn adopt_attribute(
-        &mut self,
-        state: &mut State<'_>,
-        sp: &StackFrame<'_>,
-        name: Option<Either<&str, &[Spanned<Token>]>>,
-        value: Either<&str, &[Spanned<Token>]>,
-    ) -> Result {
-        self.stack.push(Node::Attribute);
-        let result = tags::render_attribute(self, state, sp, name, value);
-        self.stack
-            .pop_if(|e| matches!(e, Node::Attribute))
-            .expect("element stack corruption");
-        result
     }
 
     fn adopt_behavior_switch(
