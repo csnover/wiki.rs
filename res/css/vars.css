@@ -1,0 +1,174 @@
+/*! variables and mixins */
+
+:root {
+    /*= colours */
+
+    --bg: white;
+    --border-clade: #999;
+    --border-fg: lightgrey;
+    --border-th: #999;
+    --fg: black;
+    --highlight: rebeccapurple;
+    --shade-bg: #f9f9f9;
+
+    /*= fonts */
+
+    --mono: inconsolata, "Segoe UI Mono", "Roboto Mono", monospace, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --sans: archivo, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --serif: source-serif, serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+
+    --bold: 650;
+    --normal-weight: 380;
+    --rlh: 1.55;
+
+    /*= patterns and decorations */
+
+    /* You think you can use a repeating-linear-gradient, but no, browsers
+       render a pixel horror instead of something beautiful, so inline SVG it is */
+    --bar-fill: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
+    --bar-fill-alt: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23000"><line x1="0" x2="4" y1="0" y2="4" /><line x1="2" x2="6" y1="-2" y2="2" /><line x1="-2" x2="2" y1="2" y2="6" /></g></svg>');
+    --bar-fill-light: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><g stroke="%23fff" stroke-width="2"><line x1="0" x2="4" y1="4" y2="0" /><line x1="-2" x2="2" y1="2" y2="-2" /><line x1="2" x2="6" y1="6" y2="2" /></g></svg>');
+
+    --box-tag: transparent linear-gradient(135deg, var(--fg) var(--tag-size), transparent var(--tag-size)) 0%/calc(var(--tag-size) * 2) no-repeat;
+    --tag-size: .4rem;
+
+    /*= metrics */
+
+    --body-bottom: 2rem;
+    --body-left: 4rem;
+    --body-right: 2rem;
+
+    --box-margin: 1rem;
+    --figure-margin: calc(var(--box-margin) * 2);
+    --footer-margin: calc(var(--box-margin) * 4);
+
+    --ol-gutter: 1.5rem;
+
+    /* TODO: CSS is missing logical translate */
+    --aside-gutter-align: translateX(min(0%, calc(var(--aside-max) * -1 + 100%)));
+    --aside-max: calc(100cqi - var(--figure-margin) - var(--max-width));
+    --aside-min: 23rem;
+
+    --side-body-stretch: 80%;
+    --side-head-font-size: 1.05em;
+    --side-line-height: 1.5;
+    --side-margin: calc(var(--box-margin) * .25);
+    --side-title-lh: 1.2;
+    --side-title-lh-adjust: calc(1em * (var(--side-line-height) - var(--side-title-lh)) / 2);
+    --side-title-margin: calc(var(--side-margin) + var(--side-title-lh-adjust));
+    --side-title-stretch: 110%;
+
+    --legend-border: var(--fg);
+    --legend-lh: .5;
+    --legend-valign: baseline;
+    --legend-wh: calc(1ex + 2px);
+
+    --big-caption: 1.1rem;
+    --caption-size: .9rem;
+    --doc-title-size: 1.25rem;
+
+    --max-width: 70rem;
+
+    --table-margin-inline: calc(var(--table-padding-inline) * -1);
+    --table-padding-block: .1rem;
+    --table-padding-inline: .5rem;
+    --table-width: calc(min(100%, var(--max-width)) + var(--table-margin-inline) * -2);
+}
+
+@mixin --float-left() {
+    clear: inline-start;
+    float: inline-start;
+    margin-block-end: var(--figure-margin);
+    margin-inline-end: var(--figure-margin);
+}
+
+@mixin --float-left-table-addon() {
+    inline-size: auto;
+    margin-inline: 0 var(--figure-margin);
+    max-inline-size: 50cqi;
+    /* TODO: CSS is missing logical translate */
+    transform: translateX(var(--table-margin-inline));
+}
+
+@mixin --float-right() {
+    clear: inline-end;
+    float: inline-end;
+    margin-block-end: var(--figure-margin);
+    margin-inline-start: var(--figure-margin);
+    transform: var(--aside-gutter-align);
+}
+
+@mixin --float-right-table-addon() {
+    inline-size: auto;
+    margin-inline: var(--figure-margin) 0;
+    max-inline-size: 50cqi;
+}
+
+@mixin --pre() {
+    hyphens: none;
+    /* Technically this is supposed to be the HTML default of 8, and using 4
+       breaks some stuff, but for the moment it seems to make more stuff less
+       ugly than it makes more ugly */
+    tab-size: 4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+@mixin --ref-marker() {
+    margin-inline-start: calc(var(--ol-gutter) * -1);
+    padding-inline-start: var(--ol-gutter);
+
+    > *::marker {
+        font-family: var(--sans);
+        font-size: 83%;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+@mixin --tabular-data() {
+    border: 0;
+    border-block-end: thin solid var(--border-fg);
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+    inline-size: var(--table-width);
+    margin-inline: var(--table-margin-inline);
+
+    > caption {
+        background-color: transparent;
+        border: 0;
+        font-family: var(--sans);
+        padding: 0;
+    }
+
+    > * > tr {
+        /* Ensure zebra striped rowspans are visually separated more often
+            even in the case of a rowspan */
+        border-block-start: thin solid var(--bg);
+
+        /* Zebra stripe the tables */
+        &:nth-child(2n) {
+            background-color: var(--shade-bg);
+        }
+
+        > * {
+            background-color: transparent;
+            border: 0;
+            font-variant-numeric: tabular-nums;
+            padding-block: var(--table-padding-block);
+            padding-inline: var(--table-padding-inline);
+            text-align: start;
+
+            &[style*="--mw-output-background:"] {
+                background: var(--mw-output-background);
+            }
+
+            &[style*="--mw-output-background-color:"] {
+                background: var(--mw-output-background-color);
+            }
+        }
+
+        > th[colspan] {
+            text-align: center;
+        }
+    }
+}

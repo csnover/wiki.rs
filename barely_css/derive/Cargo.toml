@@ -1,0 +1,14 @@
+[package]
+name = "barely_css_derive"
+description = "Barely parses and compiles a subset of CSS at compile-time"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+barely_css_impl = { path = "../impl" }
+quote = "1"
+syn = "2"

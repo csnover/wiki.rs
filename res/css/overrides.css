@@ -1,0 +1,3623 @@
+/*! All the overrides for garbage <templatestyle>s and other defaults that
+    content authored for MediaWiki expects to exist. */
+
+/*= MediaWiki variables */
+
+.mw-parser-output {
+    --background-color-base: transparent;
+    --background-color-interactive: transparent;
+    --background-color-interactive-subtle: transparent;
+    --background-color-neutral: transparent;
+    --background-color-neutral-subtle: transparent;
+    --border-color-base: var(--border-fg);
+    --border-color-muted: transparent;
+    --border-color-subtle: transparent;
+    --color-base: var(--fg);
+    --color-emphasized: var(--fg);
+    --color-subtle: var(--fg);
+}
+
+/*= Common classes */
+
+.error {
+    color: var(--highlight);
+    font-family: var(--sans);
+    font-weight: var(--normal-weight);
+}
+
+.floatleft,
+.mw-halign-left {
+    @apply --float-left;
+}
+
+.floatright,
+.mw-halign-right {
+    @apply --float-right;
+}
+
+.monospaced {
+    font-family: var(--mono);
+}
+
+.mw-redirectedfrom,
+.redirectText {
+    font-family: var(--sans);
+
+    &::before {
+        content: '⮎ ';
+    }
+}
+
+.mw-redirectedfrom::before {
+    content: '⤷ ';
+}
+
+.nowrap {
+    white-space: nowrap;
+
+    /* wiki.rs will emit more errors than MediaWiki because all file resources
+       are missing; this will cause broken layouts if not allowed to wrap */
+    .error {
+        white-space: wrap;
+    }
+}
+
+.selflink {
+    font-weight: var(--bold);
+}
+
+/* 'Template:Time Persons of the Year' puts `.wrap` inside `.nowrap`, which
+    is a load-bearing pattern for not breaking layout. */
+.wrap {
+    white-space: normal;
+}
+
+/*= Tables
+
+    MW abuses tables for layout quite a lot, so CSS for tables that actually
+    hold tabular data, not all of which are marked as .wikitable (of course),
+    has to be applied only to some things. */
+
+.wikitable {
+    @apply --tabular-data;
+
+    > * > tr {
+        /*= Template:Table cell templates */
+        > :is(
+            .table-yes,
+            .table-maybe,
+            .table-no,
+            .table-active,
+            .table-siteactive,
+            .table-siteinactive,
+            .table-success,
+            .table-failure,
+            .table-yes2,
+            .table-no2,
+            .table-partial,
+            .table-any,
+            .table-automatic,
+            .table-draw,
+            .table-noAttempt,
+            .table-na,
+            .table-Un\ADknown,
+            .table-included,
+            .noresult,
+            .table-planned,
+            .table-scheduled,
+            .table-beta,
+            .table-experimental,
+            .table-nightly,
+            .table-release-candidate,
+            .table-software,
+            .table-free,
+            .table-proprietary,
+            .table-nonfree,
+            .table-needs,
+            .table-depends,
+            .table-dropped,
+            .incorrect,
+            .table-debate,
+            .table-cast
+        ):is([style*="--mw-output-background:"], [style*="--mw-output-background-color:"]) {
+            --bg: var(--mw-output-background-color, var(--mw-output-background));
+
+            background: transparent linear-gradient(to right, var(--bg) 0, var(--bg) 5px, transparent 5px);
+            color: var(--fg);
+            text-align: start;
+        }
+
+        /* This is a ridiculous hack for improving the visual design of
+            tables with 2 or 3 rowspan headers by making sure that the stripe
+            for the second row is also visible behind the spanned rows. Using
+            `::after` to avoid conflict with 'Template:Static row numbers',
+            though it could be made to work with either pseudo-element,
+            probably. */
+        &:first-child:has(> [rowspan]) + tr {
+            position: relative;
+
+            &::after {
+                background-color: var(--shade-bg);
+                content: "";
+                display: block;
+                inset: 0;
+                position: absolute;
+                z-index: -1;
+            }
+        }
+
+        /* Table column headings should be bottom-aligned; use a heuristic
+            to avoid bottom-aligning headings for row-only tables */
+        &:first-child:not(:has(> td)) > th {
+            vertical-align: bottom;
+        }
+
+        /* This crazy nonsense is just trying to make it so that the top
+            row(s) of headings in a table have borders to separate them from
+            the table data, whilst making sure that row headings do not get
+            underlined */
+        &:first-child > th:not([scope=row]),
+        &:first-child:not(:has(> td)) + tr:not(:has(> td)) > th,
+        > th[scope=col] {
+            border-block-end: thin solid var(--border-th);
+        }
+
+        /* Tables without any column headings should get a top border */
+        &:first-child:has(> td) {
+            border-block-start: thin solid var(--border-th);
+        }
+
+        /* Assume full table spans are splitting the table into sections */
+        &:not(:first-child) > th:first-child:last-child[colspan] {
+            border-block: thin solid var(--border-th);
+        }
+    }
+
+    &.floatright,
+    &[style*="--mw-output-float:right;"]
+    {
+        @apply --float-right-table-addon;
+    }
+
+    &.floatleft,
+    &[style*="--mw-output-float:left;"]
+    {
+        @apply --float-left-table-addon;
+    }
+
+    /* 'Mount Everest' manually floats a table right after a floated right
+        figure and inevitably sad things happen */
+    &[style*="--mw-output-float:right;"] {
+        clear: inline-end;
+    }
+
+    /* 'Mount Everest' does float left and clear */
+    &:is(
+        .floatleft,
+        [style*="--mw-output-float:left;"]
+        .floatright,
+        [style*="--mw-output-float:right;"]
+    ):where(:not(:has(+ [style*="--mw-output-clear:"]))) {
+        font-family: var(--sans);
+        font-stretch: var(--side-body-stretch);
+        font-size: unset;
+        font-variant-numeric: tabular-nums;
+
+        > caption {
+            font-stretch: normal;
+        }
+    }
+}
+
+/* :-(((((
+/* 'Chelyabinsk meteor' commits this atrocity */
+[style*="--mw-output-float:right;"]:has(> .wikitable[style*="--mw-output-float:right;"][style*="--mw-output-margin:"]) {
+    margin-inline-start: var(--figure-margin);
+
+    > * {
+        margin-inline-start: 0;
+        margin-inline-end: var(--table-margin-inline);
+        inline-size: auto;
+    }
+}
+
+/* Pages that try to apply an inline width on a table which is not floating nor
+   inside some container should be ignored because this just creates ugly
+   whitespace */
+.mw-parser-output > .wikitable[style*="--mw-output-width:"]:not([style*="--mw-output-float:"], .floatleft, .floatright)
+{
+    inline-size: var(--table-width);
+}
+
+/* 'Toronto' */
+.mw-parser-output > .wikitable[style*="--mw-output-border:"][style*="--mw-output-margin:"]
+{
+    border-width: 0;
+    margin-inline: var(--table-margin-inline);
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+}
+
+/*= Template:Ahnentafel */
+
+[data-wiki-rs~=template-ahnentafel] {
+    font-family: var(--sans);
+
+    > table {
+        border: none;
+        font-size: 1em;
+    }
+
+    .ahnentafel {
+        font-stretch: var(--side-body-stretch);
+
+        td {
+            border-color: var(--border-th);
+
+            &[style*=background-color] {
+                background-image: var(--bar-fill-light);
+                background-position: 0;
+            }
+        }
+    }
+}
+
+/*= Template:Article for improvement banner */
+
+[data-wiki-rs~=template-article-for-improvement-banner] {
+    text-align: inherit;
+}
+
+/*=
+/* Template:Asbox
+/* Template:Dmbox
+/*/
+
+.asbox, .dmbox {
+    border-block-start: thin solid var(--fg);
+    font-family: var(--sans);
+    max-inline-size: none;
+
+    * + & {
+        border-block-end: 0;
+        margin-block: var(--footer-margin) 0;
+        margin-inline: 0;
+        padding-block: .5rem;
+        padding-inline: 0;
+    }
+
+    + &,
+    + .wiki-rs-categories {
+        margin-block-start: 0;
+    }
+}
+
+.asbox-body, .dmbox-body {
+    font-style: normal;
+}
+
+/*= Template:Bar box */
+
+.barbox {
+    font-family: var(--sans);
+    font-stretch: var(--side-body-stretch);
+    overflow-inline: visible;
+
+    table {
+        inline-size: var(--table-width);
+        margin-inline: var(--table-margin-inline);
+    }
+
+    td, th {
+        font-variant-numeric: tabular-nums;
+    }
+
+    tr {
+        &:nth-child(2) {
+            display: none;
+        }
+
+        &:first-child,
+        &:last-child {
+            border-block-end: thin solid var(--border-th);
+        }
+
+        &:first-child {
+            border-color: var(--fg);
+
+            > th {
+                padding-inline: var(--table-padding-inline);
+            }
+        }
+    }
+
+    > div {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        padding: 0;
+    }
+}
+
+/*=
+/* Template:Bar chart
+/* Template:Bar percent
+/*/
+
+.bar-chart {
+    @apply --tabular-data;
+    border: none;
+
+    > caption {
+        font-family: var(--sans);
+        font-weight: var(--normal-weight);
+        font-stretch: normal;
+    }
+
+    /* HOVER EFFECTS ARE INCREDIBLY OBNOXIOUS. */
+    tr:not(:first-child):nth-child(2n):hover {
+        background-color: var(--shade-bg);
+    }
+}
+
+.bar-chart tr,
+[data-wiki-rs~=template-bar-percent] {
+    &:nth-child(2n) {
+        background-color: var(--shade-bg);
+    }
+
+    > td {
+        &:first-child {
+            min-inline-size: 0;
+        }
+
+        &:nth-child(n + 2) {
+            border-inline-end: none;
+            border-inline-start: thin solid var(--fg);
+            inline-size: auto;
+            min-inline-size: 100px;
+            padding: 0;
+            padding-inline-end: var(--table-padding-inline);
+        }
+    }
+}
+
+.bar-chart-bar {
+    display: inline-block;
+    inline-size: auto;
+    white-space: nowrap;
+}
+
+.bar-chart-bar-line,
+[data-wiki-rs~=template-bar-percent] > td > div {
+    background: var(--bar-fill);
+    block-size: 1em;
+    border: thin solid black;
+    border-inline-start: 0;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.bar-chart-bar-numbers {
+    background: var(--bg);
+    background-clip: content-box;
+    font-family: var(--sans);
+    font-size: 90%;
+    font-stretch: 110%;
+    margin-inline-start: 0.15em;
+    padding-inline: 0;
+    position: static;
+}
+
+.bar-chart-bar-comment {
+    font-stretch: normal;
+    padding-inline-start: 0.25em;
+}
+
+.bar-chart-right {
+    @apply --float-right;
+    @apply --float-right-table-addon;
+
+    font-stretch: var(--side-body-stretch);
+}
+
+/*= Template:Blockquote */
+
+blockquote,
+.templatequote {
+    font-style: italic;
+    margin-block-end: 0;
+    padding-inline: 2.5rem;
+
+    em, em em em, em em em em em {
+        font-style: normal;
+    }
+
+    em em, em em em em, em em em em em em {
+        font-style: italic;
+    }
+}
+
+.templatequote {
+    overflow: visible;
+}
+
+.templatequotecite {
+    font-family: var(--sans);
+    line-height: 1rlh;
+    margin-block-start: .5em;
+    text-align: end;
+
+    em, em em em, em em em em em {
+        font-style: italic;
+    }
+
+    em em, em em em em, em em em em em em {
+        font-style: normal;
+    }
+}
+
+/*= Template:Button */
+
+[style*="font-family: sans-serif"],
+[style*="font-family:sans-serif"] {
+    font-family: var(--sans);
+}
+
+/*=
+/* Template:CN span
+/* Template:Fix span
+/*/
+
+.citation-needed-content {
+    border: 0;
+    padding-inline: 0;
+    text-decoration: underline wavy var(--border-th);
+
+    + .Template-Fact {
+        margin-inline-end: .15em;
+        margin-inline-start: -.15em;
+    }
+}
+
+/*=
+/* Template:Chart top
+/* Template:Tree chart start
+/*/
+
+[data-wiki-rs~=template-chart-top] {
+    border: 0;
+
+    * + & {
+        margin: 0;
+        margin-block-start: var(--box-margin);
+    }
+
+    > * > tr:first-child > th {
+        border-block-end: thin solid var(--fg);
+        border-block-start: 3px solid var(--fg);
+        font-stretch: var(--side-title-stretch);
+        font-size: 1.05rem;
+    }
+}
+
+[data-wiki-rs~=template-tree-chart-start] {
+    font-size: .95rem;
+    font-family: var(--sans);
+    font-stretch: 80%;
+}
+
+/*= Template:Clade gallery */
+
+.mw-parser-output > .clade-gallery {
+    display: block;
+    font-family: var(--sans);
+    margin-inline: 0;
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+
+    .clade * {
+        border-color: var(--border-clade);
+    }
+
+    .clade-leaf {
+        &:first-letter {
+            padding-inline-start: .15em;
+        }
+
+        b {
+            font-stretch: normal;
+        }
+
+        img {
+            /* Without images to load, avoid blowing out the layout */
+            max-block-size: 1em;
+            vertical-align: middle;
+        }
+    }
+
+    .cladogram.cladogram {
+        font-stretch: var(--side-body-stretch);
+        padding: 0;
+    }
+
+    .gallery-element {
+        border: none;
+    }
+
+    .main-caption,
+    .main-content {
+        padding: 0;
+    }
+
+    .main-content {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--box-margin);
+
+        > * {
+            flex: 1;
+        }
+    }
+}
+
+/*= Template:Climate chart */
+
+/* .infobox is for extra specificity */
+[data-wiki-rs~=template-climate-chart].infobox {
+    --heat-gradient: linear-gradient(to bottom, red 20%, blue 80%);
+
+    border: none;
+    font-variant-numeric: normal;
+    margin-block-end: var(--figure-margin);
+
+    /* axis display, part 1: out with the ugly dots, which reset in each column
+       and so look like shit */
+    [style*="--mw-output-border-bottom:dotted"] {
+        display: none;
+    }
+
+    /* axis display, part 2: nicely spaced dots, and a colour gradient to match
+       temperatures */
+    tr:has(> td > [style*="position:relative"]) {
+        background: #fff url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><circle cx="1" cy="1" r=".5" fill="%23999" /></svg>') repeat-x 0 calc(50% + .5em);
+        position: relative;
+
+        > :first-child::before {
+            background-image: var(--heat-gradient);
+            content: '';
+            inset: 0 0 1.5em;
+            mix-blend-mode: screen;
+            pointer-events: none;
+            position: absolute;
+            z-index: 1;
+        }
+    }
+
+    [data-wiki-rs~=template-climate-chart-celsius-column],
+    [data-wiki-rs~=template-climate-chart-celsius-column-i],
+    [data-wiki-rs~=template-climate-chart-fahrenheit-column],
+    [data-wiki-rs~=template-climate-chart-fahrenheit-column-i] {
+        /* improve legibility of labels on the axis */
+        span {
+            background-color: #fff;
+            color: #000;
+            margin-inline: -.15em;
+            padding-inline: .15em;
+
+            &[style*="font-size\:70%"] {
+                font-size: 80%;
+                font-stretch: var(--side-body-stretch);
+            }
+        }
+
+        /* the actual temperature and precipitation bars */
+        div[style*="--mw-output-background:#e44;"],
+        div[style*="--mw-output-background:#ace;"] {
+            background: var(--bar-fill);
+            border: thin solid #000;
+            /* to stop unscaled giant precipitation interfering with the
+                title link */
+            pointer-events: none;
+        }
+
+        div[style*="--mw-output-background:#ace;"] {
+            background: var(--bar-fill-alt);
+        }
+    }
+
+    th {
+        border-block-start: thin solid var(--fg);
+        font-size: 1rem;
+    }
+
+    /* legend swatches */
+    td[colspan] > span:first-child:not(.reference) {
+        border: 1px solid var(--legend-border);
+        block-size: var(--legend-wh);
+        color: transparent;
+        display: inline-block;
+        inline-size: var(--legend-wh);
+        line-height: var(--legend-lh);
+        vertical-align: var(--legend-valign);
+
+        &[style*="red"],
+        &[style*="#aaccee"] {
+            background: var(--heat-gradient), var(--bar-fill), #fff;
+            background-blend-mode: screen, normal, normal;
+            color: transparent;
+        }
+
+        &[style*="#aaccee"] {
+            background: var(--heat-gradient), var(--bar-fill-alt), #fff;
+            color: transparent;
+        }
+    }
+
+    .infobox.infobox {
+        border: 0;
+        margin: 0;
+
+        /* legend text */
+        td[colspan="12"] {
+            font-size: 90%;
+        }
+    }
+
+    > * > tr {
+        &:first-child > th {
+            border-block-start: 3px solid var(--fg);
+            font-stretch: var(--side-title-stretch);
+        }
+
+        &:last-child:last-child > * {
+            padding-block-end: 0;
+        }
+    }
+}
+
+/*= Template:Compact TOC */
+
+.toc {
+    border-block-start: 3px solid currentColor;
+    font-family: var(--sans);
+
+    .toctitle {
+        font-stretch: 120%;
+
+        + * {
+            border-block-start: thin solid var(--border-fg);
+            padding-block-start: calc(var(--box-margin) * .25);
+        }
+    }
+
+    > div {
+        text-align: center;
+    }
+}
+
+/*= Template:Div col */
+
+* + .div-col {
+    margin-block-start: var(--box-margin);
+}
+
+.div-col-rules {
+    column-rule: none;
+}
+
+/*= Template:Documentation */
+
+.documentation {
+    background-color: transparent;
+    border: 0;
+    margin: 0;
+    padding: 0;
+
+    > :where(:not(.documentation-startbox)) {
+        max-inline-size: var(--max-width);
+    }
+
+    [style*="display: inline-grid"] {
+        + [style*="display: inline-grid"] {
+            margin-inline-start: var(--box-margin);
+        }
+
+        .wikitable {
+            inline-size: auto;
+            margin-inline: 0;
+        }
+    }
+}
+
+.documentation-container {
+    clear: both;
+    max-inline-size: none;
+
+    * + & {
+        border-block-start: 3px solid currentColor;
+        margin-block-start: 2rem;
+    }
+
+    &:has(> .documentation-metadata:last-child) + .wiki-rs-categories {
+        margin-block-start: .5rem;
+    }
+}
+
+.documentation-heading {
+    font-stretch: 120%;
+
+    img {
+        max-block-size: 1cap;
+    }
+}
+
+.documentation-metadata {
+    background-color: transparent;
+    border: 0;
+    border-block-start: 3px solid;
+    font-family: var(--sans);
+    font-style: normal;
+    padding: 0;
+    padding-block-start: .5rem;
+    margin: 0;
+    margin-block-start: 4rem;
+}
+
+.documentation-startbox {
+    align-items: baseline;
+    border-block-end-color: var(--fg);
+    display: flex;
+    font-family: var(--sans);
+    padding: 0;
+    margin-block-end: 0;
+
+    > :first-child {
+        flex: 1;
+    }
+}
+
+/*= Template:Excerpt */
+
+/* This is a viewer, so no reason to show edit links */
+.excerpt-hat .mw-editsection-like {
+    display: none;
+}
+
+/*= Template:Flagicon */
+
+/* Without images to load, avoid blowing out the layout. Flag images are
+    shorter than the placeholder wiki.rs uses */
+.flagicon img {
+    max-block-size: 1cap;
+}
+
+/*= Template:Football kit */
+
+[data-wiki-rs~=template-football-kit] > :last-child {
+    padding-block-start: 0;
+}
+
+/*= Template:Gallery */
+
+.mod-gallery,
+.mod-gallery > .main,
+.mod-gallery > .main > div {
+    display: block;
+}
+
+.mw-parser-output > * + .mod-gallery {
+    margin-block-start: var(--box-margin);
+}
+
+/*= Template:Graphical timeline */
+
+[data-wiki-rs~=template-graphical-timeline] {
+    font-family: var(--sans);
+    min-inline-size: 0;
+
+    > * > tr:has(> #Navbox) + tr > * {
+        margin-block-start: var(--box-margin);
+    }
+
+    &[style*="float\:right"] {
+        border: 0;
+        font-stretch: var(--side-body-stretch);
+        margin-block: 0 var(--figure-margin);
+        margin-inline: var(--figure-margin) 0;
+        padding: 0;
+    }
+
+    #Title {
+        border-block: thin solid var(--fg);
+        border-block-start-width: 3px;
+        padding: 0;
+
+        > * {
+            background: transparent;
+            font-weight: var(--bold);
+            padding: 0;
+        }
+
+        [style*=color] {
+            color: inherit;
+        }
+    }
+
+    #Navbox {
+        border-block-end: thin solid var(--border-fg);
+        font-stretch: normal;
+        margin-block-end: var(--side-margin);
+    }
+
+    #Scale {
+        font-variant-numeric: normal;
+        inline-size: 2em;
+    }
+
+    #Timeline {
+        border-block: thin solid var(--fg);
+        overflow: hidden;
+
+        &::before {
+            background: var(--bar-fill);
+            content: '';
+            inset: 0;
+            mix-blend-mode: overlay;
+            pointer-events: none;
+            position: absolute;
+            z-index: 1;
+        }
+
+        span {
+            position: relative;
+            z-index: 2;
+        }
+    }
+}
+
+/*= Template:Hatnote */
+
+/* Keep hatnotes, and headings cuddled, ignoring any intermediate elements
+    which move themselves out of the way by floating */
+.hatnote {
+    margin-block-end: 0;
+    padding-inline-start: 0;
+
+    :is(h2, h3, h4, h5, dl:has(> dt:first-child:last-child)) + &,
+    .hatnote + &,
+    .hatnote + .mw-halign-right + & {
+        margin-block-start: 0;
+    }
+}
+
+/*= Template:Hidden begin */
+
+:not(.mbox-text-span) > .hidden-begin {
+    border: 0;
+
+    &:has(+ .navbox-styles, + .navbox) {
+        margin-block-start: var(--footer-margin);
+    }
+}
+
+:not(.mbox-text-span) > .hidden-begin > .hidden-title {
+    border-block-start: 3px solid var(--fg);
+    border-block-end: thin solid var(--border-th);
+    font-family: var(--sans);
+    font-size: var(--big-caption);
+    font-stretch: var(--side-title-stretch);
+}
+
+/*=
+/* Template:Historical populations
+/* Template:US Census population
+/*/
+
+.us-census-pop,
+[data-wiki-rs~=template-historical-populations] {
+    @apply --tabular-data;
+
+    border-block-end: none;
+    margin-block: 0 var(--figure-margin);
+    margin-inline: var(--table-margin-inline) var(--figure-margin);
+
+    caption {
+        border-block-end: thin solid var(--border-th);
+        padding: 0;
+    }
+
+    td, th {
+        padding-block: var(--table-padding-block);
+        padding-inline: var(--table-padding-inline);
+    }
+
+    td {
+        font-family: var(--sans);
+        font-stretch: var(--side-body-stretch);
+        font-variant-numeric: tabular-nums;
+    }
+
+    tr:last-child:last-child:last-child {
+        background-color: transparent;
+
+        > * {
+            border-block-start-color: var(--border-fg);
+            border-block-start-width: thin;
+            font-stretch: normal;
+        }
+    }
+}
+
+.us-census-pop-right,
+[data-wiki-rs~=template-historical-populations] {
+    @apply --float-right;
+    @apply --float-right-table-addon;
+}
+
+/* 'Tromsø' */
+[data-wiki-rs~=template-historical-populations][style*="float:none"] {
+    font-size: 1em;
+    inline-size: var(--table-width);
+    margin-inline: var(--table-margin-inline);
+    max-inline-size: none;
+
+    td {
+        &:not(:first-child) {
+            padding-inline-start: calc(var(--table-padding-inline) * .5);
+        }
+
+        &:not(:last-child) {
+            padding-inline-end: calc(var(--table-padding-inline) * .5);
+        }
+    }
+}
+
+[data-wiki-rs~=template-historical-populations]:where([style*="float:right"], [style*="float:left"]) {
+    caption, th {
+        font-stretch: var(--side-body-stretch);
+    }
+}
+
+/*=
+/* Template:Image frame
+/* Template:Multiple image
+/*/
+
+.thumb {
+    font-family: var(--sans);
+
+    /* api.php?meta=siteinfo&siprop=general thumblimits maxes out at 400 */
+    /* !important: 'Module:Wide image' defaults non-existing image width to
+        0 (and therefore max-width to 10px) */
+    &[style*="max-width\:10px"] {
+        max-inline-size: 400px;
+    }
+
+    .multiimageinner[style*="max-width:100px"] {
+        /* !important: This module blindly calculates values even if none
+            are available, which means it ends up forced to 100px wide */
+        inline-size: auto;
+        max-inline-size: none;
+    }
+
+    .trow {
+        gap: calc(var(--figure-margin) / 2);
+
+        > * {
+            flex: 1 1 0%;
+            min-inline-size: 0;
+        }
+
+        .thumbimage:has(~ .text-align-center) {
+            text-align: center;
+        }
+
+        + .trow {
+            margin-block-start: var(--box-margin);
+        }
+    }
+
+    .tsingle {
+        margin: 0;
+    }
+}
+
+/*=
+/* Template:Infobox
+/* Template:Sidebar
+/*/
+
+/* This very silly nonsense is required because 'World War II' expects to
+    be able to put an infobox in a 'Template:Stack' along with a navbox and
+    use the same em-width on both children and have them come out the same
+    size. The default MW stylesheet sets `.infobox` font size to 88%. */
+.infobox,
+.sidebar {
+    font-size: 88%;
+
+    > * {
+        font-size: 1rem;
+    }
+}
+
+.infobox.infobox,
+.sidebar.sidebar {
+    --label-baseline-align: var(--side-title-lh-adjust);
+
+    background: transparent;
+    border-block: 3px solid var(--fg);
+    border-inline: 0;
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: var(--side-line-height);
+
+    &:not([style*="--mw-output-float:left;"]) {
+        @apply --float-right;
+    }
+
+    &[style*="--mw-output-float:left;"] {
+        @apply --float-left;
+    }
+
+    [style*=line-height] {
+        line-height: inherit;
+    }
+
+    /* 'Elizabeth II' nests infoboxes, so only the root box should be
+        sized. Also, 'Template:Climate chart' uses infobox and floats to the
+        left, so should not receive explicit sizing either. */
+    :is(
+        .mw-parser-output,
+        .documentation,
+        .hidden-content
+    ) > &:not([style*="--mw-output-float:left;"]) {
+        max-inline-size: var(--aside-max);
+        min-inline-size: var(--aside-min);
+        transform: var(--aside-gutter-align);
+    }
+
+    li {
+        text-align: inherit;
+    }
+
+    * + dt,
+    * + li,
+    dl,
+    ol,
+    ul {
+        margin-block-start: 0;
+    }
+
+    /* The CSS table box model puts captions visually outside of the table.
+        When infoboxes use a caption, it should look the same as if they used
+        a table heading. */
+    &:has(> caption) {
+        border-block-start: 0;
+    }
+
+    /* Anything following a block that creates a block-end border needs
+        padding. The DOM for a caption is special, so needs a special
+        selector */
+    > caption + * > tr:first-child > * {
+        border-block-start-width: 0;
+        padding-block-start: var(--side-margin);
+    }
+
+    /* Nested tables bring trouble if this were to apply to all tr inside
+        an infobox or sidebox */
+    > * > tr,
+    /* Avoiding specificity here to deal with .infobox-label needing a
+        default bottom padding due to the reduced line-height */
+    &:where(.vcard) > * > :where(tr) > :where(td) > :where(table) > * > :where(tr) {
+        /* Authors are obsessed with inline colours */
+        background: transparent;
+        color: var(--fg);
+
+        /* Anything following a block that creates a block-end border needs
+            padding */
+        &:has(> :is(
+            .infobox-above,
+            .infobox-header,
+            .infobox-title,
+            .sidebar-title,
+            .sidebar-title-with-pretitle
+        )) + tr > * {
+            padding-block-start: var(--side-margin);
+        }
+
+        /* Anything following an image block, which is not another image
+            block, needs a block-start border and padding */
+        &:has(> :is(
+            .infobox-image,
+            .sidebar-image
+        )) + tr > :not(
+            .infobox-image,
+            .sidebar-image
+        ),
+        /* This also applies to subheaders, but the interaction between a
+            subheader followed by an image means that the previous rule would
+            not work correctly if subheader were added to it */
+        &:has(> .infobox-subheader) + tr > :not(.infobox-subheader) {
+            border-block-start: thin solid var(--fg);
+            padding-block-start: var(--side-margin);
+        }
+
+        /* Anything preceding a block that creates a block-start border
+            needs padding, and anything immediately below the end of the
+            table needs the same */
+        &:has(+ .mergedtoprow),
+        &:has(+ tr > :is(
+            .infobox-below,
+            .infobox-header,
+            .sidebar-below
+        )),
+        &:last-child {
+            > * {
+                padding-block-end: var(--side-margin);
+
+                &.infobox-label {
+                    padding-block-end: calc(var(--side-margin) + var(--label-baseline-align));
+                }
+            }
+        }
+
+        /* Sidebar navbar has no top border, so anything before it should not
+        have block-end padding so they flow together */
+        &:has(> .infobox-subheader):has(+ tr > .infobox-subheader) > *,
+        &:has(+ tr > .sidebar-navbar) > * {
+            padding-block-end: 0;
+        }
+
+        > :where(td, th) {
+            /* Many of the default templatestyles for infobox variants apply
+                default borders to cells and then selectively remove the
+                borders */
+            border-color: var(--fg);
+
+            padding: 0;
+            vertical-align: top;
+
+            /* In an embedded 'Template:Multiple image', give an unlabelled
+                caption outside the collage a compressed text. Also justify
+                the caption, since this box is narrow, so it looks bad with
+                jagged edges. */
+            &:has(> .tmulti) {
+                font-stretch: var(--side-body-stretch);
+                text-align: justify;
+                text-align-last: center;
+
+                > .hlist {
+                    font-size: var(--caption-size);
+                    font-stretch: normal;
+                    text-align: justify;
+                    text-align-last: center;
+                }
+            }
+
+            /* Give the actual collage captions smaller non-compressed
+                text */
+            > .tmulti {
+                font-size: var(--caption-size);
+                font-stretch: normal;
+                text-align: center;
+
+                .trow + .trow {
+                    margin-block-start: var(--side-margin);
+                }
+            }
+
+            /* TODO: Maybe 'Template:Hidden begin' should just never have
+                padding globally */
+            > .hidden-begin {
+                padding: 0;
+            }
+        }
+    }
+
+    /* These are the main styles for the title of all infobox/sidebox */
+    > caption,
+    .infobox-above,
+    .infobox-title,
+    .sidebar-title,
+    .sidebar-title-with-pretitle,
+    &.vevent:not(:has(> caption)) > * > tr:first-child > *
+    {
+        background: transparent;
+        border-block: thin solid var(--fg);
+        border-block-start-width: 3px;
+        border-inline: 0;
+        color: var(--fg);
+        font-size: var(--big-caption);
+        font-stretch: var(--side-title-stretch);
+        font-weight: var(--bold);
+        line-height: var(--side-title-lh);
+        padding-block: var(--side-title-margin);
+        text-align: center;
+
+        /* Too many things decide to try to be cute with the font size */
+        &[style*=font-size] {
+            font-size: var(--big-caption);
+        }
+
+        /* …aggressively cute… */
+        :where([style*=font-size]) {
+            font-size: inherit;
+        }
+
+        /* Same thing with the font colour */
+        .tmp-color,
+        .tmpl-colored-link {
+            color: inherit;
+        }
+    }
+
+    > * > tr:first-child > .sidebar-title {
+        border-block-start: 0;
+    }
+
+    .infobox-below,
+    .sidebar-below {
+        background: transparent;
+        border-block: thin solid var(--fg);
+        border-block-end: 0;
+        padding-block: var(--side-margin);
+        padding-inline: 0;
+        text-align: center;
+    }
+
+    .infobox-data {
+        text-align: start;
+    }
+
+    .infobox-full-data {
+        font-stretch: var(--side-body-stretch);
+
+        &:has(> .infobox) {
+            border-block-end: thin solid var(--fg);
+            padding-block-start: var(--side-margin);
+
+            > .infobox > * > tr:first-child > * {
+                padding-block-start: var(--side-margin);
+            }
+        }
+
+        &:empty:empty {
+            border-block-start: 0;
+            padding-block-start: 0;
+        }
+    }
+
+    .infobox-full-data > :any-link > img,
+    .infobox-full-data > img,
+    .infobox-image img,
+    .ib-settlement-cols img,
+    .sidebar-image img {
+        background-color: transparent;
+        display: block;
+        inline-size: 100%;
+        margin-inline: auto;
+        /* Since there is currently no way to load any actual images,
+            avoid taking up a bunch of space on giant placeholders */
+        max-block-size: 3rlh;
+    }
+
+    .infobox-header,
+    .sidebar-heading {
+        background: transparent;
+        font-size: var(--side-head-font-size);
+        font-stretch: var(--side-body-stretch);
+        font-weight: var(--bold);
+        line-height: var(--side-title-lh);
+        padding-block: 0 var(--side-title-lh-adjust);
+        padding-inline: 0;
+        text-align: start;
+
+        /* 'Elizabeth II' */
+        &:has(> div:empty:first-child:last-child) {
+            display: none;
+        }
+    }
+
+    .infobox-header {
+        border-block-start: thin solid var(--fg);
+        padding-block-start: var(--side-margin);
+    }
+
+    .infobox-image,
+    .sidebar-image {
+        font-size: var(--caption-size);
+        padding-block-end: var(--side-margin);
+        text-align: center;
+
+        img {
+            display: block;
+            inline-size: 100%;
+            margin-inline: auto;
+            /* Since there is currently no way to load any actual images,
+                avoid taking up a bunch of space on giant placeholders */
+            max-block-size: 3rlh;
+        }
+    }
+
+    .infobox-label,
+    &:is(.biota, .ib-chembox) > * > tr > td:first-child:not(:last-child) {
+        font-stretch: var(--side-body-stretch);
+        font-weight: var(--bold);
+        line-height: var(--side-title-lh);
+        padding-inline-end: .3rem;
+        padding-block-end: var(--label-baseline-align);
+        text-align: start;
+        /* keep first baseline alignment w/ reduced line height */
+        /* TODO: CSS is missing logical translate */
+        transform: translateY(var(--label-baseline-align));
+    }
+
+    .infobox-navbar,
+    .sidebar-navbar {
+        text-align: end;
+    }
+
+    .infobox-subheader {
+        background-color: transparent;
+        font-family: var(--sans);
+        font-size: inherit;
+        padding-block-end: var(--side-margin);
+        text-align: center;
+
+        [style*=font-size] {
+            font-size: inherit;
+        }
+    }
+
+    > * > tr:not(:has(> .infobox-subheader)) + tr > .infobox-subheader {
+        border-block-start: thin solid var(--fg);
+        padding-block-start: var(--side-margin);
+    }
+
+    > * > tr:first-child > .infobox-subheader {
+        font-size: var(--side-head-font-size);
+        font-stretch: var(--side-title-stretch);
+        padding-block-start: var(--side-margin);
+    }
+
+    .mergedtoprow {
+        > * {
+            padding-block-start: var(--side-margin);
+
+            &:has(> .hidden-begin) {
+                border-block-start: 0;
+                padding-block-start: 0;
+            }
+        }
+    }
+
+    .sidebar-below {
+        font-size: var(--caption-size);
+
+        > br {
+            display: none;
+
+            + * {
+                margin-inline-start: .3em;
+            }
+        }
+    }
+
+    .sidebar-content {
+        background: transparent;
+        color: var(--fg);
+        font-size: 1em;
+        font-stretch: var(--side-body-stretch);
+        padding-inline: 0;
+        text-align: start;
+    }
+
+    .sidebar-heading {
+        border-block-end: 0; /* 'Template:Close relationships' */
+        margin: 0; /* 'Template:Close relationships' */
+        padding-block-start: var(--side-margin);
+    }
+
+    .sidebar-list-title {
+        background: transparent; /* 'Template:Close relationships' */
+        border-block: 0; /* 'Template:Sidebar periodic table' */
+        font-size: var(--side-head-font-size);
+        line-height: calc(1em / var(--side-head-font-size));
+        font-weight: var(--bold);
+        padding-inline: 0; /* 'Template:Discrimination sidebar' */
+        text-align: start; /* 'Template:Close relationships' */
+    }
+
+    .sidebar-list-content {
+        background: transparent; /* 'Template:Buddhism' */
+        border: 0; /* 'Template:Buddhism', 'Template:Close relationships' */
+    }
+
+    /* This always comes before a .sidebar-title-with-pretitle */
+    .sidebar-pretitle {
+        background: transparent;
+        color: var(--fg);
+        padding-block-start: var(--side-title-margin);
+    }
+
+    .sidebar-subgroup > * > tr:last-child > * {
+        padding-block-end: 0;
+    }
+
+    /* This always comes after a .sidebar-pretitle */
+    .sidebar-title-with-pretitle {
+        border-block-start: 0;
+        padding-block-start: 0;
+    }
+
+        /* Template:Chembox */
+
+    &.ib-chembox,
+    &[data-wiki-rs~=template-infobox-drug] {
+        > * > tr {
+            &:first-child > [colspan]:has(> img, > * > img) {
+                padding-block: var(--side-margin);
+                padding-inline: 0;
+            }
+
+            > :is(td, th) {
+                background: transparent;
+                border: 0;
+            }
+
+            &:has(+ tr > th[colspan]) > * {
+                padding-block-end: var(--side-margin);
+            }
+
+            &:has(> th[colspan]) + tr > * {
+                padding-block-start: var(--side-margin);
+            }
+
+            > th[colspan] {
+                background: transparent;
+                border-block: thin solid var(--fg);
+                color: var(--fg);
+                padding-block: var(--side-margin);
+            }
+
+            &:first-child > th[colspan] {
+                border-block-start: 0;
+            }
+
+            &:has(> td[colspan] > [style*=padding-left]) + tr > td[colspan]:has(> [style*=padding-left]) {
+                padding-block-start: var(--side-margin);
+            }
+
+            > td[colspan] {
+                font-stretch: var(--side-body-stretch);
+
+                &:has(> [style*=word-wrap]) {
+                    font-weight: var(--bold);
+                }
+
+                &.borderless {
+                    td {
+                        border: 0;
+                    }
+                }
+
+                > :not(.plainlist)[style*=padding-left] {
+                    font-weight: var(--normal-weight);
+                    padding-inline: 0;
+                }
+
+                > .mw-collapsible {
+                    > :not(.mw-collapsible-content) {
+                        font-weight: var(--bold);
+                    }
+
+                    > .mw-collapsible-content {
+                        font-family: var(--mono);
+                        font-weight: var(--normal-weight);
+
+                        &:is(ul):has(> :nth-child(2)) {
+                            list-style: decimal;
+                            padding-inline-start: .83em;
+
+                            > *::marker {
+                                font-family: var(--sans);
+                                font-stretch: normal;
+                                font-size: .83em;
+                                font-variant-numeric: tabular-nums;
+                            }
+                        }
+
+                        [style*=border] {
+                            border: 0;
+                        }
+
+                        [style*=padding] {
+                            padding: 0;
+                        }
+
+                        [style*=font-size] {
+                            font-size: inherit;
+                        }
+
+                        [style*=text-indent] {
+                            padding-inline-start: 1em;
+                            text-indent: -1em;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+        /* Template:Infobox country */
+
+    .ib-country-names {
+        font-size: var(--caption-size);
+    }
+
+    &.ib-country,
+    &.ib-uk-place {
+        .infobox-label > [style*=text-indent],
+        .ib-country-fake-li {
+            margin-inline-start: 1ch;
+            text-indent: -1ch;
+        }
+
+        .infobox-data > table {
+            inline-size: 100%;
+
+            [style*=font-size] {
+                font-size: 1em;
+            }
+
+            td, th {
+                border: 0;
+            }
+
+            th[colspan] {
+                border-block: thin solid var(--border-fg);
+                border-block-start-color: var(--border-th);
+            }
+
+            tr:nth-child(2n) {
+                background-color: var(--shade-bg);
+            }
+
+            tr:first-child > th[colspan] {
+                border-block-start: 0;
+            }
+        }
+
+        td, th {
+            padding: 0;
+
+            &.infobox-label {
+                padding-inline-end: .3rem;
+            }
+        }
+
+        > * {
+            > :not(.mergedrow, .mergedbottomrow) > :is(td, th) {
+                padding-block-start: var(--side-margin);
+            }
+
+            > :has(+ tr:not(.mergedrow, .mergedbottomrow) > *) > * {
+                padding-block-end: var(--side-margin);
+
+                &.infobox-label {
+                    padding-block-end: calc(var(--side-margin) + var(--label-baseline-align));
+                }
+            }
+        }
+    }
+
+        /* Template:Infobox element/periodic table */
+
+    .periodictable > * > tr:first-child > td > div [style*=background-color] {
+        background-blend-mode: overlay;
+        background-image: var(--bar-fill);
+        background-size: 4px 4px;
+    }
+
+        /* Template:Infobox football club */
+
+    /* lol :-( */
+    > * > tr > td:has(> table > * > tr > td > [data-wiki-rs~=template-football-kit]) {
+        border: 0;
+
+        [data-wiki-rs~=template-football-kit] {
+            border: 0;
+            inline-size: auto;
+            margin-block: var(--side-margin);
+            margin-inline: 0;
+            padding: 0;
+        }
+    }
+
+        /* Template:Infobox genome */
+
+    &.ib-genome .infobox-image {
+        border-inline: 0;
+    }
+
+        /* Template:Infobox military conflict */
+
+    &.vevent {
+        > * > tr {
+            /* “Part of” */
+            &:nth-child(2) > * {
+                background: transparent;
+                color: var(--fg);
+                padding-block-start: calc(var(--side-margin) * .5);
+            }
+
+            /* Image part, if one exists */
+            &:is(
+                :nth-child(2),
+                :nth-child(3)
+            ):has(
+                > td > :any-link > img,
+                > td > img,
+                > td > .tmulti
+            ) > * {
+                padding-block: var(--side-margin);
+                font-size: var(--caption-size);
+                text-align: justify;
+                text-align-last: center;
+
+                &:has(> .tmulti) {
+                    font-size: 1em;
+                }
+            }
+
+            /* Belligerents, strength, etc. */
+            > th[colspan]:not(.summary) {
+                background-color: transparent;
+                border-block-start: thin solid var(--fg);
+                border-block-end: thin solid var(--border-th);
+                color: var(--fg);
+                font-size: 1em;
+            }
+
+            > td[style*=border-right] {
+                border-inline-end: thin solid var(--border-th);
+                padding-inline-end: var(--side-margin);
+
+                + td {
+                    padding-inline-start: var(--side-margin);
+                }
+            }
+        }
+
+        /* Date, place, etc. */
+        table {
+            margin-block: var(--side-margin);
+
+            th {
+                font-stretch: var(--side-body-stretch);
+                font-weight: var(--bold);
+            }
+
+            :is(td, th) {
+                text-align: start;
+                vertical-align: top;
+            }
+        }
+    }
+
+        /* Template:Infobox person */
+
+    &.vcard.vcard {
+        .honorific-prefix,
+        .honorific-suffix {
+            font-size: var(--caption-size);
+            font-weight: var(--normal-weight);
+            line-height: inherit;
+        }
+
+        .infobox-header[style*=padding] {
+            padding-block-end: 0;
+        }
+
+        > * > tr {
+            &:has(+ tr > td > table:first-child) > * {
+                padding-block-end: var(--side-margin);
+
+                &.infobox-label {
+                    padding-block-end: calc(var(--side-margin) + var(--label-baseline-align));
+                }
+            }
+
+            > td > table {
+                border-block-start: thin solid var(--fg);
+                margin: 0;
+
+                > * > tr:first-child > th {
+                    border: 0;
+                    padding-inline: 0;
+                    padding-block: var(--side-margin) 0;
+                }
+            }
+        }
+
+        .infobox-below:has(> :empty:first-child:last-child) {
+            display: none;
+        }
+
+        .skin-nightmode-reset-color {
+            background: transparent;
+        }
+    }
+
+        /* Template:Infobox settlement */
+
+    &.ib-settlement > * > tr {
+        &:has(> .infobox-subheader):has(+ .ib-settlement-official) > * {
+            padding-block-end: 0;
+        }
+
+        &.ib-settlement-official > * {
+            font-size: var(--caption-size);
+            border-block-start: 0;
+            padding-block-start: 0;
+        }
+    }
+
+    .ib-settlement-official > * {
+        font-stretch: normal;
+        text-align: center;
+    }
+
+    .ib-settlement-native,
+    .ib-uk-place-other-names {
+        font-size: var(--caption-size);
+        font-stretch: normal;
+        font-weight: var(--normal-weight);
+        padding: 0;
+    }
+
+    .ib-settlement-caption,
+    .ib-settlement-caption-link,
+    .sidebar-caption {
+        font-size: var(--caption-size);
+        font-stretch: normal;
+        line-height: 1.4;
+        text-align: justify;
+        text-align-last: center;
+    }
+
+    .ib-settlement-caption-link {
+        padding-block-end: 0;
+    }
+
+    .ib-settlement-cols + .ib-settlement-cols {
+        margin-block-start: calc(var(--side-margin) * 2);
+    }
+
+    .ib-settlement-cols-cell {
+        vertical-align: bottom;
+    }
+
+        /* Template:Infobox television */
+
+    &.ib-tv {
+        border-collapse: collapse;
+    }
+
+    .ib-tv-channel-availability {
+        > .infobox-header {
+            font-stretch: normal;
+            text-align: center;
+        }
+
+        + tr:has(> .infobox-full-data:empty) {
+            display: none;
+        }
+    }
+
+        /* Template:Sidebar person */
+
+    &.sidebar-person {
+        --image-w: 3em;
+
+        border-color: var(--fg);
+
+        hr {
+            display: none;
+
+            &:not(:first-child) {
+                margin-block-start: var(--side-margin);
+
+                ul + & + ul {
+                    margin-block-start: 0;
+                }
+            }
+        }
+
+        .hidden-begin {
+            font-size: inherit;
+        }
+
+        .hidden-title,
+        .sidebar-content > [style*=font-weight],
+        .sidebar-content > .mw-collapsible > [style*=font-weight] {
+            border-block: 0;
+            font-size: var(--side-head-font-size);
+            font-stretch: var(--side-body-stretch);
+            font-weight: var(--bold);
+            line-height: calc(var(--side-line-height) / var(--side-head-font-size));
+            margin-block: var(--side-margin) 0;
+            margin-inline: 0;
+        }
+
+        .sidebar-content > hr:first-child + .hidden-begin > .hidden-title {
+            margin-block-start: 0;
+        }
+
+        .hidden-content {
+            text-align: start;
+        }
+    }
+
+    .sidebar-person-title-image,
+    .sidebar-person-title {
+        background: transparent;
+        color: var(--fg);
+        padding: 0;
+    }
+
+    .sidebar-person-title-image {
+        inline-size: var(--image-w);
+
+        img {
+            max-block-size: 1lh;
+            max-inline-size: var(--image-w);
+        }
+    }
+
+    .sidebar-person-title {
+        font-stretch: normal;
+        font-weight: var(--normal-weight);
+        padding-inline-end: var(--image-w);
+
+        > div {
+            font-size: 1rem;
+        }
+
+        .vcard {
+            font-stretch: var(--side-title-stretch);
+            font-weight: var(--bold);
+        }
+    }
+
+        /* Template:Speciesbox */
+
+    &.biota {
+        [data-wiki-rs~=template-phanerozoic-220px] {
+            font-size: inherit;
+
+            + br {
+                display: none;
+            }
+        }
+
+        > * > tr {
+            > th {
+                background: transparent;
+
+                &[colspan] {
+                    border-block: thin solid var(--fg);
+                    border-block-end-color: var(--border-th);
+                    padding-block: var(--side-margin);
+                }
+            }
+
+            &:first-child > th {
+                background: transparent;
+                border-block-end: thin solid var(--fg);
+                color: var(--fg);
+                font-size: var(--big-caption);
+                font-stretch: var(--side-title-stretch);
+                padding-block: var(--side-margin);
+
+                > div {
+                    border-block-start: thin solid var(--fg);
+                    font-size: 1rem;
+                    font-stretch: normal;
+                    font-weight: var(--normal-weight);
+                    margin-block-start: var(--side-margin);
+                    padding-block-start: var(--side-margin);
+                }
+            }
+
+            &:has(> th[colspan]) + tr > * {
+                padding-block-start: var(--side-margin);
+            }
+
+            &:has(+ tr > th[colspan]) > *,
+            &:last-child > * {
+                padding-block-end: var(--side-margin);
+            }
+        }
+    }
+}
+
+/*= Template:Key press */
+
+.keyboard-key {
+    border-color: var(--fg);
+    font-family: var(--sans);
+    font-variant-numeric: normal;
+    margin-inline: 0.05em;
+}
+
+/*= Template:Largest cities */
+
+[data-wiki-rs~=template-largest-cities] {
+    > table {
+        border-color: var(--border-fg);
+        border-block-start: 3px solid currentColor;
+        border-inline: none;
+        font-size: 1em;
+        font-variant-numeric: tabular-nums;
+        inline-size: var(--table-width);
+        margin-inline: var(--table-margin-inline);
+    }
+
+    td {
+        padding: .25em;
+
+        &:first-child {
+            padding-inline-start: var(--table-padding-inline);
+        }
+
+        &:last-child {
+            padding-inline-end: var(--table-padding-inline);
+        }
+
+        &:has(+ .largestCities-cell-background) {
+            padding-inline-end: 1em;
+        }
+
+        &:not([rowspan]) + .largestCities-cell-background {
+            border-inline-start: thin solid var(--border-fg);
+        }
+    }
+
+    th {
+        border-block-end: thin solid var(--border-fg);
+
+        span[style*=font-size] {
+            font-stretch: var(--side-title-stretch);
+        }
+    }
+
+    tr:nth-child(2n + 1) td:not([rowspan]) {
+        background-color: var(--shade-bg);
+    }
+}
+
+.largestCities-cell-background {
+    background-color: transparent;
+}
+
+/*= Template:Legend */
+
+/* This is a colour swatch. Used in 'Canada' and 'McDonnell Douglas MD-11'.
+    It is also inexplicably used as a wrapper for things like bus numbers. */
+.legend-color:not(:has(> .legend-text, > :any-link)) {
+    block-size: var(--legend-wh);
+    border-color: var(--legend-border);
+    line-height: var(--legend-lh);
+    min-inline-size: var(--legend-wh);
+    vertical-align: var(--legend-valign);
+}
+
+/* 'Template:Legend' is sometimes inline, sometimes block. When it is inline,
+   items need extra spacing. */
+figcaption {
+    span.legend + span.legend {
+        margin-inline-start: .25em;
+
+        &::before {
+            content: ' ';
+            white-space: normal;
+        }
+    }
+}
+
+/*= Template:Location map */
+
+.switcher-container {
+    margin-block-start: calc(var(--box-margin) * .5);
+
+    /* No scripts, no switching, no reason to display many placeholder
+        images in a row */
+    > :nth-child(n+2) {
+        display: none;
+    }
+}
+
+.locmap {
+    font-stretch: var(--side-body-stretch);
+    text-align: center;
+
+    img {
+        display: block;
+    }
+
+    .od {
+        font-stretch: normal;
+    }
+}
+
+/*= Template:Markup */
+
+[data-wiki-rs~=template-markup] {
+    margin-inline: var(--table-margin-inline);
+    inline-size: var(--table-width);
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+
+    > * > tr > td {
+        border: 0;
+        padding-block: var(--table-padding-block);
+        padding-inline: var(--table-padding-inline);
+
+        + td:not([style*="border-style: none"]) {
+            border: thin solid var(--border-fg);
+        }
+    }
+}
+
+/*= Template:Math proof */
+
+.math_proof {
+    border: 0;
+    margin: 0;
+    padding: 0;
+
+    * + & {
+        margin-top: var(--box-margin);
+    }
+}
+
+/*=
+/* Template:Mbox
+/* Template:Ambox
+/* Template:Cmbox
+/* Template:Fmbox
+/* Template:Imbox
+/* Template:Ombox
+/* Template:Tmbox
+/*/
+
+.ambox,
+.cmbox,
+.fmbox,
+.imbox,
+.ombox,
+.tmbox {
+    background: var(--box-tag);
+    border: 0;
+    font-family: var(--sans);
+    margin-inline: 0;
+
+    img {
+        aspect-ratio: 1;
+        display: block;
+    }
+
+    hr {
+        margin-block: .5rem calc(.5rem - 1px);
+        margin-inline: 0;
+    }
+
+    :is(.mw-parser-output, .documentation, .excerpt, .excerpt-block) > & {
+        margin-block-start: var(--box-margin);
+    }
+}
+
+.mbox-text {
+    padding: 0;
+}
+
+.mbox-image {
+    padding-block: .25rem 0;
+    padding-inline: .5rem;
+    vertical-align: top;
+}
+
+.mbox-empty-cell {
+    padding-inline-start: .5rem;
+}
+
+.mbox-small.mbox-small {
+    margin-block: 0 var(--figure-margin);
+    margin-inline: var(--figure-margin) 0;
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+}
+
+.compact-ambox .ambox {
+    background: none;
+    /* !important: Module’s own CSS uses !important */
+    margin-inline-start: 0;
+}
+
+/*= Template:Navbar */
+
+.navbar-mini {
+    font-stretch: var(--side-title-stretch);
+}
+
+.navbar-ct-full,
+.navbar-ct-mini {
+    font-size: inherit;
+}
+
+/*= Template:Navbox */
+
+/* nest everything to increase specificity, since the templatestyles uses
+    complex selectors with high specificities */
+.navbox {
+    &.navbox,
+    .navbox-abovebelow,
+    .navbox-even,
+    .navbox-group,
+    .navbox-list,
+    .navbox-odd,
+    .navbox-subgroup,
+    .navbox-title {
+        /* !important: 'Sociology' */
+        background-color: transparent;
+        border: 0;
+    }
+
+    &.navbox {
+        border-block-start: 3px solid currentColor;
+        margin-inline: 0;
+        /* !important: 'Crazy Taxi' */
+        padding: 0;
+
+        li {
+            padding-inline-start: 0;
+        }
+    }
+
+    /* There is a much more pleasant way to do this, which is to use
+        border-top on `tr + tr`. Unfortunately, to make sure there is a
+        bottom border on a last row but *not* on a `.navbox-abovebelow`, the
+        border has to be put on the bottom so it can be erased by
+        `.navbox-abovebelow`. */
+    tr > :is(
+        .navbox-abovebelow,
+        .navbox-group,
+        .navbox-image,
+        .navbox-list,
+        .navbox-title
+    ) {
+        border-block-end: thin solid var(--border-fg);
+    }
+
+    tr:last-child > .navbox-abovebelow {
+        border-block-end: 0;
+    }
+
+    .navbox-abovebelow,
+    .navbox-group,
+    .navbox-title {
+        font-family: var(--sans);
+    }
+
+    .navbox-abovebelow {
+        font-size: var(--caption-size);
+    }
+
+    /* 'Wikipedia:Five pillars' uses this */
+    .navbox-columns-table {
+        strong {
+            font-family: var(--sans);
+        }
+
+        > * > tr > .navbox-list + .navbox-list > .navbox-subgroup {
+            border-inline-start: thin solid var(--border-fg);
+        }
+
+        .navbox-list {
+            &:not(.navbox-list-with-group) {
+                border: 0;
+            }
+
+            &:not(:has(.navbox-subgroup)) + * {
+                padding-inline-start: calc(var(--box-margin) * .25);
+            }
+        }
+    }
+
+    .navbox-group {
+        /* When navbox titles are rotated, as in 'Template:Carnivora', the
+            inline styles set widths and rely on the content box model to
+            avoid visual overflow */
+        box-sizing: content-box;
+
+        &:has(+ td .navbox-subgroup) {
+            border-inline-end: thin solid var(--border-fg);
+        }
+
+        /* 'Template:Solar system' */
+        &[scope=row][style*="text-align"] {
+            text-align: end;
+        }
+    }
+
+    .navbox-image {
+        display: none;
+    }
+
+    .navbox-list + .navbox-list {
+        /* !important: 'Template:IBM personal computers' */
+        border-inline-start: thin solid var(--border-fg);
+    }
+
+    /* 'Template:Mozilla' uses one of these weirdo hybrids */
+    .navbox-list-with-group > div:first-child:not(:empty) {
+        &:has(~ .navbox-subgroup) {
+            /* !important: 'Template:Mozilla' */
+            padding-inline: 1rem;
+        }
+
+        ~ .navbox-subgroup {
+            border-block-start: thin solid var(--border-fg);
+        }
+    }
+
+    .navbox-subgroup tr:last-child > :is(
+        .navbox-abovebelow,
+        .navbox-group,
+        .navbox-image,
+        .navbox-list
+    ) {
+        border-block-end: 0;
+    }
+
+    .navbox-title {
+        font-size: 1rem;
+        font-stretch: var(--side-title-stretch);
+
+        > :not(.navbar) {
+            /* !important: Pages like 'Crazy Taxi' on an anonymous
+            container */
+            font-size: 1rem;
+        }
+    }
+
+    /* This is more closely related to 'Template:Sidebar' than to
+        'Template:Navbox', but is used as part of
+        'Template:Infobox military conflict' on e.g. 'World War II' */
+    .navbox-vertical.navbox-vertical {
+        font-family: var(--sans);
+        font-size: 1rem;
+        line-height: var(--side-line-height);
+
+        .navbox-title {
+            border-block-end-color: var(--fg);
+            font-size: var(--big-caption);
+            line-height: var(--side-title-lh);
+            padding-block: var(--side-title-margin);
+            padding-inline: 0;
+
+            .navbar-mini {
+                font-size: 90%;
+                margin-inline-start: .5em;
+            }
+
+            [style*=font-size] {
+                font-size: inherit;
+            }
+
+            [style*=margin] {
+                margin-inline: 3em;
+            }
+
+            [style*=line-height] {
+                line-height: inherit;
+            }
+        }
+
+        .navbox-list {
+            border-block-color: var(--fg);
+            font-stretch: var(--side-body-stretch);
+            line-height: var(--side-line-height);
+            padding-block-end: var(--side-margin);
+            text-align: start;
+
+            [style*=padding] {
+                padding-inline: 0;
+            }
+
+            &.hlist ul {
+                padding-block: 0;
+            }
+
+            > div > b,
+            > div > p > b {
+                display: block;
+                font-size: var(--side-head-font-size);
+                line-height: calc(var(--side-line-height) / var(--side-head-font-size));
+                padding-block-start: var(--side-margin);
+            }
+        }
+    }
+
+    .hlist td ul {
+        + ul {
+            padding-block-start: 0;
+        }
+
+        &:has(+ ul) {
+            padding-block-end: 0;
+        }
+    }
+
+    .wikitable,
+    table.sortable {
+        border-block-end: 0;
+        inline-size: 100%;
+        margin-inline: 0;
+
+        &[style*=line-height] {
+            line-height: 1rlh;
+        }
+
+        > * > tr > * {
+            &:first-child {
+                padding-inline-start: var(--table-padding-inline);
+            }
+
+            &:last-child {
+                padding-inline-end: var(--table-padding-inline);
+            }
+        }
+    }
+
+    [style*="padding:0 0.25em"] > :is(.wikitable, table.sortable) {
+        inline-size: calc(100% + .5em);
+        margin-inline: -.25em;
+    }
+
+    /* !important: 'Template:New York City', 'Template:WikiProject Footer',
+        and others */
+    [style*="box-shadow:"]:is(
+        .navbox-abovebelow,
+        .navbox-group,
+        .navbox-list-with-group,
+        .navbox-title
+    ) {
+        box-shadow: none;
+    }
+
+    /* !important: 'Template:New York City' and 'Template:Mosques in India'
+        and 'Template:Manchester United F.C.'.
+        Caution is required because 'Template:Wikipedia policies and
+        guidelines' uses colour differently in a way which is not so bad */
+    [style*="color\:"]:is(
+        .navbox-abovebelow,
+        .navbox-abovebelow :any-link *,
+        .navbox-group,
+        .navbox-group :any-link *,
+        .navbox-title,
+        .navbox-title *
+    ) {
+        color: unset;
+    }
+}
+
+.navbox-styles {
+    display: none;
+}
+
+/* extra specificity to override `.navbox + .navbox-styles + .navbox` */
+.mw-parser-output > * + .navbox.navbox.navbox,
+.documentation > * + .navbox.navbox {
+    clear: both;
+    margin-block-start: var(--footer-margin);
+}
+
+/*= Template:Periodic table (micro) */
+
+[data-wiki-rs~=template-periodic-table--micro-] {
+    border-block: thin solid var(--fg);
+    border-inline: 0;
+    font-family: var(--sans);
+    padding-block: var(--side-margin);
+    padding-inline: 0;
+
+    &[style*="float:right"] {
+        margin-block-end: var(--figure-margin);
+        margin-inline: var(--figure-margin) 0;
+    }
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+
+    table {
+        background: var(--bg);
+        position: relative;
+
+        &::before {
+            background: var(--bar-fill);
+            content: '';
+            inset: 0;
+            mix-blend-mode: overlay;
+            opacity: .7;
+            pointer-events: none;
+            position: absolute;
+            z-index: 1;
+        }
+    }
+}
+
+#micro-periodic-table-title {
+    background: transparent;
+}
+
+#micro-periodic-table-caption {
+    padding-block-start: var(--side-margin);
+}
+
+/*= Template:Periodic table (navbox) */
+
+[aria-describedby="periodic-table-legend"] {
+    background-color: var(--bg);
+    border-collapse: separate;
+    border-spacing: 1px;
+    font-variant-numeric: normal;
+    position: relative;
+
+    div:has(> &) {
+        padding: 0;
+    }
+
+    &::before {
+        background: var(--bar-fill);
+        content: '';
+        inset: 0;
+        mix-blend-mode: overlay;
+        opacity: .7;
+        pointer-events: none;
+        position: absolute;
+        z-index: 1;
+    }
+
+    > * > tr {
+        > td {
+            font-family: var(--sans);
+            font-stretch: var(--side-body-stretch);
+
+            .mw-selflink {
+                font-stretch: normal;
+            }
+        }
+
+        > th,
+        > td > span {
+            position: relative;
+            z-index: 2;
+        }
+    }
+}
+
+#periodic-table-legend {
+    background: transparent;
+    border: 0;
+    font-family: var(--sans);
+
+    div:has(> &) {
+        padding: 0;
+    }
+
+    > div {
+        padding: 0;
+
+        > table {
+            line-height: 1rlh;
+        }
+    }
+
+    td {
+        background-image: var(--bar-fill);
+        background-blend-mode: overlay;
+    }
+}
+
+/*= Template:Phanerozoic 220px */
+
+[data-wiki-rs~=template-phanerozoic-220px] {
+    font-size: 1em;
+
+    * {
+        font-stretch: 50%;
+        padding: 0;
+    }
+
+    > * {
+        background: transparent;
+    }
+
+    > [name=Range] {
+        pointer-events: none;
+
+        * {
+            font-size: 90%;
+            font-stretch: normal;
+            font-weight: var(--bold);
+        }
+    }
+
+    > * + [data-wiki-rs~=template-fossil-range-bar] {
+        border-inline-start: thin dotted var(--fg);
+    }
+
+    a {
+        display: block;
+        line-height: 100%;
+
+        &:any-link {
+            font-weight: var(--normal-weight);
+        }
+    }
+}
+
+/*= Template:Pie chart */
+
+.pie-thumb .smooth-pie-container {
+    padding: 0;
+}
+
+/* TODO: Just force the colours to be the sequence of pretty ones always.
+    This is not possible in CSS alone because sometimes one slice is actually
+    drawn using multiple elements.
+    As a side-note, the best looking output relies on filter creating wide
+    gamut colours that get blended and then clamped into sRGB range since it
+    allows some slices to be patterned and others to be solid with the same
+    colour based on the intensity of the filter. */
+.smooth-pie,
+.smooth-pie-legend .l-color {
+    filter: saturate(200%) contrast(200%) brightness(200%) hue-rotate(50deg);
+}
+
+.smooth-pie {
+    &::before {
+        background: var(--bar-fill);
+        border-radius: 50%;
+        content: '';
+        inset: 0;
+        mix-blend-mode: overlay;
+        pointer-events: none;
+        position: absolute;
+        z-index: 1;
+    }
+
+    [title] {
+        cursor: help;
+    }
+}
+
+.smooth-pie-legend .l-color {
+    background-blend-mode: overlay;
+    background-image: var(--bar-fill);
+    background-size: 4px 4px;
+}
+
+/*=
+/* Template:Portal
+/* Template:Portal bar
+/* Template:Shortcut
+/* Template:Side box
+/* Template:Sister bar
+/* Template:Sister project
+/*/
+
+.portalright,
+.side-box-right {
+    @apply --float-right;
+}
+
+.module-shortcutboxplain {
+    background: var(--box-tag);
+    border: 0;
+    font-family: var(--sans);
+    margin-block: 0 var(--figure-margin);
+    margin-inline: var(--figure-margin) 0;
+    padding: 0;
+    padding-inline-start: var(--tag-size);
+
+    > * + * {
+        margin: 0;
+    }
+}
+
+.module-shortcutlist {
+    border: 0;
+}
+
+.portal-bar,
+.sister-bar {
+    font-family: var(--sans);
+    margin-block-start: var(--footer-margin);
+
+        + :is(.sister-bar, .portal-bar) {
+        border-block-start: none;
+        margin-block-start: 0;
+        }
+}
+
+.portal-bar-bordered,
+.sister-bar {
+    background-color: transparent;
+    border: 0;
+    border-block-end: thin solid var(--border-fg);
+    border-block-start: thin solid var(--border-fg);
+}
+
+.portalborder {
+    background: var(--box-tag);
+    border: 0;
+    padding-block: .25rem;
+    padding-inline: var(--tag-size);
+
+    &.portalright {
+        padding-inline-end: 0;
+        transform: var(--aside-gutter-align);
+    }
+}
+
+.portalbox {
+    background: var(--box-tag);
+    padding-block-start: .25rem;
+    padding-inline-start: var(--tag-size);
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+}
+
+.portalbox-entry {
+    block-size: auto;
+    display: block;
+    font-family: var(--sans);
+    font-size: 88%; /* match side-box */
+    font-style: normal;
+    font-weight: var(--normal-weight);
+    line-height: 1;
+
+    + .portalbox-entry {
+        margin-block-start: calc(var(--box-margin) * .25);
+    }
+}
+
+.portalbox-image,
+.portalbox-link {
+    padding: 0;
+}
+
+.portalbox-image img {
+    max-block-size: 1cap;
+    max-inline-size: 1cap;
+}
+
+.portalbox-link {
+    padding-inline-start: .3em;
+}
+
+.side-box {
+    border: 0;
+    background: var(--box-tag);
+    font-family: var(--sans);
+
+    .side-box-text {
+        padding-block: 0;
+    }
+
+    * + hr {
+        margin-block-start: calc(var(--box-margin) * .25);
+    }
+
+    > * + * {
+        margin-block-start: calc(var(--box-margin) * .25);
+    }
+}
+
+.side-box-right {
+    margin-block-end: var(--figure-margin);
+    margin-inline-start: var(--figure-margin);
+    transform: var(--aside-gutter-align);
+
+    .side-box-text {
+        padding-inline-end: 0;
+    }
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+
+    + .side-box-right {
+        margin-block-start: calc(var(--figure-margin) * -.5);
+    }
+}
+
+.sister-box {
+    .side-box-abovebelow {
+        padding-block: 0;
+        padding-inline: .9em;
+        text-align: start;
+    }
+
+    .side-box-text > ul {
+        border-block-start: thin solid var(--fg);
+        margin-inline: 0;
+        margin-inline-start: calc(-1cap - 4px);
+        padding-block: calc(var(--box-margin) * .25) 0;
+        padding-inline: 0;
+
+        > li {
+            min-block-size: 0;
+
+            + * {
+                margin-block-start: calc(var(--box-margin) * .25);
+            }
+        }
+    }
+}
+
+.sister-logo {
+    inline-size: auto;
+    line-height: unset;
+    vertical-align: top;
+
+    /* Without images to load, avoid blowing out the layout */
+    img {
+        max-block-size: 1cap;
+        max-inline-size: 1cap;
+    }
+}
+
+/*= Template:Quote box */
+
+.quotebox {
+    background: transparent;
+    color: var(--fg);
+    border: 0;
+    border-block-end: thin solid currentColor;
+    border-block-start: 3px solid currentColor;
+    padding-block: calc(var(--box-margin) * 2) calc(var(--box-margin) * 2);
+    padding-inline: calc(var(--box-margin) * 2) var(--box-margin);
+
+    &.floatright,
+    &.floatleft {
+        margin-block: var(--box-margin) var(--figure-margin);
+        margin-inline: var(--figure-margin) calc(var(--box-margin) * -1);
+        max-inline-size: var(--aside-max);
+        min-inline-size: var(--aside-min);
+    }
+
+    &.floatleft {
+        margin-inline: calc(var(--box-margin) * -1) var(--figure-margin);
+    }
+
+    .left-aligned {
+        text-align: justify;
+    }
+
+    cite {
+        font-style: italic;
+
+        /* 'Social class' uses this and it looks bad */
+        &.left-aligned {
+            text-align: end;
+        }
+    }
+}
+
+/*= Template:Reflist */
+
+.refbegin,
+.reflist {
+    font-size: inherit;
+    margin-block-end: 0;
+}
+
+.refbegin-hanging-indents > ul {
+    padding-inline-start: 2em;
+
+    > li {
+        padding-inline-start: 0;
+        text-indent: -2em;
+    }
+}
+
+.reflist-columns {
+    gap: calc(var(--ol-gutter) * 2);
+}
+
+/*= Template:Routemap */
+
+.RMbox {
+    border-block-end: 3px solid var(--fg);
+    box-shadow: none;
+    font-family: var(--sans);
+
+    > * > tr {
+        &:first-child > th {
+            background-image: linear-gradient(transparent 3px, var(--bg) 3px);
+            border-block-end: thin solid var(--border-fg);
+            color: var(--fg);
+            font-stretch: var(--side-title-stretch);
+            line-height: 1;
+            padding-block-start: calc(5px + 3px);
+            vertical-align: baseline;
+
+            [style*=color] {
+                color: unset;
+            }
+        }
+
+        &:not(:first-child) > th {
+            border-block-start: thin solid var(--border-fg);
+            font-stretch: 100%;
+        }
+
+        &:last-child > * {
+            padding-block-end: calc(var(--box-margin) * .5);
+
+            &:last-child {
+                margin-block-end: 0;
+            }
+        }
+
+        > td:has(> .selfreference) {
+            padding-block-start: 0;
+            padding-inline: 0;
+        }
+
+        &:has(+ tr .autocollapse) > td {
+            padding-block-end: calc(var(--box-margin) * .5);
+        }
+    }
+
+    .autocollapse > * > tr:first-child > th
+    /* , > * > tr:not(:first-child) > th  */
+    {
+        background-color: transparent;
+        border-block-start: 3px solid var(--fg);
+        color: var(--fg);
+        font-stretch: var(--side-title-stretch);
+        padding: 0;
+    }
+
+    .routemap {
+        font-stretch: var(--side-body-stretch);
+    }
+
+    .selfreference {
+        border-block-end: thin solid var(--border-th);
+        font-size: 100%;
+        padding-block: calc(var(--box-margin) * .25);
+    }
+}
+
+.mw-parser-output > .RMbox[style*="float:right"] {
+    margin-inline-start: var(--figure-margin);
+    margin-block-end: var(--figure-margin);
+    transform: var(--aside-gutter-align);
+}
+
+.RMinline:last-child {
+    margin-block-end: 0;
+}
+
+.routemap {
+    font-stretch: var(--side-body-stretch);
+
+    .RMr1.RMr1,
+    .RMl1.RMl1 {
+        font-variant-numeric: lining-nums;
+        /* !important: Module’s own CSS uses !important */
+        padding-inline: 1em;
+    }
+}
+
+/*= Template:Row header */
+
+.table-rh {
+    /* !important: Even though this template uses a class, it still also
+        unconditionally inlines styles */
+    background-color: transparent;
+    color: inherit;
+    font-family: var(--sans);
+    line-height: 1.2;
+
+    > .hatnote {
+        font-weight: var(--normal-weight);
+        margin-block-start: calc(var(--box-margin) * .5);
+    }
+}
+
+/*= Template:S-start */
+
+.succession-box.succession-box {
+    border-block-start: thin solid var(--border-fg);
+    inline-size: 100%;
+    margin-block: 0;
+    margin-inline: 0;
+    max-inline-size: none;
+
+    &:has(+ .navbox-styles, + .navbox) {
+        margin-block: var(--footer-margin) 0;
+    }
+
+    .navbox & {
+        border: none;
+        inline-size: 100%;
+        margin: 0;
+    }
+
+    * {
+        text-align: inherit;
+    }
+
+    > * > tr {
+        background-color: transparent;
+
+        > td {
+            border-block-end: thin solid var(--border-fg);
+            font-size: .88rem;
+
+            &[style*=border] {
+                border-block-start-width: 3px;
+            }
+
+            [style*=font-size] {
+                display: block;
+                font-family: var(--sans);
+                font-size: .95em;
+            }
+        }
+
+        > th {
+            border-block-start-width: 3px;
+            font-size: 1rem;
+            font-stretch: var(--side-title-stretch);
+        }
+
+        &:first-child > td[colspan] {
+            font-family: var(--sans);
+            font-size: 1rem;
+            font-stretch: var(--side-title-stretch);
+        }
+    }
+}
+
+/*= Template:Spoken Wikipedia */
+
+.spoken-wikipedia {
+    border: 0;
+    border-block-start: 3px solid currentColor;
+    font-family: var(--sans);
+}
+
+.spoken-wikipedia-disclaimer {
+    hyphens: manual;
+}
+
+/*= Template:Stack */
+
+.stack.stack.stack {
+    &.stack-clear-right,
+    &.stack-right {
+        margin-block-end: var(--figure-margin);
+        margin-inline-start: var(--figure-margin);
+        min-inline-size: var(--aside-min);
+
+        > * > * {
+            min-inline-size: var(--aside-min);
+        }
+    }
+
+    > * > * {
+        border-block-end: none;
+        float: none;
+        margin: 0;
+
+        + * {
+            margin-block-start: calc(var(--box-margin) * .25);
+        }
+    }
+}
+
+/*= Template:Stack start */
+
+.stack-right, .stack-clear-right {
+    @apply --float-right;
+}
+
+/*= Template:Static row numbers */
+
+.static-row-numbers.static-row-numbers.wikitable {
+    font-variant-numeric: tabular-nums;
+
+    > * > tr {
+        &::before {
+            font-family: var(--sans);
+            inline-size: 0;
+            padding-block: var(--table-padding-block);
+            padding-inline: var(--table-padding-inline);
+        }
+
+        &:has(> th[scope=col])::before {
+            /* !important: 'Template:Static row numbers' styles does it */
+            border-block-end: thin solid var(--border-th);
+            counter-increment: none;
+            content: "";
+        }
+
+        &:first-child:has(> th[scope=col]):has(+ tr > th[scope=col])::before {
+            border-block-end: 0;
+        }
+
+        &::before {
+            border: 0;
+        }
+
+        &.static-row-header:not(.sortbottom, .sorttop)::before {
+            border-block-end: thin solid var(--border-th);
+        }
+    }
+}
+
+.static-row-header-text.static-row-numbers > :first-child > tr:first-child:has(+ tr > th[scope=col], + .static-row-header) {
+    &::before {
+        content: "";
+    }
+
+    + tr::before {
+        content: "No.";
+        font-weight: var(--bold);
+    }
+}
+
+.static-row-header-hash.static-row-numbers > :first-child > tr:first-child:has(+ tr > th[scope=col], + .static-row-header) {
+    &::before {
+        content: "";
+    }
+
+    + tr::before {
+        content: "#";
+        font-weight: var(--bold);
+    }
+}
+
+.sticky-header-multi {
+    > * > tr:first-child {
+        position: sticky;
+        inset-block-start: 0;
+    }
+}
+
+/*= Template:Talk quote inline */
+
+.inline-quote-talk {
+    font-family: var(--serif);
+}
+
+/*=
+/* Template:Template journal
+/* Template:Template journal inline
+/*/
+
+.tj-box {
+    border: 0;
+    font-family: var(--mono);
+    font-size: inherit;
+    line-height: var(--rlh);
+    padding: 0;
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+}
+
+.tj-tape {
+    font-family: var(--mono);
+}
+
+/*= Template:Thumb image */
+
+.tleft {
+    @apply --float-left;
+}
+
+.tright {
+    @apply --float-right;
+}
+
+/*= Template:Timeline of release years */
+
+.release-timeline {
+    border-collapse: separate;
+    border-spacing: 0 1px;
+    clear: inline-end;
+    font-family: var(--sans);
+    font-size: 95%;
+    float: inline-end;
+    inline-size: auto;
+    line-height: inherit;
+    margin-block: 0 var(--figure-margin);
+    margin-inline: var(--figure-margin) calc(var(--box-margin) * -1);
+    padding: 0;
+    transform: var(--aside-gutter-align);
+
+    > caption {
+        border-block-end: thin solid var(--border-th);
+    }
+
+    td, th {
+        line-height: 1.2;
+    }
+
+    td {
+        font-stretch: var(--side-body-stretch);
+    }
+
+    th[style*=border-right] {
+        border-inline-end-width: .5ch;
+    }
+}
+
+/*= Template:Track listing */
+
+.tracklist {
+    @apply --tabular-data;
+}
+
+.tracklist-length.tracklist-length {
+    text-align: end;
+}
+
+.tracklist-total-length.tracklist-total-length {
+    background-color: var(--shade-bg);
+    border-block-start: thin solid var(--border-th);
+    font-family: var(--sans);
+    text-align: end;
+
+    > :is(td, th) {
+        padding-block: var(--table-padding-block);
+
+        &:last-child {
+            text-align: end;
+        }
+    }
+}
+
+/*= Template:Tracked */
+
+.tracked {
+    background: var(--box-tag);
+    border: 0;
+    border-radius: 0;
+    font-family: var(--sans);
+    margin-block-end: var(--figure-margin);
+    margin-inline-end: var(--figure-margin);
+    padding-block: calc(var(--tag-size) / 2);
+    padding-inline: var(--tag-size);
+    text-align: start;
+}
+
+/*= Template:Var serif */
+
+.var-serif {
+    font-family: var(--serif);
+    font-size: 1em;
+}
+
+/*= Template:Video game reviews */
+
+.vgr-center {
+    text-align: start;
+}
+
+.vgr-reviews caption {
+    font-family: var(--sans);
+}
+
+.vgr-stacked {
+    margin-block-start: calc(var(--box-margin) * .5);
+}
+
+.vgr-title {
+    font-family: var(--sans);
+}
+
+.video-game-reviews {
+    margin-block-end: var(--figure-margin);
+    margin-inline-start: var(--figure-margin);
+}
+
+/*= Template:Weather box */
+
+[data-wiki-rs~=template-weather-box] {
+    .wikitable,
+    /* A lot of pages like 'Jakarta' and 'Tromsø' shove an untemplated
+        “climatic data” table right after the weather box, so heuristically
+        match that too */
+    + .wikitable {
+        border-block-end: none;
+        inline-size: var(--table-width);
+
+        td {
+            border: solid var(--bg);
+            border-width: thin 0 0 thin;
+            font-family: var(--sans);
+            font-size: 90%;
+            text-align: center;
+            text-align: "." end;
+            inline-size: 6%;
+            padding-inline: calc(var(--table-padding-inline) * .5);
+            white-space: nowrap;
+
+            &::first-line {
+                font-size: 1rem;
+            }
+
+            &:last-child {
+                padding-inline: var(--table-padding-inline);
+            }
+
+            &[style*="color:"] {
+                background-image: var(--bar-fill-light);
+                background-blend-mode: soft-light;
+            }
+        }
+
+        th[scope=col] {
+            /* hiding the border gap requires using a unit with a known
+                size; `thin` is undefined in CSS */
+            border-block-end-width: 1px;
+            text-align: center;
+
+            &[style*="border-left-width\:medium"] {
+                position: relative;
+                &::after {
+                    border-block-end: 1px solid var(--border-th);
+                    content: '';
+                    /* "thin" and "medium" are unspecified in CSS */
+                    inline-size: 12px;
+                    inset-block-end: 0;
+                    inset-inline-start: 0;
+                    position: absolute;
+                    /* TODO: CSS is missing logical translate */
+                    transform: translate(-6px, 1px);
+                }
+            }
+        }
+
+        tr {
+            &:first-child > th {
+                font-weight: var(--normal-weight);
+
+                &::first-line {
+                    font-weight: var(--bold);
+                }
+            }
+
+            &:nth-child(2) > th[scope=row] {
+                border-block-end: thin solid var(--border-th);
+            }
+
+            &:last-child,
+            &:nth-last-child(2):has(> [colspan]) {
+                background: transparent;
+
+                > * {
+                    /* !important: 'Tromsø' climatic data table */
+                    background: transparent;
+                    /* hiding the border gap requires using a unit with a known
+                    size; `thin` is undefined in CSS */
+                    border-block-start: 1px solid var(--border-fg);
+                    line-height: 1rlh;
+
+                    /* hiding the border gap */
+                    &:last-child {
+                        position: relative;
+
+                        &::before {
+                            border-block-start: 1px solid var(--border-fg);
+                            content: '';
+                            inset-block-start: -1px;
+                            inset-inline: 0;
+                            position: absolute;
+                        }
+                    }
+                }
+
+                + tr:last-child > * {
+                    border-block-start: 0;
+
+                    &:last-child::before {
+                        display: none;
+                    }
+                }
+            }
+        }
+    }
+
+    /* !important: 'Jakarta' */
+    + .wikitable {
+        margin-inline: var(--table-margin-inline);
+
+        tr:nth-child(2) > th {
+            border-block-end: 1px solid var(--border-th);
+
+            &:last-child {
+                position: relative;
+
+                &::after {
+                    border-block-end: 1px solid var(--border-th);
+                    content: '';
+                    /* "thin" and "medium" are unspecified in CSS */
+                    inline-size: 12px;
+                    inset-block-end: 0;
+                    inset-inline-start: 0;
+                    position: absolute;
+                    /* TODO: CSS is missing logical translate */
+                    transform: translate(-6px, 1px);
+                }
+            }
+        }
+    }
+}
+
+/*= Template:Xt */
+
+.example:not(.monospaced) {
+    font-family: var(--serif);
+}
+
+/*=
+/* Template:Portals browsebar
+/* Wikipedia:Contents/TOC navbar
+/*/
+
+hr[data-wiki-rs~=template-portals-browsebar] {
+    display: none;
+}
+
+[data-wiki-rs~=template-portals-browsebar],
+[data-wiki-rs~=wikipedia-contents-toc-navbar] {
+    border-block-start: thin solid var(--fg);
+    clear: both;
+    font-family: var(--sans);
+    font-size: var(--caption-size);
+    padding-block-start: calc(var(--box-margin) * .5);
+
+    p {
+        text-align: center;
+    }
+
+    + & {
+        border: 0;
+        margin: 0;
+        padding: 0;
+    }
+
+    + * {
+        margin-block-start: calc(var(--box-margin) * .5);
+    }
+}
+
+/*= Wikipedia:Contents/Types layout */
+
+.contentsPage {
+    background: transparent;
+    border: 0;
+    position: relative;
+
+    &.contentsPage > * {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+
+        + * {
+            margin-block-start: var(--box-margin);
+        }
+    }
+}
+
+.contentsPage__intro,
+.contentsPage__section {
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+}
+
+.contentsPage__intro {
+    position: static;
+
+    > .contentsPage__sectionlinks {
+        font-family: var(--sans);
+        font-size: 1rem;
+        inset: auto;
+        inset-block-start: calc(var(--doc-title-size) / 1 - .5lh);
+        inset-inline-end: 0;
+    }
+
+    > * + * {
+        margin-block-start: var(--box-margin);
+
+        &[style*=margin] {
+            margin-block-start: var(--box-margin);
+        }
+    }
+}
+
+.contentsPage__toc.contentsPage__toc {
+    border-block: thin solid var(--border-fg);
+    font-family: var(--sans);
+    font-weight: var(--normal-weight);
+
+    dt {
+        font-weight: var(--bold);
+    }
+}
+
+.contentsPage__section,
+.contentsPage__section > .div-col {
+    margin-block-end: 0;
+
+    > :where(b, p):not(:first-child:last-child) {
+        font-family: var(--sans);
+        font-stretch: 150%;
+        text-align: start;
+        text-transform: uppercase;
+    }
+
+    > b:not(:first-child:last-child) {
+        &::before {
+            display: block;
+            content: '';
+        }
+    }
+
+    > dl > dd {
+        margin-inline-start: 0;
+
+        > b:first-child {
+            font-family: var(--sans);
+
+            + dl > dd {
+                margin: 0;
+            }
+        }
+
+        + dd {
+            margin-block-start: var(--box-margin);
+        }
+    }
+
+    > * + :where(b, p) {
+        margin-block-start: calc(var(--box-margin) * 1.5);
+    }
+}
+
+.contentsPage__title.contentsPage__title {
+    border-block: thin solid var(--fg);
+    border-block-start-width: 3px;
+    font-family: var(--sans);
+    font-size: var(--doc-title-size);
+    font-stretch: 120%;
+    font-weight: var(--bold);
+    padding: 0;
+}
+
+.contentsPage__heading.contentsPage__heading {
+    align-items: baseline;
+    border: 0;
+    display: flex;
+    font-family: var(--sans);
+    gap: calc(var(--box-margin) * .5);
+    padding: 0;
+
+    * + & {
+        margin-block-start: 5rem;
+    }
+
+    > :any-link:first-child {
+        order: 1;
+
+        img {
+            max-block-size: 1cap;
+        }
+    }
+
+    > h2 {
+        font-family: inherit;
+        font-size: 1.5rem;
+        font-stretch: semi-expanded;
+        line-height: 1rlh;
+        padding-block: .1rlh .4rlh;
+
+        + * {
+            align-items: baseline;
+            display: flex;
+            flex: 1;
+
+            &::before {
+                content: '';
+                flex: 1;
+            }
+        }
+    }
+
+    > :is(.contentsPage__sectionlinks, .contentsPage__xlink) {
+        font-size: inherit;
+        position: static;
+    }
+}
+
+.contents-pages-footer {
+    background: transparent;
+    border-block: thin solid var(--fg);
+    border-block-start-width: 3px;
+    border-inline: 0;
+    display: grid;
+    font-size: .88rem;
+    grid-template-columns: fit-content(20%) auto;
+    margin-block-start: var(--footer-margin);
+    padding: 0;
+    text-align: start;
+
+    > * + * {
+        border-block-start: thin solid var(--border-fg);
+        line-height: 1.4;
+        padding: var(--side-margin);
+    }
+
+    > p {
+        align-items: center;
+        display: flex;
+        grid-column: 1 / 2;
+        justify-content: end;
+        padding-inline-end: 0;
+    }
+
+    > .hlist {
+        grid-column: 2 / 3;
+        padding-inline-start: var(--box-margin);
+    }
+
+    [role=heading] {
+        font-family: var(--sans);
+    }
+}
+
+.contents-pages-footer-title {
+    font-family: var(--sans);
+    font-size: 1rem;
+    font-stretch: var(--side-title-stretch);
+    font-weight: var(--bold);
+    grid-column: 1 / 3;
+    padding-block: var(--side-margin);
+    text-align: center;
+}

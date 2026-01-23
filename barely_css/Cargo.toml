@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = ["derive", "impl"]
+default-members = ["", "impl"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "1.0.0"
+
+[package]
+name = "barely_css"
+description = "Barely parses and compiles a subset of CSS"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+barely_css_derive = { path = "derive" }
+barely_css_impl = { path = "impl" }

@@ -233,7 +233,13 @@ pub(super) fn media_options<'s>(
         let mut extractor = TextContent::new(&sp.source, String::new());
         extractor.visit_tokens(caption)?;
         let mut title = String::new();
-        text_run(&mut title, '\n', extractor.finish().trim_ascii(), false)?;
+        text_run(
+            &mut title,
+            '\n',
+            extractor.finish().trim_ascii(),
+            false,
+            false,
+        )?;
         options.attrs.insert("title".into(), title.into());
     }
 

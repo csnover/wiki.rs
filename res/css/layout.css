@@ -1,0 +1,395 @@
+/*! wiki.rs-specific page layout rules. */
+
+/*= global layout */
+
+.wiki-rs-body {
+    align-items: baseline;
+    border-block-start: .25rem solid var(--highlight);
+    display: grid;
+    gap: 0 4rem;
+    grid-template-columns: auto 18rem;
+    padding-block: 4rem var(--body-bottom);
+    padding-inline: var(--body-left) var(--body-right);
+}
+
+.wiki-rs-search {
+    --border-size: 2px;
+    --icon-size: 1.7em;
+
+    border-block-end: var(--border-size) solid currentColor;
+    contain: paint style;
+    display: flex;
+    font-family: var(--sans);
+    position: relative;
+
+    &:focus-within {
+        border-color: var(--highlight);
+        outline: var(--border-size) solid var(--highlight);
+    }
+
+    input {
+        --icon-h: calc(1em * 22 / 16);
+        --icon-w: calc(1em * 20 / 16);
+
+        all: unset;
+        background: transparent url('data:image/svg+xml,<svg viewBox="0 0 20 22" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="10" r="6.5" fill="transparent" stroke="black" stroke-width="2.5" vector-effect="non-scaling-stroke"/><line x1="7.5" y1="14.5" x2="2" y2="20" stroke="black" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>') 0 center/var(--icon-w) var(--icon-h) no-repeat;
+        block-size: calc(1em * var(--rlh));
+        border: 0;
+        box-sizing: border-box;
+        color: rgba(0, 0, 0, 0.3);
+        flex: 1;
+        font-family: var(--sans);
+        font-size: 1em;
+        padding-inline-start: var(--icon-size);
+
+        &::placeholder {
+            all: unset;
+            font-family: var(--sans);
+            opacity: 0;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        &:focus {
+            color: var(--fg);
+
+            &::placeholder {
+                opacity: .3;
+            }
+        }
+
+        &:not(:valid, :focus) {
+            + label {
+                visibility: visible;
+            }
+        }
+    }
+
+    label {
+        cursor: text;
+        inset-inline-start: var(--icon-size);
+        line-height: var(--rlh);
+        opacity: .3;
+        position: absolute;
+        visibility: hidden;
+    }
+
+    [type=submit] {
+        all: unset;
+        align-self: baseline;
+        border: 1px outset transparent;
+        cursor: pointer;
+        line-height: calc(1em * var(--rlh) - 3px);
+        margin-block: 1px;
+        margin-inline: .25em 1px;
+        padding-inline: .25em;
+        user-select: none;
+        text-decoration: underline;
+        visibility: hidden;
+
+        :focus-within > & {
+            background-color: var(--shade-bg);
+            border-color: var(--border-fg);
+            text-decoration: none;
+        }
+
+        &:focus, &:hover {
+            text-decoration: none;
+        }
+
+        &:active {
+            background-color: var(--border-fg);
+            border-style: inset;
+        }
+    }
+
+    &:valid [type=submit] {
+        visibility: visible;
+    }
+
+
+    /* padding-left of search + input must = --icon-size */
+    .wiki-rs-index > & {
+        max-inline-size: 50vi;
+        min-inline-size: 21.4em;
+        padding-inline-start: .15em;
+
+        label {
+            opacity: 1;
+        }
+
+        input {
+            padding-inline-start: 1.55em;
+        }
+
+        [type=submit] {
+            font-stretch: 75%;
+            font-weight: 600;
+        }
+    }
+}
+
+.wiki-rs-title {
+    align-items: baseline;
+    display: flex;
+    grid-column: 1;
+    grid-row: 1;
+
+    > * {
+        min-inline-size: 0;
+    }
+
+    > :first-child {
+        flex: 1;
+    }
+
+    > .mw-indicators {
+        display: flex;
+        white-space: nowrap;
+
+        img {
+            block-size: revert-layer;
+            vertical-align: bottom;
+        }
+
+        > * + * {
+            margin-inline-start: 1rem;
+        }
+    }
+}
+
+.wiki-rs-nav {
+    --top: 2rem;
+
+    display: flex;
+    flex-direction: column;
+    grid-column: 2;
+    grid-row: 1/3;
+    max-block-size: calc(100vb - var(--top) * 2);
+    position: sticky;
+    inset-block-start: var(--top);
+}
+
+/*= article.html */
+
+/* :where: Lower-specificity header, etc. element styles should still take
+   precedence */
+:where(.mw-parser-output) {
+    > * {
+        margin-block-start: var(--box-margin);
+    }
+
+    :where(
+        blockquote,
+        .documentation,
+        .excerpt,
+        .excerpt-block,
+        .math_proof,
+        .templatedata-header
+    ) > * + * {
+        margin-block-start: var(--box-margin);
+    }
+
+    /* Most content should be limited for readability, but some things look
+       better if they can expand into the gutter, or (like .wikitable) are
+       sometimes embedded in containers that should expand into the gutter */
+    > :where(:not(
+        .navbox,
+        .portal-bar,
+        .refbegin,
+        .reflist[style*=column-width],
+        .sister-bar,
+        .wiki-rs-categories,
+        .wikitable
+    )) {
+        max-inline-size: var(--max-width);
+    }
+
+    blockquote, dd, li, p {
+        /* 'Toronto' gets a lot of bad character distribution with
+            shorter hyphenation limits */
+        hyphenate-limit-chars: 6 3 4;
+        hyphens: auto;
+        text-align: justify;
+        text-justify: distribute;
+        text-justify: inter-character;
+    }
+}
+
+.wiki-rs-categories {
+    border-block-start: .25rem solid currentColor;
+    clear: both;
+    font-family: var(--sans);
+    font-size: 95%;
+    font-variant-numeric: normal;
+    font-weight: 350;
+    list-style: none;
+    margin-block-start: var(--footer-margin);
+    margin-inline: 0;
+    padding-block: .5rem;
+    padding-inline: 0;
+
+    &::before {
+        content: 'in: ';
+        font: italic 600 1em var(--serif);
+    }
+
+    > * {
+        display: inline;
+    }
+
+    > * + *::before {
+        content: ' / ';
+    }
+}
+
+.wiki-rs-content {
+    contain: inline-size layout style paint;
+    container: main-article / inline-size;
+    grid-column: 1;
+    grid-row: 2;
+    overflow: hidden;
+    overflow-wrap: break-word;
+    /* Weird padding and margin stuff avoids big overflows (caused by giant
+       nowrap tables) whilst allowing small overflows (because normally tables
+       and ordered lists bleed into the margins to keep text alignment) */
+    margin-inline-start: -4rem;
+    margin-inline-end: -2rem;
+    padding-inline-start: 4rem;
+    padding-inline-end: 2rem;
+}
+
+/* This is used for the replaced content of unexpanded templates in non-module
+   load modes */
+.wiki-rs-incomplete {
+    --icon-h: 1em;
+    --icon-w: 1em;
+
+    background: transparent url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M16 13h16c1.1 0 2-.9 2-2s-.9-2-2-2H16c-1.1 0-2 .9-2 2s.9 2 2 2zm0 6h16c1.1 0 2-.9 2-2s-.9-2-2-2H16c-1.1 0-2 .9-2 2s.9 2 2 2zM40 2H8a2 2 0 0 0-2 2v24.8c0 .6.4 1 .9 1.1.3 0 .6-.1.8-.3l4.2-3.9 5.9 5.6 6.2-5.7 5.5 5.1c.4.3 1 .3 1.4 0l5.3-5.1 4.1 3.7c.4.4 1 .4 1.4 0 .2-.2.3-.5.3-.8V4a2 2 0 0 0-2-2zm-2 19.9-1.2-1.1c-.4-.3-1-.3-1.4 0l-5.2 5-5.5-5c-.4-.3-1-.3-1.4 0l-5.4 5-5.3-5c-.4-.3-1-.3-1.4 0L10 22V6h28v15.9zm-2.6 7.9-5.2 5-5.5-5c-.4-.3-1-.3-1.4 0l-5.4 5-5.3-5c-.4-.3-1-.3-1.4 0L6 34.7V44c0 1.1.9 2 2 2h32a2 2 0 0 0 2-2v-9.6l-5.2-4.6c-.4-.3-1-.3-1.4 0zM38 42H10v-5.6l1.9-1.7 5.2 5c.4.3 1 .3 1.4 0l5.5-5.1 5.5 5.1c.4.3 1 .3 1.4 0l5.3-5.1 1.8 1.6V42z"/></svg>') 0 center/var(--icon-w) var(--icon-h) no-repeat;
+    font-family: var(--sans);
+    padding-inline: 1.1em .05em;
+}
+
+.wiki-rs-toc {
+    --scrollbar-padding: .5rem;
+
+    font-family: var(--sans);
+    font-size: 105%;
+    font-stretch: 80%;
+    margin-block-start: 4rem;
+    margin-inline-end: calc(var(--scrollbar-padding) * -1);
+    overflow-block: auto;
+    padding-inline-end: var(--scrollbar-padding);
+    scrollbar-width: thin;
+    scrollbar-color: grey transparent;
+
+    ul {
+        list-style: none;
+        padding-inline-start: 0;
+        margin-inline-start: 1rem;
+
+        > * + * {
+            margin-block-start: calc(var(--box-margin) * .25);
+        }
+    }
+
+    & > ul {
+        margin-inline-start: 0;
+    }
+}
+
+/*= index.html */
+
+.wiki-rs-index {
+    align-content: center;
+    font-size: 2rem;
+    font-weight: 200;
+    justify-content: center;
+    min-block-size: 70vb;
+}
+
+/*= external.html */
+
+.wiki-rs-bye {
+    display: flex;
+    font-family: var(--sans);
+    margin-block-start: 4rem;
+
+    > svg {
+        block-size: 2.25rlh;
+        inset-block-start: -.075rlh;
+        margin-inline-end: .5rem;
+        position: relative;
+    }
+
+    > div {
+        > :first-child {
+            font-weight: 550;
+        }
+
+        > hr {
+            margin-block: calc(var(--box-margin) * 2) calc(var(--box-margin) * .33);
+        }
+
+    }
+}
+
+/*= search.html */
+
+.wiki-rs-pagination {
+    --gap: 2em;
+
+    background-color: var(--bg);
+    border-block-start: 3px solid currentColor;
+    inset-block-end: 0;
+    font-family: var(--sans);
+    font-variant-numeric: tabular-nums;
+    grid-column: span 2;
+    margin-block: 4rem calc(var(--body-bottom) * -1);
+    margin-inline-start: calc(var(--body-right) - var(--body-left));
+    padding-block: .5rem var(--body-bottom);
+    position: sticky;
+
+    > ul {
+        display: flex;
+        gap: var(--gap);
+        justify-content: center;
+        list-style: none;
+        padding: 0;
+
+        > * {
+            margin-block-start: 0;
+            padding: 0;
+            white-space: nowrap;
+
+            /* Affordance for inaccurate fingers and tiny screens */
+            > :any-link {
+                margin-inline: -.5em;
+                padding-inline: .5em;
+            }
+        }
+
+        > .first::after,
+        > .last::before {
+            content: '…';
+        }
+
+        > .first::after {
+            margin-inline-start: var(--gap);
+        }
+
+        > .last::before {
+            margin-inline-end: var(--gap);
+        }
+    }
+}
+
+.wiki-rs-search-results {
+    column-width: 30em;
+    gap: calc(var(--ol-gutter) * 2);
+    margin-block-start: 4rem;
+
+    ol {
+        @apply --ref-marker;
+    }
+}

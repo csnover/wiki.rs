@@ -119,26 +119,24 @@ impl Document {
         sp: &StackFrame<'_>,
         attribute: &Spanned<Argument>,
     ) -> Result {
-        let (name, value) = if let Some(name) = attribute.name() {
-            (sp.eval(state, name)?, Some(attribute.value()))
+        let name = attribute.name();
+        let is_kv = name.is_some();
+        let value = attribute.value();
+        #[rustfmt::skip]
+        if let [Spanned { span, node: Token::Text }] = name.unwrap_or(value)
+        {
+            let name = sp.source[span.into_range()].trim_ascii();
+            write!(self.html, " {name}")?;
+            if is_kv {
+                self.attribute_value(state, sp, name, value)?;
+            }
         } else {
-            (sp.eval(state, attribute.value())?, None)
-        };
-        debug_assert!(
-            matches!(name, Cow::Borrowed(_)),
-            "plain text name with no entities"
-        );
-        write!(self.html, " {}", name.trim_ascii())?;
-        if let Some(value) = value {
-            let value = if name.eq_ignore_ascii_case("id") {
-                Either::Left(anchor_encode(&decode_html(&sp.eval(state, value)?)))
-            } else if name.eq_ignore_ascii_case("style") {
-                // TODO: Translate properties into variables so that
-                // stylesheets can avoid having to use !important
-                Either::Right(value)
-            } else {
-                Either::Right(value)
-            };
+            // Maybe it is a Wikitext table and someone shoved e.g. `<ref>`
+            // into the attribute list, smile smile. When this happens, content
+            // needs to be ignored, only attributes should be emitted, using the
+            // awful Wikitext table attributes whitelisted HTML tag rule
+            self.html.write_char(' ')?;
+            self.adopt_tokens(state, sp, name.unwrap_or(value))?;
 
             // At least 'Template:Skip to top and bottom' contains invalid HTML
             // where an attribute is missing a close quote, and this is error
@@ -146,13 +144,90 @@ impl Document {
             // necessary to handle the key and value parts separately and always
             // make sure the value is quoted or most of the page content ends up
             // in the attribute.
-            write!(self.html, r#"=""#)?;
-            match value {
-                Either::Left(value) => self.text_run(&value)?,
-                Either::Right(value) => self.adopt_tokens(state, sp, value)?,
+            if is_kv {
+                write!(self.html, "=\"")?;
+                self.adopt_tokens(state, sp, value)?;
+                self.html.write_char('"')?;
             }
-            self.html.write_char('"')?;
+        };
+
+        Ok(())
+    }
+
+    /// Transforms and writes an attribute value.
+    fn attribute_value(
+        &mut self,
+        state: &mut State<'_>,
+        sp: &StackFrame<'_>,
+        name: &str,
+        value: &[Spanned<Token>],
+    ) -> Result {
+        // TODO: This probably should all be unstripping?
+        let value = match name.to_ascii_lowercase().as_str() {
+            "class" => {
+                // TODO: Look for the mw-collapse classes and dump appropriate
+                // form hooks into the HTML to allow arbitrary collapsing
+                // elements without scripts
+                Either::Right(value)
+            }
+            "id" => Either::Left(anchor_encode(&decode_html(&sp.eval(state, value)?))),
+            "style" => {
+                // MediaWiki does sanitising, wiki.rs does not. What wiki.rs
+                // *does* do is get all these inline styles out of the way so
+                // that `!important` is not required to style pages
+                let value = sp.eval(state, value)?;
+                // TODO: This probably should only be unstripping nowiki?
+                let value = state.strip_markers.unstrip(&value);
+                let value = decode_html(&value);
+                let mut out = String::new();
+                let mut input = &*value;
+                while !input.is_empty() {
+                    // 'Template:Table cell templates' contains a bunch of
+                    // invalid garbage. When this happens, just try skipping to
+                    // the next possibly valid declaration.
+                    if let Ok((decl, next)) = barely_css::decl(input) {
+                        input = &input[next..];
+                        if let Some((name, value)) = decl {
+                            if name.starts_with("--") {
+                                write!(out, "{name}:{value};")?;
+                            } else {
+                                write!(out, "--mw-output-{name}:{value};")?;
+                            }
+                        }
+                    } else if let Some(next) = input.find(';') {
+                        input = &input[next + 1..];
+                    } else {
+                        break;
+                    }
+                }
+                Either::Left(out)
+            }
+            "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
+                let value = sp.eval(state, value)?;
+                let value = decode_html(&value);
+                // https://github.com/rust-lang/rust/issues/79524
+                let mut out = String::new();
+                let mut started = false;
+                for v in value.split_ascii_whitespace().map(anchor_encode) {
+                    if started {
+                        out += " ";
+                    } else {
+                        started = true;
+                    }
+                    out += &v;
+                }
+                Either::Left(out)
+            }
+            _ => Either::Right(value),
+        };
+
+        write!(self.html, r#"=""#)?;
+        match value {
+            Either::Left(value) => self.text_run(&value)?,
+            Either::Right(value) => self.adopt_tokens(state, sp, value)?,
         }
+        self.html.write_char('"')?;
+
         Ok(())
     }
 
@@ -288,7 +363,7 @@ impl Document {
                 .rev()
                 .any(|e| matches!(e, Node::Tag(tag) if is_code(tag)));
 
-        let prev = text_run(&mut self.html, self.last_char, text, in_code)?;
+        let prev = text_run(&mut self.html, self.last_char, text, in_code, true)?;
         if !in_attr {
             self.last_char = prev;
         }

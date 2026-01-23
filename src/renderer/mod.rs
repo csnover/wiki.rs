@@ -706,6 +706,7 @@ fn text_run<W: fmt::Write + ?Sized>(
     mut prev: char,
     text: &str,
     in_code: bool,
+    encode: bool,
 ) -> Result<char> {
     fn is_break(prev: char, next: Option<char>) -> bool {
         use unicode_general_category::{
@@ -757,9 +758,9 @@ fn text_run<W: fmt::Write + ?Sized>(
                     c
                 })?;
             }
-            '<' => write!(out, "&lt;")?,
-            '>' => write!(out, "&gt;")?,
-            '&' => write!(out, "&amp;")?,
+            '<' if encode => write!(out, "&lt;")?,
+            '>' if encode => write!(out, "&gt;")?,
+            '&' if encode => write!(out, "&amp;")?,
             c => out.write_char(c)?,
         }
         prev = c;

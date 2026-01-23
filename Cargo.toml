@@ -11,6 +11,7 @@ anyhow = "1.0"
 arc-cell = "0.3"
 arrayvec = "0.7"
 axum = "0.8"
+barely_css = { path = "barely_css" }
 bitflags = "2.10"
 bzip2-rs = "0.1"
 either = "1.15"
@@ -46,7 +47,6 @@ syntect = { version = "5.3", default-features = false, features = ["default-synt
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
 tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread"] }
-tower-http = { version = "0.6", features = ["fs"] }
 tz-rs = { version = "0.7.1", features = [] }
 tzdb_data = "0.2"
 unicase = "2.8.1"

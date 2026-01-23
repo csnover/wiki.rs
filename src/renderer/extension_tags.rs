@@ -222,7 +222,7 @@ fn gallery(
     // MW put this *inside* the list, which is obviously stupid and wrong
     if let Some(caption) = arguments.get(state, "caption")? {
         write!(out, r#"<div class="gallerycaption">"#)?;
-        text_run(out, ' ', &caption, false)?;
+        text_run(out, ' ', &caption, false, true)?;
         write!(out, "</div>")?;
     }
 

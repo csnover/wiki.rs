@@ -1,0 +1,10 @@
+[package]
+name = "barely_css_impl"
+description = "Barely parses and compiles a subset of CSS at runtime"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+peg = { git = "https://github.com/csnover/rust-peg.git", rev = "68a910801dbcf6acc19ba2f81c352435a9072cb4" }
+thiserror = "2"

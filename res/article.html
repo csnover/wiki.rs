@@ -5,12 +5,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="content-security-policy" content="img-src 'self' data:; style-src 'self' 'unsafe-inline'; default-src 'self'; upgrade-insecure-requests">
         <title><%= title %> — <%= site %></title>
-        <style>.mw-parser-output {
-            <%= crate::pages::filter::css(&output.styles) %>
-        }</style>
-        <% /* wiki.rs styles come second for last-rule-wins equal specificity
-              resolution */ %>
         <link rel="stylesheet" href="<%= base_path %>/styles.css">
+        <style>@layer templatestyles {
+            .mw-parser-output {
+                <%= crate::pages::filter::css(&output.styles) %>
+            }
+        }</style>
     </head>
     <body class="wiki-rs-body">
         <div class="wiki-rs-nav">

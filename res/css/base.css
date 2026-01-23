@@ -1,0 +1,329 @@
+/*! wiki.rs base CSS */
+
+@font-face {
+    font-family: source-serif;
+    src: url("fonts/SourceSerif4.woff2") format(woff2);
+}
+@font-face {
+    font-family: source-serif;
+    font-style: italic;
+    src: url("fonts/SourceSerif4-Italic.woff2") format(woff2);
+}
+@font-face {
+    font-family: archivo;
+    size-adjust: 96%;
+    src: url("fonts/Archivo.woff2") format(woff2);
+}
+@font-face {
+    font-family: archivo;
+    font-style: italic;
+    size-adjust: 96%;
+    src: url("fonts/Archivo-Italic.woff2") format(woff2);
+}
+@font-face {
+    font-family: inconsolata;
+    size-adjust: 106%;
+    src: url("fonts/Inconsolata.woff2") format(woff2);
+}
+
+:root {
+    font: 0.95rem/var(--rlh) var(--serif);
+    font-weight: var(--normal-weight);
+    font-variant-numeric: oldstyle-nums;
+    letter-spacing: -.015rem;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:any-link {
+    text-underline-position: from-font;
+
+    &[href$="redlink=1"] {
+        color: hsl(0, 50%, 20%);
+        text-decoration-color: rgb(180, 0, 0);
+    }
+
+    &:hover {
+        text-decoration-color: transparent;
+    }
+}
+
+:link {
+    color: hsl(225, 73%, 22%);
+    text-decoration-color: royalblue;
+}
+
+:visited {
+    color: hsl(270, 50%, 20%);
+    text-decoration-color: rebeccapurple;
+}
+
+:target:target:target:target {
+    background-color: lightyellow;
+    color: var(--fg);
+}
+
+abbr {
+    cursor: help;
+    text-decoration: underline dotted;
+}
+
+audio {
+    block-size: 1rlh;
+    max-inline-size: 100%;
+    vertical-align: top;
+}
+
+b, strong {
+    font-weight: var(--bold);
+}
+
+big {
+    font-size: 1em;
+}
+
+code, kbd, pre, samp, tt {
+    font-family: var(--mono);
+}
+
+cite {
+    font-style: normal;
+}
+
+/* Because this element is extremely heavily abused as a mechanism for indenting
+   content, there is little choice but to always do that */
+dd {
+    margin-inline-start: 1rem;
+}
+
+dl {
+    padding-inline-start: 0;
+}
+
+dt {
+    font-family: var(--sans);
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+}
+
+figure {
+    overflow: hidden;
+
+    img {
+        display: block;
+    }
+
+    &.mw-halign-left,
+    &.mw-halign-right {
+        max-inline-size: var(--aside-max);
+        min-inline-size: var(--aside-min);
+
+        p + & {
+            margin-block-start: var(--box-margin);
+        }
+    }
+}
+
+figcaption {
+    font-family: var(--sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--sans);
+    font-variant-numeric: normal;
+    hyphens: none;
+}
+
+h1 {
+    font-size: 3.5rem;
+    font-stretch: 80%;
+    font-weight: 200;
+    line-height: 1.1;
+}
+
+h2 {
+    border-block-start: 3px solid currentColor;
+    clear: inline-start;
+    font-size: 1.5rem;
+    font-stretch: semi-expanded;
+    inline-size: fit-content;
+    line-height: 1rlh;
+    margin-inline-end: auto;
+    padding-block: .1rlh .4rlh;
+
+    + * {
+        margin-block-start: var(--box-margin);
+    }
+
+    + h3 {
+        margin-block-start: 0;
+    }
+
+    * + & {
+        margin-block-start: 5rem;
+    }
+}
+
+h3 {
+    font-size: 1rem;
+    font-stretch: 150%;
+    text-transform: uppercase;
+
+    * + & {
+        margin-block-start: calc(var(--box-margin) * 1.5);
+
+        /* Allow many cute things to cuddle up to the heading */
+        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block, .tright),
+        /* This is for containers that show up sometimes like `.excerpt` */
+        + :not(blockquote):has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
+        /* Things which take themselves out of the flow by float mean the next
+           thing also needs to be cuddled */
+        + :is(.floatright, .mw-halign-left, .mw-halign-right, .tright) + * {
+            margin-block-start: 0;
+        }
+    }
+}
+
+:is(h4, h5, h6) + * {
+    margin-block-start: 0;
+
+    /* Things which take themselves out of the flow by float mean the next
+        thing also needs to be cuddled */
+    &:is(.mw-halign-left, .mw-halign-right) + * {
+        margin-block-start: 0;
+    }
+}
+
+h5 {
+    font-size: 0.83em;
+    font-stretch: 150%;
+    text-transform: uppercase;
+}
+
+h6 {
+    font-size: 0.83em;
+    font-stretch: 120%;
+}
+
+hr {
+    border: solid currentColor;
+    border-width: 1px 0 0;
+    margin-block-start: calc(1lh / 2);
+    padding-block-start: calc(1lh / 2 - 1px);
+}
+
+img {
+    block-size: auto;
+}
+
+/* In MediaWiki, empty elements get `.mw-empty-elt`. Technically these are
+   supposed to be elements with (1) no attributes and (2) only whitespace, but
+   doing it this way requires less work, so do it this way instead until it
+   turns out it cannot be done this way.
+
+   This is *required* to hide bogus empty elements caused by list constructions
+   like this:
+
+   ```
+   * {{List-item-generating template}}
+   ```
+
+   (This expands to `* \n* <template content>` due to the T2529 rule.)
+
+   It is also *required* to not apply this rule to all elements, since at least
+   empty table rows are used to fix up styles in the presence of rowspans, in
+   e.g. 'Template:Largest cities'.
+*/
+:is(li, p):where(:not([class], [style])):empty {
+    display: none;
+}
+
+math {
+    font-family: var(--serif);
+    font-weight: var(--normal-weight);
+}
+
+/* TODO: Using margin instead of padding means max-inline-size does not work
+   correctly. Also, this is doing too much work. */
+ol, ul {
+    margin-inline-start: 1rem;
+
+    > * {
+        + * {
+            margin-block-start: calc(var(--box-margin) * .25);
+
+            .plainlist & {
+                margin-block-start: 0;
+            }
+        }
+
+        > :is(ol, ul) {
+            margin-block-start: calc(var(--box-margin) * .25);
+        }
+    }
+
+    &:not([class]) > * {
+        padding-inline-start: .1rem;
+
+        .hlist &,
+        .plainlist &,
+        /* TODO: Too many templates rely on list items having no padding,
+            like navbar-brackets from 'Template:Navbar' */
+        &[class] {
+            padding-inline-start: 0;
+        }
+    }
+}
+
+ol {
+    margin-inline-start: var(--ol-gutter);
+}
+
+pre {
+    @apply --pre;
+}
+
+q {
+    &::before {
+        content: "“";
+    }
+
+    &::after {
+        content: "”";
+    }
+}
+
+small {
+    font-size: .9em;
+}
+
+sub {
+    position: relative;
+    inset-block-start: .125em;
+    vertical-align: baseline;
+}
+
+sup {
+    position: relative;
+    inset-block-start: -.5em;
+    vertical-align: baseline;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+th {
+    font-family: var(--sans);
+    hyphens: none;
+}
+
+video {
+    max-inline-size: 100%;
+}

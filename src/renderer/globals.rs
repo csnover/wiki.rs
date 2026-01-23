@@ -83,7 +83,7 @@ impl Outline {
             let mut name = String::new();
             let mut extractor = TextContent::new(source, String::new());
             extractor.visit_heading(span, level, content)?;
-            text_run(&mut name, '\n', &extractor.finish(), false)?;
+            text_run(&mut name, '\n', &extractor.finish(), false, false)?;
             name
         };
 

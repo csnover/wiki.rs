@@ -38,6 +38,9 @@ pub(crate) enum Error {
     /// A source code viewer syntax highlighter error.
     #[error(transparent)]
     Source(#[from] syntect::Error),
+    /// A CSS compiler error.
+    #[error(transparent)]
+    Style(#[from] barely_css::Error),
     /// A source code viewer syntax string formatting error.
     #[error(transparent)]
     Fmt(#[from] core::fmt::Error),
@@ -64,6 +67,7 @@ impl IntoResponse for Error {
             },
             Error::Renderer(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::Template(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Error::Style(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::Source(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::Fmt(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::RenderTx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
@@ -652,15 +656,24 @@ fn raw_source(
     .map_err(Into::into)
 }
 
-/// The CSS resource route handler.
+/// The debug CSS resource route handler.
+#[cfg(feature = "debug-styles")]
+pub(crate) async fn styles() -> Result<impl IntoResponse, Error> {
+    Ok((
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        barely_css::compile("res", "styles.css")?,
+    ))
+}
+
+/// The release CSS resource route handler.
 #[cfg(not(feature = "debug-styles"))]
 pub(crate) async fn styles() -> impl IntoResponse {
     (
         [
-            (header::CONTENT_TYPE, "text/css"),
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
             (header::CACHE_CONTROL, "max-age=604800, public, immutable"),
         ],
-        include_str!("../res/styles.css"),
+        barely_css::compile!("../res/styles.css"),
     )
 }
 

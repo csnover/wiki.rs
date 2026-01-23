@@ -1,0 +1,108 @@
+/*! wiki.rs extension tag style implementations */
+
+/*= <gallery> */
+
+.gallery.gallery.gallery.gallery {
+    border-block: thin solid var(--border-fg);
+    display: grid;
+    gap: var(--box-margin);
+    grid-template-columns: repeat(auto-fill, 20%);
+    justify-content: space-between;
+    margin-inline: 0;
+    padding-block: var(--box-margin);
+}
+
+.gallerybox {
+    list-style: none;
+    margin: 0;
+    text-align: start;
+
+    img {
+        block-size: 120px;
+    }
+}
+
+.gallerycaption.gallerycaption.gallerycaption.gallerycaption {
+    border-block-start: 3px solid var(--fg);
+    font-family: var(--sans);
+    font-size: var(--big-caption);
+    font-stretch: var(--side-title-stretch);
+    font-weight: var(--bold);
+    margin-inline: var(--table-margin-inline);
+    text-align: center;
+
+    + * {
+        margin-block-start: 0;
+        margin-inline: var(--table-margin-inline);
+        padding-inline: var(--table-padding-inline);
+    }
+}
+
+/*= <ref> */
+
+.reference {
+    font-family: var(--sans);
+    font-size: 75%;
+    font-stretch: normal;
+    font-variant-numeric: normal;
+    inset-block-start: -.5em;
+    position: relative;
+    text-decoration: none;
+    white-space: nowrap;
+
+    &::before {
+        content: '[';
+    }
+
+    &::after {
+        content: ']';
+    }
+}
+
+/*= <references> */
+
+.references {
+    @apply --ref-marker;
+}
+
+/* The first child is currently always the backref link */
+.mw-cite-backlink > :first-child {
+    /* Make the first paragraph a run-in for the backref link */
+    + p {
+        display: inline;
+    }
+
+    /* Make the first list a run-in for the backref link, and also put the
+        bullets in line with the reference list’s bullets */
+    + ul {
+        display: inline;
+        margin-inline-start: 0;
+
+        > :first-child {
+            display: inline;
+            padding-inline-start: 0;
+        }
+    }
+}
+
+/*= <syntaxhighlight> */
+
+.mw-highlight {
+    @apply --pre;
+    font-family: var(--mono);
+}
+
+/*= <timeline> */
+
+.wiki-rs-timeline {
+    font-family: var(--sans);
+
+    figure& {
+        overflow-inline: auto;
+    }
+}
+
+.wiki-rs-timeline-main-axis,
+.wiki-rs-timeline-cross-axis {
+    font-variant-numeric: normal;
+}

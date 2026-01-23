@@ -391,22 +391,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .route("/fonts/{*font}", get(pages::fonts))
         .route("/media/{*image}", get(pages::media))
         .route("/search", get(pages::search))
-        .route("/source/{*name}", get(pages::source));
-
-    // TODO: This is just for debugging to avoid having to restart the server
-    // just to check CSS changes. Also there is probably a less dumb way to do
-    // this that just allows the pages::styles to be a fallback, but ServeFile
-    // does not expose things that make it easy and I do not feel like reading
-    // more axum documentation right now. Priorities?!
-    #[cfg(feature = "debug-styles")]
-    let app = app.route_service(
-        "/styles.css",
-        tower_http::services::ServeFile::new("res/styles.css"),
-    );
-    #[cfg(not(feature = "debug-styles"))]
-    let app = app.route("/styles.css", get(pages::styles));
-
-    let app = app.route("/", get(pages::index_page)).with_state(state);
+        .route("/source/{*name}", get(pages::source))
+        .route("/styles.css", get(pages::styles))
+        .route("/", get(pages::index_page))
+        .with_state(state);
 
     let listener = TcpListener::bind(&args.bind).await?;
     log::info!("Listening at {}", args.bind);
