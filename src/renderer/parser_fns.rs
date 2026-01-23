@@ -981,6 +981,14 @@ mod title {
 
     use super::*;
 
+    /// `{{filepath: title [| 'nowiki'/size [| size/'nowiki']] }}`
+    pub fn file_path(_: &mut String, _: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+        // Normally this would look up a file, optionally picking one based on
+        // the given size hint, but since no files are included in the database
+        // dump, this can just always return nothing.
+        Ok(())
+    }
+
     /// `{{fullurl: title [| query string] }}`
     pub fn full_url(
         out: &mut String,
@@ -1220,7 +1228,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "#time" => time::time,
 
     "articlespace" => title::namespace,
-    "subjectspace" => title::namespace,
+    "filepath" => title::file_path,
     "fullurl" => title::full_url,
     "#ifexist" => title::if_exist,
     "localurl" => title::local_url,
@@ -1230,6 +1238,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "namespace" => title::namespace,
     "namespacenumber" => title::namespace,
     "ns" => title::namespace_by_name_or_id,
+    "subjectspace" => title::namespace,
     "talkspace" => title::namespace,
 };
 
