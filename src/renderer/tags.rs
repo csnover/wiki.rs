@@ -3,6 +3,7 @@
 use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use crate::{
     common::{anchor_encode, decode_html, title_decode},
+    config::CONFIG,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
@@ -47,15 +48,13 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
 
     let title = Title::new(&target, None);
     match title.namespace().id {
-        Namespace::CATEGORY if title.interwiki().is_none() => {
-            // TODO: Categories can actually receive content too, and display
-            // that instead of the category.
+        Namespace::CATEGORY if !target.starts_with(':') => {
             state.globals.categories.insert(title.key().to_string());
             if let Some(trail) = trail {
                 out.adopt_generated(state, sp, None, trail)?;
             }
         }
-        Namespace::FILE if title.interwiki().is_none() => {
+        Namespace::FILE if !target.starts_with(':') => {
             image::render_media(out, state, sp, title, content)?;
             if let Some(trail) = trail {
                 out.adopt_generated(state, sp, None, trail)?;
@@ -117,6 +116,7 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     link: &LinkKind<'_>,
 ) -> Result {
     let query = if let LinkKind::Internal(title) = link
+        && title.interwiki().is_none()
         && !state.statics.db.contains(title)
     {
         Some("mode=edit&redlink=1")
@@ -177,7 +177,16 @@ impl LinkKind<'_> {
                 }
             }
             LinkKind::Internal(title) => {
-                if title.text().is_empty() {
+                if let Some(iw) = title
+                    .interwiki()
+                    .and_then(|iw| CONFIG.interwiki_map.get(&iw.to_ascii_lowercase()))
+                {
+                    format!(
+                        "{}/external/{}",
+                        base_uri.path(),
+                        iw.replace("$1", &title.partial_url().to_string())
+                    )
+                } else if title.text().is_empty() {
                     format!("#{}", anchor_encode(title.fragment()))
                 } else {
                     let mut link = format!("{}/article/{}", base_uri.path(), title.partial_url());

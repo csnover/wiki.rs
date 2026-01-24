@@ -1,5 +1,6 @@
 [package]
 name = "wiki-rs"
+default-run = "wiki-rs"
 description = "A high-performance offline reader of multistream MediaWiki dumps."
 license = "MIT AND GPL-2.0-or-later"
 # year.month.release-in-month
@@ -33,6 +34,8 @@ phf = { version = "0.13.1", features = ["macros"] }
 piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
 piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
 pico-args = "0.5"
+prettyplease = { version = "0.2", optional = true }
+quote = { version = "1", optional = true }
 r2d2 = "0.8"
 rayon = "1"
 regex = "1"
@@ -43,6 +46,7 @@ schnellru = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde-transcode = "1"
+syn = { version = "2", optional = true, features = ["parsing", "printing"] }
 syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "html", "parsing", "regex-fancy", "yaml-load"] }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
@@ -52,10 +56,16 @@ tzdb_data = "0.2"
 unicase = "2.8.1"
 unicode-general-category = "1.1"
 unicode-normalization = "0.1"
+ureq = { version = "3.1", optional = true, features = ["json"] }
 
 [features]
 default = ["debug-styles"]
 debug-styles = []
+fetch-config = ["dep:prettyplease", "dep:quote", "dep:syn", "dep:ureq"]
+
+[[bin]]
+name = "fetch-config"
+required-features = ["fetch-config"]
 
 [build-dependencies]
 regex = "1"

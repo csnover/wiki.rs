@@ -263,15 +263,13 @@ impl Title {
         let text = normalize(text);
         let text = &*text;
 
-        // TODO: Technically this is supposed to look at a list of known
-        // interwiki prefixes, just like namespaces
+        let text = text.strip_prefix(':').unwrap_or(text);
+
         let (iw, text) = text.split_once(':').map_or((None, text), |(lhs, rhs)| {
             let lhs = lhs.trim_end();
             let rhs = rhs.trim_start();
-            if lhs.is_empty() {
+            if CONFIG.interwiki_map.contains_key(&lhs.to_ascii_lowercase()) {
                 (Some(lhs), rhs)
-            } else if Namespace::find_by_name(lhs.trim_end()).is_none() {
-                (Some(lhs), rhs.trim_start())
             } else {
                 (None, text)
             }

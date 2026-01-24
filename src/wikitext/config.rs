@@ -5,8 +5,9 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyright: Copyright 2019 Fredrik Portström and other contributors
 
+use crate::title::Namespace;
 use fancy_regex::{Regex, RegexBuilder};
-use phf::Set;
+use phf::{Map, Set};
 
 /// Enabled magic links.
 ///
@@ -41,6 +42,9 @@ pub(crate) struct ConfigurationSource {
     /// Registered function hooks, lowercased.
     pub function_hooks: Set<&'static str>,
 
+    /// Registered title interwikis.
+    pub interwiki_map: Map<&'static str, &'static str>,
+
     /// Whether language conversions are enabled.
     pub language_conversion_enabled: bool,
 
@@ -50,6 +54,9 @@ pub(crate) struct ConfigurationSource {
 
     /// The kinds of extra magic links which are enabled.
     pub magic_links: MagicLinks,
+
+    /// Registered title namespaces.
+    pub namespaces: &'static [Namespace],
 
     /// Protocols that can be used for external links, lowercased.
     pub protocols: Set<&'static str>,
