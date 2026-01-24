@@ -1,6 +1,6 @@
 //! Helpers for improved debug formatting of token trees.
 
-use crate::wikitext::{
+use super::{
     AnnoAttribute, Argument, InclusionMode, LangFlags, LangVariant, TextStyle, Token,
     codemap::{FileMap, Spanned},
 };
