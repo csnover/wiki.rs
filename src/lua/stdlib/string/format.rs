@@ -129,6 +129,7 @@ mod lua {
         ParseError,
     }
 
+    /// The result type for string formatting.
     type Result<T, E = PrintfError> = core::result::Result<T, E>;
 
     /// A part of a format string: either a string to be emitted verbatim, or a

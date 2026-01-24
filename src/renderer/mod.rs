@@ -678,6 +678,7 @@ pub(crate) struct ArticleState {
     pub variables: HashMap<String, String>,
 }
 
+/// Resolves any redirects for an article, returning the final article.
 // TODO: This should really just resolve the redirects and then do the work, but
 // borrowck is being unbearable today and this is a toy project so who cares
 // TODO: This should be part of Database

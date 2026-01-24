@@ -428,6 +428,7 @@ enum Kind {
     Operator,
 }
 
+/// Executes an arithmetic operation.
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,

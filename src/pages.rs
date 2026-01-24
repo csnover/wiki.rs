@@ -677,6 +677,7 @@ pub(crate) async fn styles() -> impl IntoResponse {
     )
 }
 
+/// Additional sailfish template filters.
 pub(crate) mod filter {
     use sailfish::{
         RenderError,
