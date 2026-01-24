@@ -441,8 +441,9 @@ fn split_target<'tt>(
             };
             callee += &sp.eval(state, rest)?;
             let callee = sp.name.join(&callee);
-            if Title::is_valid(&callee) {
-                let callee = Title::new(&callee, Namespace::find_by_id(Namespace::TEMPLATE));
+            let callee = callee.trim_ascii();
+            if Title::is_valid(callee) {
+                let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
                 let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
                 Target::Template { callee, arguments }
             } else {
