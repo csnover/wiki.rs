@@ -339,17 +339,10 @@ fn split_target<'tt>(
         // It is not good enough to just look for text nodes because there are
         // insane but legal constructions like `{{ {{#if:1|#if:}} 1|y|n }}`
         // (evaluates to "y").
-        let text = if let Spanned {
-            span,
-            node: Token::Text,
-        } = part
-        {
+        #[rustfmt::skip]
+        let text = if let Spanned { span, node: Token::Text } = part {
             Cow::Borrowed(&sp.source[span.into_range()])
-        } else if let Spanned {
-            node: Token::Generated(text),
-            ..
-        } = part
-        {
+        } else if let Spanned { node: Token::Generated(text), .. } = part {
             Cow::Borrowed(text.as_str())
         } else {
             sp.eval(state, core::slice::from_ref(part))?
