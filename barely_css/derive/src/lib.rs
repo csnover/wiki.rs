@@ -14,7 +14,12 @@ use syn::{Error, LitStr, parse_macro_input};
 #[proc_macro]
 pub fn compile(input: TokenStream) -> TokenStream {
     let path = parse_macro_input!(input as LitStr);
-    barely_css_impl::compile("", &path.value())
+    let resolved = path.span().local_file().map_or(<_>::default(), |root| {
+        root.parent().unwrap().join(path.value())
+    });
+    let root = resolved.parent().unwrap();
+    let file = resolved.file_name().unwrap();
+    barely_css_impl::compile(root, file)
         .map(|css| quote::quote!(#css))
         .unwrap_or_else(|err| {
             Error::new(path.span(), format!("Failed to compile CSS: {err}")).into_compile_error()
