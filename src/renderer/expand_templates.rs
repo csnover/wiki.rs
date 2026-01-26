@@ -296,13 +296,17 @@ impl Surrogate<Error> for ExpandTemplates {
     fn adopt_lang_variant(
         &mut self,
         _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
+        sp: &StackFrame<'_>,
+        span: Span,
         _flags: Option<&LangFlags>,
         _variants: &[Spanned<LangVariant>],
         _raw: bool,
     ) -> Result {
-        todo!("lang variant detected")
+        // TODO: It is extremely unclear what these tokens are supposed to do
+        // given that they do not seem to do anything at all on MW and just emit
+        // plain text like this.
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
     }
 
     fn adopt_link(
