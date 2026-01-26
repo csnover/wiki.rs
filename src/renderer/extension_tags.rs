@@ -151,6 +151,7 @@ use crate::{
 };
 use core::{fmt::Write as _, ops::Range};
 use either::Either;
+use numerals::roman::Roman;
 use regex::{Regex, RegexBuilder};
 use std::{
     borrow::Cow,
@@ -512,6 +513,15 @@ fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_,
     Ok(OutputMode::Block)
 }
 
+/// A reference key.
+#[derive(Debug, Eq, Hash, PartialEq)]
+struct RefKey {
+    /// The group name.
+    group: String,
+    /// The reference name.
+    name: String,
+}
+
 /// Stored citation references.
 #[derive(Debug, Default)]
 pub(crate) struct References {
@@ -519,23 +529,20 @@ pub(crate) struct References {
     text: String,
     /// References in a group. Value is a map of ranges into `text`. For
     /// compatibility, the default group is an empty string.
-    groups: HashMap<String, Vec<(usize, Range<usize>)>>,
-    /// Named references. Key is `(group, name)`. Value is index into
-    /// `groups[GroupKey]`.
-    named: HashMap<(String, String), usize>,
-    /// Global reference counter. Used for generating unique IDs.
-    count: usize,
+    groups: HashMap<String, Vec<Range<usize>>>,
+    /// Named references. Value is an index into `groups[key.group]`.
+    named: HashMap<RefKey, usize>,
 }
 
 impl References {
     /// Appends text to a named reference, separated by a single space. If the
     /// reference does not already exist, it is created.
-    fn append_named(&mut self, name: (String, String), value: &str) {
-        let group = self.groups.entry(name.0.clone()).or_default();
+    fn append_named(&mut self, name: RefKey, value: &str) {
+        let group = self.groups.entry(name.group.clone()).or_default();
 
         let index = self.named.entry(name).or_insert(group.len());
 
-        if let Some((_, range)) = group.get_mut(*index) {
+        if let Some(range) = group.get_mut(*index) {
             if range.end == self.text.len() {
                 if !Range::is_empty(range) {
                     self.text.push(' ');
@@ -555,18 +562,18 @@ impl References {
         } else {
             let range = self.text.len()..(self.text.len() + value.len());
             self.text += value;
-            self.count += 1;
-            group.push((self.count, range));
+            group.push(range);
         }
     }
 
     /// Adds a named reference with the given text. If the reference already
     /// exists and contains text, this call does nothing. Returns the
-    /// page-unique numeric ID of the reference.
-    fn insert_named(&mut self, name: (String, String), value: &str) -> usize {
+    /// page-unique ID of the reference.
+    fn insert_named(&mut self, name: RefKey, value: &str) -> String {
         if let Some(index) = self.named.get(&name) {
+            let key = Self::make_id(&name.group, *index);
             // TODO: 'cite_error_references_duplicate_key'
-            let &(id, ref range) = &self.groups[&name.0][*index];
+            let range = &self.groups[&name.group][*index];
 
             // Some pages like 'Wikidata' create empty named refs and then
             // populate the data later
@@ -574,39 +581,85 @@ impl References {
                 self.append_named(name, value);
             }
 
-            return id;
+            return key;
         }
 
         let range = self.text.len()..(self.text.len() + value.len());
         self.text += value;
 
-        let group = self.groups.entry(name.0.clone()).or_default();
+        let group = self.groups.entry(name.group.clone()).or_default();
         let index = group.len();
+        let key = Self::make_id(&name.group, index);
         self.named.insert(name, index);
-        self.count += 1;
-        group.push((self.count, range));
-        self.count
+        group.push(range);
+        key
     }
 
     /// Adds an named reference with the given text. Returns the page-unique
     /// numeric ID of the reference.
-    fn insert_unnamed(&mut self, group: String, value: &str) -> usize {
+    fn insert_unnamed(&mut self, group: String, value: &str) -> String {
         let range = self.text.len()..(self.text.len() + value.len());
         self.text += value;
 
+        let name = group.clone();
         let group = self.groups.entry(group).or_default();
-        self.count += 1;
-        group.push((self.count, range));
-        self.count
+        let key = Self::make_id(&name, group.len());
+        group.push(range);
+        key
     }
 
     /// Returns an iterator over the references in the given group.
-    fn iter_group(&self, group: &String) -> Option<impl Iterator<Item = (usize, &str)>> {
-        self.groups.get(group).map(|group| {
+    fn iter_group(&self, group_name: &String) -> Option<impl Iterator<Item = (String, &str)>> {
+        self.groups.get(group_name).map(|group| {
             group
                 .iter()
-                .map(|(id, range)| (*id, &self.text[range.clone()]))
+                .enumerate()
+                .map(|(index, range)| (Self::make_id(group_name, index), &self.text[range.clone()]))
         })
+    }
+
+    /// Encodes forward and backward reference anchors for an ID.
+    fn make_anchors(id: &str) -> (String, String) {
+        (
+            anchor_encode(&format!("cite_ref-{id}")),
+            anchor_encode(&format!("ref_{id}")),
+        )
+    }
+
+    /// Makes a unique key for a grouped reference.
+    fn make_id(group: &str, index: usize) -> String {
+        let index = index + 1;
+        if group.is_empty() {
+            index.to_string()
+        } else {
+            match group {
+                "decimal" => index.to_string(),
+                "lower-alpha" => Self::make_id_alpha(index - 1, 'a', 26),
+                "upper-alpha" => Self::make_id_alpha(index - 1, 'A', 26),
+                "lower-greek" => Self::make_id_alpha(index - 1, 'α', 24),
+                "upper-greek" => Self::make_id_alpha(index - 1, 'Α', 24),
+                "lower-roman" => format!("{:x}", Roman::from(i16::try_from(index).unwrap())),
+                "upper-roman" => format!("{:X}", Roman::from(i16::try_from(index).unwrap())),
+                _ => format!("{group} {index}"),
+            }
+        }
+    }
+
+    /// Makes an alphabetic ordinal key.
+    fn make_id_alpha(mut n: usize, base: char, alphabet_size: usize) -> String {
+        let mut buf = ['\0'; 8];
+        let mut index = 0;
+        // Clippy: `alphabet_size` is always smaller than u32
+        #[allow(clippy::cast_possible_truncation)]
+        loop {
+            buf[index] = char::from_u32(u32::from(base) + (n % alphabet_size) as u32).unwrap();
+            n /= alphabet_size;
+            index += 1;
+            if n == 0 {
+                break;
+            }
+        }
+        buf[..index].iter().rev().collect()
     }
 }
 
@@ -624,20 +677,24 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
         .map_or(<_>::default(), ToString::to_string);
 
     if let Some(follow) = arguments.get(state, "follow")? {
-        state
-            .globals
-            .references
-            .append_named((group, follow.to_string()), &reference);
+        state.globals.references.append_named(
+            RefKey {
+                group,
+                name: follow.to_string(),
+            },
+            &reference,
+        );
         return Ok(OutputMode::Empty);
     }
 
     let id = if let Some(name) = arguments.get(state, "name")? {
-        Some(
-            state
-                .globals
-                .references
-                .insert_named((group.clone(), name.to_string()), &reference),
-        )
+        Some(state.globals.references.insert_named(
+            RefKey {
+                group: group.clone(),
+                name: name.to_string(),
+            },
+            &reference,
+        ))
     } else if !reference.is_empty() {
         Some(
             state
@@ -650,11 +707,10 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
     };
 
     Ok(if let Some(id) = id {
-        let anchor = anchor_encode(&format!("cite_ref-{id}"));
-        let r#ref = anchor_encode(&format!("ref_{id}"));
+        let (from, to) = References::make_anchors(&id);
         write!(
             out,
-            r##"<span class="reference" id="{anchor}"><a href="#{ref}">{id}</a></span>"##
+            r##"<span class="reference" id="{from}"><a href="#{to}">{id}</a></span>"##
         )?;
         OutputMode::Inline
     } else {
@@ -678,6 +734,9 @@ fn references(
     // me, since it means someone thought about what happens when you have refs
     // inside refs, and that sounds like a cursed thing to have to think about.
     if arguments.body.is_some() {
+        // TODO: Any refs inside here are supposed to be added to the group
+        // matching the group attribute of the `<references>` tag, not the
+        // empty group.
         arguments.eval_body(state)?;
     }
 
@@ -709,12 +768,13 @@ fn references(
     Ok(
         if let Some(refs) = state.globals.references.iter_group(&group) {
             write!(out, r#"<ol class="references">"#)?;
-            for (id, text) in refs {
+            for (index, (id, text)) in refs.enumerate() {
                 if !text.is_empty() {
-                    let anchor = anchor_encode(&format!("ref_{id}"));
+                    let index = index + 1;
+                    let (from, to) = References::make_anchors(&id);
                     write!(
                         out,
-                        r##"<li value="{id}" id="{anchor}" class="mw-cite-backlink"><a href="#cite_ref-{id}">^</a> {text}</li>"##
+                        r##"<li value="{index}" id="{to}" class="mw-cite-backlink"><a href="#{from}">^</a> {text}</li>"##
                     )?;
                 }
             }

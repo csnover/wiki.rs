@@ -26,6 +26,7 @@ math-core = "0.1"
 memchr = "2.7"
 memmap2 = "0.9"
 minidom = "0.18"
+numerals = "0.1"
 parking_lot = "0.12"
 peg = { git = "https://github.com/csnover/rust-peg.git", rev = "68a910801dbcf6acc19ba2f81c352435a9072cb4" }
 # urlencoding is smaller, but percent-encoding is already a sub-dependency
