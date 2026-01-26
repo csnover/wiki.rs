@@ -172,3 +172,8 @@
         }
     }
 }
+
+@mixin --target() {
+    background-color: lightyellow;
+    color: var(--fg);
+}

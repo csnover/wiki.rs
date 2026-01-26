@@ -185,6 +185,16 @@
         @apply --float-left-table-addon;
     }
 
+    /* Allow only floated tables to have an overridden inline-size, since
+       in-flow tables with explicit widths look ugly */
+    &:is(
+        [style*="--mw-output-width:"], [style*="--mw-output-inline-size:"]
+    ):is(
+        [style*="--mw-output-float:"], .floatleft, .floatright
+    ) {
+        inline-size: var(--mw-output-inline-size, var(--mw-output-width));
+    }
+
     /* 'Mount Everest' manually floats a table right after a floated right
         figure and inevitably sad things happen */
     &[style*="--mw-output-float:right;"] {
@@ -221,14 +231,6 @@
     }
 }
 
-/* Pages that try to apply an inline width on a table which is not floating nor
-   inside some container should be ignored because this just creates ugly
-   whitespace */
-.mw-parser-output > .wikitable[style*="--mw-output-width:"]:not([style*="--mw-output-float:"], .floatleft, .floatright)
-{
-    inline-size: var(--table-width);
-}
-
 /* 'Toronto' */
 .mw-parser-output > .wikitable[style*="--mw-output-border:"][style*="--mw-output-margin:"]
 {
@@ -238,6 +240,12 @@
     * + & {
         margin-block-start: var(--box-margin);
     }
+}
+
+/*= Module:Citation/CS1 */
+
+.citation:target {
+    @apply --target;
 }
 
 /*= Template:Ahnentafel */
@@ -256,7 +264,7 @@
         td {
             border-color: var(--border-th);
 
-            &[style*=background-color] {
+            &[style*="--mw-output-background-color:"] {
                 background-image: var(--bar-fill-light);
                 background-position: 0;
             }
@@ -459,13 +467,6 @@ blockquote,
     }
 }
 
-/*= Template:Button */
-
-[style*="font-family: sans-serif"],
-[style*="font-family:sans-serif"] {
-    font-family: var(--sans);
-}
-
 /*=
 /* Template:CN span
 /* Template:Fix span
@@ -540,7 +541,7 @@ blockquote,
         }
     }
 
-    .cladogram.cladogram {
+    .cladogram {
         font-stretch: var(--side-body-stretch);
         padding: 0;
     }
@@ -567,7 +568,7 @@ blockquote,
 
 /*= Template:Climate chart */
 
-/* .infobox is for extra specificity */
+/* .infobox is for extra specificity vs. normal infoboxes */
 [data-wiki-rs~=template-climate-chart].infobox {
     --heat-gradient: linear-gradient(to bottom, red 20%, blue 80%);
 
@@ -722,8 +723,8 @@ blockquote,
         max-inline-size: var(--max-width);
     }
 
-    [style*="display: inline-grid"] {
-        + [style*="display: inline-grid"] {
+    [style*="--mw-output-display:inline-grid;"] {
+        + [style*="--mw-output-display:inline-grid;"] {
             margin-inline-start: var(--box-margin);
         }
 
@@ -824,7 +825,7 @@ blockquote,
         margin-block-start: var(--box-margin);
     }
 
-    &[style*="float\:right"] {
+    &[style*="--mw-output-float:right;"] {
         border: 0;
         font-stretch: var(--side-body-stretch);
         margin-block: 0 var(--figure-margin);
@@ -942,7 +943,7 @@ blockquote,
         font-variant-numeric: tabular-nums;
     }
 
-    tr:last-child:last-child:last-child {
+    tr:last-child {
         background-color: transparent;
 
         > * {
@@ -960,7 +961,7 @@ blockquote,
 }
 
 /* 'Tromsø' */
-[data-wiki-rs~=template-historical-populations][style*="float:none"] {
+[data-wiki-rs~=template-historical-populations][style*="--mw-output-float:none;"] {
     font-size: 1em;
     inline-size: var(--table-width);
     margin-inline: var(--table-margin-inline);
@@ -977,7 +978,7 @@ blockquote,
     }
 }
 
-[data-wiki-rs~=template-historical-populations]:where([style*="float:right"], [style*="float:left"]) {
+[data-wiki-rs~=template-historical-populations]:where([style*="--mw-output-float:right;"], [style*="--mw-output-float:left;"]) {
     caption, th {
         font-stretch: var(--side-body-stretch);
     }
@@ -992,15 +993,15 @@ blockquote,
     font-family: var(--sans);
 
     /* api.php?meta=siteinfo&siprop=general thumblimits maxes out at 400 */
-    /* !important: 'Module:Wide image' defaults non-existing image width to
-        0 (and therefore max-width to 10px) */
-    &[style*="max-width\:10px"] {
+    /* 'Module:Wide image' defaults non-existing image width to 0 (and therefore
+       max-width to 10px) */
+    &[style*="--mw-output-max-width:10px;"] {
         max-inline-size: 400px;
     }
 
-    .multiimageinner[style*="max-width:100px"] {
-        /* !important: This module blindly calculates values even if none
-            are available, which means it ends up forced to 100px wide */
+    .multiimageinner[style*="--mw-output-max-width:100px;"] {
+        /* This module blindly calculates values even if none are available,
+           which means it ends up forced to 100px wide */
         inline-size: auto;
         max-inline-size: none;
     }
@@ -1045,8 +1046,8 @@ blockquote,
     }
 }
 
-.infobox.infobox,
-.sidebar.sidebar {
+.infobox,
+.sidebar {
     --label-baseline-align: var(--side-title-lh-adjust);
 
     background: transparent;
@@ -1064,7 +1065,7 @@ blockquote,
         @apply --float-left;
     }
 
-    [style*=line-height] {
+    [style*="--mw-output-line-height:"] {
         line-height: inherit;
     }
 
@@ -1081,6 +1082,8 @@ blockquote,
         transform: var(--aside-gutter-align);
     }
 
+    /*- layout.css overrides */
+
     li {
         text-align: inherit;
     }
@@ -1092,6 +1095,8 @@ blockquote,
     ul {
         margin-block-start: 0;
     }
+
+    /* (end of layout overrides) */
 
     /* The CSS table box model puts captions visually outside of the table.
         When infoboxes use a caption, it should look the same as if they used
@@ -1616,7 +1621,7 @@ blockquote,
         }
     }
 
-        /* Template:Infobox element/periodic table */
+    /* Template:Infobox element/periodic table */
 
     .periodictable > * > tr:first-child > td > div [style*=background-color] {
         background-blend-mode: overlay;
@@ -1624,7 +1629,7 @@ blockquote,
         background-size: 4px 4px;
     }
 
-        /* Template:Infobox football club */
+    /* Template:Infobox football club */
 
     /* lol :-( */
     > * > tr > td:has(> table > * > tr > td > [data-wiki-rs~=template-football-kit]) {
@@ -1639,13 +1644,13 @@ blockquote,
         }
     }
 
-        /* Template:Infobox genome */
+    /* Template:Infobox genome */
 
     &.ib-genome .infobox-image {
         border-inline: 0;
     }
 
-        /* Template:Infobox military conflict */
+    /* Template:Infobox military conflict */
 
     &.vevent {
         > * > tr {
@@ -1710,7 +1715,7 @@ blockquote,
         }
     }
 
-        /* Template:Infobox person */
+    /* Template:Infobox person */
 
     &.vcard.vcard {
         .honorific-prefix,
@@ -1754,7 +1759,7 @@ blockquote,
         }
     }
 
-        /* Template:Infobox settlement */
+    /* Template:Infobox settlement */
 
     &.ib-settlement > * > tr {
         &:has(> .infobox-subheader):has(+ .ib-settlement-official) > * {
@@ -1803,7 +1808,7 @@ blockquote,
         vertical-align: bottom;
     }
 
-        /* Template:Infobox television */
+    /* Template:Infobox television */
 
     &.ib-tv {
         border-collapse: collapse;
@@ -1820,7 +1825,7 @@ blockquote,
         }
     }
 
-        /* Template:Sidebar person */
+    /* Template:Sidebar person */
 
     &.sidebar-person {
         --image-w: 3em;
@@ -1895,7 +1900,7 @@ blockquote,
         }
     }
 
-        /* Template:Speciesbox */
+    /* Template:Speciesbox */
 
     &.biota {
         [data-wiki-rs~=template-phanerozoic-220px] {
@@ -2151,7 +2156,7 @@ figcaption {
 .compact-ambox .ambox {
     background: none;
     /* !important: Module’s own CSS uses !important */
-    margin-inline-start: 0;
+    margin-inline-start: 0 !important;
 }
 
 /*= Template:Navbar */
@@ -2442,7 +2447,7 @@ figcaption {
     padding-block: var(--side-margin);
     padding-inline: 0;
 
-    &[style*="float:right"] {
+    &[style*="--mw-output-float:right;"] {
         margin-block-end: var(--figure-margin);
         margin-inline: var(--figure-margin) 0;
     }
@@ -2657,7 +2662,7 @@ figcaption {
     font-family: var(--sans);
     margin-block-start: var(--footer-margin);
 
-        + :is(.sister-bar, .portal-bar) {
+    + :is(.sister-bar, .portal-bar) {
         border-block-start: none;
         margin-block-start: 0;
         }
@@ -2799,8 +2804,8 @@ figcaption {
     background: transparent;
     color: var(--fg);
     border: 0;
-    border-block-end: thin solid currentColor;
-    border-block-start: 3px solid currentColor;
+    border-block-end: thin solid var(--fg);
+    border-block-start: 3px solid var(--fg);
     padding-block: calc(var(--box-margin) * 2) calc(var(--box-margin) * 2);
     padding-inline: calc(var(--box-margin) * 2) var(--box-margin);
 
@@ -2868,7 +2873,7 @@ figcaption {
             padding-block-start: calc(5px + 3px);
             vertical-align: baseline;
 
-            [style*=color] {
+            [style*="--mw-output-color:"] {
                 color: unset;
             }
         }
@@ -2930,19 +2935,17 @@ figcaption {
 .routemap {
     font-stretch: var(--side-body-stretch);
 
-    .RMr1.RMr1,
-    .RMl1.RMl1 {
+    .RMr1,
+    .RMl1 {
         font-variant-numeric: lining-nums;
         /* !important: Module’s own CSS uses !important */
-        padding-inline: 1em;
+        padding-inline: 1em !important;
     }
 }
 
 /*= Template:Row header */
 
 .table-rh {
-    /* !important: Even though this template uses a class, it still also
-        unconditionally inlines styles */
     background-color: transparent;
     color: inherit;
     font-family: var(--sans);
@@ -2988,7 +2991,7 @@ figcaption {
                 border-block-start-width: 3px;
             }
 
-            [style*=font-size] {
+            [style*="--mw-output-font-size:"] {
                 display: block;
                 font-family: var(--sans);
                 font-size: .95em;
@@ -3013,7 +3016,7 @@ figcaption {
 
 .spoken-wikipedia {
     border: 0;
-    border-block-start: 3px solid currentColor;
+    border-block-start: 3px solid var(--fg);
     font-family: var(--sans);
 }
 
@@ -3023,7 +3026,7 @@ figcaption {
 
 /*= Template:Stack */
 
-.stack.stack.stack {
+.stack {
     &.stack-clear-right,
     &.stack-right {
         margin-block-end: var(--figure-margin);
@@ -3067,7 +3070,7 @@ figcaption {
 
         &:has(> th[scope=col])::before {
             /* !important: 'Template:Static row numbers' styles does it */
-            border-block-end: thin solid var(--border-th);
+            border-block-end: thin solid var(--border-th) !important;
             counter-increment: none;
             content: "";
         }
@@ -3284,7 +3287,7 @@ figcaption {
                 padding-inline: var(--table-padding-inline);
             }
 
-            &[style*="color:"] {
+            &[style*="--mw-output-color:"] {
                 background-image: var(--bar-fill-light);
                 background-blend-mode: soft-light;
             }
@@ -3296,7 +3299,7 @@ figcaption {
             border-block-end-width: 1px;
             text-align: center;
 
-            &[style*="border-left-width\:medium"] {
+            &[style*="--mw-output-border-left-width:medium"] {
                 position: relative;
                 &::after {
                     border-block-end: 1px solid var(--border-th);
@@ -3330,10 +3333,9 @@ figcaption {
                 background: transparent;
 
                 > * {
-                    /* !important: 'Tromsø' climatic data table */
                     background: transparent;
                     /* hiding the border gap requires using a unit with a known
-                    size; `thin` is undefined in CSS */
+                       size; `thin` is undefined in CSS */
                     border-block-start: 1px solid var(--border-fg);
                     line-height: 1rlh;
 
@@ -3362,7 +3364,6 @@ figcaption {
         }
     }
 
-    /* !important: 'Jakarta' */
     + .wikitable {
         margin-inline: var(--table-margin-inline);
 

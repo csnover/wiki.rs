@@ -2,7 +2,7 @@
 
 /*= <gallery> */
 
-.gallery.gallery.gallery.gallery {
+.gallery {
     border-block: thin solid var(--border-fg);
     display: grid;
     gap: var(--box-margin);
@@ -10,6 +10,10 @@
     justify-content: space-between;
     margin-inline: 0;
     padding-block: var(--box-margin);
+
+    h2 + & {
+        border: 0;
+    }
 }
 
 .gallerybox {
@@ -22,7 +26,7 @@
     }
 }
 
-.gallerycaption.gallerycaption.gallerycaption.gallerycaption {
+.gallerycaption {
     border-block-start: 3px solid var(--fg);
     font-family: var(--sans);
     font-size: var(--big-caption);
