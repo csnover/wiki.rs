@@ -229,6 +229,7 @@ impl Surrogate<Error> for ExpandTemplates {
             &name,
             &extension_tags::InArgs::Wikitext(attributes),
             content,
+            false,
         )? {
             Some(Either::Left(marker)) => state.strip_markers.push(&mut self.out, &name, marker),
             Some(Either::Right(raw)) => write!(self.out, "{raw}")?,

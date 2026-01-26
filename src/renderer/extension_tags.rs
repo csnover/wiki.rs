@@ -1,63 +1,89 @@
 //! Code for handling MediaWiki extension tags.
 //!
-//! Because of the HTML whitelist—which can never really be updated because this
-//! would change the rendering of old Wikitext documents—extension tags are the
-//! only way to emit all sorts of useful HTML tags like `<figure>`, `<svg>`,
-//! `<math>`, etc. Because extension tags can emit such useful HTML, their
-//! outputs cannot, as a general rule, *ever* be sent to a Wikitext parser.
+//! Because Wikitext uses an HTML whitelist which can never really be updated
+//! (because this would change the rendering of old Wikitext documents that
+//! expects those character sequences to be treated as plain text), extension
+//! tags are the only way to emit all sorts of useful HTML tags like `<figure>`,
+//! `<svg>`, `<math>`, etc. And because extension tags *can* emit such useful
+//! HTML, their outputs cannot ever be sent to a Wikitext parser or they will be
+//! mangled. Instead, strip markers must be used to smuggle extension tag
+//! content through the parser to the final HTML document.
 //!
-//! However, because Wikitext is truly the evolved giraffe of text formats, it
-//! is not so simple to just have all extension tags emit HTML that will be
-//! injected into the output and call it a day. No, we must handle multiple
-//! stupid edge cases.
+//! Unfortunately, because Wikitext is truly the recurrent laryngeal nerve of
+//! text formats, it is not so simple to just have all extension tags emit HTML
+//! that will be injected into the output and call it a day, because there are
+//! a bunch of stupid edge cases that must also be handled.
 //!
-//! ## Stupid edge case #1: Strip markers inside extension tags
+//! ## Stupid edge case #1: The graf wrapping algorithm
 //!
-//! If the output of extension tags is always just treated as a blob of HTML at
-//! the end of the rendering pipeline—and it more or less has to be—extension
-//! tags with strip markers will end up emitting the strip markers as HTML too,
-//! rather than the content of those strip markers. This means any extension tag
-//! which treats its input as Wikitext has to make sure that any strip markers
-//! are also processed and injected into their final outputs. And, of course,
-//! due to stupid edge case #2, even though many of the extension tags do not
-//! themselves support nesting extension tags, life finds a way, so they must
-//! all handle it.
+//! The insane Wikitext algorithm for wrapping phrasing content into HTML
+//! paragraphs relies on being able to know whether a line of Wikitext contains
+//! certain HTML elements. Since this implementation treats the output of an
+//! extension tag as opaque HTML, it is necessary to attach some extra metadata
+//! to the output that can be used as a signal for the graf wrapper to know
+//! whether the extension tag output should be considered phrasing content or
+//! block-level content. This ends up not being very different to MW, which also
+//! has a mechanism for returning this kind of metadata, though for different
+//! stupid reasons.
 //!
-//! ## Stupid edge case #2: `{{#tag:}}`
+//! ## Stupid edge case #2: Extension tags inside extension tags
 //!
-//! Unfortunately, there are actually two paths to use extension tags. One way
+//! Since this implementation treats the output from extension tags as blobs of
+//! ready-to-concatenate HTML, extension tags themselves have to unstrip all
+//! strip markers instead of relying on some other processor to do it for them.
+//! If they don’t, the marker will be emitted instead of its content, which is
+//! wrong.
+//!
+//! ## Stupid edge case #3: The `#tag` parser function
+//!
+//! Unfortunately, there are actually two ways to use extension tags. One way
 //! is the normal way of writing a some XML-like tag in the source before and
-//! then step away to wash your hands. The other way is by using the parser
-//! function `{{#tag:}}`.
+//! then stepping away to wash your hands. The other way is the `#tag` parser
+//! function.
 //!
-//! The best reason to use `{{#tag}}` is (probably) that it allows the
-//! evaluation of Wikitext in cases where it would otherwise not be allowed. For
-//! example, `<pre>{{Foo}}</pre>`, which would emit `{{Foo}}`, but maybe you
-//! want the expansion of 'Template:Foo', and `{{#tag:pre|{{Foo}}}}` will do
-//! that for you. This could’ve been stated plainly in the documentation, but I
-//! guess different choices were made and instead it is buried under some jargon
-//! about pre-save transforms.
+//! The best reason to use `#tag` (probably) is that it allows the evaluation of
+//! Wikitext in places where it would otherwise not be allowed. For example,
+//! `<pre>{{Foo}}</pre>` would emit `{{Foo}}`, but maybe you want the expansion
+//! of 'Template:Foo'. `{{#tag:pre|{{Foo}}}}` will do that for you. (This
+//! could’ve been stated plainly in the documentation, but different choices
+//! were made, so I got to waste a bunch of time reading impenetrable jarson
+//! about the *irrelevant* concept of a “pre-save transform”.) This means that
+//! extension tags that do not actually support Wikitext when written as XML
+//! have to deal with things like strip markers anyway.
 //!
-//! In addition to making it impossible to reason about what sort of tokens are
-//! going to actually be given as inputs to any given extension tag, thus
-//! leading to the requirement for everything to take care about where strip
-//! markers might be, a second problem is that template argument syntax is
-//! almost but not *actually* compatible with XML attributes. So extra work has
-//! to be done to fix attribute values when authors inevitably write
-//! `{{#tag:foo||key="value"}}` when they actually meant `{{…|key=value}}`. (And
+//! ## Stupid edge case #3(b): Wikitext and XML attributes aren’t syntactically
+//!    compatible
+//!
+//! The Wikitext template argument syntax is almost but not *actually*
+//! compatible with XML attributes. This means extra work has to be done to fix
+//! attribute values when authors inevitably write
+//! `{{#tag:foo||key="value"}}` when they actually meant `key=value`. (And
 //! because `key=multiple words` is also only a valid template argument, it is
 //! not good enough to just pass the whole argument as-is.)
 //!
-//! Finally, some scripts expect to be able to call `#tag` and get back some
-//! value that they can cache globally and reuse (particularly
-//! `<templatestyles>`). Because wiki.rs caches the modules themselves across
-//! multiple page loads, it is not good enough to return a strip marker in this
-//! case—but since the output of a module has to make at least one trip through
-//! the Wikitext parser and the output of modules must be allowed to contain
-//! extension tags it ends up being good enough to just return the serialised
-//! tag and actually process it after the module is done running.
+//! ## Stupid edge case #3(c): Scripts can also use `#tag`
 //!
-//! ## Stupid edge case #3: `<nowiki>`
+//! Some scripts expect to be able to use `#tag` and get back some value that
+//! they can cache globally and reuse (particularly `<templatestyles>`). Because
+//! wiki.rs caches modules themselves across multiple page loads, it is not good
+//! enough to return a strip marker in this case because those are only valid
+//! for a single page render.
+//!
+//! Since the output of a module has to make at least one trip through the
+//! Wikitext parser and modules are allowed to emit raw XML extension tags that
+//! get processed later, it ends up being good enough to just return the
+//! XML form of the extension tag and actually process it after the module is
+//! done running.
+//!
+//! ## Stupid edge case #3(d): Scripts can return XML extension tags
+//!
+//! The solution to one problem becomes the cause of another problem. Because
+//! scripts can return XML extension tags like `<ref>`, other extension tags
+//! like `<references>` written directly in the original source text cannot be
+//! evaluated during the preprocessing stage or they might miss refs that are
+//! not inserted until the postprocessing stage.
+//!
+//! ## Stupid edge case #4: `<nowiki>`
 //!
 //! Inside `<nowiki>`, *most* Wikitext rules stop applying, but not all of them.
 //! HTML entity handling rules still apply, so valid HTML entities are left
@@ -76,7 +102,7 @@
 //! `&lt;pre&gt;`, but `&<nowiki/>amp;` produces `&amp;`, which suggests that
 //! entity processing has to happen *extremely* late. Like, possibly *too* late.
 //!
-//! ## Stupid edge case #4: `<pre>`
+//! ## Stupid edge case #5: `<pre>`
 //!
 //! `<pre>` is an extension tag. It is also an HTML tag. As a result, it is an
 //! extension tag which emits *itself*, but when it is emitting itself, it is
@@ -85,13 +111,7 @@
 //! Wikitext parser.
 //!
 //! `<pre>` is also `<nowiki>`, except it is not `<nowiki>`. It encodes only `<`
-//! and `>`, not `-{` or `}-`.
-//!
-//! ## Stupid edge case #5: `<syntaxhighlight>`
-//!
-//! `<syntaxhighlight>` is an extension tag. It emits HTML `<pre>`. Or, it emits
-//! HTML `<code>`. It’s necessary to know which it emits in order for `Document`
-//! to correctly build a DOM tree.
+//! and `>`, not `-{` or `}-`. Sure, why not.
 //!
 //! ## Stupid edge case #6: Smart quotes (a wiki.rs exclusive!)
 //!
@@ -106,7 +126,8 @@
 //! 1. They emit code, which should not have smart quotes anyway (`<pre>`,
 //!    `<syntaxhighlight>`)
 //! 2. They emit block content, and so will not be interleaved with other runs
-//!    of text (`<poem>`, `<references>`, `<timeline>`)
+//!    of text (`<poem>`, `<references>`, `<timeline>`), and so can do their own
+//!    typographical beautification
 
 // Clippy: Methods are implementing an interface which is invisible to clippy.
 #![allow(clippy::unnecessary_wraps)]
@@ -149,6 +170,9 @@ struct ExtensionTag<'args, 'call, 'sp> {
     body: Option<&'call str>,
     /// If true, the extension tag is actually a `{{#tag}}` call.
     from_parser_fn: bool,
+    /// If true, the extension tag is being rendered by a [`Document`].
+    // TODO: This sucks, is there really no better way to signal this?
+    in_document: bool,
 }
 
 impl<'args, 'call, 'sp> core::ops::Deref for ExtensionTag<'args, 'call, 'sp> {
@@ -657,6 +681,24 @@ fn references(
         arguments.eval_body(state)?;
     }
 
+    // If some template expansion emits a `<ref>` tag, the content of that
+    // reference will be lost if `<references>` is also processed during
+    // template expansion. Because wiki.rs converts `#tag` calls from scripts
+    // into XML tags to be processed during the final pass, scripts that call
+    // that also will break if `<references>` processing is not deferred.
+    if !arguments.in_document {
+        return render_raw(
+            state,
+            arguments.sp,
+            arguments.callee,
+            // The body was processed, only the output remains.
+            None,
+            // buffalo buffalo buffalo 😵‍💫
+            &arguments.arguments.arguments,
+            out,
+        );
+    }
+
     let group = arguments
         .get(state, "group")?
         .as_deref()
@@ -947,6 +989,7 @@ pub(super) fn render_extension_tag(
     callee: &str,
     arguments: &InArgs<'_, '_>,
     body: Option<&str>,
+    in_document: bool,
 ) -> Result<Option<Either<StripMarker, String>>> {
     let (arguments, from_parser_fn) = match arguments {
         InArgs::ParserFn(kvs) => (Cow::Borrowed(*kvs), true),
@@ -956,6 +999,7 @@ pub(super) fn render_extension_tag(
             (Cow::Owned(attrs), false)
         }
     };
+    let arguments = KeyCacheKvs::new(&arguments);
 
     let mut out = String::new();
     let mode = if let Some(extension_tag) = EXTENSION_TAGS.get(callee) {
@@ -967,11 +1011,12 @@ pub(super) fn render_extension_tag(
                     arguments: IndexedArgs {
                         sp,
                         callee,
-                        arguments: KeyCacheKvs::new(&arguments),
+                        arguments,
                         span: Some(span),
                     },
                     body,
                     from_parser_fn,
+                    in_document,
                 },
             )
             .map_err(|err| Error::Node {
@@ -984,26 +1029,7 @@ pub(super) fn render_extension_tag(
             // function and then stores the returned value, expecting that the
             // return value can be cached and reused. So, give it a value that
             // can be cached and reused…
-            write!(out, "<{callee}")?;
-            for attr in arguments.as_ref() {
-                let value = attr.value(state, sp)?;
-                if let Some(name) = attr.name(state, sp)? {
-                    write!(out, " {name}")?;
-                    if !value.is_empty() {
-                        write!(out, r#"="{value}""#)?;
-                    }
-                } else if !value.is_empty() {
-                    write!(out, " {}", attr.value(state, sp)?)?;
-                }
-            }
-            if let Some(body) = body
-                && !body.is_empty()
-            {
-                write!(out, ">{body}</{callee}>")?;
-            } else {
-                write!(out, "/>")?;
-            }
-            OutputMode::Raw
+            render_raw(state, sp, callee, body, &arguments, &mut out)?
         }
     } else {
         log::warn!("TODO: {callee} tag");
@@ -1042,4 +1068,35 @@ fn preprocess_frame(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> R
     let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
     preprocessor.adopt_output(state, &sp, &root)?;
     Ok(preprocessor.finish())
+}
+
+/// Re-emits an extension tag.
+fn render_raw(
+    state: &mut State<'_>,
+    sp: &StackFrame<'_>,
+    callee: &str,
+    body: Option<&str>,
+    arguments: &KeyCacheKvs<'_, '_>,
+    out: &mut String,
+) -> Result {
+    write!(out, "<{callee}")?;
+    for attr in arguments.iter() {
+        let value = attr.value(state, sp)?;
+        if let Some(name) = attr.name(state, sp)? {
+            write!(out, " {name}")?;
+            if !value.is_empty() {
+                write!(out, r#"="{value}""#)?;
+            }
+        } else if !value.is_empty() {
+            write!(out, " {}", attr.value(state, sp)?)?;
+        }
+    }
+    if let Some(body) = body
+        && !body.is_empty()
+    {
+        write!(out, ">{body}</{callee}>")?;
+    } else {
+        write!(out, "/>")?;
+    }
+    Ok(OutputMode::Raw)
 }

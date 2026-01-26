@@ -538,6 +538,7 @@ impl Surrogate<Error> for Document {
             &name,
             &extension_tags::InArgs::Wikitext(attributes),
             content,
+            true,
         )? {
             Some(Either::Left(marker)) => {
                 if self.fragment {

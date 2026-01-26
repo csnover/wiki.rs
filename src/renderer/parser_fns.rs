@@ -245,6 +245,7 @@ mod ext {
                 &name,
                 &extension_tags::InArgs::ParserFn(&arguments.arguments[2..]),
                 Some(&body),
+                false,
             )? {
                 Some(Either::Left(marker)) => {
                     state.strip_markers.push(out, &name, marker);
