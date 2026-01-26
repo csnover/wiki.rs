@@ -205,6 +205,15 @@
         max-inline-size: var(--max-width);
     }
 
+    /* To ensure max-inline-size works properly, there cannot be any inline
+       margin on root elements, but various inline and templatestyles overrides
+       expect that margin is used, not padding, so this cannot be done for all
+       ul/ol */
+    > :is(ul, ol) {
+        margin-inline-start: 0;
+        padding-inline-start: 1rem;
+    }
+
     blockquote, dd, li, p {
         /* 'Toronto' gets a lot of bad character distribution with
             shorter hyphenation limits */

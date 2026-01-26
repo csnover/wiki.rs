@@ -1057,11 +1057,11 @@ blockquote,
     font-family: var(--sans);
     line-height: var(--side-line-height);
 
-    &:not([style*="--mw-output-float:left;"]) {
+    .mw-parser-output > &:not([style*="--mw-output-float:left;"]) {
         @apply --float-right;
     }
 
-    &[style*="--mw-output-float:left;"] {
+    .mw-parser-output > &[style*="--mw-output-float:left;"] {
         @apply --float-left;
     }
 

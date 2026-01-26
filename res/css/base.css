@@ -42,7 +42,8 @@
 :any-link {
     text-underline-position: from-font;
 
-    &[href$="redlink=1"] {
+    /* This cannot use $= because redlinks might include anchors */
+    &[href*="redlink=1"] {
         color: hsl(0, 50%, 20%);
         text-decoration-color: rgb(180, 0, 0);
     }
@@ -160,10 +161,6 @@ h2 {
         margin-block-start: var(--box-margin);
     }
 
-    + h3 {
-        margin-block-start: 0;
-    }
-
     * + & {
         margin-block-start: 5rem;
     }
@@ -186,6 +183,10 @@ h3 {
         + :is(.floatright, .mw-halign-left, .mw-halign-right, .tright) + * {
             margin-block-start: 0;
         }
+    }
+
+    + h4 {
+        margin-block-start: 0;
     }
 }
 
@@ -248,8 +249,7 @@ math {
     font-weight: var(--normal-weight);
 }
 
-/* TODO: Using margin instead of padding means max-inline-size does not work
-   correctly. Also, this is doing too much work. */
+/* TODO: This is doing too much work. */
 ol, ul {
     margin-inline-start: 1rem;
 
@@ -264,18 +264,6 @@ ol, ul {
 
         > :is(ol, ul) {
             margin-block-start: calc(var(--box-margin) * .25);
-        }
-    }
-
-    &:not([class]) > * {
-        padding-inline-start: .1rem;
-
-        .hlist &,
-        .plainlist &,
-        /* TODO: Too many templates rely on list items having no padding,
-            like navbar-brackets from 'Template:Navbar' */
-        &[class] {
-            padding-inline-start: 0;
         }
     }
 }
