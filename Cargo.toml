@@ -4,7 +4,7 @@ default-run = "wiki-rs"
 description = "A high-performance offline reader of multistream MediaWiki dumps."
 license = "MIT AND GPL-2.0-or-later"
 # year.month.release-in-month
-version = "2026.1.2-pre"
+version = "2026.1.2"
 edition = "2024"
 
 [dependencies]
