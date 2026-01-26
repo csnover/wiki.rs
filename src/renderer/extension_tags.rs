@@ -714,7 +714,7 @@ fn references(
                     let anchor = anchor_encode(&format!("ref_{id}"));
                     write!(
                         out,
-                        r##"<li id="{anchor}" class="mw-cite-backlink"><a href="#cite_ref-{id}">^</a> {text}</li>"##
+                        r##"<li value="{id}" id="{anchor}" class="mw-cite-backlink"><a href="#cite_ref-{id}">^</a> {text}</li>"##
                     )?;
                 }
             }
