@@ -144,7 +144,9 @@ pub(super) fn media_options<'s>(
                 // sign, the alt statement will be treated as a caption.”
                 // This will happen because evaluating `argument.name` does
                 // not strip whitespace so the key will not match.
-                options.attrs.insert(name, value);
+                let mut alt = String::new();
+                text_run(&mut alt, '\n', &value, false, false)?;
+                options.attrs.insert(name, alt.into());
             } else {
                 match name.trim_ascii() {
                     "upright" => {
