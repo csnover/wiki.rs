@@ -1153,18 +1153,17 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "!" => |out: &mut String, _, _| { out.write_char('|')?; Ok(()) },
     "=" => |out: &mut String, _, _| { out.write_char('=')?; Ok(()) },
 
-    "#expr" => cond::expr,
-    "#if" => cond::r#if,
-    "#ifeq" => cond::if_eq,
-    "#iferror" => cond::if_error,
-    "#ifexpr" => cond::if_expr,
-    "#switch" => cond::switch,
+    "expr" => cond::expr,
+    "if" => cond::r#if,
+    "ifeq" => cond::if_eq,
+    "iferror" => cond::if_error,
+    "ifexpr" => cond::if_expr,
+    "switch" => cond::switch,
 
-    "#coordinates" => ext::geodata_coordinates,
-    "#property" => ext::wikibase_property,
-    "#tag" => ext::extension_tag,
+    "coordinates" => ext::geodata_coordinates,
+    "invoke" => ext::invoke,
+    "property" => ext::wikibase_property,
     "tag" => ext::extension_tag,
-    "#invoke" => ext::invoke,
 
     "articlepagename" => page::subject_page_name,
     "basepagename" => page::base_page_name,
@@ -1192,8 +1191,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "lcfirst" => string::lc_first,
     "padleft" => string::pad_left,
     "plural" => string::plural,
-    "#plural" => string::plural,
-    "#titleparts" => string::title_parts,
+    "titleparts" => string::title_parts,
     "uc" => string::uc,
     "ucfirst" => string::uc_first,
     "urlencode" => string::url_encode,
@@ -1226,16 +1224,16 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "localtimestamp" => time::timestamp,
     "localweek" => time::week,
     "localyear" => time::year,
-    "#time" => time::time,
+    "time" => time::time,
 
     "articlespace" => title::namespace,
     "filepath" => title::file_path,
     "fullurl" => title::full_url,
-    "#ifexist" => title::if_exist,
+    "ifexist" => title::if_exist,
     "localurl" => title::local_url,
-    "#lst" => title::transclude_section,
-    "#lsth" => title::transclude_heading,
-    "#lstx" => title::transclude_except,
+    "lst" => title::transclude_section,
+    "lsth" => title::transclude_heading,
+    "lstx" => title::transclude_except,
     "namespace" => title::namespace,
     "namespacenumber" => title::namespace,
     "ns" => title::namespace_by_name_or_id,
@@ -1271,14 +1269,14 @@ pub fn call_parser_fn(
                 err
             }
         })
-    } else if CONFIG.variables.contains(callee) {
+    } else if let Some(callee) = CONFIG.variables.get(callee) {
         if let Some(value) = args.eval(state, 0)? {
             // log::trace!("Setting {callee} to {value}");
             state
                 .globals
                 .variables
                 .insert(callee.to_string(), value.to_string());
-        } else if let Some(value) = state.globals.variables.get(callee) {
+        } else if let Some(value) = state.globals.variables.get(*callee) {
             write!(out, "{value}")?;
         }
         Ok(())

@@ -47,40 +47,75 @@ impl Namespace {
 static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     annotation_tags: phf::phf_set! {},
     annotations_enabled: false,
-    behavior_switch_words: phf::phf_set! {
-        "notoc", "nogallery", "forcetoc", "toc", "noeditsection", "newsectionlink",
-        "nonewsectionlink", "hiddencat", "expectunusedcategory", "expectunusedtemplate",
-        "index", "noindex", "staticredirect", "notitleconvert", "nocontentconvert",
-        "noglobal", "disambiguation", "archivedtalk", "notalk", "expectedunconnectedpage"
+    behavior_switch_words: phf::phf_map! {
+        "__archivedtalk__" => "archivedtalk", "__disambig__" => "disambiguation",
+        "__expected_unconnected_page__" => "expectedunconnectedpage",
+        "__expectunusedcategory__" => "expectunusedcategory", "__expectunusedtemplate__"
+        => "expectunusedtemplate", "__forcetoc__" => "forcetoc", "__hiddencat__" =>
+        "hiddencat", "__index__" => "index", "__newsectionlink__" => "newsectionlink",
+        "__nocontentconvert__" => "nocontentconvert", "__nocc__" => "nocontentconvert",
+        "__noeditsection__" => "noeditsection", "__nogallery__" => "nogallery",
+        "__noglobal__" => "noglobal", "__noindex__" => "noindex", "__nonewsectionlink__"
+        => "nonewsectionlink", "__notalk__" => "notalk", "__notitleconvert__" =>
+        "notitleconvert", "__notc__" => "notitleconvert", "__notoc__" => "notoc",
+        "__staticredirect__" => "staticredirect", "__toc__" => "toc"
     },
     extension_tags: phf::phf_set! {
-        "pre", "nowiki", "gallery", "indicator", "langconvert", "graph", "timeline",
-        "hiero", "charinsert", "ref", "references", "inputbox", "imagemap", "source",
-        "syntaxhighlight", "poem", "categorytree", "section", "score", "templatestyles",
-        "templatedata", "math", "ce", "chem", "maplink", "mapframe", "page-collection",
-        "phonos"
+        "categorytree", "ce", "charinsert", "chem", "gallery", "graph", "hiero",
+        "imagemap", "indicator", "inputbox", "langconvert", "mapframe", "maplink",
+        "math", "nowiki", "page-collection", "phonos", "poem", "pre", "ref",
+        "references", "score", "section", "source", "syntaxhighlight", "templatedata",
+        "templatestyles", "timeline"
     },
-    function_hooks: phf::phf_set! {
-        "ns", "nse", "urlencode", "lcfirst", "ucfirst", "lc", "uc", "localurl",
-        "localurle", "fullurl", "fullurle", "canonicalurl", "canonicalurle", "formatnum",
-        "grammar", "gender", "plural", "formal", "bidi", "numberingroup", "language",
-        "padleft", "padright", "anchorencode", "defaultsort", "filepath",
-        "pagesincategory", "pagesize", "protectionlevel", "protectionexpiry", "pagename",
-        "pagenamee", "fullpagename", "fullpagenamee", "subpagename", "subpagenamee",
-        "rootpagename", "rootpagenamee", "basepagename", "basepagenamee", "talkpagename",
-        "talkpagenamee", "subjectpagename", "subjectpagenamee", "pageid", "revisionid",
-        "revisionday", "revisionday2", "revisionmonth", "revisionmonth1", "revisionyear",
-        "revisiontimestamp", "revisionuser", "cascadingsources", "namespace",
-        "namespacee", "namespacenumber", "talkspace", "talkspacee", "subjectspace",
-        "subjectspacee", "numberofarticles", "numberoffiles", "numberofusers",
-        "numberofactiveusers", "numberofpages", "numberofadmins", "numberofedits",
-        "bcp47", "dir", "interwikilink", "interlanguagelink", "contentmodel", "int",
-        "special", "speciale", "tag", "formatdate", "displaytitle", "if", "ifeq",
-        "switch", "ifexist", "ifexpr", "iferror", "time", "timel", "timef", "timefl",
-        "expr", "rel2abs", "titleparts", "pendingchangelevel", "categorytree", "lst",
-        "lstx", "lsth", "target", "babel", "coordinates", "invoke", "related",
-        "noexternallanglinks", "shortdesc", "property", "statements",
-        "commaseparatedlist", "assessment", "chart", "mentor"
+    function_hooks: phf::phf_map! {
+        "anchorencode" => "anchorencode", "assessment" => "assessment", "babel" =>
+        "babel", "basepagename" => "basepagename", "basepagenamee" => "basepagenamee",
+        "bcp47" => "bcp47", "bidi" => "bidi", "canonicalurl" => "canonicalurl",
+        "canonicalurle" => "canonicalurle", "cascadingsources" => "cascadingsources",
+        "categorytree" => "categorytree", "chart" => "chart", "commaseparatedlist" =>
+        "commaseparatedlist", "contentmodel" => "contentmodel", "coordinates" =>
+        "coordinates", "defaultsort" => "defaultsort", "defaultsortkey" => "defaultsort",
+        "defaultcategorysort" => "defaultsort", "dir" => "dir", "displaytitle" =>
+        "displaytitle", "expr" => "expr", "filepath" => "filepath", "formal" => "formal",
+        "formatdate" => "formatdate", "dateformat" => "formatdate", "formatnum" =>
+        "formatnum", "fullpagename" => "fullpagename", "fullpagenamee" =>
+        "fullpagenamee", "fullurl" => "fullurl", "fullurle" => "fullurle", "gender" =>
+        "gender", "grammar" => "grammar", "if" => "if", "ifeq" => "ifeq", "iferror" =>
+        "iferror", "ifexist" => "ifexist", "ifexpr" => "ifexpr", "int" => "int",
+        "interlanguagelink" => "interlanguagelink", "interwikilink" => "interwikilink",
+        "invoke" => "invoke", "language" => "language", "lc" => "lc", "lcfirst" =>
+        "lcfirst", "localurl" => "localurl", "localurle" => "localurle", "lst" => "lst",
+        "section" => "lst", "lsth" => "lsth", "section-h" => "lsth", "lstx" => "lstx",
+        "section-x" => "lstx", "mentor" => "mentor", "namespace" => "namespace",
+        "namespacee" => "namespacee", "namespacenumber" => "namespacenumber",
+        "noexternallanglinks" => "noexternallanglinks", "ns" => "ns", "nse" => "nse",
+        "numberingroup" => "numberingroup", "numingroup" => "numberingroup",
+        "numberofactiveusers" => "numberofactiveusers", "numberofadmins" =>
+        "numberofadmins", "numberofarticles" => "numberofarticles", "numberofedits" =>
+        "numberofedits", "numberoffiles" => "numberoffiles", "numberofpages" =>
+        "numberofpages", "numberofusers" => "numberofusers", "padleft" => "padleft",
+        "padright" => "padright", "pageid" => "pageid", "pagename" => "pagename",
+        "pagenamee" => "pagenamee", "pagesincategory" => "pagesincategory", "pagesincat"
+        => "pagesincategory", "pagesize" => "pagesize", "pendingchangelevel" =>
+        "pendingchangelevel", "plural" => "plural", "property" => "property",
+        "protectionexpiry" => "protectionexpiry", "protectionlevel" => "protectionlevel",
+        "rel2abs" => "rel2abs", "related" => "related", "revisionday" => "revisionday",
+        "revisionday2" => "revisionday2", "revisionid" => "revisionid", "revisionmonth"
+        => "revisionmonth", "revisionmonth1" => "revisionmonth1", "revisiontimestamp" =>
+        "revisiontimestamp", "revisionuser" => "revisionuser", "revisionyear" =>
+        "revisionyear", "rootpagename" => "rootpagename", "rootpagenamee" =>
+        "rootpagenamee", "shortdesc" => "shortdesc", "special" => "special", "speciale"
+        => "speciale", "statements" => "statements", "subjectpagename" =>
+        "subjectpagename", "articlepagename" => "subjectpagename", "subjectpagenamee" =>
+        "subjectpagenamee", "articlepagenamee" => "subjectpagenamee", "subjectspace" =>
+        "subjectspace", "articlespace" => "subjectspace", "subjectspacee" =>
+        "subjectspacee", "articlespacee" => "subjectspacee", "subpagename" =>
+        "subpagename", "subpagenamee" => "subpagenamee", "switch" => "switch", "tag" =>
+        "tag", "talkpagename" => "talkpagename", "talkpagenamee" => "talkpagenamee",
+        "talkspace" => "talkspace", "talkspacee" => "talkspacee", "target" => "target",
+        "time" => "time", "timef" => "timef", "timefl" => "timefl", "timel" => "timel",
+        "titleparts" => "titleparts", "uc" => "uc", "ucfirst" => "ucfirst", "urlencode"
+        => "urlencode"
     },
     interwiki_map: phf::phf_map! {
         "acc" => "https://accounts.wmflabs.org/internal.php/viewRequest?id=$1", "acronym"
@@ -89,7 +124,8 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "https://antwiki.org/wiki/$1", "appropedia" => "https://www.appropedia.org/$1",
         "aquariumwiki" =>
         "https://meta.wikimedia.org/wiki/Interwiki_map/discontinued#AquariumWiki",
-        "arborwiki" => "https://localwiki.org/ann-arbor/$1", "arxiv" =>
+        "arborwiki" => "https://localwiki.org/ann-arbor/$1", "arbcom-zh" =>
+        "https://wikipedia-zh-arbcom.wikimedia.org/wiki/$1", "arxiv" =>
         "https://arxiv.org/abs/$1", "battlestarwiki" =>
         "https://en.battlestarwiki.org/$1", "bcnbio" =>
         "https://www.bcn.cl/historiapolitica/resenas_parlamentarias/wiki/$1", "beacha" =>
@@ -272,8 +308,10 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "shoutwiki" => "https://www.shoutwiki.com/wiki/$1", "silcode" =>
         "https://iso639-3.sil.org/code/$1", "slashdot" =>
         "https://slashdot.org/article.pl?sid=$1", "sourceforge" =>
-        "https://sourceforge.net/$1", "spcom" => "https://spcom.wikimedia.org/wiki/$1",
-        "species" => "https://species.wikimedia.org/wiki/$1", "stats" =>
+        "https://sourceforge.net/$1", "spamcheck" =>
+        "https://spamcheck.toolforge.org/by-domain?q=$1", "spcom" =>
+        "https://spcom.wikimedia.org/wiki/$1", "species" =>
+        "https://species.wikimedia.org/wiki/$1", "stats" =>
         "https://stats.wikimedia.org/$1", "stewardry" =>
         "https://meta.toolforge.org/stewardry/?wiki=$1", "strategy" =>
         "https://strategy.wikimedia.org/wiki/$1", "strategywiki" =>
@@ -535,7 +573,8 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "https://jbo.wikipedia.org/wiki/$1", "jv" => "https://jv.wikipedia.org/wiki/$1",
         "ka" => "https://ka.wikipedia.org/wiki/$1", "kaa" =>
         "https://kaa.wikipedia.org/wiki/$1", "kab" =>
-        "https://kab.wikipedia.org/wiki/$1", "kbd" =>
+        "https://kab.wikipedia.org/wiki/$1", "kaj" =>
+        "https://kaj.wikipedia.org/wiki/$1", "kbd" =>
         "https://kbd.wikipedia.org/wiki/$1", "kbp" =>
         "https://kbp.wikipedia.org/wiki/$1", "kcg" =>
         "https://kcg.wikipedia.org/wiki/$1", "kg" => "https://kg.wikipedia.org/wiki/$1",
@@ -1014,36 +1053,59 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         },
     ],
     protocols: phf::phf_set! {
-        "bitcoin:", "ftp://", "ftps://", "geo:", "git://", "gopher://", "http://",
+        "//", "bitcoin:", "ftp://", "ftps://", "geo:", "git://", "gopher://", "http://",
         "https://", "irc://", "ircs://", "magnet:", "mailto:", "matrix:", "mms://",
         "news:", "nntp://", "redis://", "sftp://", "sip:", "sips:", "sms:", "ssh://",
-        "svn://", "tel:", "telnet://", "urn:", "wikipedia://", "worldwind://", "xmpp:",
-        "//"
+        "svn://", "tel:", "telnet://", "urn:", "wikipedia://", "worldwind://", "xmpp:"
     },
     redirect_magic_words: phf::phf_set! {
         "#redirect"
     },
     valid_title_bytes: " %!\"$&'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+",
-    variables: phf::phf_set! {
-        "!", "=", "currentmonth", "currentmonth1", "currentmonthname",
-        "currentmonthnamegen", "currentmonthabbrev", "currentday", "currentday2",
-        "currentdayname", "currentyear", "currenttime", "currenthour", "localmonth",
-        "localmonth1", "localmonthname", "localmonthnamegen", "localmonthabbrev",
-        "localday", "localday2", "localdayname", "localyear", "localtime", "localhour",
-        "numberofarticles", "numberoffiles", "numberofedits", "articlepath", "pageid",
-        "sitename", "server", "servername", "scriptpath", "stylepath", "pagename",
-        "pagenamee", "fullpagename", "fullpagenamee", "namespace", "namespacee",
-        "namespacenumber", "currentweek", "currentdow", "localweek", "localdow",
-        "revisionid", "revisionday", "revisionday2", "revisionmonth", "revisionmonth1",
-        "revisionyear", "revisiontimestamp", "revisionuser", "revisionsize",
-        "subpagename", "subpagenamee", "talkspace", "talkspacee", "subjectspace",
-        "subjectspacee", "talkpagename", "talkpagenamee", "subjectpagename",
-        "subjectpagenamee", "numberofusers", "numberofactiveusers", "numberofpages",
-        "currentversion", "rootpagename", "rootpagenamee", "basepagename",
-        "basepagenamee", "currenttimestamp", "localtimestamp", "directionmark",
-        "contentlanguage", "userlanguage", "pagelanguage", "numberofadmins",
-        "cascadingsources", "bcp47", "contentmodel", "dir", "language", "numberofwikis",
-        "pendingchangelevel", "noexternallanglinks", "wbreponame"
+    variables: phf::phf_map! {
+        "!" => "!", "=" => "=", "articlepath" => "articlepath", "basepagename" =>
+        "basepagename", "basepagenamee" => "basepagenamee", "#bcp47" => "bcp47",
+        "cascadingsources" => "cascadingsources", "contentlanguage" => "contentlanguage",
+        "contentlang" => "contentlanguage", "#contentmodel" => "contentmodel",
+        "currentday" => "currentday", "currentday2" => "currentday2", "currentdayname" =>
+        "currentdayname", "currentdow" => "currentdow", "currenthour" => "currenthour",
+        "currentmonth" => "currentmonth", "currentmonth2" => "currentmonth",
+        "currentmonth1" => "currentmonth1", "currentmonthabbrev" => "currentmonthabbrev",
+        "currentmonthname" => "currentmonthname", "currentmonthnamegen" =>
+        "currentmonthnamegen", "currenttime" => "currenttime", "currenttimestamp" =>
+        "currenttimestamp", "currentversion" => "currentversion", "currentweek" =>
+        "currentweek", "currentyear" => "currentyear", "#dir" => "dir", "directionmark"
+        => "directionmark", "dirmark" => "directionmark", "fullpagename" =>
+        "fullpagename", "fullpagenamee" => "fullpagenamee", "#language" => "language",
+        "localday" => "localday", "localday2" => "localday2", "localdayname" =>
+        "localdayname", "localdow" => "localdow", "localhour" => "localhour",
+        "localmonth" => "localmonth", "localmonth2" => "localmonth", "localmonth1" =>
+        "localmonth1", "localmonthabbrev" => "localmonthabbrev", "localmonthname" =>
+        "localmonthname", "localmonthnamegen" => "localmonthnamegen", "localtime" =>
+        "localtime", "localtimestamp" => "localtimestamp", "localweek" => "localweek",
+        "localyear" => "localyear", "namespace" => "namespace", "namespacee" =>
+        "namespacee", "namespacenumber" => "namespacenumber", "noexternallanglinks" =>
+        "noexternallanglinks", "numberofactiveusers" => "numberofactiveusers",
+        "numberofadmins" => "numberofadmins", "numberofarticles" => "numberofarticles",
+        "numberofedits" => "numberofedits", "numberoffiles" => "numberoffiles",
+        "numberofpages" => "numberofpages", "numberofusers" => "numberofusers",
+        "numberofwikis" => "numberofwikis", "pageid" => "pageid", "pagelanguage" =>
+        "pagelanguage", "pagename" => "pagename", "pagenamee" => "pagenamee",
+        "pendingchangelevel" => "pendingchangelevel", "revisionday" => "revisionday",
+        "revisionday2" => "revisionday2", "revisionid" => "revisionid", "revisionmonth"
+        => "revisionmonth", "revisionmonth1" => "revisionmonth1", "revisionsize" =>
+        "revisionsize", "revisiontimestamp" => "revisiontimestamp", "revisionuser" =>
+        "revisionuser", "revisionyear" => "revisionyear", "rootpagename" =>
+        "rootpagename", "rootpagenamee" => "rootpagenamee", "scriptpath" => "scriptpath",
+        "server" => "server", "servername" => "servername", "sitename" => "sitename",
+        "stylepath" => "stylepath", "subjectpagename" => "subjectpagename",
+        "articlepagename" => "subjectpagename", "subjectpagenamee" => "subjectpagenamee",
+        "articlepagenamee" => "subjectpagenamee", "subjectspace" => "subjectspace",
+        "articlespace" => "subjectspace", "subjectspacee" => "subjectspacee",
+        "articlespacee" => "subjectspacee", "subpagename" => "subpagename",
+        "subpagenamee" => "subpagenamee", "talkpagename" => "talkpagename",
+        "talkpagenamee" => "talkpagenamee", "talkspace" => "talkspace", "talkspacee" =>
+        "talkspacee", "userlanguage" => "userlanguage", "wbreponame" => "wbreponame"
     },
 };
 

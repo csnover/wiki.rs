@@ -450,9 +450,7 @@ where
 {
     match &token.node {
         Token::Autolink { target, content } => visitor.visit_autolink(token.span, target, content),
-        Token::BehaviorSwitch { name } => {
-            visitor.visit_behavior_switch(token.span, &visitor.source()[name.into_range()])
-        }
+        Token::BehaviorSwitch { name } => visitor.visit_behavior_switch(token.span, name),
         Token::Comment { content, unclosed } => visitor.visit_comment(
             token.span,
             &visitor.source()[content.into_range()],

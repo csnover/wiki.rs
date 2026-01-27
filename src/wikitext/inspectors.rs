@@ -198,7 +198,7 @@ impl fmt::Debug for TokenInspector<'_> {
                 .finish(),
             Token::BehaviorSwitch { name } => f
                 .debug_tuple(&span_name("BehaviorSwitch", self.0, self.1))
-                .field(&&self.0[name.into_range()])
+                .field(name)
                 .finish(),
             Token::Comment { content, unclosed } => f
                 .debug_struct(&span_name("Comment", self.0, self.1))

@@ -417,7 +417,7 @@ fn split_target<'tt>(
     // eprintln!("{callee_lower} / {first:?} / {rest:?}");
 
     Ok(
-        if is_function_call(arguments.is_empty(), has_colon, &callee_lower) {
+        if let Some(callee) = resolve_callee(arguments.is_empty(), has_colon, &callee_lower) {
             // It is important to actually not pass a zeroth argument if there
             // is not one because this changes behaviour (e.g. `{{VAR}}` gets
             // `VAR`; `{{VAR:}}` calls `VAR` with an empty string)
@@ -430,7 +430,7 @@ fn split_target<'tt>(
                 .collect::<Vec<_>>();
 
             Target::ParserFn {
-                callee: callee_lower,
+                callee: callee.to_string(),
                 arguments,
             }
         } else {
@@ -527,17 +527,41 @@ pub(crate) fn call_template(
     Ok(wrapper_key)
 }
 
-/// Returns true if the given template target is a variable or parser function.
-fn is_function_call(empty_arguments: bool, has_colon: bool, callee_lower: &str) -> bool {
-    // We can just assume that if it starts with a '#' then it is a parser
-    // function since the way MediaWiki URLs work mean these cannot be
-    // templates, and the list of function hooks from the MediaWiki API does
-    // not actually include the hash.
-    (empty_arguments && CONFIG.variables.contains(callee_lower))
-        || callee_lower.starts_with('#')
-        || (has_colon && CONFIG.function_hooks.contains(callee_lower))
-        || callee_lower == "subst"
-        || callee_lower == "safesubst"
+/// Returns the canonical variable or parser function name if the given
+/// template target is a registered variable or parser function alias.
+///
+/// Technically, aliases may be either case-sensitive *or* case-insensitive,
+/// but in practice this does not seem to really matter so this implementation
+/// just always uses case-insensitive matching.
+pub(crate) fn resolve_callee(
+    empty_arguments: bool,
+    has_colon: bool,
+    callee_lower: &str,
+) -> Option<&str> {
+    // Variable names can technically be arbitrary strings matching the entire
+    // name-part, but in practice they are basic sequences optionally ending
+    // with ':' (though registering a variable with a colon is deprecated,
+    // probably for this exact reason: it is dumb and it sucks and makes the
+    // implementation stupid). fetch-config normalises a trailing colon away for
+    // implementation simplicity, with the related risk that this ends up
+    // causing template shadowing and a requirement to change it later to
+    // support very cursed wikis. MW only checks variables if there are no
+    // `{{...|args}}`, so this risk is low.
+    if empty_arguments && let callee @ Some(_) = CONFIG.variables.get(callee_lower).copied() {
+        callee
+    } else if has_colon {
+        // The list of function hooks and aliases from the MediaWiki API does
+        // not specify which ones were registered using `SFH_NO_HASH`, so there
+        // is no way to know for sure whether a parser function is supposed to
+        // start with '#' or not. Since MW only checks for parser functions if
+        // there is a ':' in the name-part, this is probably fine, since in
+        // order to cause a mismatch it would mean that someone made a namespace
+        // alias that matches a parser function name, which is unlikely.
+        let callee_lower = callee_lower.strip_prefix('#').unwrap_or(callee_lower);
+        CONFIG.function_hooks.get(callee_lower).copied()
+    } else {
+        None
+    }
 }
 
 /// Handles a template or parameter which is disabled due to the current

@@ -13,7 +13,7 @@ use crate::{
     lua::{HostCall, LuaFrame},
     renderer::{
         CachedValue, ExpandMode, ExpandTemplates, Kv, StackFrame, State, Surrogate, call_parser_fn,
-        call_template,
+        call_template, resolve_callee,
     },
     title::{Namespace, Title},
     wikitext::FileMap,
@@ -514,7 +514,10 @@ fn call_parser_function(
 
     with_sp(&frame_id, Some(sp), |sp| {
         let mut result = String::new();
-        call_parser_fn(&mut result, state, sp, None, &callee, &args)?;
+        let callee = resolve_callee(args.is_empty(), true, &callee).ok_or_else(|| {
+            anyhow::anyhow!("callParserFunction: function \"{callee}\" was not found")
+        })?;
+        call_parser_fn(&mut result, state, sp, None, callee, &args)?;
         Ok(state
             .statics
             .vm

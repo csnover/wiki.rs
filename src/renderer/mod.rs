@@ -333,7 +333,7 @@ use std::{
 };
 pub(crate) use surrogate::Surrogate;
 use tags::LinkKind;
-pub(crate) use template::call_template;
+pub(crate) use template::{call_template, resolve_callee};
 
 mod document;
 mod emitters;

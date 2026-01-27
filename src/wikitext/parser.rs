@@ -2975,16 +2975,19 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///
     /// <https://www.mediawiki.org/wiki/Help:Magic_words#Behavior_switches>
     rule behavior_switch() -> Spanned<Token>
-    = spanned(<
-        "__" name:spanned(<$((!"__" (text_char() / "-"))+)>) "__"
-        {
-            if contains_ignore_case(&state.config.behavior_switch_words, name.node) {
-                Token::BehaviorSwitch { name: name.span }
-            } else {
-                Token::Text
-            }
-        }
+    = name:spanned(<
+      $(
+        bs:("__" { "__" } / "＿＿" { "＿＿" })
+        (!const_value(bs) (text_char() / "-"))+
+        const_value(bs)
+      )
     >)
+    {
+        name.map_node(|name| {
+            resolve_alias_ignore_case(&state.config.behavior_switch_words, name)
+                .map_or(Token::Text, |name| Token::BehaviorSwitch { name })
+        })
+    }
 
     /// A bold or italic text style.
     ///
@@ -3874,4 +3877,14 @@ static INCLUDE_TAGS: phf::Set<&str> = phf::phf_set! {
 fn contains_ignore_case(candidates: &phf::Set<&str>, value: &str) -> bool {
     // TODO: Use a case-insensitive hashable type instead of allocating.
     candidates.contains(&value.to_ascii_lowercase())
+}
+
+/// Returns the canonical name for the given case-insensitive `alias`.
+#[inline]
+fn resolve_alias_ignore_case<'a>(
+    candidates: &phf::Map<&str, &'a str>,
+    alias: &str,
+) -> Option<&'a str> {
+    // TODO: Use a case-insensitive hashable type instead of allocating.
+    candidates.get(&alias.to_ascii_lowercase()).copied()
 }

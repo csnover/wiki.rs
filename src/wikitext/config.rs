@@ -33,14 +33,14 @@ pub(crate) struct ConfigurationSource {
     /// Whether annotations are enabled.
     pub annotations_enabled: bool,
 
-    /// Words that can appear between `__` and `__`, lowercased.
-    pub behavior_switch_words: Set<&'static str>,
+    /// Words that can appear between `__` and `__`, lowercased, by alias.
+    pub behavior_switch_words: Map<&'static str, &'static str>,
 
-    /// Tag names of registered extension tags, lowercased.
+    /// Tag names of registered extension tags, lowercased, by alias.
     pub extension_tags: Set<&'static str>,
 
-    /// Registered function hooks, lowercased.
-    pub function_hooks: Set<&'static str>,
+    /// Registered function hooks, lowercased, by alias.
+    pub function_hooks: Map<&'static str, &'static str>,
 
     /// Registered title interwikis.
     pub interwiki_map: Map<&'static str, &'static str>,
@@ -68,8 +68,8 @@ pub(crate) struct ConfigurationSource {
     /// for interpolation into a PHP PCRE character set pattern.
     pub valid_title_bytes: &'static str,
 
-    /// Registered variables, lowercased.
-    pub variables: Set<&'static str>,
+    /// Registered variables, lowercased, by alias.
+    pub variables: Map<&'static str, &'static str>,
 }
 
 /// Processed configuration data for the parser.

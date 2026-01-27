@@ -316,7 +316,7 @@ pub(crate) enum Token {
     /// A behavior switch.
     BehaviorSwitch {
         /// The switch name, excluding `__` markers.
-        name: Span,
+        name: &'static str,
     },
     /// An HTML comment.
     Comment {

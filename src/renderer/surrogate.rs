@@ -619,7 +619,7 @@ where
             surrogate.adopt_autolink(state, sp, token.span, target, content)
         }
         Token::BehaviorSwitch { name } => {
-            surrogate.adopt_behavior_switch(state, sp, token.span, &sp.source[name.into_range()])
+            surrogate.adopt_behavior_switch(state, sp, token.span, name)
         }
         Token::Comment { content, unclosed } => surrogate.adopt_comment(
             state,

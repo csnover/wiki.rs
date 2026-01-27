@@ -36,6 +36,7 @@ piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87
 piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
 pico-args = "0.5"
 prettyplease = { version = "0.2", optional = true }
+proc-macro2 = { version = "1", optional = true }
 quote = { version = "1", optional = true }
 r2d2 = "0.8"
 rayon = "1"
@@ -57,12 +58,12 @@ tzdb_data = "0.2"
 unicase = "2.8.1"
 unicode-general-category = "1.1"
 unicode-normalization = "0.1"
-ureq = { version = "3.1", optional = true, features = ["json"] }
+ureq = { version = "3.1", optional = true }
 
 [features]
 default = ["debug-styles"]
 debug-styles = []
-fetch-config = ["dep:prettyplease", "dep:quote", "dep:syn", "dep:ureq"]
+fetch-config = ["dep:prettyplease", "dep:proc-macro2", "dep:quote", "dep:syn", "dep:ureq"]
 
 [[bin]]
 name = "fetch-config"
