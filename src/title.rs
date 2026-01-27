@@ -259,30 +259,48 @@ impl Title {
     /// namespace.
     ///
     /// In MediaWiki, this is like `newFromText`.
-    pub fn new(text: &str, ns: Option<&'static Namespace>) -> Self {
+    pub fn new(text: &str, default_ns: Option<&'static Namespace>) -> Self {
         let text = normalize(text);
         let text = &*text;
 
-        let text = text.strip_prefix(':').unwrap_or(text);
+        // Namespaced & interwiki titles that start with ':' are given special
+        // rendering behaviour, but it could also be an explicit main namespace.
+        // It is not possible to know at this point.
+        let (empty_start, mut text) = text
+            .strip_prefix(':')
+            .map_or((false, text), |text| (true, text));
 
-        let (iw, text) = text.split_once(':').map_or((None, text), |(lhs, rhs)| {
+        // Namespaces and interwiki prefixes may have the same name, and
+        // namespaces are given priority. (It does not make much sense that
+        // namespaces from one wiki are treated as if they might exist on a
+        // foreign wiki, but the Lua mw.title interface acts like this is the
+        // case, so wiki.rs does too.)
+        let (ns, iw) = text.split_once(':').map_or(<_>::default(), |(lhs, rhs)| {
             let lhs = lhs.trim_end();
             let rhs = rhs.trim_start();
-            if CONFIG.interwiki_map.contains_key(&lhs.to_ascii_lowercase()) {
-                (Some(lhs), rhs)
+            if let Some(ns) = Namespace::find_by_name(lhs) {
+                text = rhs;
+                (Some(ns), None)
+            } else if CONFIG.interwiki_map.contains_key(&lhs.to_ascii_lowercase()) {
+                text = rhs;
+                (None, Some(lhs))
             } else {
-                (None, text)
+                <_>::default()
             }
         });
 
-        let (ns, text) = text.split_once(':').map_or((ns, text), |(lhs, rhs)| {
-            if let Some(ns) = Namespace::find_by_name(lhs.trim_end()) {
-                (Some(ns), rhs.trim_start())
+        let ns = ns.unwrap_or_else(|| {
+            if let Some((lhs, rhs)) = text.split_once(':')
+                && let Some(ns) = Namespace::find_by_name(lhs.trim_end())
+            {
+                text = rhs.trim_start();
+                ns
+            } else if empty_start {
+                Namespace::main()
             } else {
-                (ns, text)
+                default_ns.unwrap_or_else(Namespace::main)
             }
         });
-        let ns = ns.unwrap_or_else(Namespace::main);
 
         let (text, fragment) = text
             .split_once('#')
@@ -583,14 +601,14 @@ mod tests {
 
     #[test]
     fn from_str() {
-        let title = Title::new("Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
+        let title = Title::new("Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
         assert_eq!(title.namespace().id, Namespace::TALK);
         assert_eq!(title.base_text(), "Aa/Bb");
         assert_eq!(title.fragment(), "Dd/Ee/Ff");
-        assert_eq!(title.full_text(), "Iw:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
-        assert_eq!(title.interwiki(), Some("Iw"));
+        assert_eq!(title.full_text(), "Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
+        assert_eq!(title.interwiki(), Some("Wikidata"));
         assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
-        assert_eq!(title.prefixed_text(), "Iw:Talk:Aa/Bb/Cc");
+        assert_eq!(title.prefixed_text(), "Wikidata:Talk:Aa/Bb/Cc");
         assert_eq!(title.root_text(), "Aa");
         assert_eq!(title.subpage_text(), "Cc");
         assert_eq!(title.text(), "Aa/Bb/Cc");
@@ -598,8 +616,18 @@ mod tests {
 
     #[test]
     fn interwiki() {
+        let title = Title::new("Wikidata:File:A.png", None);
+        assert_eq!(title.interwiki(), Some("Wikidata"));
+        assert_eq!(title.namespace().id, Namespace::FILE);
+        assert_eq!(title.key(), "File:A.png");
+
+        let title = Title::new(":Wikidata:File:A.png", None);
+        assert_eq!(title.interwiki(), Some("Wikidata"));
+        assert_eq!(title.namespace().id, Namespace::FILE);
+        assert_eq!(title.key(), "File:A.png");
+
         let title = Title::new(":File:A.png", None);
-        assert_eq!(title.interwiki(), Some(""));
+        assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::FILE);
         assert_eq!(title.key(), "File:A.png");
 
@@ -607,6 +635,30 @@ mod tests {
         assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::FILE);
         assert_eq!(title.key(), "File:A.png");
+
+        let title = Title::new(":Wikipedia:Wikipedia:Foo", None);
+        assert_eq!(title.interwiki(), None);
+        assert_eq!(title.namespace().id, Namespace::PROJECT);
+        assert_eq!(title.key(), "Wikipedia:Wikipedia:Foo");
+        assert_eq!(title.text(), "Wikipedia:Foo");
+
+        let title = Title::new("Wikipedia:Wikipedia:Foo", None);
+        assert_eq!(title.interwiki(), None);
+        assert_eq!(title.namespace().id, Namespace::PROJECT);
+        assert_eq!(title.key(), "Wikipedia:Wikipedia:Foo");
+        assert_eq!(title.text(), "Wikipedia:Foo");
+
+        let title = Title::new("Wikipedia:Foo", None);
+        assert_eq!(title.interwiki(), None);
+        assert_eq!(title.namespace().id, Namespace::PROJECT);
+        assert_eq!(title.key(), "Wikipedia:Foo");
+        assert_eq!(title.text(), "Foo");
+
+        let title = Title::new(":Wikipedia:Foo", None);
+        assert_eq!(title.interwiki(), None);
+        assert_eq!(title.namespace().id, Namespace::PROJECT);
+        assert_eq!(title.key(), "Wikipedia:Foo");
+        assert_eq!(title.text(), "Foo");
     }
 
     #[test]
