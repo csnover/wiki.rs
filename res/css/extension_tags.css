@@ -2,7 +2,7 @@
 
 /*= <gallery> */
 
-.gallery {
+.gallery:not(.mw-gallery-slideshow) {
     border-block: thin solid var(--border-fg);
     display: grid;
     gap: var(--box-margin);

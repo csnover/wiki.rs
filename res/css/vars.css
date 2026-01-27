@@ -75,6 +75,22 @@
     --table-width: calc(min(100%, var(--max-width)) + var(--table-margin-inline) * -2);
 }
 
+@mixin --cuddle-categories() {
+    + .wiki-rs-categories {
+        margin-block-start: 0;
+    }
+}
+
+@mixin --cuddle-categories-body() {
+    border: 0;
+    border-block-start: thin solid var(--fg);
+    font-family: var(--sans);
+    padding: 0;
+    padding-block: .5rem;
+    margin: 0;
+    margin-block-start: var(--footer-margin);
+}
+
 @mixin --float-left() {
     clear: inline-start;
     float: inline-start;

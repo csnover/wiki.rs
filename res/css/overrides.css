@@ -52,6 +52,24 @@
     content: '⤷ ';
 }
 
+.mw-ui-button {
+    border: thin solid var(--fg);
+    box-shadow: .5px .5px 0 var(--fg), 1px 1px 0 var(--fg), 1.5px 1.5px 0 var(--fg), 2px 2px 0 var(--fg);
+    color: var(--fg);
+    display: inline-block;
+    font-family: var(--sans);
+    font-variant-numeric: normal;
+    line-height: 1.4;
+    padding-inline: .25em;
+    margin-inline: 0 2px;
+    margin-block: 0 2px;
+
+    &:active {
+        box-shadow: none;
+        transform: translate(2px, 2px);
+    }
+}
+
 .nowrap {
     white-space: nowrap;
 
@@ -284,20 +302,12 @@
 /*/
 
 .asbox, .dmbox {
-    border-block-start: thin solid var(--fg);
-    font-family: var(--sans);
+    @apply --cuddle-categories;
+    @apply --cuddle-categories-body;
+
     max-inline-size: none;
 
-    * + & {
-        border-block-end: 0;
-        margin-block: var(--footer-margin) 0;
-        margin-inline: 0;
-        padding-block: .5rem;
-        padding-inline: 0;
-    }
-
-    + &,
-    + .wiki-rs-categories {
+    + & {
         margin-block-start: 0;
     }
 }
@@ -576,6 +586,10 @@ blockquote,
     font-variant-numeric: normal;
     margin-block-end: var(--figure-margin);
 
+    &.infobox.infobox {
+        min-inline-size: 0;
+    }
+
     /* axis display, part 1: out with the ugly dots, which reset in each column
        and so look like shit */
     [style*="--mw-output-border-bottom:dotted"] {
@@ -610,7 +624,7 @@ blockquote,
             margin-inline: -.15em;
             padding-inline: .15em;
 
-            &[style*="font-size\:70%"] {
+            &[style*="--mw-output-font-size:70%;"] {
                 font-size: 80%;
                 font-stretch: var(--side-body-stretch);
             }
@@ -634,6 +648,7 @@ blockquote,
     th {
         border-block-start: thin solid var(--fg);
         font-size: 1rem;
+        font-stretch: var(--side-body-stretch);
     }
 
     /* legend swatches */
@@ -736,16 +751,16 @@ blockquote,
 }
 
 .documentation-container {
+    border-block-start: 3px solid currentColor;
     clear: both;
     max-inline-size: none;
 
     * + & {
-        border-block-start: 3px solid currentColor;
         margin-block-start: 2rem;
     }
 
-    &:has(> .documentation-metadata:last-child) + .wiki-rs-categories {
-        margin-block-start: .5rem;
+    &:has(> .documentation-metadata:last-child) {
+        @apply --cuddle-categories;
     }
 }
 
@@ -757,16 +772,12 @@ blockquote,
     }
 }
 
+/* TODO: Deduplicate; this is the same style as disambiguation box */
 .documentation-metadata {
+    @apply --cuddle-categories-body;
+
     background-color: transparent;
-    border: 0;
-    border-block-start: 3px solid;
-    font-family: var(--sans);
     font-style: normal;
-    padding: 0;
-    padding-block-start: .5rem;
-    margin: 0;
-    margin-block-start: 4rem;
 }
 
 .documentation-startbox {
@@ -923,6 +934,10 @@ blockquote,
 [data-wiki-rs~=template-historical-populations] {
     @apply --tabular-data;
 
+    &[style*="--mw-output-float:none;"] {
+        float: none;
+    }
+
     border-block-end: none;
     margin-block: 0 var(--figure-margin);
     margin-inline: var(--table-margin-inline) var(--figure-margin);
@@ -932,24 +947,37 @@ blockquote,
         padding: 0;
     }
 
-    td, th {
-        padding-block: var(--table-padding-block);
-        padding-inline: var(--table-padding-inline);
-    }
-
     td {
         font-family: var(--sans);
-        font-stretch: var(--side-body-stretch);
         font-variant-numeric: tabular-nums;
     }
 
-    tr:last-child {
-        background-color: transparent;
+    tr {
+        > th:first-child:not([colspan]) {
+            white-space: nowrap;
+        }
 
-        > * {
-            border-block-start-color: var(--border-fg);
-            border-block-start-width: thin;
-            font-stretch: normal;
+        > :is(:nth-child(2), :nth-child(4), :last-child:not(:first-child)) {
+            text-align: end;
+            text-align: "." end;
+        }
+
+        > :nth-child(2):has(+ * + *) {
+            padding-inline-end: 0;
+        }
+
+        > :nth-child(3):not(:last-child) {
+            padding-inline: 0;
+        }
+
+        &:last-child {
+            background-color: transparent;
+
+            > [colspan] {
+                border-block-start-color: var(--border-fg);
+                border-block-start-width: thin;
+                font-stretch: normal;
+            }
         }
     }
 }
@@ -958,6 +986,8 @@ blockquote,
 [data-wiki-rs~=template-historical-populations] {
     @apply --float-right;
     @apply --float-right-table-addon;
+
+    font-stretch: var(--side-body-stretch);
 }
 
 /* 'Tromsø' */
@@ -1057,11 +1087,16 @@ blockquote,
     font-family: var(--sans);
     line-height: var(--side-line-height);
 
-    .mw-parser-output > &:not([style*="--mw-output-float:left;"]) {
+    .infobox,
+    .sidebar {
+        border-block: 0;
+    }
+
+    &:where(.sidebar) {
         @apply --float-right;
     }
 
-    .mw-parser-output > &[style*="--mw-output-float:left;"] {
+    &[style*="--mw-output-float:left;"] {
         @apply --float-left;
     }
 
@@ -1076,7 +1111,9 @@ blockquote,
         .mw-parser-output,
         .documentation,
         .hidden-content
-    ) > &:not([style*="--mw-output-float:left;"]) {
+    ) > &:not([style*="--mw-output-float:left;"], [style*="--mw-output-float:none;"]) {
+        @apply --float-right;
+
         max-inline-size: var(--aside-max);
         min-inline-size: var(--aside-min);
         transform: var(--aside-gutter-align);
@@ -2639,6 +2676,10 @@ figcaption {
     @apply --float-right;
 }
 
+.module-shortcutanchordiv {
+    margin: 0;
+}
+
 .module-shortcutboxplain {
     background: var(--box-tag);
     border: 0;
@@ -2650,6 +2691,10 @@ figcaption {
 
     > * + * {
         margin: 0;
+    }
+
+    h3 + .module-shortcutanchordiv + & + * {
+        margin-block-start: 0;
     }
 }
 
@@ -2959,7 +3004,7 @@ figcaption {
 
 /*= Template:S-start */
 
-.succession-box.succession-box {
+.succession-box {
     border-block-start: thin solid var(--border-fg);
     inline-size: 100%;
     margin-block: 0;
@@ -3118,6 +3163,19 @@ figcaption {
     }
 }
 
+/* Template:Talk quote block */
+
+.talkquote {
+    background: transparent;
+    border-color: var(--fg);
+    padding-block: 0;
+    padding-inline: 1ch 0;
+
+    * + & {
+        margin-block-start: var(--box-margin);
+    }
+}
+
 /*= Template:Talk quote inline */
 
 .inline-quote-talk {
@@ -3225,6 +3283,12 @@ figcaption {
     padding-block: calc(var(--tag-size) / 2);
     padding-inline: var(--tag-size);
     text-align: start;
+}
+
+/*= Template:Transclude list item excerpts as random slideshow */
+
+.excerptSlideshow-container {
+    margin-block: 0;
 }
 
 /*= Template:Var serif */

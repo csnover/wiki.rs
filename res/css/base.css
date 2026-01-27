@@ -190,6 +190,10 @@ h3 {
     }
 }
 
+:is(.mw-halign-right):has(+ h3) {
+    margin-block-start: calc(var(--box-margin) * 1.5);
+}
+
 :is(h4, h5, h6) + * {
     margin-block-start: 0;
 
@@ -220,6 +224,14 @@ hr {
 
 img {
     block-size: auto;
+
+    &[align="left"] {
+        @apply --float-left;
+    }
+
+    &[align="right"] {
+        @apply --float-right;
+    }
 }
 
 /* In MediaWiki, empty elements get `.mw-empty-elt`. Technically these are
