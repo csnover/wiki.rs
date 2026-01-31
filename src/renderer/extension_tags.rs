@@ -132,6 +132,8 @@
 // Clippy: Methods are implementing an interface which is invisible to clippy.
 #![allow(clippy::unnecessary_wraps)]
 
+mod graph;
+mod svg;
 mod timeline;
 
 use super::{
@@ -143,7 +145,7 @@ use super::{
     text_run,
 };
 use crate::{
-    common::{anchor_encode, decode_html},
+    common::{CowExt as _, anchor_encode, decode_html},
     db::Database,
     php::strtr,
     title::{Namespace, Title},
@@ -278,6 +280,16 @@ fn gallery(
     }
     write!(out, "</ul>")?;
 
+    Ok(OutputMode::Block)
+}
+
+/// The `<graph>` extension tag.
+/// <https://www.mediawiki.org/w/index.php?oldid=7692802>
+fn graph(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+    // Possible attributes: fallback, fallbackWidth
+    let result = graph::spec_to_svg(arguments.body(), state.statics.base_time)
+        .map_err(|err| Error::Extension(Box::new(err)))?;
+    write!(out, "{result}")?;
     Ok(OutputMode::Block)
 }
 
@@ -502,10 +514,9 @@ fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_,
         // with no other Wikitext parsing, doing things in this order ‘should’
         // be ‘fine’.
         let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
-        match strtr(&body, &[("<", "&lt;"), (">", "&gt;")]) {
-            Cow::Borrowed(_) => body,
-            Cow::Owned(body) => Cow::Owned(body),
-        }
+        strtr(&body, &[("<", "&lt;"), (">", "&gt;")])
+            .owned()
+            .unwrap_or(body)
     };
 
     let body = state.strip_markers.unstrip(&body);
@@ -1001,6 +1012,7 @@ type ExtensionTagFn = fn(&mut String, &mut State<'_>, &ExtensionTag<'_, '_, '_>)
 static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
     "chem" => math,
     "gallery" => gallery,
+    "graph" => graph,
     "indicator" => indicator,
     "mapframe" => map_frame,
     "math" => math,

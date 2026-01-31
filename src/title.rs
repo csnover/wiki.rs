@@ -1,7 +1,7 @@
 //! Types and functions for parsing and formatting MediaWiki title strings.
 
 use crate::{
-    common::{decode_html, url_encode},
+    common::{CowExt as _, decode_html, url_encode},
     config::CONFIG,
 };
 use percent_encoding::PercentEncode;
@@ -558,10 +558,7 @@ pub fn normalize(text: &str) -> Cow<'_, str> {
     }
 
     if flushed == 0 {
-        match decoded {
-            Cow::Borrowed(b) => Cow::Borrowed(b.trim_matches(trimmable)),
-            Cow::Owned(o) => Cow::Owned(o.trim_matches(trimmable).to_string()),
-        }
+        decoded.map_ref(|b| b.trim_matches(trimmable))
     } else {
         out += decoded[flushed..].trim_end_matches(trimmable);
         Cow::Owned(out)

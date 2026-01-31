@@ -6,7 +6,7 @@ use super::{
     text_run,
 };
 use crate::{
-    common::url_encode,
+    common::{CowExt as _, url_encode},
     config::CONFIG,
     title::Title,
     wikitext::{
@@ -116,10 +116,9 @@ pub(super) fn media_options<'s>(
     options.link = Some(LinkKind::Internal(title));
 
     for argument in arguments {
-        let value = match sp.eval(state, argument.value())? {
-            Cow::Borrowed(v) => Cow::Borrowed(v.trim_ascii()),
-            Cow::Owned(o) => Cow::Owned(o.trim_ascii().to_string()),
-        };
+        let value = sp
+            .eval(state, argument.value())?
+            .map_ref(|v| v.trim_ascii());
         if let Some(name_node) = &argument.name() {
             let name = sp.eval(state, name_node)?;
             if name == "link" {

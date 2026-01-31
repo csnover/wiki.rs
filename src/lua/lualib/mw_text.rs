@@ -9,6 +9,7 @@
 
 use super::prelude::*;
 use crate::{
+    common::CowExt as _,
     lua::{HostCall, UnstripMode},
     php::strtr,
     renderer::{State, StripMarker, StripMarkers},
@@ -72,10 +73,7 @@ impl TextLibrary {
         ctx: Context<'gc>,
         text: VmString<'gc>,
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        Ok(match StripMarkers::kill(text.to_str()?) {
-            Cow::Borrowed(_) => text,
-            Cow::Owned(text) => ctx.intern(text.as_bytes()),
-        })
+        Ok(StripMarkers::kill(text.to_str()?).owned_or(text, |text| ctx.intern(text.as_bytes())))
     }
 
     /// Replaces stripped `<nowiki>` tags with their original text and removes
@@ -221,9 +219,6 @@ pub(super) fn unstrip(
                 }),
         };
 
-        Ok(ctx.stash(match result {
-            Cow::Borrowed(_) => text,
-            Cow::Owned(text) => ctx.intern(text.as_bytes()),
-        }))
+        Ok(ctx.stash(result.owned_or(text, |text| ctx.intern(text.as_bytes()))))
     })
 }

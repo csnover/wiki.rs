@@ -1,5 +1,6 @@
 //! Time zone specifier.
 
+use super::super::DateTimeZone;
 use std::borrow::Cow;
 
 /// A time zone specifier.
@@ -41,6 +42,16 @@ impl Timezone<'_> {
                         .map(tz::LocalTimeType::ut_offset)
                 })
                 .unwrap_or(0),
+        }
+    }
+}
+
+impl<'a> From<&'a DateTimeZone> for Timezone<'a> {
+    fn from(value: &'a DateTimeZone) -> Self {
+        match value {
+            DateTimeZone::Offset(offset) => Timezone::Offset(offset.whole_seconds()),
+            DateTimeZone::Alias(alias) => Timezone::Alias(alias.time_zone_designation().into()),
+            DateTimeZone::Named(name, _) => Timezone::Named(name),
         }
     }
 }

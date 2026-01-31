@@ -83,6 +83,7 @@ like, a map or whatever. Also, anything which relies on client-side scripting is
 not supported right now. Here are all of the currently supported extension tags:
 
 * `<gallery>` (partial), which is used to display several images in a collection
+* `<graph>` (partial), which is used to draw graphs, but without the XSS problem
 * `<indicator>`, which is used to show indicator badges at the top of some pages
 * `<mapframe>` (stub), which is used to draw a map so you may know where you are
 * `<math>` (partial), which is used to display mathematical formulae and symbols

@@ -9,7 +9,7 @@
 
 use super::prelude::*;
 use crate::{
-    common::{format_date, format_number, parse_formatted_number},
+    common::{format_date_mediawiki, format_number, parse_formatted_number},
     php::{DateTime, strval},
 };
 use std::cell::Cell;
@@ -107,7 +107,7 @@ impl LanguageLibrary {
             Option<bool>,
         ),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        Ok(format_date(
+        Ok(format_date_mediawiki(
             &self.date.get(),
             format.to_str()?,
             date.map(VmString::to_str).transpose()?,

@@ -1,1 +1,2 @@
-doc-valid-idents = ["EasyTimeline", "MediaWiki", "ParserFunctions", "PubMed", ".."]
+allow-private-module-inception = true
+doc-valid-idents = ["EasyTimeline", "GeoJSON", "MediaWiki", "ParserFunctions", "PubMed", "TopoJSON", ".."]

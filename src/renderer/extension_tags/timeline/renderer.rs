@@ -12,9 +12,11 @@
 #![allow(clippy::cast_precision_loss)]
 
 use super::{
+    super::svg::{NS_SVG, ValueDisplay, n},
     AlignBars, Alignment, ColorId, ColorValue, Dims, Either, Error, FontSize, ImageSize,
     LegendPosition, Line, LineDataInstr, Orientation, PREDEFINED_COLORS, PlotDataPos, Rect, Result,
-    ScaleUnit, TabStop, TextSpan, Uri, Url, parser::Timeline,
+    ScaleUnit, TabStop, TextSpan, Uri, Url,
+    parser::Timeline,
 };
 use core::ops::Deref;
 use minidom::{Element, ElementBuilder};
@@ -108,14 +110,10 @@ impl<'input> Renderer<'input> {
         let svg = Element::builder("svg", NS_SVG)
             .attr(
                 n!("viewBox"),
-                format!(
-                    "0 0 {} {}",
-                    image_dims.width().v(3),
-                    image_dims.height().v(3)
-                ),
+                format!("0 0 {} {}", image_dims.width().v(), image_dims.height().v()),
             )
-            .attr(n!("width"), image_dims.width().v(3))
-            .attr(n!("height"), image_dims.height().v(3))
+            .attr(n!("width"), image_dims.width().v())
+            .attr(n!("height"), image_dims.height().v())
             .attr(n!("class"), "wiki-rs-timeline")
             .build();
 
@@ -154,7 +152,7 @@ impl<'input> Renderer<'input> {
 
         let bg = self.color(bg)?;
 
-        let mut bgs = Element::builder("g", NS_SVG).attr(n!("fill"), bg.v(3));
+        let mut bgs = Element::builder("g", NS_SVG).attr(n!("fill"), bg.v());
 
         for bar in self.bars.values() {
             let rect = self.bar_dims(
@@ -209,7 +207,7 @@ impl<'input> Renderer<'input> {
         let canvas_bg = self.color(self.canvas_color.unwrap_or("white"))?;
         let css = format!(
             ".wiki-rs-timeline{{background-color:{};text a{{fill:#00f}}line{{transform:translate(.5px,.5px)}}}}",
-            canvas_bg.v(3)
+            canvas_bg.v()
         );
         let style = Element::builder("style", NS_SVG).append(css).build();
         self.svg.append_child(style);
@@ -730,7 +728,7 @@ fn draw_scale(r: &mut Renderer<'_>, color: ColorValue, is_major: bool) -> Result
             labels.append_child(make_text(&MakeText {
                 x,
                 y,
-                text: &[TextSpan::Text(&at.v(2))],
+                text: &[TextSpan::Text(&at.v_precision(2))],
                 link: None,
                 font_size: FontSize::Small,
                 color,
@@ -755,24 +753,24 @@ fn draw_scale(r: &mut Renderer<'_>, color: ColorValue, is_major: bool) -> Result
 /// Creates an SVG line with the given properties.
 fn make_line(x1: f64, y1: f64, x2: f64, y2: f64, color: ColorValue, width: f64) -> Element {
     Element::builder("line", NS_SVG)
-        .attr(n!("x1"), x1.v(3))
-        .attr(n!("y1"), y1.v(3))
-        .attr(n!("x2"), x2.v(3))
-        .attr(n!("y2"), y2.v(3))
-        .attr(n!("stroke"), color.v(3))
-        .attr(n!("stroke-width"), width.v(3))
+        .attr(n!("x1"), x1.v())
+        .attr(n!("y1"), y1.v())
+        .attr(n!("x2"), x2.v())
+        .attr(n!("y2"), y2.v())
+        .attr(n!("stroke"), color.v())
+        .attr(n!("stroke-width"), width.v())
         .build()
 }
 
 /// Creates an SVG rect with the given dimensions and optional fill.
 fn make_rect(rect: Rect, color: Option<ColorValue>) -> Element {
     let rect = Element::builder("rect", NS_SVG)
-        .attr(n!("x"), rect.main_start().v(3))
-        .attr(n!("y"), rect.cross_start().v(3))
-        .attr(n!("width"), rect.main_len().v(3))
-        .attr(n!("height"), rect.cross_len().v(3));
+        .attr(n!("x"), rect.main_start().v())
+        .attr(n!("y"), rect.cross_start().v())
+        .attr(n!("width"), rect.main_len().v())
+        .attr(n!("height"), rect.cross_len().v());
     if let Some(color) = color {
-        rect.attr(n!("fill"), color.v(3))
+        rect.attr(n!("fill"), color.v())
     } else {
         rect
     }
@@ -872,55 +870,24 @@ fn next_line(
     align: Alignment,
 ) -> ElementBuilder {
     Element::builder("text", NS_SVG)
-        .attr(n!("x"), x.v(3))
-        .attr(n!("y"), y.v(3))
-        .attr(n!("font-size"), font_size.value().v(3))
-        .attr(n!("fill"), color.v(3))
+        .attr(n!("x"), x.v())
+        .attr(n!("y"), y.v())
+        .attr(n!("font-size"), font_size.value().v())
+        .attr(n!("fill"), color.v())
         .attr(n!("text-anchor"), align.to_svg())
-}
-
-/// The SVG namespace.
-const NS_SVG: &str = "http://www.w3.org/2000/svg";
-
-/// Shorthand for XML attribute names.
-macro_rules! n {
-    ($name:literal) => {
-        // Clippy: Upstream lints are leaking in.
-        #[allow(clippy::transmute_ptr_to_ptr)]
-        {
-            ::minidom::rxml::xml_ncname!($name).into()
-        }
-    };
-}
-
-use n;
-
-/// A trait for formatting floating point values with limited precision.
-trait ValueDisplay {
-    /// Formats the value as a floating point string with *maximum* precision
-    /// `precision`.
-    fn v(self, precision: u8) -> String;
-}
-
-impl ValueDisplay for f64 {
-    fn v(self, precision: u8) -> String {
-        let precision = 10.0_f64.powi(precision.into());
-        let v = (self * precision).round() / precision;
-        format!("{v}")
-    }
 }
 
 impl ValueDisplay for ColorValue {
     // Clippy: Values are guaranteed to be in range.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    fn v(self, precision: u8) -> String {
+    fn v_precision(self, precision: u8) -> String {
         match self {
             ColorValue::Hsb(h, s, b) => {
                 format!(
                     "hsl({} {}% {}%)",
-                    (h * 360.0).v(precision),
-                    (s * 100.0).v(precision),
-                    (b * 100.0).v(precision)
+                    (h * 360.0).v_precision(precision),
+                    (s * 100.0).v_precision(precision),
+                    (b * 100.0).v_precision(precision)
                 )
             }
             ColorValue::Named(n) => PREDEFINED_COLORS.get(n).copied().unwrap().to_string(),

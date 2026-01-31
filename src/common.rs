@@ -3,15 +3,108 @@
 //! correspond to PHP nor Lua built-ins).
 
 use crate::{
-    php::{DateTime, DateTimeError, DateTimeParseError, DateTimeZone, strtr, strval},
+    php::{DateTime, DateTimeError, DateTimeFormatError, DateTimeZone, strtr, strval},
     title::{self, Title},
 };
 use axum::http::Uri;
 use core::fmt::{self, Write as _};
 use html_escape::NAMED_ENTITIES;
 use regex::Regex;
-use std::{borrow::Cow, sync::LazyLock};
-use time::UtcOffset;
+use std::{
+    borrow::{Borrow, Cow},
+    io::Write as _,
+    sync::LazyLock,
+};
+
+// SPDX-SnippetBegin
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-SnippetComment: https://stackoverflow.com/a/72179625/252087
+/// An ergonomic extension trait for extending [`Cow`] borrows.
+pub(crate) trait CowExt<'a, B>
+where
+    B: 'a + ToOwned + ?Sized,
+{
+    /// Makes a new `Cow` for an optional component of the borrowed data,
+    /// extending the borrow if `self` is borrowed.
+    fn filter_map<F>(self, f: F) -> Option<Self>
+    where
+        F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, B>>,
+        Self: Sized;
+
+    /// Maps the value in a `Cow`, extending the borrow if `self` is borrowed.
+    fn map<F>(self, f: F) -> Self
+    where
+        F: for<'b> FnOnce(&'b B) -> Cow<'b, B>;
+
+    /// If `self` is borrowed, reborrows the value. Otherwise, converts the
+    /// result of `f` into an owned value.
+    fn map_ref<F>(self, f: F) -> Self
+    where
+        F: for<'b> FnOnce(&'b B) -> &'b B;
+
+    /// If `self` is owned, returns `Some(self)`. Otherwise, returns `None`.
+    fn owned(self) -> Option<Cow<'static, B>>;
+
+    /// If `self` is borrowed, returns `other`. Otherwise, takes the result of
+    /// `f` as an owned value.
+    fn owned_or<F, T>(self, other: T, f: F) -> T
+    where
+        F: for<'b> FnOnce(<B as ToOwned>::Owned) -> T;
+}
+
+impl<'a, B> CowExt<'a, B> for Cow<'a, B>
+where
+    B: 'a + ToOwned + ?Sized,
+{
+    fn filter_map<F>(self, f: F) -> Option<Self>
+    where
+        F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, B>>,
+        Self: Sized,
+    {
+        match self {
+            Cow::Borrowed(v) => f(v),
+            Cow::Owned(v) => f(v.borrow()).map(|v| Cow::Owned(v.into_owned())),
+        }
+    }
+
+    fn map<F>(self, f: F) -> Self
+    where
+        F: for<'b> FnOnce(&'b B) -> Cow<'b, B>,
+    {
+        match self {
+            Cow::Borrowed(v) => f(v),
+            Cow::Owned(v) => Cow::Owned(f(v.borrow()).into_owned()),
+        }
+    }
+
+    fn map_ref<F>(self, f: F) -> Self
+    where
+        F: for<'b> FnOnce(&'b B) -> &'b B,
+    {
+        match self {
+            Cow::Borrowed(v) => Cow::Borrowed(f(v)),
+            Cow::Owned(v) => Cow::Owned(f(v.borrow()).to_owned()),
+        }
+    }
+
+    fn owned(self) -> Option<Cow<'static, B>> {
+        match self {
+            Cow::Borrowed(_) => None,
+            Cow::Owned(o) => Some(Cow::Owned(o)),
+        }
+    }
+
+    fn owned_or<F, T>(self, other: T, f: F) -> T
+    where
+        F: for<'b> FnOnce(<B as ToOwned>::Owned) -> T,
+    {
+        match self {
+            Cow::Borrowed(_) => other,
+            Cow::Owned(o) => f(o),
+        }
+    }
+}
+// SPDX-SnippetEnd
 
 /// The i18n dictionary from MediaWiki.
 pub(crate) static MESSAGES: LazyLock<serde_json::Value> =
@@ -92,6 +185,105 @@ pub fn decode_html(text: &str) -> Cow<'_, str> {
     }
 }
 
+/// Formats a date using a
+/// [glibc](https://www.man7.org/linux/man-pages/man3/strftime.3.html)
+/// `strftime` formatting string.
+pub(crate) fn format_date_strftime(
+    time: DateTime,
+    format: impl IntoIterator<Item = u8>,
+) -> Result<Vec<u8>, DateTimeFormatError> {
+    let mut format = format.into_iter();
+    let mut out = Vec::<u8>::new();
+    while let Some(b) = format.next() {
+        if b != b'%' {
+            out.push(b);
+            continue;
+        }
+
+        match format.next() {
+            Some(b'a') => write!(out, "{:.3}", time.weekday()),
+            Some(b'A') => write!(out, "{}", time.weekday()),
+            Some(b'b' | b'h') => write!(out, "{:.3}", time.month()),
+            Some(b'B') => write!(out, "{}", time.month()),
+            Some(b'c') => write!(out, "{}", time.format("r")?),
+            Some(b'C') => write!(out, "{}", time.year() / 100),
+            Some(b'd') => write!(out, "{:02}", time.day()),
+            Some(b'D') => write!(
+                out,
+                "{:02}/{:02}/{:02}",
+                u8::from(time.month()),
+                time.day(),
+                time.year()
+            ),
+            Some(b'e') => write!(out, "{:>2}", time.day()),
+            Some(b'F') => write!(
+                out,
+                "{:04}-{:02}-{:02}",
+                time.year(),
+                u8::from(time.month()),
+                time.day()
+            ),
+            Some(b'G') => {
+                let (year, week, _) = time.to_iso_week_date();
+                write!(out, "{year:04}-{week:02}")
+            }
+            Some(b'g') => {
+                let (year, week, _) = time.to_iso_week_date();
+                write!(out, "{:02}-{week:02}", year % 100)
+            }
+            Some(b'H') => write!(out, "{:02}", time.hour()),
+            Some(b'I') => {
+                write!(out, "{:02}", {
+                    let h = time.hour() % 12;
+                    if h == 0 { 12 } else { h }
+                })
+            }
+            Some(b'j') => write!(out, "{}", time.ordinal()),
+            Some(b'k') => write!(out, "{:>2}", time.hour()),
+            Some(b'l') => {
+                write!(out, "{:>2}", {
+                    let h = time.hour() % 12;
+                    if h == 0 { 12 } else { h }
+                })
+            }
+            Some(b'm') => write!(out, "{:02}", u8::from(time.month())),
+            Some(b'M') => write!(out, "{:02}", time.minute()),
+            Some(b'n') => writeln!(out),
+            Some(b'p') => write!(out, "{}M", if time.hour() < 12 { 'A' } else { 'P' }),
+            Some(b'P') => write!(out, "{}m", if time.hour() < 12 { 'a' } else { 'p' }),
+            Some(b'r') => write!(out, "{}.m.", if time.hour() < 12 { 'a' } else { 'p' }),
+            Some(b'R') => write!(out, "{:02}:{:02}", time.hour(), time.minute()),
+            Some(b's') => write!(out, "{}", time.unix_timestamp()),
+            Some(b'S') => write!(out, "{:02}", time.second()),
+            Some(b't') => write!(out, "\t"),
+            Some(b'T') => write!(
+                out,
+                "{:02}:{:02}:{:02}",
+                time.hour(),
+                time.minute(),
+                time.second()
+            ),
+            Some(b'u') => write!(out, "{}", time.weekday().number_from_monday()),
+            Some(b'U') => write!(out, "{:02}", time.sunday_based_week()),
+            Some(b'V') => write!(out, "{:02}", time.iso_week()),
+            Some(b'W') => write!(out, "{:02}", time.monday_based_week()),
+            Some(b'x' | b'X') => todo!(),
+            Some(b'y') => write!(out, "{:02}", time.year() % 100),
+            Some(b'Y') => write!(out, "{}", time.year()),
+            Some(b'z') => write!(
+                out,
+                "{:+02}{:02}",
+                time.offset().whole_hours(),
+                time.offset().minutes_past_hour().abs()
+            ),
+            Some(b'Z') => write!(out, "{}", time.time_zone_designation()),
+            Some(b'%') | None => write!(out, "%"),
+            Some(c) => write!(out, "%{c}"),
+        }?;
+    }
+    Ok(out)
+}
+
 /// Formats a date according to the given `format` string.
 ///
 /// The `format` string is a MediaWiki extended time formatting string.
@@ -104,7 +296,7 @@ pub fn decode_html(text: &str) -> Cow<'_, str> {
 ///
 /// The value given in `now` will be used as the current time if no `date` is
 /// given.
-pub fn format_date(
+pub fn format_date_mediawiki(
     now: &DateTime,
     format: &str,
     date: Option<&str>,
@@ -123,9 +315,9 @@ pub fn format_date(
     };
 
     let tz = if local {
-        DateTimeZone::Offset(UtcOffset::current_local_offset().map_err(DateTimeParseError::from)?)
+        DateTimeZone::local()?
     } else {
-        DateTimeZone::Offset(UtcOffset::UTC)
+        DateTimeZone::UTC
     };
 
     date.into_offset(tz)?.format(format).map_err(Into::into)

@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, fmt::Write as _};
 use time::{
-    OffsetDateTime, UtcOffset,
+    Date, Duration, Month, OffsetDateTime, UtcOffset,
     format_description::well_known::{Iso8601, Rfc2822},
 };
 pub(crate) use timelib::Error as DateTimeParseError;
@@ -26,6 +26,9 @@ pub(crate) enum DateTimeFormatError {
     /// An error occurred when formatting.
     #[error(transparent)]
     Format(#[from] time::error::Format),
+    /// An error occurred when trying to write to a byte buffer.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
     /// An error occurred when trying to write to a string.
     #[error(transparent)]
     Write(#[from] core::fmt::Error),
@@ -55,7 +58,7 @@ impl DateTimeZone {
     /// Returns the local system time zone.
     pub fn local() -> Result<Self, DateTimeError> {
         Ok(Self::Offset(
-            time::UtcOffset::current_local_offset().map_err(DateTimeParseError::from)?,
+            UtcOffset::current_local_offset().map_err(DateTimeParseError::from)?,
         ))
     }
 }
@@ -70,6 +73,36 @@ pub(crate) struct DateTime {
 }
 
 impl DateTime {
+    /// Midnight, 1 January, 1970 (UTC).
+    pub const UNIX_EPOCH: Self = Self {
+        inner: OffsetDateTime::UNIX_EPOCH,
+        tz: DateTimeZone::UTC,
+    };
+
+    /// Creates a new [`DateTime`] from numeric date parts.
+    ///
+    /// The `month` and `day` parts are 1-indexed.
+    ///
+    /// Parts with values that are outside the range of the given time part will
+    /// overflow into the next largest time part.
+    // Clippy: TODO: Some args struct, perhaps.
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    pub fn from_parts(
+        year: i64,
+        month: Option<i64>,
+        day: Option<i64>,
+        hour: Option<i64>,
+        minute: Option<i64>,
+        second: Option<i64>,
+        micros: Option<i64>,
+        offset: Option<&DateTimeZone>,
+    ) -> Result<Self, DateTimeError> {
+        Ok(timelib::from_parts(
+            year, month, day, hour, minute, second, micros, offset,
+        )?)
+    }
+
     /// Creates a new `DateTime` object from a Unix timestamp.
     pub fn from_unix_timestamp(timestamp: i64) -> Result<Self, DateTimeError> {
         Ok(Self {
@@ -190,6 +223,31 @@ impl DateTime {
         Ok(out)
     }
 
+    /// Projects this time into a different time zone. (In other words, the same
+    /// time instant as seen from another time zone.)
+    pub fn into_offset(mut self, tz: DateTimeZone) -> Result<Self, DateTimeError> {
+        self.inner = self.inner.to_offset(self.tz_to_offset(tz)?);
+        self.tz = tz;
+        Ok(self)
+    }
+
+    /// Converts a timezone to an offset for this time.
+    fn tz_to_offset(self, tz: DateTimeZone) -> Result<UtcOffset, DateTimeError> {
+        Ok(match tz {
+            DateTimeZone::Offset(offset) => offset,
+            DateTimeZone::Alias(alias) => UtcOffset::from_whole_seconds(alias.ut_offset())
+                .map_err(DateTimeParseError::from)?,
+            DateTimeZone::Named(_, tz) => {
+                let unix_time = self.inner.unix_timestamp();
+                let local = tz
+                    .find_local_time_type(unix_time)
+                    .map_err(|err| DateTimeParseError::Timezone(err.into()))?;
+                UtcOffset::from_whole_seconds(local.ut_offset())
+                    .map_err(DateTimeParseError::from)?
+            }
+        })
+    }
+
     /// Returns true if the currently represented time is in daylight saving
     /// time.
     pub fn is_dst(&self) -> bool {
@@ -203,6 +261,44 @@ impl DateTime {
         }
     }
 
+    /// Replace the date, which is assumed to be in the stored offset. The time
+    /// and offset components are unchanged.
+    pub fn replace_date(self, date: Date) -> Self {
+        Self {
+            inner: self.inner.replace_date(date),
+            tz: self.tz,
+        }
+    }
+
+    /// Replace the day of the month.
+    pub fn replace_day(self, day: u8) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_day(day)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Replace the month of the year.
+    pub fn replace_month(self, month: Month) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_month(month)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Replace the month of the year.
+    pub fn replace_year(self, year: i32) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_year(year)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Gets the time zone.
+    pub fn time_zone(&self) -> &DateTimeZone {
+        &self.tz
+    }
+
     /// Gets the string representation of the current time zone.
     pub fn time_zone_designation(&self) -> Cow<'_, str> {
         match &self.tz {
@@ -212,32 +308,53 @@ impl DateTime {
         }
     }
 
-    /// Projects this time into a different time zone.
-    pub fn into_offset(mut self, tz: DateTimeZone) -> Result<Self, DateTimeError> {
-        self.inner = self.inner.to_offset(match tz {
-            DateTimeZone::Offset(offset) => offset,
-            DateTimeZone::Alias(alias) => UtcOffset::from_whole_seconds(alias.ut_offset())
-                .map_err(DateTimeParseError::from)?,
-            DateTimeZone::Named(_, tz) => {
-                let unix_time = self.inner.unix_timestamp();
-                let local = tz
-                    .find_local_time_type(unix_time)
-                    .map_err(|err| DateTimeParseError::Timezone(err.into()))?;
-                UtcOffset::from_whole_seconds(local.ut_offset())
-                    .map_err(DateTimeParseError::from)?
-            }
-        });
+    /// Truncate to the start of the day, setting the time to midnight.
+    pub fn truncate_to_day(self) -> Self {
+        Self {
+            inner: self.inner.truncate_to_day(),
+            tz: self.tz,
+        }
+    }
 
-        self.tz = tz;
-        Ok(self)
+    /// Truncate to the hour, setting the minute, second, and subsecond
+    /// components to zero.
+    pub fn truncate_to_hour(self) -> Self {
+        Self {
+            inner: self.inner.truncate_to_hour(),
+            tz: self.tz,
+        }
+    }
+
+    /// Truncate to the millisecond, setting the microsecond and nanosecond
+    /// components to zero.
+    pub fn truncate_to_millisecond(self) -> Self {
+        Self {
+            inner: self.inner.truncate_to_millisecond(),
+            tz: self.tz,
+        }
+    }
+
+    /// Truncate to the minute, setting the second and subsecond components to
+    /// zero.
+    pub fn truncate_to_minute(self) -> Self {
+        Self {
+            inner: self.inner.truncate_to_minute(),
+            tz: self.tz,
+        }
+    }
+
+    /// Truncate to the second, setting the subsecond components to zero.
+    pub fn truncate_to_second(self) -> Self {
+        Self {
+            inner: self.inner.truncate_to_second(),
+            tz: self.tz,
+        }
     }
 
     // Allow Deref to avoid rote, but hide the timezone functions so they are
     // not called accidentally
     #[allow(dead_code, clippy::missing_docs_in_private_items, clippy::unused_self)]
     fn checked_to_offset(&self) {}
-    #[allow(dead_code, clippy::missing_docs_in_private_items, clippy::unused_self)]
-    fn replace_offset(&self) {}
     #[allow(
         dead_code,
         clippy::missing_docs_in_private_items,
@@ -245,6 +362,8 @@ impl DateTime {
         clippy::wrong_self_convention
     )]
     fn to_offset(&self) {}
+    #[allow(dead_code, clippy::missing_docs_in_private_items, clippy::unused_self)]
+    fn replace_offset(&self) {}
 }
 
 impl From<time::UtcDateTime> for DateTime {
@@ -286,6 +405,36 @@ impl core::ops::Deref for DateTime {
     }
 }
 
+impl core::ops::Sub for DateTime {
+    type Output = Duration;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.inner - rhs.inner
+    }
+}
+
+impl core::ops::Add<Duration> for DateTime {
+    type Output = Self;
+
+    fn add(self, rhs: Duration) -> Self::Output {
+        Self {
+            inner: self.inner + rhs,
+            tz: self.tz,
+        }
+    }
+}
+
+impl core::ops::Sub<Duration> for DateTime {
+    type Output = Self;
+
+    fn sub(self, rhs: Duration) -> Self::Output {
+        Self {
+            inner: self.inner - rhs,
+            tz: self.tz,
+        }
+    }
+}
+
 /// Parses a string as a number similar to [`floatval`](https://php.net/floatval)
 /// but returning an error if there is no number instead of returning 0.0.
 pub fn floatval(n: &str) -> Result<(f64, &str), core::num::ParseFloatError> {
@@ -310,6 +459,24 @@ pub fn fuzzy_cmp(lhs: &str, rhs: &str) -> bool {
     } else {
         lhs == rhs
     }
+}
+
+/// Parses a string as a number similar to [`intval`](https://php.net/intval)
+/// but returning an error if there is no number instead of returning 0.
+pub fn intval(n: &str, radix: Option<u32>) -> Result<(i64, &str), core::num::ParseIntError> {
+    let end = n
+        .as_bytes()
+        .iter()
+        .position(|b| !b.is_ascii_digit() && *b != b'-')
+        .unwrap_or(n.len());
+    let radix = radix.unwrap_or_else(|| {
+        if n.starts_with("0x") || n.starts_with("0X") {
+            16
+        } else {
+            10
+        }
+    });
+    i64::from_str_radix(&n[..end], radix).map(|value| (value, &n[end..]))
 }
 
 /// Finds and replaces substrings in the input like [`strtr`](https://php.net/strtr).

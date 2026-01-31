@@ -6,6 +6,7 @@ use super::{
     surrogate::Surrogate,
 };
 use crate::{
+    common::CowExt as _,
     lua::LuaFrame,
     title::Title,
     wikitext::{Argument, FileMap, Span, Spanned, Token},
@@ -116,10 +117,7 @@ impl<'a> StackFrame<'a> {
             {
                 self.arguments.value(state, parent, index)?.map(|value| {
                     if is_named {
-                        match value {
-                            Cow::Borrowed(b) => Cow::Borrowed(b.trim_ascii()),
-                            Cow::Owned(o) => Cow::Owned(o.trim_ascii().to_string()),
-                        }
+                        value.map_ref(|b| b.trim_ascii())
                     } else {
                         value
                     }

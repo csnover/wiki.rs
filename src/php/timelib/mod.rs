@@ -1,5 +1,6 @@
 //! PHP `strtotime` compatible time parsing library.
 
+use super::{DateTime, DateTimeZone};
 use time::{Month, Weekday};
 use timezone::Timezone;
 
@@ -56,9 +57,9 @@ pub(crate) enum Error {
 // timelib (which should just be DateTimeBuilder and Timezone).
 pub(super) fn new_datetime(
     text: &str,
-    default_tz: Option<&super::DateTimeZone>,
-    now: Option<&super::DateTime>,
-) -> Result<super::DateTime, Error> {
+    default_tz: Option<&DateTimeZone>,
+    now: Option<&DateTime>,
+) -> Result<DateTime, Error> {
     let state = match parse_date::parse(text) {
         parse_date::ParseResult {
             builder: state,
@@ -76,13 +77,7 @@ pub(super) fn new_datetime(
     };
 
     let offset = Some(if let Some(default_tz) = default_tz {
-        match default_tz {
-            super::DateTimeZone::Offset(offset) => Timezone::Offset(offset.whole_seconds()),
-            super::DateTimeZone::Alias(alias) => {
-                Timezone::Alias(alias.time_zone_designation().into())
-            }
-            super::DateTimeZone::Named(name, _) => Timezone::Named(name),
-        }
+        Timezone::from(default_tz)
     } else {
         Timezone::Offset(now.offset().whole_seconds())
     });
@@ -101,6 +96,37 @@ pub(super) fn new_datetime(
     };
 
     state.build(Some(other))
+}
+
+/// Creates a new [`DateTime`] from numeric date parts.
+// Clippy: TODO: Some args struct, perhaps.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn from_parts(
+    year: i64,
+    month: Option<i64>,
+    day: Option<i64>,
+    hour: Option<i64>,
+    minute: Option<i64>,
+    second: Option<i64>,
+    micros: Option<i64>,
+    offset: Option<&DateTimeZone>,
+) -> Result<DateTime, Error> {
+    DateTimeBuilder {
+        date: TimelibDate {
+            year: Some(year),
+            month: month.or(Some(1)),
+            day: day.or(Some(1)),
+        },
+        time: TimelibTime {
+            hour: hour.or(Some(0)),
+            minute: minute.or(Some(0)),
+            second: second.or(Some(0)),
+            micros: micros.or(Some(0)),
+        },
+        offset: offset.map(Timezone::from),
+        ..Default::default()
+    }
+    .build(None)
 }
 
 /// A time builder.

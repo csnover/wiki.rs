@@ -1,0 +1,640 @@
+{
+  "width": 780,
+  "height": 465,
+  "data": [
+    {
+      "name": "wheat",
+      "values": [
+        {
+          "year": "1565",
+          "wheat": 41,
+          "wages": 5
+        },
+        {
+          "year": "1570",
+          "wheat": 45,
+          "wages": 5.05
+        },
+        {
+          "year": "1575",
+          "wheat": 42,
+          "wages": 5.08
+        },
+        {
+          "year": "1580",
+          "wheat": 49,
+          "wages": 5.12
+        },
+        {
+          "year": "1585",
+          "wheat": 41.5,
+          "wages": 5.15
+        },
+        {
+          "year": "1590",
+          "wheat": 47,
+          "wages": 5.25
+        },
+        {
+          "year": "1595",
+          "wheat": 64,
+          "wages": 5.54
+        },
+        {
+          "year": "1600",
+          "wheat": 27,
+          "wages": 5.61
+        },
+        {
+          "year": "1605",
+          "wheat": 33,
+          "wages": 5.69
+        },
+        {
+          "year": "1610",
+          "wheat": 32,
+          "wages": 5.78
+        },
+        {
+          "year": "1615",
+          "wheat": 33,
+          "wages": 5.94
+        },
+        {
+          "year": "1620",
+          "wheat": 35,
+          "wages": 6.01
+        },
+        {
+          "year": "1625",
+          "wheat": 33,
+          "wages": 6.12
+        },
+        {
+          "year": "1630",
+          "wheat": 45,
+          "wages": 6.22
+        },
+        {
+          "year": "1635",
+          "wheat": 33,
+          "wages": 6.3
+        },
+        {
+          "year": "1640",
+          "wheat": 39,
+          "wages": 6.37
+        },
+        {
+          "year": "1645",
+          "wheat": 53,
+          "wages": 6.45
+        },
+        {
+          "year": "1650",
+          "wheat": 42,
+          "wages": 6.5
+        },
+        {
+          "year": "1655",
+          "wheat": 40.5,
+          "wages": 6.6
+        },
+        {
+          "year": "1660",
+          "wheat": 46.5,
+          "wages": 6.75
+        },
+        {
+          "year": "1665",
+          "wheat": 32,
+          "wages": 6.8
+        },
+        {
+          "year": "1670",
+          "wheat": 37,
+          "wages": 6.9
+        },
+        {
+          "year": "1675",
+          "wheat": 43,
+          "wages": 7
+        },
+        {
+          "year": "1680",
+          "wheat": 35,
+          "wages": 7.3
+        },
+        {
+          "year": "1685",
+          "wheat": 27,
+          "wages": 7.6
+        },
+        {
+          "year": "1690",
+          "wheat": 40,
+          "wages": 8
+        },
+        {
+          "year": "1695",
+          "wheat": 50,
+          "wages": 8.5
+        },
+        {
+          "year": "1700",
+          "wheat": 30,
+          "wages": 9
+        },
+        {
+          "year": "1705",
+          "wheat": 32,
+          "wages": 10
+        },
+        {
+          "year": "1710",
+          "wheat": 44,
+          "wages": 11
+        },
+        {
+          "year": "1715",
+          "wheat": 33,
+          "wages": 11.75
+        },
+        {
+          "year": "1720",
+          "wheat": 29,
+          "wages": 12.5
+        },
+        {
+          "year": "1725",
+          "wheat": 39,
+          "wages": 13
+        },
+        {
+          "year": "1730",
+          "wheat": 26,
+          "wages": 13.3
+        },
+        {
+          "year": "1735",
+          "wheat": 32,
+          "wages": 13.6
+        },
+        {
+          "year": "1740",
+          "wheat": 27,
+          "wages": 14
+        },
+        {
+          "year": "1745",
+          "wheat": 27.5,
+          "wages": 14.5
+        },
+        {
+          "year": "1750",
+          "wheat": 31,
+          "wages": 15
+        },
+        {
+          "year": "1755",
+          "wheat": 35.5,
+          "wages": 15.7
+        },
+        {
+          "year": "1760",
+          "wheat": 31,
+          "wages": 16.5
+        },
+        {
+          "year": "1765",
+          "wheat": 43,
+          "wages": 17.6
+        },
+        {
+          "year": "1770",
+          "wheat": 47,
+          "wages": 18.5
+        },
+        {
+          "year": "1775",
+          "wheat": 44,
+          "wages": 19.5
+        },
+        {
+          "year": "1780",
+          "wheat": 46,
+          "wages": 21
+        },
+        {
+          "year": "1785",
+          "wheat": 42,
+          "wages": 23
+        },
+        {
+          "year": "1790",
+          "wheat": 47.5,
+          "wages": 25.5
+        },
+        {
+          "year": "1795",
+          "wheat": 76,
+          "wages": 27.5
+        },
+        {
+          "year": "1800",
+          "wheat": 79,
+          "wages": 28.5
+        },
+        {
+          "year": "1805",
+          "wheat": 81,
+          "wages": 29.5
+        },
+        {
+          "year": "1810",
+          "wheat": 99,
+          "wages": 30
+        },
+        {
+          "year": "1815",
+          "wheat": 78
+        },
+        {
+          "year": "1820",
+          "wheat": 54
+        }
+      ]
+    },
+    {
+      "name": "monarchs",
+      "values": [
+        {
+          "name": "Elizabeth",
+          "start": 1565,
+          "end": 1603,
+          "index": 0
+        },
+        {
+          "name": "James I",
+          "start": 1603,
+          "end": 1625,
+          "index": 1
+        },
+        {
+          "name": "Charles I",
+          "start": 1625,
+          "end": 1649,
+          "index": 2
+        },
+        {
+          "name": "Cromwell",
+          "start": 1649,
+          "end": 1660,
+          "commonwealth": true,
+          "index": 3
+        },
+        {
+          "name": "Charles II",
+          "start": 1660,
+          "end": 1685,
+          "index": 4
+        },
+        {
+          "name": "James II",
+          "start": 1685,
+          "end": 1689,
+          "index": 5
+        },
+        {
+          "name": "W&M",
+          "start": 1689,
+          "end": 1702,
+          "index": 6
+        },
+        {
+          "name": "Anne",
+          "start": 1702,
+          "end": 1714,
+          "index": 7
+        },
+        {
+          "name": "George I",
+          "start": 1714,
+          "end": 1727,
+          "index": 8
+        },
+        {
+          "name": "George II",
+          "start": 1727,
+          "end": 1760,
+          "index": 9
+        },
+        {
+          "name": "George III",
+          "start": 1760,
+          "end": 1820,
+          "index": 10
+        },
+        {
+          "name": "George IV",
+          "start": 1820,
+          "end": 1820,
+          "index": 11
+        }
+      ],
+      "transform": [
+        {
+          "type": "formula",
+          "field": "offset",
+          "expr": "((!datum.commonwealth && datum.index % 2) ? -1: 1) * 2 + 95"
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "x",
+      "type": "linear",
+      "range": "width",
+      "zero": false,
+      "domain": [
+        1565,
+        1825
+      ]
+    },
+    {
+      "name": "y",
+      "type": "linear",
+      "range": "height",
+      "domain": {
+        "data": "wheat",
+        "field": "wheat"
+      }
+    },
+    {
+      "name": "c",
+      "type": "ordinal",
+      "range": [
+        "black",
+        "white"
+      ],
+      "domain": {
+        "data": "monarchs",
+        "field": "commonwealth"
+      }
+    }
+  ],
+  "axes": [
+    {
+      "type": "x",
+      "scale": "x",
+      "ticks": 5,
+      "format": "04d"
+    },
+    {
+      "type": "y",
+      "scale": "y",
+      "grid": true,
+      "orient": "right",
+      "layer": "front",
+      "ticks": 5,
+      "offset": 5,
+      "tickSize": 0,
+      "properties": {
+        "axis": {
+          "strokeWidth": {
+            "value": 0
+          }
+        },
+        "grid": {
+          "stroke": {
+            "value": "#fff"
+          },
+          "strokeWidth": {
+            "value": 0.25
+          }
+        },
+        "labels": {
+          "fontStyle": {
+            "value": "italic"
+          }
+        }
+      }
+    }
+  ],
+  "marks": [
+    {
+      "type": "rect",
+      "from": {
+        "data": "wheat"
+      },
+      "properties": {
+        "enter": {
+          "x": {
+            "scale": "x",
+            "field": "year"
+          },
+          "width": {
+            "value": 15
+          },
+          "y": {
+            "scale": "y",
+            "field": "wheat"
+          },
+          "y2": {
+            "scale": "y",
+            "value": 0
+          },
+          "fill": {
+            "value": "#aaa"
+          },
+          "stroke": {
+            "value": "#5d5d5d"
+          },
+          "strokeWidth": {
+            "value": 0.25
+          }
+        }
+      }
+    },
+    {
+      "type": "area",
+      "from": {
+        "data": "wheat",
+        "transform": [
+          {
+            "type": "filter",
+            "test": "!!datum.wages"
+          }
+        ]
+      },
+      "properties": {
+        "enter": {
+          "interpolate": {
+            "value": "linear"
+          },
+          "x": {
+            "scale": "x",
+            "field": "year"
+          },
+          "y": {
+            "scale": "y",
+            "field": "wages"
+          },
+          "y2": {
+            "scale": "y",
+            "value": 0
+          },
+          "fill": {
+            "value": "#B3D9E6"
+          },
+          "fillOpacity": {
+            "value": 0.8
+          }
+        }
+      }
+    },
+    {
+      "type": "line",
+      "from": {
+        "data": "wheat",
+        "transform": [
+          {
+            "type": "filter",
+            "test": "!!datum.wages"
+          }
+        ]
+      },
+      "properties": {
+        "enter": {
+          "interpolate": {
+            "value": "linear"
+          },
+          "x": {
+            "scale": "x",
+            "field": "year"
+          },
+          "y": {
+            "scale": "y",
+            "field": "wages"
+          },
+          "stroke": {
+            "value": "#ff7e79"
+          },
+          "strokeWidth": {
+            "value": 3
+          }
+        }
+      }
+    },
+    {
+      "type": "line",
+      "from": {
+        "data": "wheat",
+        "transform": [
+          {
+            "type": "filter",
+            "test": "!!datum.wages"
+          }
+        ]
+      },
+      "properties": {
+        "enter": {
+          "interpolate": {
+            "value": "linear"
+          },
+          "x": {
+            "scale": "x",
+            "field": "year"
+          },
+          "y": {
+            "scale": "y",
+            "field": "wages"
+          },
+          "stroke": {
+            "value": "#000"
+          },
+          "strokeWidth": {
+            "value": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "monarch_rects",
+      "type": "rect",
+      "from": {
+        "data": "monarchs"
+      },
+      "properties": {
+        "enter": {
+          "x": {
+            "scale": "x",
+            "field": "start"
+          },
+          "x2": {
+            "scale": "x",
+            "field": "end"
+          },
+          "y": {
+            "scale": "y",
+            "value": 95
+          },
+          "y2": {
+            "scale": "y",
+            "field": "offset"
+          },
+          "fill": {
+            "scale": "c",
+            "field": "commonwealth"
+          },
+          "stroke": {
+            "value": "#000"
+          },
+          "strokeWidth": {
+            "value": 2
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {
+        "mark": "monarch_rects"
+      },
+      "properties": {
+        "enter": {
+          "x": {
+            "field": "x"
+          },
+          "dx": {
+            "field": "width",
+            "mult": 0.5
+          },
+          "y": {
+            "field": "y2",
+            "offset": 14
+          },
+          "text": {
+            "field": "datum.name"
+          },
+          "align": {
+            "value": "center"
+          },
+          "fill": {
+            "value": "black"
+          },
+          "font": {
+            "value": "Helvetica Neue"
+          },
+          "fontSize": {
+            "value": 10
+          },
+          "fontStyle": {
+            "value": "italic"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@ use crate::{
     php::{DateTime, DateTimeZone},
 };
 use gc_arena::Rootable;
-use std::{io::Write as _, time::Instant};
+use std::time::Instant;
 
 /// Loads the OS library.
 #[allow(clippy::too_many_lines)]
@@ -58,95 +58,8 @@ pub fn load_os(ctx: Context<'_>) {
                 return Ok(CallbackReturn::Return);
             }
 
-            let mut format = format.as_bytes()[start..].iter();
-            let mut out = Vec::<u8>::new();
-            while let Some(&b) = format.next() {
-                if b != b'%' {
-                    out.push(b);
-                    continue;
-                }
-
-                match format.next() {
-                    Some(b'a') => write!(out, "{:.3}", time.weekday()),
-                    Some(b'A') => write!(out, "{}", time.weekday()),
-                    Some(b'b' | b'h') => write!(out, "{:.3}", time.month()),
-                    Some(b'B') => write!(out, "{}", time.month()),
-                    Some(b'c') => write!(out, "{}", time.format("r")?),
-                    Some(b'C') => write!(out, "{}", time.year() / 100),
-                    Some(b'd') => write!(out, "{:02}", time.day()),
-                    Some(b'D') => write!(
-                        out,
-                        "{:02}/{:02}/{:02}",
-                        u8::from(time.month()),
-                        time.day(),
-                        time.year()
-                    ),
-                    Some(b'e') => write!(out, "{:>2}", time.day()),
-                    Some(b'F') => write!(
-                        out,
-                        "{:04}-{:02}-{:02}",
-                        time.year(),
-                        u8::from(time.month()),
-                        time.day()
-                    ),
-                    Some(b'G') => {
-                        let (year, week, _) = time.to_iso_week_date();
-                        write!(out, "{year:04}-{week:02}")
-                    }
-                    Some(b'g') => {
-                        let (year, week, _) = time.to_iso_week_date();
-                        write!(out, "{:02}-{week:02}", year % 100)
-                    }
-                    Some(b'H') => write!(out, "{:02}", time.hour()),
-                    Some(b'I') => {
-                        write!(out, "{:02}", {
-                            let h = time.hour() % 12;
-                            if h == 0 { 12 } else { h }
-                        })
-                    }
-                    Some(b'j') => write!(out, "{}", time.ordinal()),
-                    Some(b'k') => write!(out, "{:>2}", time.hour()),
-                    Some(b'l') => {
-                        write!(out, "{:>2}", {
-                            let h = time.hour() % 12;
-                            if h == 0 { 12 } else { h }
-                        })
-                    }
-                    Some(b'm') => write!(out, "{:02}", u8::from(time.month())),
-                    Some(b'M') => write!(out, "{:02}", time.minute()),
-                    Some(b'n') => writeln!(out),
-                    Some(b'p') => write!(out, "{}M", if time.hour() < 12 { 'A' } else { 'P' }),
-                    Some(b'P') => write!(out, "{}m", if time.hour() < 12 { 'a' } else { 'p' }),
-                    Some(b'r') => write!(out, "{}.m.", if time.hour() < 12 { 'a' } else { 'p' }),
-                    Some(b'R') => write!(out, "{:02}:{:02}", time.hour(), time.minute()),
-                    Some(b's') => write!(out, "{}", time.unix_timestamp()),
-                    Some(b'S') => write!(out, "{:02}", time.second()),
-                    Some(b't') => write!(out, "\t"),
-                    Some(b'T') => write!(
-                        out,
-                        "{:02}:{:02}:{:02}",
-                        time.hour(),
-                        time.minute(),
-                        time.second()
-                    ),
-                    Some(b'u') => write!(out, "{}", time.weekday().number_from_monday()),
-                    Some(b'U') => write!(out, "{:02}", time.sunday_based_week()),
-                    Some(b'V') => write!(out, "{:02}", time.iso_week()),
-                    Some(b'W') => write!(out, "{:02}", time.monday_based_week()),
-                    Some(b'x' | b'X') => todo!(),
-                    Some(b'y') => write!(out, "{:02}", time.year() % 100),
-                    Some(b'Y') => write!(out, "{}", time.year()),
-                    Some(b'z') => write!(
-                        out,
-                        "{:+02}{:02}",
-                        time.offset().whole_hours(),
-                        time.offset().minutes_past_hour().abs()
-                    ),
-                    Some(b'Z') => write!(out, "{}", time.time_zone_designation()),
-                    Some(b'%') | None => write!(out, "%"),
-                    Some(&c) => write!(out, "%{c}"),
-                }?;
-            }
+            let format = format.as_bytes()[start..].iter().copied();
+            let out = crate::common::format_date_strftime(time, format)?;
 
             stack.replace(ctx, ctx.intern(&out));
             Ok(CallbackReturn::Return)

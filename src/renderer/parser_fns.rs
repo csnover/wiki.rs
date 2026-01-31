@@ -13,8 +13,8 @@ use super::{
 };
 use crate::{
     common::{
-        anchor_encode, decode_html, format_date, format_message, format_number, make_url,
-        parse_formatted_number, url_encode,
+        CowExt as _, anchor_encode, decode_html, format_date_mediawiki, format_message,
+        format_number, make_url, parse_formatted_number, url_encode,
     },
     config::CONFIG,
     expr,
@@ -601,10 +601,7 @@ mod string {
             };
 
             let value = if flags.contains(Flags::REVERSE) {
-                StripMarkers::for_each_non_marker(&n, |s| match parse_formatted_number(s) {
-                    Cow::Borrowed(_) => None,
-                    s @ Cow::Owned(_) => Some(s),
-                })
+                StripMarkers::for_each_non_marker(&n, |s| parse_formatted_number(s).owned())
             } else {
                 StripMarkers::for_each_non_marker(&n, format_part(flags))
             };
@@ -929,7 +926,7 @@ mod time {
 
             // 'Template:Date' sends garbage values to `#time` without an
             // `#iferror` guard to capture the errors.
-            match on_error_resume_next(format_date(
+            match on_error_resume_next(format_date_mediawiki(
                 &state.statics.base_time,
                 &format,
                 date.as_deref(),
@@ -1299,15 +1296,7 @@ fn on_error_resume_next<T, E: fmt::Display>(value: Result<T, E>) -> Result<T, St
 
 /// Decodes HTML entities and trims ASCII whitespace from the value.
 fn decode_trim(value: Cow<'_, str>) -> Cow<'_, str> {
-    match value {
-        // This ugliness seems to be necessary to maintain the original lifetime
-        // and satisfy borrowck
-        Cow::Borrowed(value) => match decode_html(value) {
-            Cow::Borrowed(value) => Cow::Borrowed(value.trim_ascii()),
-            Cow::Owned(value) => Cow::Owned(value.trim_ascii().to_string()),
-        },
-        Cow::Owned(value) => Cow::Owned(decode_html(&value).trim_ascii().to_string()),
-    }
+    trim(value.map(decode_html))
 }
 
 /// Trims ASCII whitespace from the value.
@@ -1317,8 +1306,5 @@ fn decode_trim(value: Cow<'_, str>) -> Cow<'_, str> {
 /// have such a flag concept, so these parser functions must trim their own
 /// strings.
 fn trim(value: Cow<'_, str>) -> Cow<'_, str> {
-    match value {
-        Cow::Borrowed(value) => Cow::Borrowed(value.trim_ascii()),
-        Cow::Owned(value) => Cow::Owned(value.trim_ascii().to_string()),
-    }
+    value.map_ref(|value| value.trim_ascii())
 }
