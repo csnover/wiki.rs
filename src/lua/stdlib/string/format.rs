@@ -714,6 +714,8 @@ mod lua {
         }
     }
 
+    impl core::iter::FusedIterator for FormatIter<'_> {}
+
     /// Parses a formatting string into a sequence of [`FormatElement`]s.
     pub fn parse_format_string(fmt: &str) -> impl Iterator<Item = Result<FormatElement<'_>>> {
         FormatIter(fmt)

@@ -392,3 +392,10 @@ where
         })
     }
 }
+
+impl<I> core::iter::FusedIterator for ReplIter<I>
+where
+    I: Iterator + core::iter::FusedIterator,
+    I::Item: PrimitiveType,
+{
+}
