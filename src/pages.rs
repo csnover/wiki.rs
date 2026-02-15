@@ -412,11 +412,20 @@ pub(crate) async fn search(
         site: &'a str,
     }
 
-    let plain = regex::escape(&query) == query;
-    let query = regex::RegexBuilder::new(&query)
+    let (plain, query) = if let Ok(re) = regex::RegexBuilder::new(&query)
         .case_insensitive(true)
         .build()
-        .unwrap();
+    {
+        (regex::escape(&query) == query, re)
+    } else {
+        // Maybe someone types 'Foo (', in which case it should be treated as
+        // plain text instead of exploding
+        let query = regex::RegexBuilder::new(&regex::escape(&query))
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        (true, query)
+    };
 
     log::debug!("Searching for {query}");
     let time = Instant::now();
