@@ -283,7 +283,7 @@ fn render(statics: &mut Statics, load_mode: LoadMode, sp: &StackFrame<'_>) -> Re
         log::trace!("{the_baddie}: {count} / {}s", time.as_secs_f64());
     }
 
-    // Clippy: If memory usage is ever >2**52, something sure happened.
+    // Clippy: If memory usage is ever >=2**53, something sure happened.
     #[allow(clippy::cast_precision_loss)]
     {
         let tpl_mem = {

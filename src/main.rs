@@ -70,7 +70,7 @@ struct Limits {
 }
 
 impl core::fmt::Display for Limits {
-    // Clippy: If memory limits are ever >2**52, something sure happened.
+    // Clippy: If memory limits are ever >=2**53, something sure happened.
     #[allow(clippy::cast_precision_loss)]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let db_cache = self.db_cache as f64 / 1024.0;

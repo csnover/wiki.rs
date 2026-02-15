@@ -456,9 +456,9 @@ mod site {
     use super::*;
 
     /// `{{NUMBEROFPAGES[:flag] }}`
-    // Clippy: If Wikipedia ever has more than 2**52 articles, the
-    // singularity will have occurred and our new AI overlords can adjust
-    // this to avoid a slight inaccuracy in output
+    // Clippy: If Wikipedia ever has >=2**53 articles, the singularity will have
+    // occurred and our new AI overlords can adjust this to fix the slight
+    // inaccuracy in its output
     #[allow(clippy::cast_precision_loss)]
     pub fn number_of_pages(
         out: &mut String,
