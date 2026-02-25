@@ -11,9 +11,10 @@ use crate::{
 };
 use axum::{
     Form,
+    body::Body,
     extract::{Path, Query, RawQuery, State},
     http::{HeaderMap, StatusCode, header},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
 };
 use rayon::{iter::ParallelIterator, slice::ParallelSliceMut};
 use sailfish::TemplateSimple;
@@ -148,7 +149,7 @@ pub(crate) async fn article(
         let target = Title::new(&target.content, None);
         let query = format!("from={}", title.partial_url());
         return make_url(None, &state.base_uri, &target, Some(&query), true)
-            .map(|s| axum::response::Redirect::permanent(&s))
+            .map(|s| Redirect::permanent(&s))
             .map(IntoResponse::into_response)
             .map_err(Into::into);
     }
@@ -390,7 +391,7 @@ pub(crate) async fn search(
         page,
         per_page,
     }): Query<SearchQuery>,
-) -> impl IntoResponse {
+) -> Result<Response<Body>, Error> {
     #[derive(TemplateSimple)]
     #[template(path = "search.html")]
     struct SearchResult<'a> {
@@ -469,6 +470,16 @@ pub(crate) async fn search(
     let page_count = results.len().div_ceil(per_page);
     let range = page * per_page..results.len().min((page + 1) * per_page);
 
+    if page == 0
+        && let [result] = results.as_slice()
+    {
+        let target = Title::new(result, None);
+        return make_url(None, &state.base_uri, &target, None, true)
+            .map(|s| Redirect::permanent(&s))
+            .map(IntoResponse::into_response)
+            .map_err(Into::into);
+    }
+
     SearchResult {
         base_path: state.base_uri.path(),
         query: query.as_str(),
@@ -481,7 +492,8 @@ pub(crate) async fn search(
     }
     .render_once()
     .map(html_result)
-    .map_err(Error::from)
+    .map(IntoResponse::into_response)
+    .map_err(Into::into)
 }
 
 /// The rendering mode for a source page.
