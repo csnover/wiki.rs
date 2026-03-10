@@ -46,14 +46,6 @@ pub(super) struct Legend<'s> {
 }
 
 impl<'s> Legend<'s> {
-    /// The default gradient height for quantitative legends.
-    pub const GRADIENT_HEIGHT: f64 = 16.0;
-    /// The default gradient stroke colour for quantitative legends.
-    pub const GRADIENT_STROKE_COLOR: &'static str = "#888";
-    /// The default gradient stroke width for quantitative legends.
-    pub const GRADIENT_STROKE_WIDTH: f64 = 1.0;
-    /// The default gradient width for quantitative legends.
-    pub const GRADIENT_WIDTH: f64 = 100.0;
     /// The default alignment for legend labels.
     pub const LABEL_ALIGN: Align = Align::Left;
     /// The default baseline for legend labels.
@@ -64,7 +56,6 @@ impl<'s> Legend<'s> {
     pub const LABEL_FONT: &'static str = "sans-serif";
     /// The default font size for legend labels.
     pub const LABEL_FONT_SIZE: f64 = 10.0;
-    pub const MARGIN: f64 = 2.0;
     /// The default offset from the edge of the data rectangle.
     pub const OFFSET: f64 = 20.0;
     /// The default padding between legend items.
@@ -73,6 +64,8 @@ impl<'s> Legend<'s> {
     pub const SYMBOL_COLOR: &'static str = "#888";
     /// The default symbolic legend symbol shape.
     pub const SYMBOL_SHAPE: Shape = Shape::Circle;
+    /// The default symbolic legend symbol size.
+    pub const SYMBOL_SIZE: f64 = 50.0;
     /// The default symbolic legend symbol stroke width.
     pub const SYMBOL_STROKE_WIDTH: f64 = 1.0;
 
@@ -145,8 +138,8 @@ pub(super) enum Orient {
 #[serde(bound = "'de: 's", deny_unknown_fields)]
 pub(super) struct Properties<'s> {
     /// Visual styles for a continuous colour gradient.
-    #[serde(default)]
-    pub gradient: Option<Propset<'s>>,
+    #[serde(default, rename = "gradient")]
+    pub _gradient: Option<Propset<'s>>,
     /// Visual styles for discrete legend items.
     #[serde(default)]
     pub labels: Option<Propset<'s>>,

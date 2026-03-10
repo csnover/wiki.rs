@@ -6,13 +6,11 @@ use super::{
     expr::Ast,
     mark::{Interpolate, Orient, Shape},
     predicate::Call as PredicateCall,
-    spec::Spec,
 };
-use either::Either;
 use serde_json_borrow::Value;
 use std::borrow::Cow;
 
-/// Trait for arbitrary value retrieval.
+/// A trait for arbitrary value retrieval.
 pub(super) trait Getter<'s> {
     /// The type of the item.
     type Item;
@@ -359,28 +357,17 @@ macro_rules! bag_o_crap {
                     }
                 )*
 
-                if self.x.is_some() {
+                if needs_x {
                     fields.push(("x", Value::from(x)));
-                }
-                if self.x2.is_some() {
                     fields.push(("x2", Value::from(x + width)));
-                }
-                if self.xc.is_some() {
                     fields.push(("xc", Value::from(x + width / 2.0)));
-                }
-                if self.width.is_some() {
                     fields.push(("width", Value::from(width)));
                 }
-                if self.y.is_some() {
+
+                if needs_y {
                     fields.push(("y", Value::from(y)));
-                }
-                if self.y2.is_some() {
                     fields.push(("y2", Value::from(y + height)));
-                }
-                if self.yc.is_some() {
                     fields.push(("yc", Value::from(y + height / 2.0)));
-                }
-                if self.height.is_some() {
                     fields.push(("height", Value::from(height)));
                 }
 
@@ -630,8 +617,7 @@ impl<'s> Getter<'s> for ColorProperty<'s> {
                 let r = r.get(node).unwrap_or(128.0);
                 let g = g.get(node).unwrap_or(128.0);
                 let b = b.get(node).unwrap_or(128.0);
-                // Clippy: Precision does not matter.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation, reason = "loss does not matter")]
                 let color = Color::new(r as f32, g as f32, b as f32, 1.0);
                 Some(color)
             }
@@ -639,8 +625,7 @@ impl<'s> Getter<'s> for ColorProperty<'s> {
                 let h = h.get(node).unwrap_or(0.0);
                 let s = s.get(node).unwrap_or(0.0);
                 let l = l.get(node).unwrap_or(0.5);
-                // Clippy: Precision does not matter.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation, reason = "loss does not matter")]
                 let color = Color::from_hsla(h as f32, s as f32, l as f32, 1.0);
                 Some(color)
             }
@@ -648,8 +633,7 @@ impl<'s> Getter<'s> for ColorProperty<'s> {
                 let l = l.get(node).unwrap_or(50.0);
                 let a = a.get(node).unwrap_or(0.0);
                 let b = b.get(node).unwrap_or(0.0);
-                // Clippy: Precision does not matter.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation, reason = "loss does not matter")]
                 let color = Color::from_laba(l as f32, a as f32, b as f32, 1.0);
                 Some(color)
             }
@@ -657,8 +641,7 @@ impl<'s> Getter<'s> for ColorProperty<'s> {
                 let l = l.get(node).unwrap_or(50.0);
                 let c = c.get(node).unwrap_or(0.0);
                 let h = h.get(node).unwrap_or(0.0);
-                // Clippy: Precision does not matter.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation, reason = "loss does not matter")]
                 let color = Color::from_lcha(l as f32, c as f32, h as f32, 1.0);
                 Some(color)
             }
@@ -715,15 +698,7 @@ impl<'s> FieldRef<'s> {
     fn key(&self, node: &Node<'s, '_>) -> Option<Cow<'_, str>> {
         match self {
             FieldRef::Field(name) => Some(name.clone()),
-            FieldRef::Datum { datum } => datum
-                .key(node)
-                .and_then(|key| get_nested_value(node.item, &key).map(ValueExt::to_string)),
-            FieldRef::Group { .. } => {
-                panic!("using group for key is probably pathological");
-            }
-            FieldRef::Parent { parent, level } => ascend(node, *level)
-                .and_then(Either::left)
-                .and_then(|node| parent.key(node)),
+            _ => self.get(node).map(ValueExt::into_string),
         }
     }
 }
@@ -742,28 +717,20 @@ impl<'s> Getter<'s> for FieldRef<'s> {
     fn get(&self, node: &Node<'s, '_>) -> Option<Self::Item> {
         match self {
             FieldRef::Field(name) => get_nested_value(node.item, name).cloned(),
-            FieldRef::Datum { datum } => datum.get(node),
-            FieldRef::Group { group, level } => ascend(node, *level).and_then(|parent| {
+            FieldRef::Datum { datum } => {
+                let key = datum.key(node)?;
+                get_nested_value(node.item, &key).cloned()
+            }
+            FieldRef::Group { group, level } => {
+                let parent_node = ascend(node, *level)?;
                 let key = group.key(node)?;
-                match parent {
-                    Either::Left(node) => node
-                        .mark
-                        .and_then(|mark| mark.propset(Kind::Enter))
-                        .and_then(|propset| propset.get(&key, node)),
-                    Either::Right(spec) => match &*key {
-                        "width" => Some(spec.width().into()),
-                        "height" => Some(spec.height().into()),
-                        _ => None,
-                    },
-                }
-            }),
-            FieldRef::Parent { parent, level } => ascend(node, *level)
-                .and_then(Either::left)
-                .and_then(|parent_node| {
-                    let key = parent.key(node)?;
-                    get_nested_value(parent_node.item, &key)
-                })
-                .cloned(),
+                parent_node.visual(&key)
+            }
+            FieldRef::Parent { parent, level } => {
+                let parent_node = ascend(node, *level)?;
+                let key = parent.key(node)?;
+                get_nested_value(parent_node.item, &key).cloned()
+            }
         }
     }
 }
@@ -822,9 +789,6 @@ pub(super) enum Kind {
     /// Mouse cursor hover properties.
     Hover,
 }
-
-/// A parent node type.
-type Parent<'b, 's> = Either<&'b Node<'s, 'b>, &'b Spec<'s>>;
 
 /// A list of production rules or a value.
 ///
@@ -1300,10 +1264,12 @@ impl<'s> Getter<'s> for ValueRefTemplateData<'s> {
 
 /// Finds the node `level` steps up the node tree. If level is `None`, it will
 /// return the parent `Node`.
-fn ascend<'b, 's>(node: &'b Node<'s, '_>, level: Option<f64>) -> Option<Parent<'b, 's>> {
-    // Clippy: Wacky level values will just cause the loop to terminate at the
-    // root.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn ascend<'b, 's>(node: &'b Node<'s, 'b>, level: Option<f64>) -> Option<&'b Node<'s, 'b>> {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "bogus values will just cause the loop to terminate at the root"
+    )]
     let mut level = level.map_or(1, |level| level as u32);
     let mut node = node;
     #[rustfmt::skip]
@@ -1311,13 +1277,6 @@ fn ascend<'b, 's>(node: &'b Node<'s, '_>, level: Option<f64>) -> Option<Parent<'
         node = parent;
         level -= 1;
     };
-    // TODO: This should be simplified by changing Group visual property
-    // lookups to always just go through the visual properties object
-    (level == 0).then(|| {
-        if node.parent.is_none() {
-            Parent::Right(node.spec)
-        } else {
-            Parent::Left(node)
-        }
-    })
+
+    (level == 0).then_some(node)
 }

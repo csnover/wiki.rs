@@ -3,7 +3,7 @@
 use super::{
     super::{
         Error, Node, ScaleNode,
-        data::ValueExt,
+        data::ValueExt as _,
         legend::{Kind as LegendKind, Legend, Orient},
         mark::{Kind as MarkKind, Mark},
         propset::{
@@ -26,7 +26,7 @@ pub(super) fn legend_to_mark<'s>(
 ) -> Result<(Mark<'s>, Rect)> {
     let scale = legend
         .scale(node)
-        .ok_or(Error::LegendScale(legend.scale_name().to_string()))?;
+        .ok_or(Error::LegendScale(legend.scale_name().to_owned()))?;
 
     let mark = if legend.is_color() && !scale.is_discrete() {
         quantitative_legend(legend, node, scale)
@@ -97,26 +97,14 @@ fn fixed_line_ys<'s>(
         .unwrap_or(Legend::LABEL_FONT_SIZE);
 
     let height = font_size + PAD;
-    let offset = defaults::SYMBOL_SIZE.sqrt().round();
-    // Clippy: If there are ever >=2**53 items, something sure happened.
-    #[allow(clippy::cast_precision_loss)]
+    let offset = Legend::SYMBOL_SIZE.sqrt().round();
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "if there are ever ≥2**53 items, something sure happened"
+    )]
     let range = (0..data.len())
         .map(|index| Value::from(y + (offset / 2.0 + (index as f64) * height).round()));
     (range.collect(), offset)
-}
-
-/// Creates a mark to render a quantitative legend as a gradient.
-fn gradient(mut properties: Propset<'_>) -> Mark<'_> {
-    defaults::apply!(properties, {
-        x => 0.0,
-        y => 0.0,
-        width => Legend::GRADIENT_WIDTH,
-        height => Legend::GRADIENT_HEIGHT,
-        stroke => Legend::GRADIENT_STROKE_COLOR,
-        stroke_width => Legend::GRADIENT_STROKE_WIDTH,
-    });
-
-    Mark::new(MarkKind::Rect, None, None, properties)
 }
 
 /// Creates a mark to render the labels of a legend.
@@ -175,8 +163,10 @@ fn ordinal_legend<'s>(
         Cow::Borrowed(&legend.values)
     };
 
-    // Clippy: If there are ever >=2**53 items, something sure happened.
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "if there are ever ≥2**53 items, something sure happened"
+    )]
     let domain = vec![
         Value::from(0.0),
         Value::from(data.len().saturating_sub(1) as f64),
@@ -210,8 +200,10 @@ fn ordinal_legend<'s>(
         .enumerate()
         .map(|(index, value)| {
             let label = formatter(value);
-            // Clippy: If there are ever >=2**53 items, something sure happened.
-            #[allow(clippy::cast_precision_loss)]
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "if there are ever ≥2**53 items, something sure happened"
+            )]
             Value::from([
                 ("data", value.clone()),
                 ("index", (index as f64).into()),
@@ -233,6 +225,7 @@ fn ordinal_legend<'s>(
     marks.push(labels(properties(&legend.properties.labels), false, data));
 
     let kind = Container {
+        marks,
         scales: vec![Scale::new(
             ScaleKind::Ordinal {
                 band_size: None,
@@ -244,7 +237,6 @@ fn ordinal_legend<'s>(
             domain,
             range,
         )],
-        marks,
         ..Default::default()
     };
 
@@ -252,8 +244,10 @@ fn ordinal_legend<'s>(
 }
 
 /// Returns a clone of the given property set.
-// Clippy: This is a convenience function to reduce line noise.
-#[allow(clippy::ref_option)]
+#[expect(
+    clippy::ref_option,
+    reason = "this is a convenience function to reduce noisy code elsewhere"
+)]
 #[inline]
 fn properties<'s>(propset: &Option<Propset<'s>>) -> Propset<'s> {
     propset.clone().unwrap_or_default()
@@ -265,7 +259,7 @@ fn quantitative_legend<'s>(
     _node: &Node<'s, '_>,
     _scale: ScaleNode<'s, '_>,
 ) -> Mark<'s> {
-    todo!()
+    todo!("Vega 2 is missing any examples with quantitative legends");
 }
 
 /// Calculates the y-coordinates of lines for a symbolic legend.
@@ -338,7 +332,7 @@ fn symbols<'s>(
 
     defaults::apply!(properties, {
         shape => Legend::SYMBOL_SHAPE,
-        size => defaults::SYMBOL_SIZE,
+        size => Legend::SYMBOL_SIZE,
         stroke => Legend::SYMBOL_COLOR,
         stroke_width => Legend::SYMBOL_STROKE_WIDTH,
         x => ValueRefNumber::with_field_and_scale(

@@ -1,13 +1,12 @@
 //! Types and functions for visualisation data retrieval.
 
 use super::{
-    Node, TimeExt, expr::Result, geo::topojson, propset::RulePredicate, spec::Spec,
-    transform::Transform,
+    Node, TimeExt, expr::Result, geo::topojson, propset::RulePredicate, transform::Transform,
 };
 use crate::php::{DateTime, DateTimeZone};
-use core::{cmp::Ordering, fmt::Write as _};
+use core::{cell::OnceCell, cmp::Ordering, fmt::Write as _};
 use serde_json_borrow::Value;
-use std::{borrow::Cow, cell::OnceCell, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap};
 
 /// An extension trait for [`Value`].
 pub(super) trait ValueExt<'s> {
@@ -23,6 +22,9 @@ pub(super) trait ValueExt<'s> {
 
     /// If the [`Value`] is a string, returns the associated str.
     fn as_cow(&self) -> Option<&Cow<'s, str>>;
+
+    /// Gets a mutable property of the [`Value`].
+    fn get_mut<'a>(&'a mut self, key: &str) -> Option<&'a mut Value<'s>>;
 
     /// Sets a property if the [`Value`] is an object, returning the old value.
     fn insert<K, V>(&mut self, key: K, value: V) -> Option<Self>
@@ -131,6 +133,11 @@ impl<'s> ValueExt<'s> for Value<'s> {
             // operand is a string in step 3
             (lhs, rhs) => lhs.to_f64().total_cmp(&rhs.to_f64()),
         }
+    }
+
+    #[inline]
+    fn get_mut<'a>(&'a mut self, key: &str) -> Option<&'a mut Value<'s>> {
+        self.as_object_mut().and_then(|object| object.get_mut(key))
     }
 
     #[inline]
@@ -281,10 +288,17 @@ pub(super) struct Data<'s> {
 
 impl<'s> Data<'s> {
     /// Retrieves the raw source value from this data definition.
-    pub fn source<'b>(&'b self, spec: &'b Spec<'s>) -> Option<&'b Value<'s>> {
+    pub fn source<'b>(&'b self, node: &'b Node<'s, '_>) -> Option<Cow<'b, [Value<'s>]>> {
         match &self.source {
-            Source::Values(value) => Some(value),
-            Source::Named(name) => spec.data(name).and_then(|data| data.source(spec)),
+            Source::Values(data) => Some(Cow::Owned(if let Some(format) = &self.format {
+                format.format(data)
+            } else {
+                format_json(data, &FormatTypes::Auto, None)
+            })),
+            Source::Named(name) => node
+                .spec
+                .data(name)
+                .map(|data| Cow::Borrowed(data.values(node))),
             Source::Url(_) => {
                 log::warn!("Remote data fetching is not supported");
                 None
@@ -294,6 +308,15 @@ impl<'s> Data<'s> {
 
     /// Gets the list of transformed values from the data set.
     pub fn values<'b>(&'b self, node: &'b Node<'s, '_>) -> &'b [Value<'s>] {
+        // TODO: It is technically not possible to always reuse the input values
+        // because every object is supposed to be given a generated _id property
+        // and this property is required in edge cases where e.g. a data set is
+        // filtered into another data set and now it wants to match objects
+        // between the two data sets. The only place this happens in the example
+        // data is in interaction (which is not a thing) and in the Force
+        // transformer (where it is not actually needed for the one test case
+        // that Vega has). So if you are reading this, because you think there
+        // should be _id, sorry!
         if let Some(cached) = self.transform_cache.get() {
             return cached;
         } else if let Source::Named(name) = &self.source
@@ -305,26 +328,20 @@ impl<'s> Data<'s> {
         }
 
         self.transform_cache.get_or_init(|| {
-            let data = self.source(node.spec).unwrap_or(&Value::Null);
-            let mut data = if let Some(format) = &self.format {
-                format.format(data)
-            } else {
-                format_json(data, &FormatTypes::Auto, None)
-            };
-
+            let mut data = self.source(node).unwrap_or_default();
             for transform in &self.transform {
-                data = transform.transform(node, data);
+                data = Cow::Owned(transform.transform(node, data));
             }
             for _ in &self.modify {
                 todo!()
             }
-            data
+            data.into_owned()
         })
     }
 }
 
 /// A streaming data operator.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "this is used only for dynamic runtime")]
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type")]
 enum Modify<'s> {
@@ -346,7 +363,7 @@ enum Modify<'s> {
 }
 
 /// A data mutation definition.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "this is used only for dynamic runtime")]
 #[derive(Debug, serde::Deserialize)]
 struct Mutation<'s> {
     /// The field to mutate.
@@ -399,6 +416,75 @@ impl<'s> TopoJson<'s> {
                 vec![topojson::mesh(data, mesh.unwrap())]
             }
         }
+    }
+}
+
+/// Hierarchical JSON.
+#[derive(Debug, serde::Deserialize)]
+struct TreeJson<'s> {
+    /// The JSON property that contains an array of children nodes for each
+    /// intermediate node. This parameter defaults to "children".
+    #[serde(borrow, default = "TreeJson::default_children")]
+    children: Cow<'s, str>,
+    /// The JSON property to use to point to the parent node of an
+    /// intermediate node.
+    #[serde(borrow, default = "TreeJson::default_parent")]
+    parent: Cow<'s, str>,
+}
+
+impl<'s> TreeJson<'s> {
+    /// The default value for [`Self::TreeJson`]`::children`.
+    const fn default_children() -> Cow<'static, str> {
+        Cow::Borrowed("children")
+    }
+
+    /// The default value for [`Self::TreeJson`]`::parent`.
+    const fn default_parent() -> Cow<'static, str> {
+        Cow::Borrowed("parent")
+    }
+
+    /// Converts tree data to a flat node list.
+    fn format(&self, root: &Value<'s>) -> Vec<Value<'s>> {
+        let mut table = vec![];
+        let root = root.clone();
+        self.visit(&mut table, root, None);
+        // Vega put a root property on the array, but we know the root is always
+        // the first item, and since arrays cannot have extra properties in Rust
+        // just don’t bother making things weird and complicated
+        table
+    }
+
+    /// Flattens a data node by adding parent indexes to each node and
+    /// recursively moving all children into the flat list, replacing child
+    /// nodes with indexes into the flat list.
+    ///
+    /// Vega only collected references to the child nodes and added parent
+    /// references to each child node, but this is impossible to do without
+    /// either `Rc` or garbage collection, which remains a bridge too far for
+    /// this for now. Since this format seems to be primarily intended for use
+    /// by specific transforms like Treemap, hopefully this is OK enough since
+    /// the transforms can just be written to understand that an index of
+    /// children is a lookup.
+    fn visit(&self, table: &mut Vec<Value<'s>>, mut node: Value<'s>, parent: Option<usize>) {
+        node.insert(
+            self.parent.clone(),
+            parent.map_or(Value::Null, |parent| (parent as u64).into()),
+        );
+
+        let parent = table.len();
+
+        // To avoid double-borrows, push a dummy into the table, then replace it
+        // later
+        table.push(<_>::default());
+
+        if let Some(children) = node.get_mut(&self.children).and_then(Value::as_array_mut) {
+            for child in children {
+                let child = core::mem::replace(child, Value::Number((table.len() as u64).into()));
+                self.visit(table, child, Some(parent));
+            }
+        }
+
+        table[parent] = node;
     }
 }
 
@@ -468,10 +554,10 @@ enum Format<'s> {
     /// JavaScript object notation.
     Json {
         /// The expected data types for the fields of the data.
-        #[serde(borrow)]
+        #[serde(borrow, default)]
         parse: FormatTypes<'s>,
         /// An object path to use as the root of the data.
-        #[serde(borrow)]
+        #[serde(borrow, default)]
         property: Option<Cow<'s, str>>,
     },
     /// Comma-separated values.
@@ -490,12 +576,8 @@ enum Format<'s> {
     #[serde(borrow)]
     TopoJson(TopoJson<'s>),
     /// Hierarchical JSON.
-    TreeJson {
-        /// The JSON property that contains an array of children nodes for each
-        /// intermediate node. This parameter defaults to "children".
-        #[serde(borrow, rename = "children")]
-        _children: Option<Cow<'s, str>>,
-    },
+    #[serde(borrow)]
+    TreeJson(TreeJson<'s>),
 }
 
 impl<'s> Format<'s> {
@@ -504,6 +586,7 @@ impl<'s> Format<'s> {
         match self {
             Format::Json { parse, property } => format_json(data, parse, property.as_deref()),
             Format::TopoJson(topojson) => topojson.format(data),
+            Format::TreeJson(treejson) => treejson.format(data),
             _ => todo!(),
         }
     }
@@ -521,10 +604,11 @@ impl<'s> Format<'s> {
 }
 
 /// A data type specifier.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum FormatTypes<'s> {
     /// Heuristically determine the types of data fields.
+    #[default]
     Auto,
     /// Explicitly define the types of data fields.
     #[serde(borrow, untagged)]
@@ -588,7 +672,7 @@ mod ser {
             f.write_str("error")
         }
     }
-    impl std::error::Error for Error {}
+    impl core::error::Error for Error {}
     impl serde::ser::Error for Error {
         fn custom<T>(_: T) -> Self
         where

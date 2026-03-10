@@ -1,6 +1,6 @@
 //! Types and functions for drawing SVG paths.
 
-use super::{super::EPSILON, ValueDisplay, Vec2};
+use super::{super::EPSILON, ValueDisplay as _, Vec2};
 use core::{
     cmp::Ordering,
     f64::consts::{FRAC_PI_2, PI, TAU},
@@ -428,8 +428,7 @@ fn corner_tangents(p0: Vec2, p1: Vec2, r1: f64, rc: f64, cw: bool) -> Intersecti
 
 /// Draws a sector of an arc path using the given tangents, radius, corner
 /// radii, and sweep directions.
-// Clippy: There just are.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "there just are")]
 fn draw_arc_sector(
     context: &mut SvgPath,
     t0: &Intersection,

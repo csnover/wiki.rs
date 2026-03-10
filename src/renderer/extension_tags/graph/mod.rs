@@ -40,10 +40,11 @@
 //!    generator, and signals are entirely about event-driven data updates.
 
 use crate::php::{DateTime, DateTimeZone};
+use core::cell::RefCell;
 use either::Either;
 use rand::rngs::SmallRng;
 use serde_json_borrow::Value;
-use std::{borrow::Cow, cell::RefCell};
+use std::borrow::Cow;
 use time::Duration;
 
 mod axis;
@@ -196,14 +197,19 @@ impl<'s, 'b> Node<'s, 'b> {
     /// Returns an iterator that generates a `Node` for each data object in the
     /// node.
     fn for_each_item(&'b self) -> impl DoubleSizeIterator<Item = Node<'s, 'b>> {
-        self.data.iter().map(|item| Self {
-            item,
-            data: Cow::Borrowed(&self.data),
-            mark: self.mark,
-            now: self.now,
-            parent: self.parent,
-            rng: self.rng,
-            spec: self.spec,
+        self.data.iter().map(|item| {
+            if let Some(mark) = self.mark {
+                mark.invalidate_caches();
+            }
+            Self {
+                item,
+                data: Cow::Borrowed(&self.data),
+                mark: self.mark,
+                now: self.now,
+                parent: self.parent,
+                rng: self.rng,
+                spec: self.spec,
+            }
         })
     }
 
@@ -276,6 +282,17 @@ impl<'s, 'b> Node<'s, 'b> {
             parent: Some(self),
             rng: self.rng,
             spec: self.spec,
+        }
+    }
+
+    /// Gets a visual property of the current node.
+    fn visual(&self, key: &str) -> Option<Value<'s>> {
+        match key {
+            "width" => Some(self.width().into()),
+            "height" => Some(self.height().into()),
+            key => self
+                .mark
+                .and_then(|mark| mark.propset(propset::Kind::Enter)?.get(key, self)),
         }
     }
 }
@@ -385,9 +402,10 @@ trait TimeExt: Sized {
 
 impl TimeExt for DateTime {
     fn from_f64(value: f64, utc: bool) -> Self {
-        // Clippy: Numbers converted to Date in JS are truncated, ECMAScript
-        // 2026 §§21.4.2.1, 21.4.1.31.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "matches ES2026 §§21.4.2.1, 21.4.1.31"
+        )]
         let date = DateTime::UNIX_EPOCH + Duration::milliseconds(value as i64);
         if utc {
             date
@@ -396,10 +414,10 @@ impl TimeExt for DateTime {
         }
     }
 
-    // Clippy: Millisecond is the smallest representable value in JS so
-    // discarding nanosecond part by truncation is fine, and precision
-    // loss is impossible since the valid date range in JS is ±8.65e15.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "ms is smallest precision so truncation is fine, and ECMAScript defines valid date range of ±8.65e15 so no loss will occur"
+    )]
     #[inline]
     fn to_f64(&self) -> f64 {
         const MS_PER_NS: i128 = 1_000_000;

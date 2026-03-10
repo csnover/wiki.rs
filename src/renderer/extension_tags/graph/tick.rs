@@ -66,7 +66,7 @@ impl TimeInterval {
                 // Sunday but the step is seven days. There is no unit which
                 // makes sense for “floor N days of the week”. Luckily(?) the
                 // nice tick step intervals only use 1 week at a time.
-                debug_assert!(w == -1 || w == 1);
+                debug_assert!(w == -1 || w == 1, "there is only one first day of the week");
                 (date - Duration::days(-i64::from(date.weekday().number_days_from_sunday())))
                     .truncate_to_day()
             }
@@ -77,8 +77,11 @@ impl TimeInterval {
                 // duration
                 debug_assert!((-12..=12).contains(&m));
                 let month = date.month() as i64;
-                // Clippy: The input value and modulo are both always >= 1.
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "input value and modulo are always ≥1"
+                )]
                 let month = date.month().nth_prev(((month - 1) % m.max(1)) as u8);
                 date.replace_day(1)
                     .unwrap()
@@ -89,8 +92,7 @@ impl TimeInterval {
             TimeInterval::Year(y) => {
                 let year = i64::from(date.year());
                 let year = year - year % y;
-                // Clippy: The year value comes from an i32.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation, reason = "value comes from i32")]
                 date.replace_day(1)
                     .unwrap()
                     .replace_month(Month::January)
@@ -119,9 +121,11 @@ impl TimeInterval {
                 // (currently) always have the same number of months.
                 let interval = interval + i64::from(date.month() as u8);
                 let year = date.year() + i32::try_from(interval / 12).unwrap();
-                // Clippy: The value is mod 12 so is guaranteed to fit, and sign
-                // checked so guaranteed to be positive.
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "value is mod 12 and sign checked"
+                )]
                 let mut month = Month::try_from(if interval < 0 {
                     12 + (interval % 12)
                 } else {
@@ -232,9 +236,11 @@ pub(super) fn ticks(start: f64, stop: f64, count: f64) -> impl Iterator<Item = f
         };
 
         if i2 >= i1 {
-            // Clippy: The input values are already integral by rounding and
-            // guaranteed to be ordered such that i2 >= i1.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "values were already rounded and guaranteed to be ordered such that i2 ≥ i1"
+            )]
             let n = (i2 - i1) as u32;
             (reverse, i1, i2, inc, n + 1)
         } else {
@@ -307,16 +313,15 @@ pub(super) fn time_ticks(start: f64, stop: f64, count: f64) -> impl Iterator<Ite
 
     let sign = if duration.is_negative() { -1 } else { 1 };
     let interval = if best == 0 {
-        // Clippy: The value is guaranteed to be >=1 so will always advance even
-        // if truncated, is >0 so floor is the same as trunc, and these values
-        // in D3 are floored.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "value is floored in D3, which is equivalent to trunc due to clamp ≥1"
+        )]
         let interval = tick_step(start, stop, count).max(1.0) as i64;
         TimeInterval::Millisecond(sign * interval)
     } else if best == STEPS.len() {
         const MS_PER_YEAR: f64 = 1_000.0 * 60.0 * 60.0 * 24.0 * 365.0;
-        // Clippy: The value is floored so will never have a fractional part.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation, reason = "value is floored")]
         let interval = tick_step(start / MS_PER_YEAR, stop / MS_PER_YEAR, count).floor() as i64;
         TimeInterval::Year(interval)
     } else {

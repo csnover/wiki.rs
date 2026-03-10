@@ -1,0 +1,225 @@
+{
+  "scales": [
+    {
+      "range": "width",
+      "domain": {
+        "field": "x",
+        "data": "chart"
+      },
+      "zero": false,
+      "type": "linear",
+      "name": "x",
+      "nice": true
+    },
+    {
+      "type": "linear",
+      "clamp": true,
+      "domainMin": 0,
+      "zero": false,
+      "nice": true,
+      "range": "height",
+      "name": "y",
+      "domain": {
+        "field": "y",
+        "data": "chart"
+      }
+    },
+    {
+      "type": "ordinal",
+      "domain": {
+        "data": "chart",
+        "field": "series"
+      },
+      "range": "category10",
+      "name": "color"
+    }
+  ],
+  "marks": [
+    {
+      "from": {
+        "data": "chart"
+      },
+      "properties": {
+        "hover": {
+          "stroke": {
+            "value": "red"
+          }
+        },
+        "update": {
+          "stroke": {
+            "scale": "color",
+            "field": "series"
+          }
+        },
+        "enter": {
+          "stroke": {
+            "scale": "color",
+            "field": "series"
+          },
+          "y": {
+            "scale": "y",
+            "field": "y"
+          },
+          "x": {
+            "field": "x",
+            "scale": "x"
+          },
+          "strokeWidth": {
+            "value": 2.5
+          }
+        }
+      },
+      "type": "line"
+    }
+  ],
+  "legends": [],
+  "height": 170,
+  "axes": [
+    {
+      "properties": {
+        "axis": {
+          "stroke": {
+            "value": "#54595d"
+          },
+          "strokeWidth": {
+            "value": 2
+          }
+        },
+        "ticks": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        },
+        "title": {
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "labels": {
+          "angle": {
+            "value": -45
+          },
+          "align": {
+            "value": "right"
+          },
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "grid": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        }
+      },
+      "type": "x",
+      "format": "d",
+      "grid": false,
+      "scale": "x",
+      "title": "Year"
+    },
+    {
+      "scale": "y",
+      "grid": true,
+      "properties": {
+        "ticks": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        },
+        "axis": {
+          "stroke": {
+            "value": "#54595d"
+          },
+          "strokeWidth": {
+            "value": 2
+          }
+        },
+        "title": {
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "labels": {
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "grid": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        }
+      },
+      "format": ",d",
+      "title": "Population",
+      "type": "y"
+    }
+  ],
+  "version": 2,
+  "width": 340,
+  "data": [
+    {
+      "values": [
+        {
+          "y": 219928,
+          "series": "y",
+          "x": 1903
+        },
+        {
+          "x": 1960,
+          "y": 1138611,
+          "series": "y"
+        },
+        {
+          "series": "y",
+          "x": 1970,
+          "y": 1330788
+        },
+        {
+          "series": "y",
+          "x": 1975,
+          "y": 1479116
+        },
+        {
+          "y": 1630485,
+          "series": "y",
+          "x": 1980
+        },
+        {
+          "x": 1990,
+          "y": 1601234,
+          "series": "y"
+        },
+        {
+          "series": "y",
+          "y": 1654761,
+          "x": 1995
+        },
+        {
+          "series": "y",
+          "x": 2000,
+          "y": 1581082
+        },
+        {
+          "x": 2007,
+          "y": 1660714,
+          "series": "y"
+        },
+        {
+          "series": "y",
+          "y": 1652171,
+          "x": 2010
+        }
+      ],
+      "name": "chart",
+      "format": {
+        "type": "json",
+        "parse": {
+          "y": "integer",
+          "x": "integer"
+        }
+      }
+    }
+  ]
+}

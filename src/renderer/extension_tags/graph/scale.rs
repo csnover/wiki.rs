@@ -9,13 +9,11 @@ use super::{
     transform::{Accumulator, AggregateOp},
 };
 use crate::php::DateTime;
+use core::cell::{RefCell, RefMut};
 use either::Either;
 use indexmap::IndexMap;
 use serde_json_borrow::Value;
-use std::{
-    borrow::Cow,
-    cell::{OnceCell, RefCell, RefMut},
-};
+use std::borrow::Cow;
 
 /// Maps an input value to an output value.
 #[derive(Debug, serde::Deserialize)]
@@ -59,7 +57,7 @@ pub(super) struct Scale<'s> {
     range: Option<Range<'s>>,
     /// The cached derived range.
     #[serde(skip)]
-    range_cache: OnceCell<CachedRange<'s>>,
+    range_cache: RefCell<Option<CachedRange<'s>>>,
     /// Sets or overrides the maximum of the output range.
     #[serde(borrow, default, deserialize_with = "option_scalar")]
     range_max: Option<Value<'s>>,
@@ -110,57 +108,66 @@ impl<'s> Scale<'s> {
                     // particular, building the range cache may require
                     // accessing the domain from `calc_ordinal_range`, which
                     // would result in a double-borrow.
-                    let domain = if invert {
-                        Either::Left(self.range(node))
-                    } else {
-                        Either::Right(self.domain(node))
-                    };
-
-                    let (position, len) = {
-                        let domain = domain
-                            .as_ref()
-                            .either(|range| &**range, |domain| domain.as_slice());
+                    let (position, len) = self.with_ordinal_range(node, !invert, |domain| {
                         (
                             domain
                                 .iter()
                                 .position(|candidate| value.fuzzy_eq(candidate)),
                             domain.len(),
                         )
-                    };
+                    });
 
                     if let Some(position) = position {
                         position
-                    } else if let Either::Right(mut domain) = domain {
-                        // TODO: This should invalidate the range cache for an
-                        // ordinal range since the band size will change.
-                        domain.push(value.clone());
+                    } else if !invert {
+                        self.domain(node).push(value.clone());
+                        // This invalidates the range cache since the band size
+                        // will be different now
+                        *self.range_cache.borrow_mut() = None;
                         len
                     } else {
                         0
                     }
                 };
 
-                let range = if invert {
-                    Either::Right(self.domain(node))
-                } else {
-                    Either::Left(self.range(node))
-                };
-                let range = range
-                    .as_ref()
-                    .either(|range| &**range, |domain| domain.as_slice());
-
-                if range.is_empty() {
-                    todo!("empty range")
-                } else {
-                    range[position % range.len()].clone()
-                }
+                self.with_ordinal_range(node, invert, |range| {
+                    if range.is_empty() {
+                        todo!("empty range")
+                    } else {
+                        range[position % range.len()].clone()
+                    }
+                })
             }
+            Kind::Quantitative {
+                kind: QuantitativeScale::Quantile | QuantitativeScale::Threshold,
+                ..
+            } => self.apply_threshold(node, value, invert),
             Kind::Time { clamp, .. } => {
-                self.apply_quantitative(node, value, invert, QuantitativeScale::Linear, clamp)
+                self.apply_quantitative(node, value, invert, QuantitativeScale::Linear, clamp, None)
             }
-            Kind::Quantitative { kind, clamp, .. } => {
-                self.apply_quantitative(node, value, invert, kind, clamp)
-            }
+            Kind::Quantitative {
+                kind,
+                clamp,
+                exponent,
+                ..
+            } => self.apply_quantitative(node, value, invert, kind, clamp, exponent),
+        }
+    }
+
+    /// Invalidates caches, if necessary.
+    pub fn invalidate(&self) {
+        // TODO: This could record a cache key too to reduce the number of
+        // invalidations, if it actually is the case that is meaningfully
+        // faster and anyone cares.
+        if let Some(Domain::Derived(data_ref)) = &self.domain
+            && data_ref.is_dynamic()
+        {
+            *self.domain_cache.borrow_mut() = None;
+        }
+        if let Some(Range::Derived(data_ref)) = &self.range
+            && data_ref.is_dynamic()
+        {
+            *self.range_cache.borrow_mut() = None;
         }
     }
 
@@ -173,6 +180,7 @@ impl<'s> Scale<'s> {
         invert: bool,
         kind: QuantitativeScale,
         clamp: bool,
+        exponent: Option<f64>,
     ) -> Value<'s> {
         let unit_value = {
             let (min, max) = if invert {
@@ -184,37 +192,58 @@ impl<'s> Scale<'s> {
             let value = (value.to_f64() - min) / (max - min);
             let value = match kind {
                 QuantitativeScale::Log => value.log10(),
-                QuantitativeScale::Linear
-                | QuantitativeScale::Pow {
-                    exponent: Some(1.0),
-                } => value,
-                QuantitativeScale::Sqrt
-                | QuantitativeScale::Pow {
-                    exponent: None | Some(0.5),
-                } => value.signum() * value.abs().sqrt(),
-                QuantitativeScale::Pow {
-                    exponent: Some(exp),
-                } => value.signum() * value.abs().powf(exp),
-                kind => {
-                    log::warn!("TODO: {kind:?} scale");
-                    value
-                }
+                QuantitativeScale::Pow => match exponent {
+                    Some(1.0) => value,
+                    Some(0.5) | None => value.signum() * value.abs().sqrt(),
+                    Some(exp) => value.signum() * value.abs().powf(exp),
+                },
+                QuantitativeScale::Sqrt => value.signum() * value.abs().sqrt(),
+                _ => value,
             };
             if clamp { value.clamp(min, max) } else { value }
         };
 
-        let (min, max) = if invert {
-            self.input_range(node)
+        if let QuantitativeScale::Quantize = kind {
+            #[expect(clippy::cast_possible_truncation, reason = "truncation is intentional")]
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "if there are ever ≥2**53 items, something sure happened"
+            )]
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "sign loss is impossible due to clamping"
+            )]
+            self.with_ordinal_range(node, invert, |range| {
+                let index = range.len() as f64 * unit_value;
+                let max = range.len() as f64 - 1.0;
+                let index = index.floor().clamp(0.0, max);
+                range[index as usize].clone()
+            })
         } else {
-            self.output_range(node)
-        };
+            let (min, max) = if invert {
+                self.input_range(node)
+            } else {
+                self.output_range(node)
+            };
 
-        let value = (max - min) * unit_value + min;
-        Value::from(if self.round == Some(true) {
-            value.round()
-        } else {
-            value
-        })
+            let value = (max - min) * unit_value + min;
+            Value::from(if self.round == Some(true) {
+                value.round()
+            } else {
+                value
+            })
+        }
+    }
+
+    /// Applies a quantile or threshold scale to the given input value,
+    /// returning the mapped value.
+    fn apply_threshold(&self, node: &Node<'s, '_>, value: &Value<'s>, invert: bool) -> Value<'s> {
+        let index = self.with_ordinal_range(node, !invert, |domain| {
+            domain
+                .binary_search_by(|domain| domain.fuzzy_total_cmp(value))
+                .unwrap_or_else(|index| index)
+        });
+        self.with_ordinal_range(node, invert, |range| range[index].clone())
     }
 
     /// Gets the minimum and maximum for a quantitative domain. The returned
@@ -285,54 +314,61 @@ impl<'s> Scale<'s> {
     }
 
     /// Calculates and returns the cached range.
-    fn cached_range(&self, node: &Node<'s, '_>) -> &CachedRange<'s> {
-        self.range_cache.get_or_init(|| {
-            let mut range = self
-                .range
-                .as_ref()
-                .map(|range| range.get(node))
-                .unwrap_or_default();
+    fn cached_range(&self, node: &Node<'s, '_>) -> RefMut<'_, CachedRange<'s>> {
+        RefMut::map(self.range_cache.borrow_mut(), |cache| {
+            cache.get_or_insert_with(|| {
+                let mut range = self
+                    .range
+                    .as_ref()
+                    .map(|range| range.get(node))
+                    .unwrap_or_default();
 
-            range_override(
-                &mut range,
-                self.range_min.as_ref(),
-                <[_]>::first,
-                <[_]>::first_mut,
-            );
-            range_override(
-                &mut range,
-                self.range_max.as_ref(),
-                <[_]>::last,
-                <[_]>::last_mut,
-            );
+                range_override(
+                    &mut range,
+                    self.range_min.as_ref(),
+                    <[_]>::first,
+                    <[_]>::first_mut,
+                );
+                range_override(
+                    &mut range,
+                    self.range_max.as_ref(),
+                    <[_]>::last,
+                    <[_]>::last_mut,
+                );
 
-            if matches!(self.reverse, Reverse::Value(true)) {
-                range.to_mut().reverse();
-            }
-
-            match self.kind {
-                Kind::Ordinal {
-                    band_size,
-                    outer_padding,
-                    padding,
-                    points,
-                } => {
-                    self.calc_ordinal_range(node, range, band_size, outer_padding, padding, points)
+                if matches!(self.reverse, Reverse::Value(true)) {
+                    range.to_mut().reverse();
                 }
-                Kind::Time { .. } | Kind::Quantitative { .. } => {
-                    let range = if matches!(self.range, Some(Range::Height)) {
-                        range.to_mut().reverse();
-                        range
-                    } else {
-                        range
-                    };
-                    CachedRange {
-                        band_width: 0.0,
-                        extent: None,
+
+                match self.kind {
+                    Kind::Ordinal {
+                        band_size,
+                        outer_padding,
+                        padding,
+                        points,
+                    } => self.calc_ordinal_range(
+                        node,
                         range,
+                        band_size,
+                        outer_padding,
+                        padding,
+                        points,
+                    ),
+                    Kind::Time { .. } | Kind::Quantitative { .. } => {
+                        let range = if matches!(self.range, Some(Range::Height)) {
+                            range.to_mut().reverse();
+                            range
+                        } else {
+                            range
+                        };
+                        CachedRange {
+                            band_width: 0.0,
+                            extent: None,
+                            range,
+                        }
                     }
                 }
-            }
+            })
         })
     }
 
@@ -349,8 +385,10 @@ impl<'s> Scale<'s> {
         let padding = padding.unwrap_or(0.0);
         let outer_padding = outer_padding.unwrap_or(padding);
         let range = if let Some(band_size) = band_size {
-            // Clippy: If there are ever >=2**53 items, something sure happened.
-            #[allow(clippy::cast_precision_loss)]
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "if there are ever ≥2**53 items, something sure happened"
+            )]
             let len = self.domain(node).len() as f64;
             let space = if points {
                 padding * band_size
@@ -382,9 +420,10 @@ impl<'s> Scale<'s> {
         } else {
             let start = range.first().map_or(0.0, ValueExt::to_f64);
             let end = range.get(1).map_or(0.0, ValueExt::to_f64);
-            // Clippy: There is no reasonable condition where there are >4B
-            // values in the domain.
-            #[allow(clippy::cast_possible_truncation)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "there is no reasonable condition with >4B domain values"
+            )]
             let len = self.domain(node).len() as u32;
             let round = self.round.unwrap_or(true);
 
@@ -514,7 +553,18 @@ impl<'s> Scale<'s> {
                         kind, nice, zero, ..
                     } => {
                         if matches!(kind, QuantitativeScale::Quantile) {
-                            domain
+                            let domain = prepare_quantile(&domain);
+                            let range_len = self.range(node).len();
+                            #[expect(
+                                clippy::cast_precision_loss,
+                                reason = "if there are ever ≥2**53 items, something sure happened"
+                            )]
+                            (1..=range_len)
+                                .map(|index| {
+                                    compute_quantile(&domain, index as f64 / range_len as f64)
+                                        .into()
+                                })
+                                .collect()
                         } else {
                             let (mut min, mut max) =
                                 self.calc_quantitative_domain(node, domain, kind, zero);
@@ -536,33 +586,42 @@ impl<'s> Scale<'s> {
             extent
         } else {
             let range = self.reverse(node, &cached_range.range);
-            if range.len() < 3 {
-                let min = range.first().map_or(0.0, ValueExt::to_f64);
-                let max = range.last().map_or(0.0, ValueExt::to_f64);
-                (min, max)
-            } else {
-                todo!("polymap");
-            }
+            let min = range.first().map_or(0.0, ValueExt::to_f64);
+            let max = range.get(1).map_or(0.0, ValueExt::to_f64);
+            (min, max)
         }
     }
 
     /// Gets the calculated range of the scale.
-    fn range(&self, node: &Node<'s, '_>) -> Cow<'_, [Value<'s>]> {
+    fn range(&self, node: &Node<'s, '_>) -> Vec<Value<'s>> {
         self.reverse(node, &self.cached_range(node).range)
     }
 
     /// Reverses the output range if required by the associated node.
-    fn reverse<'b>(&self, node: &Node<'s, '_>, range: &'b [Value<'s>]) -> Cow<'b, [Value<'s>]> {
+    fn reverse<'b>(&self, node: &Node<'s, '_>, range: &'b [Value<'s>]) -> Vec<Value<'s>> {
         // This references a field on the associated group data object which is
         // different for each iteration, so cannot be cached. :-(
+        // TODO: The interaction between `RefCell` and `Cow` is impossibly
+        // dysfunctional, so it is not easily possible to return a cached range
+        let mut range = range.to_owned();
         if let Reverse::Field { field } = &self.reverse
             && get_nested_value(node.item, field).is_some_and(ValueExt::to_bool)
         {
-            let mut range = range.to_vec();
             range.reverse();
-            Cow::Owned(range)
+        }
+        range
+    }
+
+    /// Calls `f` with either the ordinal domain or ordinal range depending on
+    /// whether `use_domain` is true.
+    fn with_ordinal_range<F, T>(&self, node: &Node<'s, '_>, use_domain: bool, f: F) -> T
+    where
+        F: Fn(&[Value<'s>]) -> T,
+    {
+        if use_domain {
+            f(self.domain(node).as_slice())
         } else {
-            Cow::Borrowed(range)
+            f(&self.range(node))
         }
     }
 }
@@ -684,13 +743,21 @@ pub(super) enum Kind {
     #[serde(untagged)]
     Quantitative {
         /// The kind of quantitative scale.
-        #[serde(flatten)]
+        #[serde(default, rename = "type")]
         kind: QuantitativeScale,
         /// If true, values that exceed the data domain are clamped to either
         /// the minimum or maximum range value. (Only for linear, log, and
         /// sqrt.)
         #[serde(default)]
         clamp: bool,
+        /// The exponent of a [`QuantitativeScale::Pow`] transform. If
+        /// unspecified, acts the same as [`QuantitativeScale::Sqrt`].
+        ///
+        /// This would nominally be a subfield of [`QuantitativeScale::Pow`],
+        /// but `#[serde(untagged)]` and `#[serde(default, flatten)]` do not
+        /// work together.
+        #[serde(default)]
+        exponent: Option<f64>,
         /// If true, modifies the scale domain to use a more human-friendly
         /// number range (e.g., 7 instead of 6.96). (Only for linear, log, and
         /// sqrt.)
@@ -738,19 +805,16 @@ impl From<NiceTime> for TimeInterval {
 }
 
 /// A kind of quantitative scale.
-#[derive(Clone, Copy, Debug, serde::Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(super) enum QuantitativeScale {
     /// No transform.
+    #[default]
     Linear,
     /// Apply a logarithmic transform of 10 to the input domain value.
     Log,
     /// Apply an exponential transform to the input domain value.
-    Pow {
-        /// The exponent of the transform. Defaults to 1.
-        #[serde(default)]
-        exponent: Option<f64>,
-    },
+    Pow,
     /// Apply an exponential transform of 0.5 to the input domain value.
     Sqrt,
     /// Maps a sampled input domain to a discrete range.
@@ -768,7 +832,7 @@ impl QuantitativeScale {
     /// distributed steps for the given range.
     fn ticks<'s>(self, min: f64, max: f64, count: f64) -> Option<impl Iterator<Item = Value<'s>>> {
         match self {
-            Self::Linear | Self::Pow { .. } | Self::Sqrt | Self::Quantize => {
+            Self::Linear | Self::Pow | Self::Sqrt | Self::Quantize => {
                 Some(Either::Left(ticks(min, max, count).map(Value::from)))
             }
             Self::Log => Some(Either::Right(log_ticks(min, max, count).map(Value::from))),
@@ -1031,13 +1095,13 @@ impl<'s> ScaleDataRef<'s> {
                 };
 
                 for field in fields.iter(node) {
-                    let Some(value) = get_nested_value(item, field) else {
-                        continue;
-                    };
+                    // The playfair example relies on missing values being
+                    // treated as some falsy value
+                    let value = get_nested_value(item, field).unwrap_or(&Value::Null);
 
                     if let Some((op, agg)) = sorter {
                         let acc = rows.entry(value).or_default();
-                        op.apply(acc, agg);
+                        op.apply(acc, agg, item);
                         acc.commit();
                     } else {
                         rows.entry(value).or_default();
@@ -1066,6 +1130,24 @@ impl<'s> ScaleDataRef<'s> {
                     .collect::<Vec<_>>()
             }
         }
+    }
+
+    /// Returns true if the data reference has a dependency on an indirect
+    /// lookup which requires cache invalidation.
+    fn is_dynamic(&self) -> bool {
+        let mut fields = match self {
+            ScaleDataRef::Data { field, .. } => Either::Left(core::iter::once(field)),
+            ScaleDataRef::Fields { fields, .. } => {
+                Either::Right(fields.iter().map(|field| &field.field))
+            }
+        };
+
+        fields.any(|field| {
+            matches!(
+                field,
+                ScaleDataRefField::Parent(..) | ScaleDataRefField::MultipleParent(..)
+            )
+        })
     }
 }
 
@@ -1195,8 +1277,7 @@ fn log_ticks(min: f64, max: f64, count: f64) -> impl Iterator<Item = f64> {
     let mut out = vec![];
 
     if log_max - log_min < count {
-        // Clippy: Truncation is desirable as this is a to-int conversion.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation, reason = "truncation is intentional")]
         let (i_min, i_max) = (log_min.floor() as i64, log_max.ceil() as i64);
         if min > 0.0 {
             for i in i_min..=i_max {
@@ -1228,8 +1309,10 @@ fn log_ticks(min: f64, max: f64, count: f64) -> impl Iterator<Item = f64> {
             }
         }
 
-        // Clippy: If there are ever >=2**52 ticks, something sure happened.
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "if there are ever ≥2**53 ticks, something sure happened"
+        )]
         if out.len() as f64 * 2.0 < count {
             out = ticks(min, max, count).collect();
         }
@@ -1274,10 +1357,10 @@ fn make_nice(first: f64, last: f64) -> (f64, f64) {
 }
 
 /// Rounds the given minimum and maximum to more human-friendly values.
-// Clippy: Numbers converted to Date in JS are truncated, ECMAScript 2026
-// §§21.4.2.1, 21.4.1.31, and the maximum Date range is ±8.65e15, so precision
-// loss is impossible/irrelevant.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "matches ES2026 §§21.4.2.1, 21.4.1.31"
+)]
 fn make_nice_time(first: f64, last: f64, nice: NiceTime) -> (f64, f64) {
     let start_time = DateTime::from_f64(first.min(last), false);
     let stop_time = DateTime::from_f64(last.max(first), false);
@@ -1286,6 +1369,57 @@ fn make_nice_time(first: f64, last: f64, nice: NiceTime) -> (f64, f64) {
     let stop = interval.ceil(stop_time).unix_timestamp() as f64 * 1_000.0;
     (start, stop)
 }
+
+/// Returns the value at the given quantile `p` from the given list of `values`.
+pub(super) fn quantile<'b, 's: 'b>(values: impl IntoIterator<Item = &'b Value<'s>>, p: f64) -> f64 {
+    compute_quantile(&prepare_quantile(values), p)
+}
+
+/// Computes the quantile `p` in the range `0..=1` for the list of `values`.
+fn compute_quantile(values: &[f64], p: f64) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "if there are ever ≥2**53 values, something sure happened"
+    )]
+    let split_at = (values.len() - 1) as f64 * p + 1.0;
+    let index = split_at.floor();
+    let error = split_at - index;
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "original value was usize and multiplier is 0..=1"
+    )]
+    let index = index as usize;
+    let value = values[index - 1];
+    if error == 0.0 {
+        value
+    } else {
+        value + error * (values[index] - value)
+    }
+}
+
+/// Converts a list of values into a sorted list of numbers usable for
+/// calculating quantiles.
+fn prepare_quantile<'b, 's: 'b>(values: impl IntoIterator<Item = &'b Value<'s>>) -> Vec<f64> {
+    let mut values = values
+        .into_iter()
+        .filter_map(|value| {
+            let value = if value.is_null() {
+                f64::NAN
+            } else {
+                value.to_f64()
+            };
+            (!value.is_nan()).then_some(value)
+        })
+        .collect::<Vec<_>>();
+    values.sort_unstable_by(f64::total_cmp);
+    values
+}
+
 // SPDX-SnippetEnd
 
 /// Overrides a range value.

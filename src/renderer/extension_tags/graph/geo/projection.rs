@@ -1,8 +1,9 @@
 //! Over 9,000 map projection functions.
 
-// Clippy: If it worked well enough for D3 then it is going to just have to work
-// well enough here too for now.
-#![allow(clippy::float_cmp)]
+#![expect(
+    clippy::float_cmp,
+    reason = "good enough for D3, good enough for me for now"
+)]
 
 use super::{
     super::{EPSILON, renderer::Vec2},
@@ -11,6 +12,7 @@ use super::{
     circle_iter, clamp_acos, clamp_asin,
 };
 use core::f64::consts::{FRAC_1_SQRT_2, FRAC_2_SQRT_PI, FRAC_PI_2, FRAC_PI_4, PI, SQRT_2, TAU};
+use either::Either;
 
 /// A cartographic projection.
 #[derive(Clone, Debug)]
@@ -18,8 +20,6 @@ pub(super) enum Projection {
     /// Airy’s minimum-error azimuthal
     Airy(f64),
     /// Albers USA
-    // TODO: This is inverted and bogus. AlbersUsa is a totally different
-    // projector from these ones.
     AlbersUsa {
         /// The Alaska projector.
         alaska: Box<Projector>,
@@ -29,17 +29,17 @@ pub(super) enum Projection {
         lower_48: Box<Projector>,
     },
     /// Armadillo
-    Armadillo((f64, f64, f64, f64, f64)),
+    Armadillo(ArmadilloParams),
     /// Basic projection
     Basic(fn(Vec2) -> Vec2),
     /// Berghaus Star
-    Berghaus(f64),
+    Berghaus(BerghausParams),
     /// Bonne
     Bonne((f64, f64)),
     /// Bottomley
     Bottomley(f64),
     /// Chamberlin trimetric
-    Chamberlin(([ChamberlinPoint; 3], f64, f64, Vec2), Rotate),
+    Chamberlin(ChamberlinParams, Rotate),
     /// Lambert conformal conic
     ConicConformal((f64, f64)),
     /// Conic equal area
@@ -52,8 +52,26 @@ pub(super) enum Projection {
     CylindricalEqualArea(f64),
     /// Cylindrical stereographic, Gall’s stereographic
     CylindricalStereographic(f64),
+    /// Gilbert
+    ///
+    /// In D3, this allowed to wrap another projection and then internally used
+    /// an equirectangular projector with scale `1.0_f64.to_degrees()` and
+    /// translate `(0, 0)` to transform streamed coordinates by creating an
+    /// overridden listener chain `Proxy { point: |p, l| {
+    ///     Vec2::new(p.x * 0.5, clamp_asin((-p.y * 0.5).to_radians().tan()))
+    ///         .to_degrees()
+    /// }}` → equirectangular → wrapped projection → output listener. Since the
+    /// equirectangular projection is an identity projection this seems probably
+    /// to just be a mechanism for doing degree-radian conversions? Since there
+    /// is no way to communicate “wrap something else” in the Vega schema, this
+    /// implementation just always uses the default orthographic projection as
+    /// the “wrapped” projection, which then does not require any of this extra
+    /// stuff. But I guess if you are here reading this because you want to
+    /// unbundle this unreasonably nearly complete conversion of D3, you will
+    /// want to fix this.
+    Gilbert,
     /// Gingery
-    Gingery((f64, f64, f64)),
+    Gingery(GingeryParams),
     /// Quincuncial where quincuncial = true
     QuincuncialTrue((f64, fn(Vec2) -> Vec2)),
     /// Quincuncial where quincuncial = false
@@ -63,9 +81,9 @@ pub(super) enum Projection {
     /// Hammer retroazimuthal
     HammerRetroazimuthal((f64, f64)),
     /// Hierarchical Equal Area isoLatitude Pixelisation of a 2-sphere
-    Healpix((f64, f64, f64, f64, f64, f64, f64, f64, f64)),
+    Healpix(HealpixParams),
     /// Hill eucyclic, Maurer No. 73
-    Hill((f64, f64, f64, f64, f64, f64, f64, f64)),
+    Hill(HillParams),
     /// Lagrange conformal
     Lagrange(f64),
     /// Loximuthal
@@ -75,27 +93,28 @@ pub(super) enum Projection {
     /// Rectangular polyconic
     RectangularPolyconic((f64, f64)),
     /// Satellite (tilted perpsective)
-    Satellite((f64, f64, f64)),
+    Satellite(SatelliteParams),
     /// Satellite (no perspective)
     SatelliteVertical(f64),
+    /// Transverse Mercator
+    TransverseMercator,
     /// Two-point azimuthal
     TwoPointAzimuthal(f64, Rotate),
     /// Two-point equidistant
-    TwoPointEquidistant((f64, f64, f64, f64), Rotate),
+    TwoPointEquidistant(Either<TwoPointEquidistantParams, fn(Vec2) -> Vec2>, Rotate),
 }
 
 impl Projection {
     /// Creates a new projection from the given projector settings.
-    // Clippy: It is one giant switch.
-    #[allow(clippy::too_many_lines)]
-    pub fn new(value: &ProjectorSettings) -> Self {
-        match value.projection {
+    #[expect(clippy::too_many_lines, reason = "this is just a big switch")]
+    pub fn new(s: &ProjectorSettings) -> Self {
+        match s.projection {
             ProjectionSettings::Airy { radius } => Self::Airy(airy_params(radius)),
             ProjectionSettings::Albers { parallels } => Self::ConicEqualArea({
                 conic_equal_area_params((parallels[0].to_radians(), parallels[1].to_radians()))
             }),
             ProjectionSettings::AlbersUsa => {
-                let (lower_48, hawaii, alaska) = albers_usa_params(value);
+                let (lower_48, hawaii, alaska) = albers_usa_params(s);
 
                 Self::AlbersUsa {
                     alaska: Box::new(alaska),
@@ -106,7 +125,7 @@ impl Projection {
             ProjectionSettings::Armadillo { parallel } => {
                 Self::Armadillo(armadillo_params(parallel))
             }
-            ProjectionSettings::Berghaus { lobes } => Self::Berghaus(2.0 * PI / lobes),
+            ProjectionSettings::Berghaus { lobes } => Self::Berghaus(berghaus_params(lobes)),
             ProjectionSettings::Bonne { parallel } => {
                 bonne_params(parallel.to_radians()).map_or(Self::Basic(sinusoidal), Self::Bonne)
             }
@@ -132,6 +151,7 @@ impl Projection {
             ProjectionSettings::CylindricalStereographic(parallel) => {
                 Self::CylindricalStereographic(parallel.to_radians().cos())
             }
+            ProjectionSettings::Gilbert => Self::Gilbert,
             ProjectionSettings::Gingery { lobes, radius } => {
                 Self::Gingery(gingery_params(lobes, radius))
             }
@@ -187,12 +207,14 @@ impl Projection {
             ProjectionSettings::TwoPointEquidistant { points } => {
                 let params = two_point_params(points);
                 let z0 = two_point_params(points).0;
-                // TODO: Rotation will be wrong then.
-                if z0 == 0.0 {
-                    Self::Basic(azimuthal_equidistant)
-                } else {
-                    Self::TwoPointEquidistant(two_point_equidistant_params(z0 * 2.0), params.1)
-                }
+                Self::TwoPointEquidistant(
+                    if z0 == 0.0 {
+                        Either::Right(azimuthal_equidistant)
+                    } else {
+                        Either::Left(two_point_equidistant_params(z0 * 2.0))
+                    },
+                    params.1,
+                )
             }
             ProjectionSettings::Aitoff => Self::Basic(aitoff),
             ProjectionSettings::August => Self::Basic(august),
@@ -213,7 +235,6 @@ impl Projection {
             ProjectionSettings::Equirectangular => Self::Basic(equirectangular),
             ProjectionSettings::Fahey => Self::Basic(fahey),
             ProjectionSettings::Foucaut => Self::Basic(foucaut),
-            ProjectionSettings::Gilbert => Self::Basic(gilbert),
             ProjectionSettings::Ginzburg4 => Self::Basic(ginzburg_4),
             ProjectionSettings::Ginzburg5 => Self::Basic(ginzburg_5),
             ProjectionSettings::Ginzburg6 => Self::Basic(ginzburg_6),
@@ -242,7 +263,7 @@ impl Projection {
             ProjectionSettings::Sinusoidal => Self::Basic(sinusoidal),
             ProjectionSettings::Stereographic => Self::Basic(stereographic),
             ProjectionSettings::Times => Self::Basic(times),
-            ProjectionSettings::TransverseMercator => Self::Basic(transverse_mercator),
+            ProjectionSettings::TransverseMercator => Self::TransverseMercator,
             ProjectionSettings::VanDerGrinten => Self::Basic(van_der_grinten),
             ProjectionSettings::VanDerGrinten2 => Self::Basic(van_der_grinten_2),
             ProjectionSettings::VanDerGrinten3 => Self::Basic(van_der_grinten_3),
@@ -255,7 +276,7 @@ impl Projection {
         }
     }
 
-    /// Applies this projection to the given `point`.
+    /// Applies this projection to the given `point`, in radians.
     pub fn apply(&self, point: Vec2) -> Vec2 {
         match self {
             Self::Airy(params) => airy(point, *params),
@@ -265,7 +286,7 @@ impl Projection {
                 lower_48,
             } => albers_usa(point, alaska, hawaii, lower_48),
             Self::Armadillo(params) => armadillo(point, *params),
-            Self::Basic(func) => func(point),
+            Self::Basic(func) | Self::TwoPointEquidistant(Either::Right(func), _) => func(point),
             Self::Berghaus(params) => berghaus(point, *params),
             Self::Bonne(params) => bonne(point, *params),
             Self::Bottomley(params) => bottomley(point, *params),
@@ -276,6 +297,7 @@ impl Projection {
             Self::Craig(params) => craig(point, *params),
             Self::CylindricalEqualArea(params) => cylindrical_equal_area(point, *params),
             Self::CylindricalStereographic(params) => cylindrical_stereographic(point, *params),
+            Self::Gilbert => gilbert(point),
             Self::Gingery(params) => gingery(point, *params),
             Self::Hammer(params) => hammer(point, *params),
             Self::HammerRetroazimuthal(params) => hammer_retroazimuthal(point, *params),
@@ -289,24 +311,115 @@ impl Projection {
             Self::RectangularPolyconic(params) => rectangular_polyconic(point, *params),
             Self::Satellite(params) => satellite(point, *params),
             Self::SatelliteVertical(params) => satellite_vertical(point, *params),
+            Self::TransverseMercator => transverse_mercator(point),
             Self::TwoPointAzimuthal(params, _) => two_point_azimuthal(point, *params),
-            Self::TwoPointEquidistant(params, _) => two_point_equidistant(point, *params),
+            Self::TwoPointEquidistant(Either::Left(params), _) => {
+                two_point_equidistant(point, *params)
+            }
         }
     }
 
-    /// Returns a calculated rotation value for the projector, if one exists.
-    pub fn rotate(&self) -> Option<Rotate> {
+    /// Returns a listener proxy for projections that meddle with streams, or
+    /// `None` if this projection is standard enough that it does not need to
+    /// do that.
+    pub fn proxy<'a, L>(&'a self, listener: &'a mut L) -> Option<ProjectionStream<'a, L>>
+    where
+        L: Listener + ?Sized,
+    {
+        match self {
+            Self::Armadillo(..)
+            | Self::Berghaus(..)
+            | Self::Gingery(..)
+            | Self::HammerRetroazimuthal(..)
+            | Self::Healpix(..) => Some(ProjectionStream {
+                listener,
+                projection: self,
+            }),
+            _ => None,
+        }
+    }
+
+    /// Returns a calculated centre for the projector.
+    pub fn center(&self, [x, y]: [f64; 2], scale: f64, translate: [f64; 2]) -> Vec2 {
+        let translate = Vec2::new(translate[0], translate[1]);
+        let (x, y) = if matches!(self, Self::TransverseMercator) {
+            (-y, x)
+        } else {
+            (x, y)
+        };
+        let center = self.apply(Vec2::new(x, y).to_radians()) * scale;
+        Vec2::new(translate.x - center.x, translate.y + center.y)
+    }
+
+    /// Returns a calculated rotation value for the projector.
+    pub fn rotate(&self, rotate: Rotate) -> Rotate {
         match self {
             Self::Chamberlin(_, rotate)
             | Self::TwoPointAzimuthal(_, rotate)
-            | Self::TwoPointEquidistant(_, rotate) => Some(*rotate),
-            _ => None,
+            | Self::TwoPointEquidistant(_, rotate) => *rotate,
+            Self::TransverseMercator => match rotate {
+                Rotate::OneD(y) => Rotate::ThreeD([y, 0.0, 90.0]),
+                Rotate::TwoD([y, p]) => Rotate::ThreeD([y, p, 90.0]),
+                Rotate::ThreeD([y, p, r]) => Rotate::ThreeD([y, p, r + 90.0]),
+            },
+            _ => rotate,
         }
     }
 }
 
+/// A stream proxy for custom projections.
+pub(super) struct ProjectionStream<'a, L>
+where
+    L: Listener + ?Sized,
+{
+    /// The output listener.
+    listener: &'a mut L,
+    /// The projection.
+    projection: &'a Projection,
+}
+
+impl<L> Listener for ProjectionStream<'_, L>
+where
+    L: Listener + ?Sized,
+{
+    fn line_end(&mut self) {
+        self.listener.line_end();
+    }
+
+    fn line_start(&mut self) {
+        self.listener.line_start();
+    }
+
+    fn point(&mut self, point: Vec2) {
+        self.listener.point(point);
+    }
+
+    fn polygon_end(&mut self) {
+        self.listener.polygon_end();
+    }
+
+    fn polygon_start(&mut self) {
+        self.listener.polygon_start();
+    }
+
+    fn sphere(&mut self) {
+        match self.projection {
+            Projection::Armadillo(params) => armadillo_sphere(*params, self.listener),
+            Projection::Berghaus(params) => berghaus_sphere(*params, self.listener),
+            Projection::Gingery(params) => gingery_sphere(*params, self.listener),
+            Projection::HammerRetroazimuthal(_) => hammer_retroazimuthal_sphere(self.listener),
+            Projection::Healpix(params) => healpix_sphere(*params, self.listener),
+            _ => self.listener.sphere(),
+        }
+    }
+}
+
+/// Berghaus epsilon.
+const BERGHAUS_GINGERY_EPSILON: f64 = 1e-2;
 /// Healpix parallel.
 const HEALPIX_PARALLEL: f64 = 41.0 + 48.0 / 36.0 + 37.0 / 3600.0;
+/// Healpix parallel, in radians.
+const HEALPIX_PARALLEL_RADIANS: f64 = HEALPIX_PARALLEL.to_radians();
 /// Sinu-Mollweide φ.
 const SINU_MOLLWEIDE_PHI: f64 = 0.710_988_959_620_756_7;
 /// Sinu-Mollweide Y.
@@ -343,18 +456,22 @@ fn aitoff(point: Vec2) -> Vec2 {
 
 /// Albers USA projection.
 fn albers_usa(point: Vec2, alaska: &Projector, hawaii: &Projector, lower_48: &Projector) -> Vec2 {
-    // There is a lot of cursed code in D3 but this might be the
-    // most cursed. The AlbersUsa composite projector is a Rube
-    // Goldberg machine with zero code comments explaining what it
-    // is doing. So here is what it is doing: Three projectors are
-    // created (CONUS, Alaska, Hawaii), each one gets a clip extent
-    // and a listener. The listener receives only the `point` event
-    // and sets the closured `point` variable. When the AlbersUsa
-    // projection is applied, it nulls out this closured variable
-    // and tries sending the input point to each internal projector
-    // until the closured variable is indirectly set by one of them.
-    // This works because if the point is outside the clip extent,
-    // the projector will not emit a `point` event.
+    // The AlbersUsa composite projector is a Rube Goldberg machine with zero
+    // code comments explaining what it is doing. So here is what it is doing:
+    // Three projectors are created (CONUS, Alaska, Hawaii), each one gets a
+    // clip extent and a custom listener which receives only the `point` event
+    // and, when it does, it sets the `point` variable through closure. When
+    // an input is received, AlbersUsa nulls out the closed-over variable and
+    // tries sending the input point to each internal projector until the
+    // closed-over variable is indirectly set by one of them. This works because
+    // if the point is outside the clip extent the inner projector will not emit
+    // a `point` event. One could argue this is either very elegant, or very
+    // cursed.
+    //
+    // In any case, because this implementation does not just send arbitrary
+    // functions to be used as projectors, it is necessary to have the inner
+    // projectors emit normalised values instead of acting like outputs or else
+    // the outer projector will try to scale the values twice, etc.
 
     struct PointListener(Option<Vec2>);
     impl Listener for PointListener {
@@ -381,27 +498,29 @@ fn albers_usa(point: Vec2, alaska: &Projector, hawaii: &Projector, lower_48: &Pr
                 .with_listener(PointListener(None), |listener| listener.point(point))
                 .0
         })
-        .map_or(Vec2::invalid(), Vec2::to_radians)
+        .map_or(Vec2::invalid(), |point| Vec2::new(point.x, -point.y))
 }
 
 /// Albers USA projection parameter calculator.
-fn albers_usa_params(value: &ProjectorSettings) -> (Projector, Projector, Projector) {
-    // TODO: Depends on `precision`, `scale`, `translate`.
-    let k = value.scale.expect("the default scale should have applied");
-    let [x, y] = value.translate.unwrap_or_default();
-
+fn albers_usa_params(s: &ProjectorSettings) -> (Projector, Projector, Projector) {
     let projection = ProjectionSettings::Albers {
         parallels: ProjectionSettings::default_albers_parallels(),
     };
+    let s = projection.defaults().merge(s);
+    let k = s.scale.expect("the default scale should have applied");
+    let [x, y] = s
+        .translate
+        .expect("the default translate should have applied");
+
     let lower_48 = Projector::new(&ProjectorSettings {
         clip_extent: Some([
             [x - 0.455 * k, y - 0.238 * k],
             [x + 0.455 * k, y + 0.238 * k],
         ]),
-        precision: value.precision,
+        precision: s.precision,
         projection,
         scale: Some(k),
-        translate: value.translate,
+        translate: s.translate,
         ..projection.defaults()
     });
 
@@ -414,7 +533,7 @@ fn albers_usa_params(value: &ProjectorSettings) -> (Projector, Projector, Projec
             [x - 0.214 * k + EPSILON, y + 0.166 * k + EPSILON],
             [x - 0.115 * k - EPSILON, y + 0.234 * k - EPSILON],
         ]),
-        precision: value.precision,
+        precision: s.precision,
         projection,
         rotate: Some(Rotate::TwoD([157.0, 0.0])),
         scale: Some(k),
@@ -431,7 +550,7 @@ fn albers_usa_params(value: &ProjectorSettings) -> (Projector, Projector, Projec
             [x - 0.425 * k + EPSILON, y + 0.120 * k + EPSILON],
             [x - 0.214 * k - EPSILON, y + 0.234 * k - EPSILON],
         ]),
-        precision: value.precision,
+        precision: s.precision,
         projection,
         rotate: Some(Rotate::TwoD([154.0, 0.0])),
         scale: Some(k * 0.35),
@@ -441,10 +560,34 @@ fn albers_usa_params(value: &ProjectorSettings) -> (Projector, Projector, Projec
     (lower_48, hawaii, alaska)
 }
 
+/// Precomputed values for an Armadillo projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ArmadilloParams {
+    /// The parallel, in radians.
+    phi0: f64,
+    /// The sine of [`Self::phi0`].
+    sin_phi0: f64,
+    /// The cosine of [`Self::phi0`].
+    cos_phi0: f64,
+    /// The signum of [`Self::phi0`].
+    s_phi0: f64,
+    /// The tangent of [`Self::phi0`].
+    tan_phi0: f64,
+    /// Some modifier for phi.
+    k: f64,
+}
+
 /// Armadillo projection.
 fn armadillo(
     point: Vec2,
-    (sin_phi0, cos_phi0, s_phi0, tan_phi0, k): (f64, f64, f64, f64, f64),
+    ArmadilloParams {
+        sin_phi0,
+        cos_phi0,
+        s_phi0,
+        tan_phi0,
+        k,
+        ..
+    }: ArmadilloParams,
 ) -> Vec2 {
     let (sin_l, cos_l) = (point.x / 2.0).sin_cos();
     let (sin_p, cos_p) = point.y.sin_cos();
@@ -460,30 +603,47 @@ fn armadillo(
 }
 
 /// Armadillo projection parameter calculator.
-fn armadillo_params(parallel: f64) -> (f64, f64, f64, f64, f64) {
+fn armadillo_params(parallel: f64) -> ArmadilloParams {
     let phi0 = parallel.to_radians();
     let (sin_phi0, cos_phi0) = phi0.sin_cos();
     let s_phi0 = nsignum(phi0);
     let tan_phi0 = (s_phi0 * phi0).tan();
     let k = (1.0 + sin_phi0 - cos_phi0) / 2.0;
-    (sin_phi0, cos_phi0, s_phi0, tan_phi0, k)
+    ArmadilloParams {
+        phi0,
+        sin_phi0,
+        cos_phi0,
+        s_phi0,
+        tan_phi0,
+        k,
+    }
 }
 
 /// Armadillo projection sphere point generator.
-fn armadillo_sphere<L: Listener>((phi0, sign_phi0, tan_phi0): (f64, f64, f64), mut listener: L) {
-    let mut lambda = sign_phi0 * -180.0;
-    while lambda * sign_phi0 < 180.0 {
-        listener.point(Vec2::new(lambda, sign_phi0 * 90.0));
-        lambda += sign_phi0 * 90.0;
+fn armadillo_sphere<L>(
+    ArmadilloParams {
+        phi0,
+        s_phi0,
+        tan_phi0,
+        ..
+    }: ArmadilloParams,
+    listener: &mut L,
+) where
+    L: Listener + ?Sized,
+{
+    let mut lambda = s_phi0 * -180.0;
+    while lambda * s_phi0 < 180.0 {
+        listener.point(Vec2::new(lambda, s_phi0 * 90.0));
+        lambda += s_phi0 * 90.0;
     }
     loop {
         lambda -= phi0;
-        if sign_phi0 * lambda < -180.0 {
+        if s_phi0 * lambda < -180.0 {
             break;
         }
         listener.point(Vec2::new(
             lambda,
-            sign_phi0
+            s_phi0
                 * -(lambda.to_radians() / 2.0)
                     .cos()
                     .atan2(tan_phi0)
@@ -546,14 +706,27 @@ fn baker(point: Vec2) -> Vec2 {
     }
 }
 
+/// Precomputed values for a Berghaus projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BerghausParams {
+    /// The negative cosine of [`BERGHAUS_GINGERY_EPSILON`].
+    cr: f64,
+    /// ???
+    k: f64,
+    /// The number of lobes.
+    n: f64,
+    /// The sine of [`BERGHAUS_GINGERY_EPSILON`].
+    sr: f64,
+}
+
 /// Berghaus projection.
-fn berghaus(point: Vec2, big_k: f64) -> Vec2 {
+fn berghaus(point: Vec2, BerghausParams { k, .. }: BerghausParams) -> Vec2 {
     let azimuthal = azimuthal_equidistant(point);
     if point.x.abs() > FRAC_PI_2 {
         // back hemisphere
         let angle = azimuthal.angle();
         let r = azimuthal.len();
-        let angle0 = big_k * ((angle - FRAC_PI_2) / big_k).round() + FRAC_PI_2;
+        let angle0 = k * ((angle - FRAC_PI_2) / k).round() + FRAC_PI_2;
         // angle relative to lobe end
         let alpha = {
             let delta = angle - angle0;
@@ -567,23 +740,37 @@ fn berghaus(point: Vec2, big_k: f64) -> Vec2 {
     }
 }
 
+/// Berghaus projection parameter calculator.
+fn berghaus_params(n: f64) -> BerghausParams {
+    let (cr, sr) = BERGHAUS_GINGERY_EPSILON.to_radians().sin_cos();
+    let k = 2.0 * PI / n;
+    BerghausParams { cr: -cr, k, n, sr }
+}
+
 /// Berghaus projection sphere point generator.
-fn berghaus_sphere<L: Listener>((n, sr, cr): (f64, f64, f64), listener: &mut L) {
+fn berghaus_sphere<L>(BerghausParams { n, cr, sr, .. }: BerghausParams, listener: &mut L)
+where
+    L: Listener + ?Sized,
+{
     let delta = 360.0 / n;
     let delta0 = TAU / n;
     let mut phi = 90.0 - 180.0 / n;
     let mut phi0 = FRAC_PI_2;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "n should be a small integer, it is just easier to hold as a float because that is how it is used mostly"
+    )]
     for _ in 0..(n as i32) {
         listener.point(Vec2::new(
             (sr * phi0.cos()).atan2(cr).to_degrees(),
             clamp_asin(sr * phi0.sin()).to_degrees(),
         ));
         if phi < -90.0 {
-            listener.point(Vec2::new(-90.0, -180.0 - phi - EPSILON));
-            listener.point(Vec2::new(-90.0, -180.0 - phi + EPSILON));
+            listener.point(Vec2::new(-90.0, -180.0 - phi - BERGHAUS_GINGERY_EPSILON));
+            listener.point(Vec2::new(-90.0, -180.0 - phi + BERGHAUS_GINGERY_EPSILON));
         } else {
-            listener.point(Vec2::new(90.0, phi + EPSILON));
-            listener.point(Vec2::new(90.0, phi - EPSILON));
+            listener.point(Vec2::new(90.0, phi + BERGHAUS_GINGERY_EPSILON));
+            listener.point(Vec2::new(90.0, phi - BERGHAUS_GINGERY_EPSILON));
         }
         phi -= delta;
         phi0 -= delta0;
@@ -636,6 +823,19 @@ fn bromley(point: Vec2) -> Vec2 {
     mollweide_bromley(point, 1.0, 4.0 / PI, PI)
 }
 
+/// Precomputed values for a Chamberlin projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ChamberlinParams {
+    /// The precomputed points, in radians.
+    points: [ChamberlinPoint; 3],
+    /// Angle 1.
+    beta1: f64,
+    /// Angle 2.
+    beta2: f64,
+    /// The mean of points. (Sorry, I have no idea what these values represent.)
+    mean: Vec2,
+}
+
 /// A point structure used by the Chamberlin projection.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ChamberlinPoint {
@@ -652,7 +852,12 @@ pub(super) struct ChamberlinPoint {
 /// Chamberlin projection.
 fn chamberlin(
     point: Vec2,
-    (points, beta1, beta2, mean): ([ChamberlinPoint; 3], f64, f64, Vec2),
+    ChamberlinParams {
+        points,
+        beta1,
+        beta2,
+        mean,
+    }: ChamberlinParams,
 ) -> Vec2 {
     fn norm_longitude(lambda: f64) -> f64 {
         lambda - TAU * ((lambda + PI) / TAU).floor()
@@ -729,17 +934,17 @@ fn chamberlin_distance_azimuth(
 }
 
 /// Chamberlin projection parameter calculator.
-fn chamberlin_params(points: [[f64; 2]; 3]) -> (([ChamberlinPoint; 3], f64, f64, Vec2), Rotate) {
+fn chamberlin_params(points: [[f64; 2]; 3]) -> (ChamberlinParams, Rotate) {
     let mut origin = Centroid::new();
-    for point in points {
-        origin.point(Vec2::new(point[0], point[1]));
+    for [x, y] in points {
+        origin.point(Vec2::new(x, y));
     }
     let origin = origin.finish();
     let rotate = Rotate::TwoD([-origin.x, -origin.y]);
     let rotator = Rotator::from(rotate);
 
-    let mut points = core::array::from_fn::<_, 3, _>(|index| {
-        let point = rotator.rotate(Vec2::new(points[index][0], points[index][1]).to_radians());
+    let mut points = points.map(|[x, y]| {
+        let point = rotator.rotate(Vec2::new(x, y).to_radians());
         ChamberlinPoint {
             p0: point,
             sc_phi: point.y.sin_cos(),
@@ -748,8 +953,11 @@ fn chamberlin_params(points: [[f64; 2]; 3]) -> (([ChamberlinPoint; 3], f64, f64,
         }
     });
 
-    let mut a = points[2];
-    for b in points {
+    let len = points.len();
+    for index in 0..len {
+        let [a, b] = points
+            .get_disjoint_mut([(len + index - 1) % len, index])
+            .unwrap();
         a.v = chamberlin_distance_azimuth(
             b.p0.y - a.p0.y,
             a.sc_phi.1,
@@ -775,7 +983,15 @@ fn chamberlin_params(points: [[f64; 2]; 3]) -> (([ChamberlinPoint; 3], f64, f64,
 
     let mean = Vec2::new(points[2].p1.x, 2.0 * points[0].p1.y);
 
-    ((points, beta1, beta2, mean), rotate)
+    (
+        ChamberlinParams {
+            points,
+            beta1,
+            beta2,
+            mean,
+        },
+        rotate,
+    )
 }
 
 /// Collignon projection.
@@ -969,8 +1185,10 @@ fn eisenlohr(point: Vec2) -> Vec2 {
 
 /// Calculate F(φ|m) where m = k² = sin²α.
 /// See Abramowitz and Stegun, 17.6.7.
-// Clippy: Blame mathematicians. Or maths. Or numbers.
-#[allow(clippy::many_single_char_names)]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "blame mathematicians. or maths. or numbers"
+)]
 fn elliptic_f(mut phi: f64, m: f64) -> f64 {
     if m == 0.0 {
         return phi;
@@ -1003,8 +1221,10 @@ fn elliptic_f(mut phi: f64, m: f64) -> f64 {
 
 /// Calculate F(φ+iψ|m).
 /// See Abramowitz and Stegun, 17.4.11.
-// Clippy: Blame mathematicians. Or maths. Or numbers.
-#[allow(clippy::many_single_char_names)]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "blame mathematicians. or maths. or numbers"
+)]
 fn elliptic_fi(Vec2 { x: phi, y: psi }: Vec2, m: f64) -> Vec2 {
     let r = phi.abs();
     let i = psi.abs();
@@ -1052,10 +1272,33 @@ fn foucaut(point: Vec2) -> Vec2 {
     )
 }
 
+/// Precomputed values for a Gingery projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct GingeryParams {
+    /// The number of lobes.
+    n: f64,
+    /// The sine of [`BERGHAUS_GINGERY_EPSILON`].
+    sr: f64,
+    /// The cosine of [`BERGHAUS_GINGERY_EPSILON`].
+    cr: f64,
+    /// The sine of [`Self::rho`].
+    sin_rho: f64,
+    /// The cosine of [`Self::rho`].
+    cos_rho: f64,
+    /// The radius, in radians.
+    rho: f64,
+    /// The square of [`Self::rho`].
+    sq_rho: f64,
+    /// ???
+    k: f64,
+}
+
 /// Gingery projection.
-// Clippy: Blame mathematicians. Or maths. Or numbers.
-#[allow(clippy::many_single_char_names, clippy::similar_names)]
-fn gingery(point: Vec2, params: (f64, f64, f64)) -> Vec2 {
+#[expect(
+    clippy::many_single_char_names,
+    reason = "blame mathematicians. or maths. or numbers"
+)]
+fn gingery(point: Vec2, GingeryParams { rho, k, sq_rho, .. }: GingeryParams) -> Vec2 {
     fn arc_length(alpha: f64, k: f64, x: f64) -> f64 {
         let mut y = alpha * x.cos();
         if x < FRAC_PI_2 {
@@ -1076,8 +1319,6 @@ fn gingery(point: Vec2, params: (f64, f64, f64)) -> Vec2 {
         }
         s * 0.5 * h
     }
-
-    let (rho, k, sq_rho) = params;
 
     let point = azimuthal_equidistant(point);
     let r2 = point.square_len();
@@ -1114,18 +1355,42 @@ fn gingery(point: Vec2, params: (f64, f64, f64)) -> Vec2 {
 }
 
 /// Gingery projection parameter calculator.
-fn gingery_params(lobes: f64, radius: f64) -> (f64, f64, f64) {
-    let radius = radius.to_radians();
-    (radius, TAU / lobes, radius * radius)
+fn gingery_params(n: f64, rho: f64) -> GingeryParams {
+    let rho = rho.to_radians();
+    let (sin_rho, cos_rho) = rho.sin_cos();
+    let (cr, sr) = BERGHAUS_GINGERY_EPSILON.sin_cos();
+    GingeryParams {
+        n,
+        sr,
+        cr,
+        sin_rho,
+        cos_rho,
+        rho,
+        sq_rho: rho * rho,
+        k: TAU / n,
+    }
 }
 
 /// Gingery projection sphere point generator.
-fn gingery_sphere<L: Listener>(
-    (n, sr, cr, sin_rho, cos_rho): (f64, f64, f64, f64, f64),
-    mut listener: L,
-) {
+fn gingery_sphere<L>(
+    GingeryParams {
+        n,
+        sr,
+        cr,
+        sin_rho,
+        cos_rho,
+        ..
+    }: GingeryParams,
+    listener: &mut L,
+) where
+    L: Listener + ?Sized,
+{
     let delta = TAU / n;
     let mut phi = 0.0_f64;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "n should be a small integer, it is just easier to hold as a float because that is how it is used mostly"
+    )]
     for _ in 0..(n as i32) {
         listener.point(Vec2::new((sr * phi.cos()).atan2(cr), (sr * phi.sin()).asin()).to_degrees());
         listener.point(
@@ -1197,8 +1462,10 @@ fn ginzburg_9(point: Vec2) -> Vec2 {
 }
 
 /// Ginzburg polyconic calculation.
-// Clippy: Blame mathematicians. Or maths. Or numbers.
-#[allow(clippy::many_single_char_names)]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "blame mathematicians. or maths. or numbers"
+)]
 fn ginzburg_polyconic(
     (a, b, c, d, e, f, g, h): (f64, f64, f64, f64, f64, f64, f64, f64),
     point: Vec2,
@@ -1218,17 +1485,10 @@ fn ginzburg_polyconic(
 
 /// Gilbert projection.
 fn gilbert(point: Vec2) -> Vec2 {
-    // TODO: Not sure why we are in radians when D3 is in degrees
-    // here.
+    // D3 creates a different projector for Gilbert which means this function
+    // in D3 was running in degrees, but since this implementation uses the same
+    // base projector for everything it is in radians
     orthographic(Vec2::new(point.x * 0.5, clamp_asin((point.y * 0.5).tan())))
-}
-
-/// Gilbert projection stream point transformer.
-fn gilbert_point_transformer(point: Vec2) -> Vec2 {
-    Vec2::new(
-        point.x * 0.5,
-        clamp_asin((point.y * 0.5).to_radians().tan()).to_degrees(),
-    )
 }
 
 /// Gnomonic projection.
@@ -1272,8 +1532,11 @@ fn gringorten(point: Vec2) -> Vec2 {
 }
 
 /// Gringorten hexadecant calculation.
-// Clippy: Blame mathematicians. Or maths. Or numbers.
-#[allow(clippy::many_single_char_names, clippy::similar_names)]
+#[expect(
+    clippy::many_single_char_names,
+    clippy::similar_names,
+    reason = "blame mathematicians. or maths. or numbers"
+)]
 fn gringorten_hexadecant(point: Vec2) -> Vec2 {
     if point.y == FRAC_PI_2 {
         return Vec2::zero();
@@ -1434,7 +1697,10 @@ fn hammer_retroazimuthal_rotation(sin_phi0: f64, cos_phi0: f64, point: Vec2) -> 
 }
 
 /// Hammer retroazimuthal projection sphere point generator.
-fn hammer_retroazimuthal_sphere<L: Listener>(mut listener: L) {
+fn hammer_retroazimuthal_sphere<L>(listener: &mut L)
+where
+    L: Listener + ?Sized,
+{
     const EPSILON: f64 = 1e-2;
     for point in circle_iter(90.0 - EPSILON, Direction::Forward) {
         listener.point(point);
@@ -1465,53 +1731,81 @@ fn hatano(point: Vec2) -> Vec2 {
     )
 }
 
+/// Precomputed values for a Healpix projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct HealpixParams {
+    /// The cosine of 0.0.
+    cos_zero: f64,
+    /// ???
+    dx1: f64,
+    /// ???
+    dy1: f64,
+    /// ???
+    k: f64,
+    /// The number of lobes.
+    n: f64,
+    /// ???
+    y0: f64,
+    /// ???
+    y1: f64,
+}
+
 /// Hierarchical Equal Area isoLatitude Pixelisation of a 2-sphere projection.
 fn healpix(
     point: Vec2,
-    (zero_cos, phi0, big_n, dx0, dx1, y0, y1, dy1, k): (
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-    ),
+    HealpixParams {
+        cos_zero,
+        n,
+        dx1,
+        y0,
+        y1,
+        dy1,
+        k,
+    }: HealpixParams,
 ) -> Vec2 {
+    let dx0 = TAU;
     let abs_phi = point.y.abs();
-    let point = if abs_phi > phi0 {
-        let i = ((point.x + PI) / k).floor().clamp(0.0, big_n - 1.0);
-        let lambda = point.x + (PI * (big_n - 1.0) / big_n - i * k);
+    let point = if abs_phi > HEALPIX_PARALLEL_RADIANS {
+        let i = ((point.x + PI) / k).floor().clamp(0.0, n - 1.0);
+        let lambda = point.x + (PI * (n - 1.0) / n - i * k);
         let signum_phi = point.y.signum();
         let point = collignon(Vec2::new(lambda, abs_phi));
         Vec2::new(
-            point.x * dx0 / dx1 - dx0 * (big_n - 1.0) / (2.0 * big_n) + i * dx0 / big_n,
+            point.x * dx0 / dx1 - dx0 * (n - 1.0) / (2.0 * n) + i * dx0 / n,
             (y0 + (point.y - y1) * 4.0 * dy1 / dx0) * signum_phi,
         )
     } else {
-        cylindrical_equal_area(point, zero_cos)
+        cylindrical_equal_area(point, cos_zero)
     };
     Vec2::new(point.x / 2.0, point.y)
 }
 
 /// Hierarchical Equal Area isoLatitude Pixelisation of a 2-sphere projection
 /// parameter calculator.
-fn healpix_params(lobes: f64) -> (f64, f64, f64, f64, f64, f64, f64, f64, f64) {
-    const PHI0: f64 = HEALPIX_PARALLEL.to_radians();
+fn healpix_params(n: f64) -> HealpixParams {
+    let phi0 = HEALPIX_PARALLEL_RADIANS;
     let cos_phi0 = cylindrical_equal_area_params(0.0);
-    let dx0 = TAU;
-    let dx1 = collignon(Vec2::new(PI, PHI0)).x - collignon(Vec2::new(-PI, PHI0)).x;
-    let y0 = cylindrical_equal_area(Vec2::new(0.0, PHI0), cos_phi0).y;
-    let y1 = collignon(Vec2::new(0.0, PHI0)).y;
+    let dx1 = collignon(Vec2::new(PI, phi0)).x - collignon(Vec2::new(-PI, phi0)).x;
+    let y0 = cylindrical_equal_area(Vec2::new(0.0, phi0), cos_phi0).y;
+    let y1 = collignon(Vec2::new(0.0, phi0)).y;
     let dy1 = collignon(Vec2::new(0.0, FRAC_PI_2)).y - y1;
-    let k = TAU / lobes;
-    (0.0_f64.cos(), PHI0, lobes, dx0, dx1, y0, y1, dy1, k)
+    let k = TAU / n;
+    HealpixParams {
+        cos_zero: 0.0_f64.cos(),
+        dx1,
+        dy1,
+        k,
+        n,
+        y0,
+        y1,
+    }
 }
 
 /// Healpix projection sphere point generator.
-fn healpix_sphere<L: Listener>(n: f64, mut listener: L) {
+fn healpix_sphere<L>(HealpixParams { n, .. }: HealpixParams, listener: &mut L)
+where
+    L: Listener + ?Sized,
+{
     let step = 180.0 / n;
     let mut x = -180.0;
     let mut even = true;
@@ -1543,19 +1837,40 @@ fn healpix_sphere<L: Listener>(n: f64, mut listener: L) {
     }
 }
 
+/// Precomputed values for a Hill projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct HillParams {
+    /// The clamped arcsine of [`Self::big_b`].
+    beta: f64,
+    /// ???
+    big_a: f64,
+    /// The sine of the reciprocal of [`Self::big_l`].
+    big_b: f64,
+    /// The ratio.
+    big_k: f64,
+    /// [`Self::big_k`] plus one.
+    big_l: f64,
+    /// ???
+    rho0: f64,
+    /// The square of [`Self::big_k`].
+    sq_big_k: f64,
+    /// The square of [`Self::big_l`].
+    sq_big_l: f64,
+}
+
 /// Hill projection.
 fn hill(
     point: Vec2,
-    (big_k, big_b, big_a, big_l, beta, rho0, sq_big_k, sq_big_l): (
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-    ),
+    HillParams {
+        big_k,
+        big_b,
+        big_a,
+        big_l,
+        beta,
+        rho0,
+        sq_big_k,
+        sq_big_l,
+    }: HillParams,
 ) -> Vec2 {
     let t = 1.0 - point.y.sin();
     let (rho, omega) = if t != 0.0 && t < 2.0 {
@@ -1584,16 +1899,25 @@ fn hill(
 }
 
 /// Hill projection parameter calculator.
-fn hill_params(ratio: f64) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
-    let big_l = 1.0 + ratio;
+fn hill_params(big_k: f64) -> HillParams {
+    let big_l = 1.0 + big_k;
     let sin_b = big_l.recip().sin();
     let beta = clamp_asin(sin_b);
     let big_b = PI + 4.0 * beta * big_l;
     let big_a = 2.0 * (PI / big_b).sqrt();
-    let rho0 = 0.5 * big_a * (big_l + (ratio * (2.0 + ratio)).sqrt());
-    let sq_big_k = ratio * ratio;
+    let rho0 = 0.5 * big_a * (big_l + (big_k * (2.0 + big_k)).sqrt());
+    let sq_big_k = big_k * big_k;
     let sq_big_l = big_l * big_l;
-    (ratio, big_b, big_a, big_l, beta, rho0, sq_big_k, sq_big_l)
+    HillParams {
+        beta,
+        big_a,
+        big_b,
+        big_k,
+        big_l,
+        rho0,
+        sq_big_k,
+        sq_big_l,
+    }
 }
 
 /// Homolosine projection.
@@ -1722,7 +2046,7 @@ fn mercator(point: Vec2) -> Vec2 {
 
 /// Miller projection.
 fn miller(point: Vec2) -> Vec2 {
-    Vec2::new(point.x, 1.25 * (FRAC_PI_4 + 0.4 * point.y).ln())
+    Vec2::new(point.x, 1.25 * (FRAC_PI_4 + 0.4 * point.y).tan().ln())
 }
 
 /// Modified stereographic projection.
@@ -1967,14 +2291,18 @@ fn robinson(point: Vec2) -> Vec2 {
         [0.5722, 0.9761 * 1.0144],
         [0.5322, 1.0000 * 1.0144],
     ];
-    // Clippy: The value comes from a constant table.
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "value is small and from a const source"
+    )]
     let i = (point.y.abs() * 36.0 / PI).min(ROBINSON_CONSTANTS.len() as f64 - 2.0);
     let i0 = i.floor();
     let di = i - i0;
-    // Clippy: The value is clamped to positive and rounded to a
-    // whole number.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the value is clamped to unsigned range and rounded before truncation"
+    )]
     let i0 = i0 as usize;
     let [ax, ay] = ROBINSON_CONSTANTS[i0];
     let [bx, by] = ROBINSON_CONSTANTS[i0 + 1];
@@ -1986,8 +2314,26 @@ fn robinson(point: Vec2) -> Vec2 {
     )
 }
 
+/// Precomputed values for a Satellite projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct SatelliteParams {
+    /// The distance.
+    big_p: f64,
+    /// The cosine of the tilt.
+    cos_o: f64,
+    /// The sine of the tilt.
+    sin_o: f64,
+}
+
 /// Satellite projection.
-fn satellite(point: Vec2, (big_p, sin_o, cos_o): (f64, f64, f64)) -> Vec2 {
+fn satellite(
+    point: Vec2,
+    SatelliteParams {
+        big_p,
+        sin_o,
+        cos_o,
+    }: SatelliteParams,
+) -> Vec2 {
     let point = satellite_vertical(point, big_p);
     let y = point.y;
     let big_a = y * sin_o / (big_p - 1.0) + cos_o;
@@ -1995,10 +2341,14 @@ fn satellite(point: Vec2, (big_p, sin_o, cos_o): (f64, f64, f64)) -> Vec2 {
 }
 
 /// Satellite projection parameter calculator.
-fn satellite_params(distance: f64, tilt: f64) -> Option<(f64, f64, f64)> {
+fn satellite_params(big_p: f64, tilt: f64) -> Option<SatelliteParams> {
     (tilt != 0.0).then(|| {
         let (sin_o, cos_o) = tilt.sin_cos();
-        (distance, sin_o, cos_o)
+        SatelliteParams {
+            big_p,
+            cos_o,
+            sin_o,
+        }
     })
 }
 
@@ -2048,10 +2398,28 @@ fn two_point_azimuthal(point: Vec2, d_cos: f64) -> Vec2 {
     Vec2::new(point.x * d_cos, point.y)
 }
 
+/// Precomputed values for a two-point equidistant projection.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TwoPointEquidistantParams {
+    /// Half the negative half-distance.
+    lambda_a: f64,
+    /// Half the positive half-distance.
+    lambda_b: f64,
+    /// The square of [`Self::z0`].
+    sq_z0: f64,
+    /// The half-distance of the two points.
+    z0: f64,
+}
+
 /// Two-point equidistant projection.
 fn two_point_equidistant(
     point: Vec2,
-    (z0, lambda_a, lambda_b, sq_z0): (f64, f64, f64, f64),
+    TwoPointEquidistantParams {
+        z0,
+        lambda_a,
+        lambda_b,
+        sq_z0,
+    }: TwoPointEquidistantParams,
 ) -> Vec2 {
     debug_assert_ne!(z0, 0.0, "should have picked azimuthal_equidistant");
 
@@ -2068,11 +2436,16 @@ fn two_point_equidistant(
 }
 
 /// Two-point equidistant projection parameter calculator.
-fn two_point_equidistant_params(z0: f64) -> (f64, f64, f64, f64) {
-    let lambda_a = -z0 / 2.0;
-    let lambda_b = -lambda_a;
+fn two_point_equidistant_params(z0: f64) -> TwoPointEquidistantParams {
+    let lambda_b = z0 / 2.0;
+    let lambda_a = -lambda_b;
     let sq_z0 = z0 * z0;
-    (z0, lambda_a, lambda_b, sq_z0)
+    TwoPointEquidistantParams {
+        lambda_a,
+        lambda_b,
+        sq_z0,
+        z0,
+    }
 }
 
 /// General two-point projection parameter calculator.
@@ -2085,7 +2458,12 @@ fn two_point_params(points: [[f64; 2]; 2]) -> (f64, Rotate) {
     let r = Rotator::from(Rotate::TwoD([-origin.x, -origin.y]));
     let p = r.rotate(from.to_radians());
 
-    let gamma = -clamp_asin(p.y.sin() / distance.sin());
+    let sin_d = distance.sin();
+    let gamma = if sin_d == 0.0 {
+        0.0
+    } else {
+        -clamp_asin(p.y.sin() / distance.sin())
+    };
     let gamma = if p.x > 0.0 { PI - gamma } else { gamma };
 
     (

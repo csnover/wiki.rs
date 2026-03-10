@@ -8,8 +8,9 @@ use super::{
     spec::Container,
     transform::Transform,
 };
+use core::cell::OnceCell;
 use serde_json_borrow::Value;
-use std::{borrow::Cow, cell::OnceCell};
+use std::borrow::Cow;
 
 /// A visualisation.
 #[derive(Debug, serde::Deserialize)]
@@ -83,6 +84,15 @@ impl<'s> Mark<'s> {
             self.property(node, PropsetKind::Enter, |p| &p.height)
         } else {
             None
+        }
+    }
+
+    /// Invalidates any cached group mark scales.
+    pub fn invalidate_caches(&self) {
+        if let Kind::Group(group) = &self.kind {
+            for scale in &group.scales {
+                scale.invalidate();
+            }
         }
     }
 
@@ -236,11 +246,11 @@ impl<'s> DataRef<'s> {
                     data
                 } else {
                     self.data_cache.get_or_init(|| {
-                        let mut data = data.to_vec();
+                        let mut data = Cow::Borrowed(data);
                         for transform in &self.transform {
-                            data = transform.transform(node, data);
+                            data = Cow::Owned(transform.transform(node, data));
                         }
-                        data
+                        data.into_owned()
                     })
                 })
             }
@@ -293,9 +303,14 @@ pub(super) enum DataRefTarget<'s> {
 /// An easing function.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-// Clippy: Since this is not actually used right now, it is a waste of time to
-// document.
-#[allow(clippy::missing_docs_in_private_items)]
+#[allow(
+    clippy::allow_attributes,
+    reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+)]
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "since this is not used now, it is a waste of time to document it"
+)]
 pub enum EasingFunction {
     LinearIn,
     LinearOut,

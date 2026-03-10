@@ -2,7 +2,7 @@
 
 use super::{
     Node,
-    data::{ValueExt, get_nested_value},
+    data::{ValueExt as _, get_nested_value},
 };
 use serde_json_borrow::Value;
 use std::borrow::Cow;
@@ -216,7 +216,7 @@ enum Operator<'s> {
 }
 
 /// A reference to a scale.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "this is used only for dynamic runtime")]
 #[derive(Debug, serde::Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
 enum ScopedScaleRef<'s> {
@@ -239,7 +239,7 @@ enum ScopedScaleRef<'s> {
 }
 
 /// A dynamic variable.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "this is used only for dynamic runtime")]
 #[derive(Debug, serde::Deserialize)]
 #[serde(bound = "'s: 'de")]
 pub(super) struct Signal<'s> {
@@ -289,7 +289,7 @@ enum SourceSet<'s> {
 }
 
 /// An event stream.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "this is used only for dynamic runtime")]
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Stream<'s> {

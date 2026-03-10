@@ -13,35 +13,12 @@ use super::{
     EPSILON,
     renderer::{Rect, Vec2, Vec3},
 };
+use crate::renderer::extension_tags::graph::geo::projection::Projection;
 use core::{
     cmp::Ordering,
     f64::consts::{FRAC_PI_2, PI, TAU},
 };
 use serde_json_borrow::Value;
-
-/// Projector output kinds.
-enum AProjector {
-    /// Albers composite.
-    AlbersUsa,
-    /// Overrides stream sphere listener.
-    Armadillo,
-    /// Overrides stream sphere listener.
-    Berghaus,
-    /// Overrides stream point listener.
-    Gilbert,
-    /// Overrides stream sphere listener.
-    Gingery,
-    /// Overrides stream sphere listener.
-    HammerRetroazimuthal,
-    /// Overrides stream sphere listener.
-    Healpix,
-    /// Adapts some other projector.
-    Quincuncial,
-    /// Rotates based on points, not rotate. (twopoint, chamberlin)
-    Points,
-    /// Default.
-    Standard,
-}
 
 /// A listener which calculates the centroid of a list of points.
 struct Centroid {
@@ -710,35 +687,19 @@ impl ProjectionSettings {
     /// projection.
     fn defaults(self) -> ProjectorSettings {
         match self {
-            Self::Albers { .. } => {
-                // TODO: Also uses parallels.
-                ProjectorSettings {
-                    center: Some([-0.6, 38.7]),
-                    projection: Self::ConicEqualArea(ConicSettings {
-                        parallels: [29.5, 45.5],
-                    }),
-                    rotate: Some(Rotate::TwoD([96.0, 0.0])),
-                    scale: Some(1070.0),
-                    ..ProjectorSettings::baseline(self)
-                }
-            }
-            Self::AlbersUsa => {
-                // TODO: This thing is nuts! extends albers, overrides stream, precision, scale, and translate
-                ProjectorSettings {
-                    scale: Some(1070.0),
-                    ..ProjectorSettings::baseline(self)
-                }
-            }
-            Self::Gilbert => {
-                // TODO: Replaces stream using an inner equirectangular
-                // projection with these settings:
-                // ProjectorSettings {
-                //     scale: Some(1.0_f64.to_degrees()),
-                //     translate: Some([0.0, 0.0]),
-                //     ..ProjectorSettings::baseline(self)
-                // }
-                ProjectorSettings::baseline(self)
-            }
+            Self::Albers { .. } => ProjectorSettings {
+                center: Some([-0.6, 38.7]),
+                projection: Self::ConicEqualArea(ConicSettings {
+                    parallels: [29.5, 45.5],
+                }),
+                rotate: Some(Rotate::TwoD([96.0, 0.0])),
+                scale: Some(1070.0),
+                ..ProjectorSettings::baseline(self)
+            },
+            Self::AlbersUsa => ProjectorSettings {
+                scale: Some(1070.0),
+                ..ProjectorSettings::baseline(self)
+            },
             Self::PeirceQuincuncial { .. } => ProjectorSettings {
                 clip_angle: Some(180.0 - 1e-6),
                 rotate: Some(Rotate::ThreeD([-90.0, -90.0, 45.0])),
@@ -749,9 +710,10 @@ impl ProjectionSettings {
                 ..ProjectorSettings::baseline(self)
             },
             Self::TransverseMercator => {
-                // TODO: replaces center, rotate
+                // In D3, the constructor for this projection bypasses its own
+                // rotate function; this is the untransformed version
                 ProjectorSettings {
-                    rotate: Some(Rotate::ThreeD([0.0, 0.0, 90.0])),
+                    rotate: Some(Rotate::ThreeD([0.0, 0.0, 0.0])),
                     ..Self::Mercator.defaults()
                 }
             }
@@ -776,7 +738,7 @@ pub(super) struct Projector {
     precision: Option<f64>,
 
     /// The projection.
-    projection: projection::Projection,
+    projection: Projection,
 
     /// The rotation of the projection.
     rotate: Rotator,
@@ -789,34 +751,39 @@ impl Projector {
     /// Creates a new `Projector` using the given settings.
     pub fn new(s: &ProjectorSettings) -> Self {
         let s = s.projection.defaults().merge(s);
-        let scale = s.scale.unwrap_or(150.0);
-        let translate = s
-            .translate
-            .map_or(Vec2::new(480.0, 250.0), |[x, y]| Vec2::new(x, y));
-        let projection = projection::Projection::new(&s);
-        let rotate = projection.rotate().or(s.rotate).unwrap_or_default();
-        let mut this = Self {
-            center: Vec2::zero(),
-            clip_angle: s.clip_angle.map(f64::to_radians),
-            extent: s
-                .clip_extent
-                .map(|[[left, top], [right, bottom]]| Rect::new(left, top, right, bottom)),
-            precision: s.precision,
-            projection,
-            rotate: Rotator::from(rotate),
-            scale,
-        };
-        // TODO: There needs to be a separate trait for built projections that
-        // allows them to do different stuff because AlbersUsa is a unique
-        // snowflake.
-        if !matches!(s.projection, ProjectionSettings::AlbersUsa) {
-            let center = s
-                .center
-                .map_or(<_>::default(), |[x, y]| Vec2::new(x, y).to_radians());
-            let center = this.projection.apply(center) * scale;
-            this.center = Vec2::new(translate.x - center.x, translate.y + center.y);
+        let projection = Projection::new(&s);
+        if matches!(projection, Projection::AlbersUsa { .. }) {
+            // AlbersUsa is three projectors in a trenchcoat, so it handles
+            // everything and this is just a pass-through
+            Projector {
+                center: Vec2::zero(),
+                clip_angle: None,
+                extent: None,
+                precision: Some(0.0),
+                projection,
+                rotate: Rotator::Identity,
+                scale: 1.0,
+            }
+        } else {
+            let (Some(center), Some(rotate), Some(scale), Some(translate)) =
+                (s.center, s.rotate, s.scale, s.translate)
+            else {
+                panic!("baseline should have applied");
+            };
+            let rotate = projection.rotate(rotate);
+            let center = projection.center(center, scale, translate);
+            Projector {
+                center,
+                clip_angle: s.clip_angle.map(f64::to_radians),
+                extent: s
+                    .clip_extent
+                    .map(|[[left, top], [right, bottom]]| Rect::new(left, top, right, bottom)),
+                precision: s.precision,
+                projection,
+                rotate: Rotator::from(rotate),
+                scale,
+            }
         }
-        this
     }
 
     /// Converts a GeoJSON object into an SVG path.
@@ -839,14 +806,7 @@ impl Projector {
     /// scaling, and translation.
     #[inline]
     pub fn projection_degrees(&self, point: Vec2) -> Vec2 {
-        let point = self.project(self.rotate(point.to_radians()));
-        // TODO: There needs to be a trait for projections that lets them do
-        // insane things.
-        if matches!(self.projection, projection::Projection::AlbersUsa { .. }) {
-            point.to_degrees()
-        } else {
-            self.scale(point)
-        }
+        self.scale(self.project(self.rotate(point.to_radians())))
     }
 
     /// Projects a single geographic `point`, in radians latitude and longitude,
@@ -912,12 +872,19 @@ impl Projector {
             ) as &mut dyn Listener
         };
 
+        let mut proxy = self.projection.proxy(preclip);
+        let projection = if let Some(proxy) = &mut proxy {
+            proxy as &mut dyn Listener
+        } else {
+            preclip
+        };
+
         // D3 also chains a degrees-to-radians converter, but this
         // implementation just has `Self::point` converts to radians itself so
         // that it is not necessary to stick yet another slow layer of
         // indirection in the chain of slow indirections and everything internal
         // can just use radians
-        f(preclip);
+        f(projection);
 
         output_listener
     }
@@ -1037,15 +1004,15 @@ mod geojson {
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ProjectorSettings {
-    /// The center of the projection.
+    /// The center of the projection, in degrees latitude/longitude.
     #[serde(default)]
     center: Option<[f64; 2]>,
 
-    /// The clip angle of the projection.
+    /// The clip angle of the projection, in degrees.
     #[serde(default)]
     clip_angle: Option<f64>,
 
-    /// The clip extent of the projection.
+    /// The clip extent of the projection, in Cartesian coordinates.
     #[serde(default)]
     clip_extent: Option<[[f64; 2]; 2]>,
 
@@ -1057,7 +1024,7 @@ pub(super) struct ProjectorSettings {
     #[serde(default, flatten)]
     projection: ProjectionSettings,
 
-    /// The rotation of the projection.
+    /// The rotation of the projection, in degrees.
     #[serde(default)]
     rotate: Option<Rotate>,
 
@@ -1065,16 +1032,24 @@ pub(super) struct ProjectorSettings {
     #[serde(default)]
     scale: Option<f64>,
 
-    /// The translation of the projection.
+    /// The translation of the projection, in Cartesian coordinates.
     #[serde(default)]
     translate: Option<[f64; 2]>,
 }
 
 impl ProjectorSettings {
-    /// Creates a new `ProjectorSettings` with default settings.
+    /// Creates a new `ProjectorSettings` with default settings. It is not
+    /// possible to just make this the `Default` impl for `ProjectorSettings`
+    /// because it would be ambiguous whether a user explicitly specified a
+    /// value or not, and so it would be impossible to have other
+    /// projection-kind-specific defaults.
     fn baseline(projection: ProjectionSettings) -> Self {
         Self {
+            center: Some([0.0, 0.0]),
             projection,
+            rotate: Some(<_>::default()),
+            scale: Some(150.0),
+            translate: Some([480.0, 250.0]),
             ..Default::default()
         }
     }
@@ -1083,14 +1058,14 @@ impl ProjectorSettings {
     /// `self` with non-`None` properties of `other`.
     fn merge(&self, other: &Self) -> Self {
         Self {
-            center: self.center.or(other.center),
-            clip_angle: self.clip_angle.or(other.clip_angle),
-            clip_extent: self.clip_extent.or(other.clip_extent),
-            precision: self.precision.or(other.precision),
+            center: other.center.or(self.center),
+            clip_angle: other.clip_angle.or(self.clip_angle),
+            clip_extent: other.clip_extent.or(self.clip_extent),
+            precision: other.precision.or(self.precision),
             projection: other.projection,
-            rotate: self.rotate.or(other.rotate),
-            scale: self.scale.or(other.scale),
-            translate: self.translate.or(other.translate),
+            rotate: other.rotate.or(self.rotate),
+            scale: other.scale.or(self.scale),
+            translate: other.translate.or(self.translate),
         }
     }
 }
@@ -1475,10 +1450,10 @@ mod svg_path_output {
 // SPDX-SnippetComment: Adapted from topojson 1.6 by Michael Bostock
 pub(super) mod topojson {
     use super::super::data::ValueExt;
+    use core::cell::RefCell;
     use indexmap::IndexMap;
     use serde_json_borrow::Value;
     use std::{
-        cell::RefCell,
         collections::{BTreeMap, BTreeSet},
         rc::Rc,
     };
@@ -1552,8 +1527,10 @@ pub(super) mod topojson {
         /// Collect all arc indexes for the given line.
         fn line(&mut self, arcs: &[Value<'_>]) {
             for index in arcs {
-                // Clippy: TopoJSON defines these values as i32.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "topojson defines these as i32"
+                )]
                 self.arc(index.to_f64() as i32);
             }
         }
@@ -1590,10 +1567,10 @@ pub(super) mod topojson {
     }
 
     /// Converts an arc index into an array index.
-    // Clippy: Because TopoJSON defines bit-not to invert negative indexes, the
-    // arc indexes must be no greater than i32 because ECMAScript uses that type
-    // for bit operations. Negative values are one’s-complement inverted.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "topojson uses bit-not operations in ECMAScript which restricts the values to i32. negative values get one’s-complement inverted so there is never sign loss"
+    )]
     #[inline]
     fn arc_index(i: i32) -> usize {
         (if i < 0 { !i } else { i }) as usize
@@ -1700,8 +1677,10 @@ pub(super) mod topojson {
         fn line(&mut self, arcs: &[Value<'s>]) -> Vec<Value<'s>> {
             let mut points = vec![];
             for arc_index in arcs {
-                // Clippy: TopoJSON defines these values as i32.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "topojson defines these as i32"
+                )]
                 self.arc(&mut points, arc_index.to_f64() as i32);
             }
             if points.len() < 2 {

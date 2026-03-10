@@ -91,8 +91,8 @@ impl<'b, L: Listener> Resampler<'b, L> {
             "for the love of god, use the non-resampling resampler"
         );
         Self {
-            line_start: resampler::line_start,
             line_end: resampler::line_end,
+            line_start: resampler::line_start,
             listener,
             point: resampler::point,
             precision: precision.map_or(0.5, |value| value * value),

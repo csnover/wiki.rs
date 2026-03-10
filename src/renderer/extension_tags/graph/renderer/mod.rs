@@ -9,10 +9,11 @@ use super::{
     spec::{Container, Padding, Spec},
 };
 use crate::php::DateTime;
-use core::f64::consts::FRAC_PI_2;
+use core::{cell::RefCell, f64::consts::FRAC_PI_2};
 pub(crate) use format::{Error as FormatError, NumberFormatter};
 pub(crate) use mark::shape_text;
 use minidom::Element;
+use rand::{SeedableRng as _, rngs::SmallRng};
 use rustybuzz::{Face, GlyphBuffer, ttf_parser::GlyphId};
 use tiny_skia::{Path, PathBuilder};
 
@@ -37,7 +38,10 @@ mod defaults {
     pub(crate) use apply;
 
     /// The default for the [`size`](Propset::size) of a symbol mark.
-    pub(crate) const SYMBOL_SIZE: f64 = 50.0;
+    ///
+    /// This default is defined in multiple places with different values. This
+    /// is the default from `vega-scenegraph` which appears to actually be used.
+    pub(crate) const SYMBOL_SIZE: f64 = 100.0;
     /// The default for the [`fill`](Propset::fill) of an axis or legend title.
     pub(crate) const TITLE_COLOR: &str = "#000";
     /// The default for the [`font`](Propset::font) of an axis or legend title.
@@ -63,7 +67,7 @@ pub(super) fn render(spec: &Spec<'_>, now: DateTime) -> Result<Element> {
     let bounds = {
         let base = box_bounds.union(&Rect::from_xywh(0.0, 0.0, spec.width(), spec.height()));
         match &spec.padding {
-            &Some(Padding::Uniform(p)) => base.inset(&Rect::new(-p, -p, p, p)),
+            &Some(Padding::Uniform(p)) => base.inset(&Rect::new(-p, -p, -p, -p)),
             Some(Padding::Inset {
                 bottom,
                 left,
@@ -72,15 +76,15 @@ pub(super) fn render(spec: &Spec<'_>, now: DateTime) -> Result<Element> {
             }) => base.inset(&Rect::new(
                 -left.unwrap_or(0.0),
                 -top.unwrap_or(0.0),
-                right.unwrap_or(0.0),
-                bottom.unwrap_or(0.0),
+                -right.unwrap_or(0.0),
+                -bottom.unwrap_or(0.0),
             )),
             Some(Padding::Strict) => todo!(),
             Some(Padding::Auto) | None => {
-                const AUTO_PAD_INSET: f64 = 5.0;
+                const AUTO_PAD_INSET: f64 = -5.0;
                 base.union(&axis_bounds).inset(&Rect::new(
-                    -AUTO_PAD_INSET,
-                    -AUTO_PAD_INSET,
+                    AUTO_PAD_INSET,
+                    AUTO_PAD_INSET,
                     AUTO_PAD_INSET,
                     AUTO_PAD_INSET,
                 ))
@@ -251,10 +255,12 @@ pub(super) fn buffer_to_path(face: &Face<'_>, buffer: &GlyphBuffer) -> Option<Pa
 
     let mut path = GlyphPath::default();
     for (info, pos) in buffer.glyph_infos().iter().zip(buffer.glyph_positions()) {
-        // Clippy: `info.glyph_id` is guaranteed to be <= u16::MAX. And there is
-        // even a helper function in rustybuzz to do this conversion, which as
-        // of 0.20 is uselessly locked behind `pub(crate)` for no reason.
-        #[allow(clippy::cast_possible_truncation)]
+        // There is a helper function in rustybuzz to do this conversion, which
+        // as of 0.20 is uselessly locked behind `pub(crate)` for no reason. :-(
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "`info.glyph_id` is guaranteed to be ≤u16::MAX"
+        )]
         let glyph_id = GlyphId(info.glyph_id as u16);
 
         // “… since ttf-parser is a pull parser, OutlineBuilder will emit
@@ -269,8 +275,10 @@ pub(super) fn buffer_to_path(face: &Face<'_>, buffer: &GlyphBuffer) -> Option<Pa
             path.segment.clear();
         }
 
-        // Clippy: If the x-advance is >=2**24, something has gone wrong.
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "if x-advance is ≥2**24, something sure happened"
+        )]
         {
             path.x += pos.x_advance as f32;
         }
@@ -310,11 +318,10 @@ impl Pixels {
             size <= 4_096 * 4_096,
             "bitmap resource limit reached; maximum size is 4096×4096"
         );
-        // Clippy: This number came from a u16.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation, reason = "value came from a u16")]
         let stride = stride as u16;
         Self {
-            data: vec![0u8; size],
+            data: vec![0_u8; size],
             stride,
             width,
         }
@@ -337,9 +344,11 @@ impl Pixels {
 
     /// An overengineered iterator over the index and mask of pixels within the
     /// given `rect`.
-    // Clippy: The rect is clamped to the bounds of the bitmap, which must
-    // be positive, and truncation does not matter.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "truncation does not matter and value is clamped to an unsigned range"
+    )]
     pub fn iter_indexes(&self, rect: &Rect) -> impl Iterator<Item = (usize, u8)> + use<> {
         let rect = rect.intersect(&self.bounds());
 
@@ -379,8 +388,7 @@ impl Pixels {
     /// The height of the bitmap, in pixels.
     #[inline]
     #[must_use]
-    // Clippy: This number came from a u16.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation, reason = "value came from a u16")]
     pub fn height(&self) -> u16 {
         (self.data.len() / usize::from(self.stride)) as u16
     }
@@ -412,10 +420,10 @@ impl Rect {
     #[inline]
     pub const fn new(left: f64, top: f64, right: f64, bottom: f64) -> Self {
         Self {
-            left: left.min(right),
-            top: top.min(bottom),
-            right: right.max(left),
-            bottom: bottom.max(top),
+            left,
+            top,
+            right,
+            bottom,
         }
     }
 
@@ -424,6 +432,13 @@ impl Rect {
     #[inline]
     pub const fn from_xywh(x: f64, y: f64, width: f64, height: f64) -> Self {
         Self::new(x, y, x + width, y + height)
+    }
+
+    /// Gets the area of the rectangle.
+    #[inline]
+    #[must_use]
+    pub const fn area(&self) -> f64 {
+        self.width() * self.height()
     }
 
     /// Gets the bottom-left corner of the rect as a `Vec2`.
@@ -439,14 +454,33 @@ impl Rect {
         other.contained_by(self)
     }
 
-    /// Creates a new `Rect` by extending the edges by the given amounts.
+    /// Creates a new `Rect` by extending the edges inward by the given amounts.
+    ///
+    /// If an inset causes a negative dimension, it will be clamped to zero and
+    /// both points in that dimension will be set to the midpoint.
     #[inline]
     pub const fn inset(&self, inset: &Self) -> Self {
+        let left = self.left + inset.left;
+        let top = self.top + inset.top;
+        let right = self.right - inset.right;
+        let bottom = self.bottom - inset.bottom;
+        let (top, bottom) = if bottom < top {
+            let mid = bottom.midpoint(top);
+            (mid, mid)
+        } else {
+            (top, bottom)
+        };
+        let (left, right) = if right < left {
+            let mid = right.midpoint(left);
+            (mid, mid)
+        } else {
+            (left, right)
+        };
         Self {
-            left: self.left + inset.left,
-            top: self.top + inset.top,
-            right: self.right + inset.right,
-            bottom: self.bottom + inset.bottom,
+            left,
+            top,
+            right,
+            bottom,
         }
     }
 
@@ -536,7 +570,7 @@ impl Containable for Rect {
 }
 
 impl core::fmt::Debug for Rect {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Rect")
             .field("left", &self.left)
             .field("top", &self.top)
@@ -646,6 +680,15 @@ impl Vec2 {
         self.y.atan2(self.x)
     }
 
+    /// Gets the absolute value of `self`.
+    #[inline]
+    pub const fn abs(self) -> Self {
+        Self {
+            x: self.x.abs(),
+            y: self.y.abs(),
+        }
+    }
+
     /// Gets the cross-product of `self` and `other`.
     #[inline]
     pub const fn cross(self, other: Self) -> f64 {
@@ -662,6 +705,12 @@ impl Vec2 {
     #[inline]
     pub const fn extend(self, z: f64) -> Vec3 {
         Vec3::with_z(self, z)
+    }
+
+    /// Returns true if neither coordinate is [`f64::NAN`].
+    #[inline]
+    pub const fn is_valid(&self) -> bool {
+        !self.x.is_nan() && !self.y.is_nan()
     }
 
     /// Gets the Euclidean length of `self`.
@@ -760,6 +809,12 @@ impl core::ops::AddAssign<f64> for Vec2 {
     }
 }
 
+impl core::ops::AddAssign for Vec2 {
+    fn add_assign(&mut self, rhs: Vec2) {
+        *self = *self + rhs;
+    }
+}
+
 impl core::ops::Div<f64> for Vec2 {
     type Output = Self;
 
@@ -801,6 +856,12 @@ impl core::ops::Sub for Vec2 {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
         }
+    }
+}
+
+impl core::ops::SubAssign for Vec2 {
+    fn sub_assign(&mut self, rhs: Vec2) {
+        *self = *self - rhs;
     }
 }
 
@@ -982,19 +1043,36 @@ macro_rules! to_svg {
         element
     }};
 
-    ($element:expr, $propset:ident, $node:ident, {
+    ($element:expr, $propset:ident, $hover:ident, $node:ident, {
         $($prop:ident => $attr:literal),* $(,)?
     }) => {{
+        use $crate::renderer::extension_tags::svg::NS_SVG;
+        use ::core::{write, option::Option::Some, fmt::Write as _};
+        use ::minidom::Element;
+        use ::std::string::String;
+
         let mut element = $element;
-        $(
-            if let Some(value) = $propset.$prop.get($node).map(|value| value.to_string()) {
-                element = element.attr(n!($attr), value);
-            }
-        )*
-        element
+        // TODO: Hover styles that are the same for every item in a mark should
+        // be applied to the parent scope, since browser parsing all this CSS is
+        // slow.
+        let mut style = String::from("@scope{:scope:hover{");
+        let mut has_style = false;
+        $(if let Some(value) = $propset.$prop.get($node).map(|value| value.to_string()) {
+              element = element.attr(n!($attr), value);
+        })*
+        if let Some(hover) = $hover {
+            $(if let Some(value) = hover.$prop.get($node).map(|value| value.to_string()) {
+                has_style = true;
+                let _ = write!(style, "{}:{value};", $attr);
+            })*
+        }
+        style.push_str("}}");
+        if has_style {
+            element.append(Element::builder("style", NS_SVG).append(style))
+        } else {
+            element
+        }
     }}
 }
 
-use rand::{SeedableRng, rngs::SmallRng};
-use std::cell::RefCell;
 use to_svg;

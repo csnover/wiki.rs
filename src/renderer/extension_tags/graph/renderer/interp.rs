@@ -193,8 +193,10 @@ fn bundle(
     let mut points = peeknth::sizedpeekdn::<_, 1, 1>(points);
 
     if points.len() > 1 && beta != Some(1.0) {
-        // Clippy: If there are ever >=2**53 points, something sure happened.
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "if there are ever ≥2**53 points, something sure happened"
+        )]
         let len = points.len() as f64;
         let (first, delta) = {
             let first = points.peek_front().copied().unwrap();
@@ -205,9 +207,10 @@ fn bundle(
         basis(
             path,
             &mut points.enumerate().map(|(i, point)| {
-                // Clippy: If there are ever >=2**53 points, something sure
-                // happened.
-                #[allow(clippy::cast_precision_loss)]
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "if there are ever ≥2**53 points, something sure happened"
+                )]
                 let t = i as f64 / len;
                 let mut point = point * beta;
                 point.x += (1.0 - beta) * (first.x + t * delta.x);

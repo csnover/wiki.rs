@@ -198,8 +198,10 @@ where
         self.point = clip::point_ring;
         self.line_start = clip::ring_start;
         self.line_end = clip::ring_end;
-        assert!(self.clipped_polygon.is_empty());
-        assert!(self.raw_polygon.is_empty());
+        assert!(
+            self.clipped_polygon.is_empty() && self.raw_polygon.is_empty(),
+            "polygon_start calls cannot be nested"
+        );
     }
 
     fn polygon_end(&mut self) {
@@ -460,8 +462,10 @@ where
         self.clean = Clean::CLEAN;
     }
 
-    // Clippy: If it was good enough for D3, it is good enough for me for now.
-    #[allow(clippy::float_cmp)]
+    #[expect(
+        clippy::float_cmp,
+        reason = "good enough for D3, good enough for me for now"
+    )]
     fn point(&mut self, mut point: Vec2) {
         let sx = if point.x > 0.0 { PI } else { -PI };
         let dx = (point.x - self.prev_point.x).abs();
@@ -567,8 +571,7 @@ where
 }
 
 /// A preclipper which clips lines to a radius around the projection’s origin.
-// Clippy: No, really, there is a lot of state tracking.
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools, reason = "yes, many states, much bool")]
 pub(super) struct ClipCircle<L>
 where
     L: Listener,
@@ -1140,8 +1143,10 @@ where
     fn polygon_start(&mut self) {
         self.clean = Clean::CLEAN;
         self.in_polygon = true;
-        assert!(self.clipped_polygon.is_empty());
-        assert!(self.raw_polygon.is_empty());
+        assert!(
+            self.clipped_polygon.is_empty() && self.raw_polygon.is_empty(),
+            "polygon_start calls cannot be nested"
+        );
     }
 
     fn sphere(&mut self) {}
@@ -1662,9 +1667,10 @@ fn inside_polygon_cartographic(polygon: &[Vec<Vec2>], point: Vec2) -> bool {
                     -1
                 };
                 let phi_arc = f64::from(-direction) * clamp_asin(intersection.z);
-                // Clippy: If it was good enough for D3, it is good enough for
-                // me for now.
-                #[allow(clippy::float_cmp)]
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "good enough for D3, good enough for me for now"
+                )]
                 if parallel > phi_arc || parallel == phi_arc && (arc.x != 0.0 || arc.y != 0.0) {
                     winding += direction;
                 }

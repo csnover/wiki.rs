@@ -4,16 +4,16 @@ use super::{
     super::{
         DoubleSizeIterator, Node, Result,
         mark::{Kind as MarkKind, Mark, Orient, Shape},
-        propset::{Align, Baseline, Getter, Kind as PropsetKind, Propset},
+        propset::{Align, Baseline, Getter as _, Kind as PropsetKind, Propset},
     },
-    NS_SVG, Rect, TextMetrics, ValueDisplay, Vec2, defaults, draw_container, interp, n,
+    NS_SVG, Rect, TextMetrics, ValueDisplay as _, Vec2, defaults, draw_container, interp, n,
     path::{Command, SvgPath, SvgPathIterator, arc_path},
     text_metrics, to_svg,
 };
-use core::fmt::Write as _;
+use core::{cell::Cell, fmt::Write as _};
 use minidom::{Element, ElementBuilder};
 use rustybuzz::{Face, GlyphBuffer, ShapePlan, UnicodeBuffer, ttf_parser::Tag};
-use std::{borrow::Cow, cell::Cell, sync::LazyLock};
+use std::{borrow::Cow, sync::LazyLock};
 
 /// Creates an SVG element for a single mark.
 pub(super) fn draw_mark<'s>(
@@ -28,7 +28,8 @@ pub(super) fn draw_mark<'s>(
         return Ok(None);
     };
 
-    // TODO: stroke/fill should default for marks which are not axis/legend.
+    let hover = mark.propset(PropsetKind::Hover);
+
     let node = &parent.with_child_mark(mark);
     if propset.opacity.get(node) == Some(0.0) {
         return Ok(None);
@@ -37,18 +38,18 @@ pub(super) fn draw_mark<'s>(
     let mut bounds = Rect::default();
     let g = Element::builder("g", NS_SVG);
     let g = match &mark.kind {
-        MarkKind::Rect => g.append_all(draw_rect(propset, node)),
-        MarkKind::Symbol => g.append_all(draw_symbol(propset, node)),
-        MarkKind::Path => g.append_all(draw_path(propset, node)),
-        MarkKind::Arc => g.append_all(draw_arc(propset, node)),
-        MarkKind::Area => g.append_all(draw_area(propset, node)),
-        MarkKind::Line => g.append_all(draw_line(propset, node)),
-        MarkKind::Rule => g.append_all(draw_rule(propset, node)),
-        MarkKind::Image => g.append_all(draw_image(propset, node)),
-        MarkKind::Text => g.append_all(draw_text(propset, node)),
+        MarkKind::Rect => g.append_all(draw_rect(propset, hover, node)),
+        MarkKind::Symbol => g.append_all(draw_symbol(propset, hover, node)),
+        MarkKind::Path => g.append_all(draw_path(propset, hover, node)),
+        MarkKind::Arc => g.append_all(draw_arc(propset, hover, node)),
+        MarkKind::Area => g.append_all(draw_area(propset, hover, node)),
+        MarkKind::Line => g.append_all(draw_line(propset, hover, node)),
+        MarkKind::Rule => g.append_all(draw_rule(propset, hover, node)),
+        MarkKind::Image => g.append_all(draw_image(propset, hover, node)),
+        MarkKind::Text => g.append_all(draw_text(propset, hover, node)),
         MarkKind::Group(_) => {
             let mut g = g;
-            for child in draw_group(propset, node) {
+            for child in draw_group(propset, hover, node) {
                 let (element, child_bounds) = child?;
                 g = g.append(element);
                 bounds = bounds.union(&child_bounds);
@@ -351,8 +352,12 @@ where
 }
 
 /// Creates an SVG element for an arc mark.
-fn draw_arc<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
-    node.for_each_item().map(|ref node| {
+fn draw_arc<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
+    node.for_each_item().map(move |ref node| {
         let x = propset.x.get(node).unwrap_or(0.0);
         let y = propset.y.get(node).unwrap_or(0.0);
         let start_angle = propset.start_angle.get(node).unwrap_or(0.0);
@@ -360,7 +365,7 @@ fn draw_arc<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Ite
         let inner_radius = propset.inner_radius.get(node).unwrap_or(0.0);
         let outer_radius = propset.outer_radius.get(node).unwrap_or(0.0);
         let path = arc_path(start_angle, end_angle, inner_radius, outer_radius);
-        new_element("path", propset, node)
+        new_element("path", propset, hover, node)
             .attr(n!("d"), path)
             .attr(
                 n!("transform"),
@@ -371,7 +376,11 @@ fn draw_arc<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Ite
 }
 
 /// Creates an SVG element for an area mark.
-fn draw_area<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
+fn draw_area<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
     let orientation = propset.orient.get(node).unwrap_or_default();
     let interpolate = propset.interpolate.get(node).unwrap_or_default();
     let tension = propset.tension.get(node);
@@ -401,16 +410,20 @@ fn draw_area<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
 
     interpolate(&mut path, backward, interp::Mode::AreaOdd, tension);
 
-    core::iter::once(
-        new_element("path", propset, node)
-            .attr(n!("d"), path.finish())
-            .build(),
-    )
+    node.for_each_item()
+        .next()
+        .map(|ref node| {
+            new_element("path", propset, hover, node)
+                .attr(n!("d"), path.finish())
+                .build()
+        })
+        .into_iter()
 }
 
 /// Creates an SVG element for a group mark.
 fn draw_group<'s>(
     propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
     node: &Node<'s, '_>,
 ) -> impl Iterator<Item = Result<(Element, Rect)>> {
     let Some((MarkKind::Group(group), encoder)) = node
@@ -436,7 +449,7 @@ fn draw_group<'s>(
         // whole group according to its bounds.
         if width != 0.0 || height != 0.0 {
             // x/y do not go on this element so cannot use `draw_rect`
-            let bg = new_element("rect", &propset, node)
+            let bg = new_element("rect", &propset, hover, node)
                 .attr(n!("width"), width.v())
                 .attr(n!("height"), height.v())
                 .build();
@@ -457,11 +470,15 @@ fn draw_group<'s>(
 }
 
 /// Creates an SVG element for an image mark.
-fn draw_image<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
-    node.for_each_item().filter_map(|ref node| {
+fn draw_image<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
+    node.for_each_item().filter_map(move |ref node| {
         let bounds = image_dims(propset, node);
         propset.url.get(node).map(|href| {
-            new_element("image", propset, node)
+            new_element("image", propset, hover, node)
                 .attr(
                     n!("transform"),
                     format!(
@@ -496,7 +513,11 @@ fn image_dims<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> Rect {
 }
 
 /// Creates an SVG element for a line mark.
-fn draw_line<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
+fn draw_line<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
     let interpolate = propset.interpolate.get(node).unwrap_or_default();
     let tension = propset.tension.get(node);
 
@@ -510,21 +531,29 @@ fn draw_line<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
     let mut path = SvgPath::default();
     interpolate(&mut path, &mut points, interp::Mode::Line, tension);
 
-    core::iter::once(
-        new_element("path", propset, node)
-            .attr(n!("d"), path.finish())
-            .build(),
-    )
+    node.for_each_item()
+        .next()
+        .map(|ref node| {
+            new_element("path", propset, hover, node)
+                .attr(n!("d"), path.finish())
+                .build()
+        })
+        .into_iter()
 }
 
 /// Creates an SVG element for a path mark.
-fn draw_path<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
-    node.for_each_item().filter_map(|ref node| {
+fn draw_path<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
+    node.for_each_item().filter_map(move |ref node| {
         propset.path.get(node).map(|path| {
             let x = propset.x.get(node).unwrap_or(0.0);
             let y = propset.x.get(node).unwrap_or(0.0);
 
-            let mut path = new_element("path", propset, node).attr(n!("d"), path.to_string());
+            let mut path =
+                new_element("path", propset, hover, node).attr(n!("d"), path.to_string());
 
             if x != 0.0 || y != 0.0 {
                 path = path.attr(
@@ -539,15 +568,19 @@ fn draw_path<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
 }
 
 /// Creates an SVG element for a rect mark.
-fn draw_rect<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
-    node.for_each_item().filter_map(|ref node| {
+fn draw_rect<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
+    node.for_each_item().filter_map(move |ref node| {
         let (x, width) = propset.x(node);
         let (y, height) = propset.y(node);
 
         // Although a dimensionless rect could still have a stroke, and thus could
         // have some visual output, Vega omits them from the scene
         (width > 0.0 && height > 0.0).then(|| {
-            new_element("rect", propset, node)
+            new_element("rect", propset, hover, node)
                 .attr(n!("x"), x.v())
                 .attr(n!("y"), y.v())
                 .attr(n!("width"), width.v())
@@ -558,13 +591,17 @@ fn draw_rect<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
 }
 
 /// Creates an SVG element for a rule mark.
-fn draw_rule<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
-    node.for_each_item().filter_map(|ref node| {
+fn draw_rule<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
+    node.for_each_item().filter_map(move |ref node| {
         let (x, width) = propset.x(node);
         let (y, height) = propset.y(node);
 
         (width > 0.0 || height > 0.0).then(|| {
-            new_element("line", propset, node)
+            new_element("line", propset, hover, node)
                 .attr(n!("x1"), x.v())
                 .attr(n!("x2"), (x + width).v())
                 .attr(n!("y1"), y.v())
@@ -575,8 +612,12 @@ fn draw_rule<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
 }
 
 /// Creates an SVG element for a symbol mark.
-fn draw_symbol<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
-    node.for_each_item().map(|ref node| {
+fn draw_symbol<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
+    node.for_each_item().map(move |ref node| {
         let x = propset.x.get(node).unwrap_or(0.0);
         let y = propset.y.get(node).unwrap_or(0.0);
         // In Vega, the default size fallback does not apply to axis or legend,
@@ -643,7 +684,7 @@ fn draw_symbol<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<
             }
         }
 
-        new_element("path", propset, node)
+        new_element("path", propset, hover, node)
             .attr(n!("d"), path.finish())
             .attr(
                 n!("transform"),
@@ -654,7 +695,11 @@ fn draw_symbol<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<
 }
 
 /// Creates an SVG element for a text mark.
-fn draw_text<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<Item = Element> {
+fn draw_text<'s>(
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> impl Iterator<Item = Element> {
     let encoder = node.mark.as_ref().and_then(|mark| mark.encoder.as_ref());
     node.for_each_item().filter_map(move |ref node| {
         let propset = encoder.map_or(Cow::Borrowed(propset), |encoder| encoder(propset, node));
@@ -676,7 +721,7 @@ fn draw_text<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
             dy += font_size * baseline.adjustment();
         }
 
-        let mut element = new_element("text", &propset, node).append(text.to_string());
+        let mut element = new_element("text", &propset, hover, node).append(text.to_string());
 
         let transform = if let Some(angle) = propset.angle.get(node) {
             let mut transform = format!(
@@ -699,8 +744,12 @@ fn draw_text<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
             .attr(n!("transform"), transform)
             .attr(n!("font-size"), font_size.v());
 
+        if hover.is_none() {
+            element = element.attr(n!("pointer-events"), "none");
+        }
+
         Some(
-            to_svg!(element, propset, node, {
+            to_svg!(element, propset, hover, node, {
                 align => "text-anchor",
                 font => "font-family",
                 font_style => "font-style",
@@ -712,8 +761,13 @@ fn draw_text<'s>(propset: &Propset<'s>, node: &Node<'s, '_>) -> impl Iterator<It
 }
 
 /// Creates an SVG element builder with common visual properties set.
-fn new_element<'s>(name: &str, propset: &Propset<'s>, node: &Node<'s, '_>) -> ElementBuilder {
-    let element = to_svg!(Element::builder(name, NS_SVG), propset, node, {
+fn new_element<'s>(
+    name: &str,
+    propset: &Propset<'s>,
+    hover: Option<&Propset<'s>>,
+    node: &Node<'s, '_>,
+) -> ElementBuilder {
+    let element = to_svg!(Element::builder(name, NS_SVG), propset, hover, node, {
         cursor => "cursor",
         fill => "fill",
         fill_opacity => "fill-opacity",
@@ -726,7 +780,8 @@ fn new_element<'s>(name: &str, propset: &Propset<'s>, node: &Node<'s, '_>) -> El
     });
 
     if propset.fill.is_none() {
-        element.attr(n!("fill"), "none".to_string())
+        // The default in SVG is black fill
+        element.attr(n!("fill"), "none".to_owned())
     } else {
         element
     }

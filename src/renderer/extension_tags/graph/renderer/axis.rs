@@ -219,10 +219,7 @@ fn data<'s>(
         };
 
         let mut minor_ticks = vec![];
-        // Clippy: There is no reasonable condition where there are >4B minor
-        // ticks, and the value is checked for positivity earlier, and was found
-        // to be reasonably happy.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "there is no way there would be >4B minor ticks, and the value was checked for positivity earlier and found to be reasonably happy")]
         let minor_count = count as u32;
 
         let (min, max) = scale.input_range();

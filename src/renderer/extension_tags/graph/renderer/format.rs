@@ -80,8 +80,10 @@ pub(super) fn make_formatter<'b, 's: 'b>(
         }
         Format::String => Box::new(ValueExt::to_string),
         Format::Number => {
-            // Clippy: If there are ever >=2**53 items, something sure happened.
-            #[allow(clippy::cast_precision_loss)]
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "if there are ever ≥2**53 items, something sure happened"
+            )]
             let count = count as f64;
             let number_formatter = auto_number_format(format, scale.input_range(), count)?;
             // TODO: This is supposed to do special things for log scales.
@@ -157,7 +159,7 @@ fn auto_number_format(
         Kind::Fixed => {
             if spec.precision.is_none() {
                 let p = u8::from(spec.suffix == Some("%")) * 2;
-                spec.precision = Some(precision_fixed(step) - p);
+                spec.precision = Some(precision_fixed(step).saturating_sub(p));
             }
         }
         _ => {}
@@ -286,8 +288,10 @@ enum Kind {
 
 impl Kind {
     /// Converts the given number `n` to a string with optional precision `p`.
-    // Clippy: Truncation is desirable in all cases where it occurs.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "truncation is desirable here"
+    )]
     fn fmt(self, n: f64, p: Option<u8>) -> String {
         if n == f64::INFINITY {
             return "Infinity".into();
@@ -296,9 +300,9 @@ impl Kind {
         }
         match self {
             Kind::Binary => format!("{n:b}", n = n as i64),
-            Kind::Character => {
-                // Clippy: Sign loss is specified by ECMAScript 2026 §22.1.2.1.
-                #[allow(clippy::cast_sign_loss)]
+            Kind::Character =>
+            {
+                #[expect(clippy::cast_sign_loss, reason = "matches ES2026 §22.1.2.1")]
                 char::from_u32((n as u16).into())
                     .unwrap_or(char::REPLACEMENT_CHARACTER)
                     .to_string()
@@ -337,15 +341,20 @@ impl Kind {
                     let dec = n / 10.0_f64.powi(n_digits.into());
                     let sign = if n_digits < 0 { "-" } else { "+" };
                     let exp = n_digits.abs();
-                    // Clippy: This number came from a u8.
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    #[expect(clippy::cast_sign_loss, reason = "value comes from u8")]
                     let p = p as usize - 1;
                     format!("{dec:.p$}e{sign}{exp}")
                 } else {
                     let p = e.log10();
-                    debug_assert!(p.signum() > 0.0 && p <= f64::from(i16::MAX));
-                    // Clippy: The previous line asserts the value is OK.
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    assert!(
+                        p.signum() > 0.0 && p <= f64::from(i16::MAX),
+                        "impossible precision"
+                    );
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "previous line asserts range"
+                    )]
                     let p = p as usize;
                     format!("{n:.p$}")
                 }
@@ -357,8 +366,7 @@ impl Kind {
                 let p = p.unwrap_or(0);
                 let n = round(n, format_precision(n, p));
                 let p = format_precision(n * (1.0 + 1e-15), p).clamp(0, 20);
-                // Clippy: p is clamped to a positive value.
-                #[allow(clippy::cast_sign_loss)]
+                #[expect(clippy::cast_sign_loss, reason = "value is clamped to unsigned range")]
                 let p = p as usize;
                 format!("{n:.p$}")
             }
@@ -673,7 +681,7 @@ impl core::str::FromStr for Specifier {
             .unwrap()
         });
 
-        let matches = RE.captures(s).ok_or(Error::Regex(s.to_string()))?;
+        let matches = RE.captures(s).ok_or(Error::Regex(s.to_owned()))?;
 
         let zero = matches.get(5).is_some();
         let fill = if zero {
@@ -855,10 +863,9 @@ impl UnitFormatter {
             } else {
                 value
             };
-            // Clippy: Truncation is intentional here since this is used as an
-            // index. Truncation must happen after floor because the value may
-            // be negative, which has a different behaviour to truncation.
-            #[allow(clippy::cast_possible_truncation)]
+            // Truncation must happen after floor because the value may be
+            // negative, which has a different behaviour to truncation.
+            #[expect(clippy::cast_possible_truncation, reason = "intended behaviour")]
             (((1e-12 + value.log10()) / 3.0).floor() as isize).clamp(-8, 8)
         };
 
@@ -867,8 +874,7 @@ impl UnitFormatter {
 }
 
 /// Computes the decimal exponent of the specified number `x`.
-// Clippy: The exponent range is -324..=308.
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation, reason = "the range is -324..=308")]
 fn exponent(x: f64) -> i16 {
     if x == 0.0 {
         0
@@ -884,8 +890,7 @@ fn format_precision(value: f64, precision: u8) -> i16 {
     // This formula is almost the same as a log10, except that it occasionally
     // exhibits different behaviour. For example, 0.0̅1 does something different.
     // This is required to pass tests.
-    // Clippy: The exponent range is -324..=308.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation, reason = "the range is -324..=308")]
     let weird_whole_digits = if value == 0.0 {
         1
     } else {
@@ -905,9 +910,12 @@ fn precision_fixed(step: f64) -> u8 {
 /// the specified numeric `step` and reference `value`.
 #[inline]
 fn precision_prefix(step: f64, value: f64) -> u8 {
-    // Clippy: The result value is always in i16 range. This could stay in i16
-    // and be truncated except that the exponent might be negative.
-    #[allow(clippy::cast_possible_truncation)]
+    // This could stay in i16 and be truncated except that the exponent might be
+    // negative and needs to round down instead of toward zero.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "guaranteed to be in range as `exponent` returns i16"
+    )]
     let value = (f64::from(exponent(value)) / 3.0).floor() as i16;
     (value.clamp(-8, 8) * 3 - exponent(step.abs()))
         .max(0)
