@@ -1,7 +1,10 @@
 //! MediaWiki Lua support libraries.
 
-// Clippy: Methods are implementing an interface which is invisible to clippy.
-#![allow(clippy::unnecessary_wraps, clippy::unused_self)]
+#![expect(
+    clippy::unnecessary_wraps,
+    clippy::unused_self,
+    reason = "implementing an interface invisible to clippy"
+)]
 
 use gc_arena::{Collect, Rootable};
 pub(super) use mw::{LuaEngine, run_host_call};

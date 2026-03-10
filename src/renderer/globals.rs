@@ -3,7 +3,7 @@
 use super::{Result, text_run};
 use crate::{
     common::anchor_encode,
-    wikitext::{HeadingLevel, Span, Spanned, Token, helpers::TextContent, visit::Visitor},
+    wikitext::{HeadingLevel, Span, Spanned, Token, helpers::TextContent, visit::Visitor as _},
 };
 use core::fmt;
 use std::collections::{BTreeSet, HashMap};

@@ -12,8 +12,8 @@ use crate::{
     common::anchor_encode,
     wikitext::{Parser, helpers::TextContent, visit::Visitor as _},
 };
+use core::cell::{Ref, RefCell};
 use gc_arena::Rootable;
-use std::cell::{Ref, RefCell};
 
 /// The URI support library.
 #[derive(gc_arena::Collect, Default)]

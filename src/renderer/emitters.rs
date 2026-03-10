@@ -38,8 +38,10 @@ use core::fmt;
 /// `DOM\Processors\PWrap`), presumably just to make it nearly impossible for
 /// any one developer to understand how anything works.
 #[derive(Debug, Default)]
-// Clippy: Should care, don’t care, hate this code.
-#[allow(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "should care, don’t care. hate this code"
+)]
 pub(super) struct GrafEmitter {
     // State for a single line:
     /// If true, the line contains an end tag which triggers a graf state

@@ -7,14 +7,13 @@ use crate::{
     title::{self, Title},
 };
 use axum::http::Uri;
-use core::fmt::{self, Write as _};
+use core::{
+    borrow::Borrow as _,
+    fmt::{self, Write as _},
+};
 use html_escape::NAMED_ENTITIES;
 use regex::Regex;
-use std::{
-    borrow::{Borrow, Cow},
-    io::Write as _,
-    sync::LazyLock,
-};
+use std::{borrow::Cow, io::Write as _, sync::LazyLock};
 
 // SPDX-SnippetBegin
 // SPDX-License-Identifier: CC-BY-SA-4.0

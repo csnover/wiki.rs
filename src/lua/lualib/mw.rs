@@ -12,15 +12,15 @@ use crate::{
     db::Database,
     lua::{HostCall, LuaFrame},
     renderer::{
-        CachedValue, ExpandMode, ExpandTemplates, Kv, StackFrame, State, Surrogate, call_parser_fn,
-        call_template, resolve_callee,
+        CachedValue, ExpandMode, ExpandTemplates, Kv, StackFrame, State, Surrogate as _,
+        call_parser_fn, call_template, resolve_callee,
     },
     title::{Namespace, Title},
     wikitext::FileMap,
 };
 use arc_cell::OptionalArcCell;
+use core::{cell::RefCell, pin::Pin};
 use piccolo::{ExternError, Stack, StashedString, StashedTable, StashedValue, UserData};
-use std::{cell::RefCell, pin::Pin};
 
 /// The main Lua support library.
 #[derive(gc_arena::Collect, Default)]
@@ -509,7 +509,7 @@ fn call_parser_function(
             );
         }
 
-        Ok((frame_id.to_string(), callee, args))
+        Ok((frame_id.to_owned(), callee, args))
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
@@ -536,8 +536,8 @@ fn expand_template(
     args: &StashedTable,
 ) -> Result<StashedString, ExternError> {
     let (frame_id, title, arguments) = state.statics.vm.try_enter(|ctx| {
-        let frame_id = ctx.fetch(frame_id).to_str()?.to_string();
-        let title = ctx.fetch(title).to_str()?.to_string();
+        let frame_id = ctx.fetch(frame_id).to_str()?.to_owned();
+        let title = ctx.fetch(title).to_str()?.to_owned();
         let arguments = args_from_table(ctx, ctx.fetch(args))?;
         Ok((frame_id, title, arguments))
     })?;
@@ -569,7 +569,7 @@ fn get_all_expanded_arguments(
     let frame_id = state
         .statics
         .vm
-        .try_enter(|ctx| Ok(ctx.fetch(frame_id).to_str()?.to_string()))?;
+        .try_enter(|ctx| Ok(ctx.fetch(frame_id).to_str()?.to_owned()))?;
 
     with_sp(&frame_id, Some(sp), |sp| {
         let table = state.statics.vm.enter(|ctx| ctx.stash(Table::new(&ctx)));
@@ -608,8 +608,8 @@ fn get_expanded_argument(
 ) -> Result<StashedValue, ExternError> {
     let (frame_id, key) = state.statics.vm.try_enter(|ctx| {
         Ok((
-            ctx.fetch(frame_id).to_str()?.to_string(),
-            ctx.fetch(key).to_str()?.to_string(),
+            ctx.fetch(frame_id).to_str()?.to_owned(),
+            ctx.fetch(key).to_str()?.to_owned(),
         ))
     })?;
 
@@ -637,8 +637,8 @@ fn preprocess(
 ) -> Result<StashedString, ExternError> {
     let (frame_id, text) = state.statics.vm.try_enter(|ctx| {
         Ok((
-            ctx.fetch(frame_id).to_str()?.to_string(),
-            ctx.fetch(text).to_str()?.to_string(),
+            ctx.fetch(frame_id).to_str()?.to_owned(),
+            ctx.fetch(text).to_str()?.to_owned(),
         ))
     })?;
 

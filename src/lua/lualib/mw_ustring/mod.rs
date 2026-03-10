@@ -11,8 +11,8 @@ use super::prelude::*;
 use crate::lua::stdlib::{
     calculate_start_count, find_lua, gmatch_next, gsub::gsub_lua, match_lua, sub_lua,
 };
+use core::cell::Cell;
 use piccolo::{Stack, UserData};
-use std::cell::Cell;
 use unicode_normalization::UnicodeNormalization as _;
 
 #[cfg(test)]
@@ -154,8 +154,10 @@ impl UstringLibrary {
         check_string("gcodepoint_init", ctx, s)?;
 
         let seq = Table::new(&ctx);
-        // Clippy: The index will never be large enough to wrap.
-        #[allow(clippy::cast_possible_wrap)]
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "the index will never be large enough to wrap"
+        )]
         for (index, value) in code_point(s, start, end)?.enumerate() {
             seq.set(ctx, index as i64 + 1, value)?;
         }
@@ -317,7 +319,7 @@ impl UstringLibrary {
 
 impl MwInterface for UstringLibrary {
     const NAME: &str = "mw.ustring";
-    const CODE: &[u8] = include_bytes!("./modules/mw.ustring.lua");
+    const CODE: &[u8] = include_bytes!("../modules/mw.ustring.lua");
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {
@@ -344,8 +346,10 @@ impl MwInterface for UstringLibrary {
         }
     }
 
-    // Clippy: The value is constant and known to be in range.
-    #[allow(clippy::cast_possible_wrap)]
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "the value is a known in-range const"
+    )]
     fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {
             using ctx;
@@ -359,8 +363,10 @@ impl MwInterface for UstringLibrary {
 /// Validates that the given pattern is below the size limit.
 #[inline]
 fn check_pattern<'gc>(func: &str, ctx: Context<'gc>, s: VmString<'_>) -> Result<(), VmError<'gc>> {
-    // Clippy: The value is constant and known to be in range.
-    #[allow(clippy::cast_possible_wrap)]
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "the value is a known in-range const"
+    )]
     if s.len() > PATTERN_LENGTH_LIMIT as i64 {
         Err(format!(
             "bad argument #2 to '{func}' (pattern is longer than {PATTERN_LENGTH_LIMIT} bytes)"
@@ -374,8 +380,10 @@ fn check_pattern<'gc>(func: &str, ctx: Context<'gc>, s: VmString<'_>) -> Result<
 /// Validates that the given string is below the size limit.
 #[inline]
 fn check_string<'gc>(func: &str, ctx: Context<'gc>, s: VmString<'_>) -> Result<(), VmError<'gc>> {
-    // Clippy: The value is constant and known to be in range.
-    #[allow(clippy::cast_possible_wrap)]
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "the value is a known in-range const"
+    )]
     if s.len() > STRING_LENGTH_LIMIT as i64 {
         Err(format!(
             "bad argument #1 to '{func}' (string is longer than {STRING_LENGTH_LIMIT} bytes)"

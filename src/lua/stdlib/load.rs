@@ -8,8 +8,8 @@ use super::extras::count_fuel;
 use core::pin::Pin;
 use gc_arena::{Collect, Gc};
 use piccolo::{
-    BoxSequence, Callback, CallbackReturn, Closure, Context, Error, Execution, Function, IntoValue,
-    Sequence, SequencePoll, Stack, String, Table, TypeError, Value,
+    BoxSequence, Callback, CallbackReturn, Closure, Context, Error, Execution, Function,
+    IntoValue as _, Sequence, SequencePoll, Stack, String, Table, TypeError, Value,
 };
 
 /// The load mode.
@@ -204,9 +204,11 @@ impl<'gc> Sequence<'gc> for BuildLoadString<'gc> {
                         return Ok(SequencePoll::Return);
                     };
                     stack[self.step - 1] = Value::String(s);
-                    // Clippy: More than 4GiB of code would be problematic, and
-                    // string lengths cannot be negative.
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = ">4GiB code is impossible, and string lengths cannot be negative"
+                    )]
                     {
                         self.total_len += s.len() as usize;
                     }

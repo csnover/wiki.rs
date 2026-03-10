@@ -99,8 +99,10 @@ pub(super) fn new_datetime(
 }
 
 /// Creates a new [`DateTime`] from numeric date parts.
-// Clippy: TODO: Some args struct, perhaps.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "adding an args struct would mostly just be busywork"
+)]
 pub(super) fn from_parts(
     year: i64,
     month: Option<i64>,
@@ -205,23 +207,29 @@ enum Special {
     WeekdayCount(i64),
 }
 
-/// An unconstrained date specifier.
-// Clippy: Come on, now.
-#[allow(clippy::missing_docs_in_private_items)]
+/// An date specifier without range constraints. During processing, out-of-range
+/// values will overflow or underflow into the previous/next component.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct TimelibDate {
+    /// The year.
     year: Option<i64>,
+    /// The month, 0-indexed.
     month: Option<i64>,
+    /// The day, 0-indexed.
     day: Option<i64>,
 }
 
-/// An unconstrained time specifier.
+/// An time specifier without range constraints. During processing, out-of-range
+/// values will overflow or underflow into the previous/next component.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[allow(clippy::missing_docs_in_private_items)]
 struct TimelibTime {
+    /// The hour.
     hour: Option<i64>,
+    /// The minute.
     minute: Option<i64>,
+    /// The second.
     second: Option<i64>,
+    /// The microseconds.
     micros: Option<i64>,
 }
 

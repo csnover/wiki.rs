@@ -376,7 +376,7 @@ fn do_work(db: &Database<'_>, channel: &Channel, job: Job) {
             if let Ok(article) = db.extract_article(key, entry) {
                 db.cache
                     .write()
-                    .insert(key.to_string(), Some(Arc::new(article)));
+                    .insert(key.to_owned(), Some(Arc::new(article)));
             }
             channel.queue.lock().in_flight -= 1;
         }

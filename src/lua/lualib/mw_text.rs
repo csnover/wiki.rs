@@ -14,8 +14,9 @@ use crate::{
     php::strtr,
     renderer::{State, StripMarker, StripMarkers},
 };
+use core::cell::RefCell;
 use piccolo::{ExternError, Stack, StashedString, StashedTable, UserData};
-use std::{borrow::Cow, cell::RefCell};
+use std::borrow::Cow;
 
 /// The text support library.
 #[derive(gc_arena::Collect, Default)]

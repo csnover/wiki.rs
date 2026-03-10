@@ -1,6 +1,7 @@
 //! PHP compatible functions and types.
 
-use std::{borrow::Cow, fmt::Write as _};
+use core::fmt::Write as _;
+use std::borrow::Cow;
 use time::{
     Date, Duration, Month, OffsetDateTime, UtcOffset,
     format_description::well_known::{Iso8601, Rfc2822},
@@ -85,8 +86,10 @@ impl DateTime {
     ///
     /// Parts with values that are outside the range of the given time part will
     /// overflow into the next largest time part.
-    // Clippy: TODO: Some args struct, perhaps.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "adding an args struct would mostly just be busywork"
+    )]
     #[inline]
     pub fn from_parts(
         year: i64,
@@ -351,18 +354,39 @@ impl DateTime {
         }
     }
 
-    // Allow Deref to avoid rote, but hide the timezone functions so they are
-    // not called accidentally
-    #[allow(dead_code, clippy::missing_docs_in_private_items, clippy::unused_self)]
-    fn checked_to_offset(&self) {}
+    #[allow(
+        clippy::allow_attributes,
+        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+    )]
     #[allow(
         dead_code,
         clippy::missing_docs_in_private_items,
         clippy::unused_self,
-        clippy::wrong_self_convention
+        reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
+    )]
+    fn checked_to_offset(&self) {}
+    #[allow(
+        clippy::allow_attributes,
+        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+    )]
+    #[allow(
+        dead_code,
+        clippy::missing_docs_in_private_items,
+        clippy::unused_self,
+        clippy::wrong_self_convention,
+        reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
     )]
     fn to_offset(&self) {}
-    #[allow(dead_code, clippy::missing_docs_in_private_items, clippy::unused_self)]
+    #[allow(
+        clippy::allow_attributes,
+        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+    )]
+    #[allow(
+        dead_code,
+        clippy::missing_docs_in_private_items,
+        clippy::unused_self,
+        reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
+    )]
     fn replace_offset(&self) {}
 }
 
@@ -448,7 +472,7 @@ pub fn floatval(n: &str) -> Result<(f64, &str), core::num::ParseFloatError> {
 
 /// Performs a fuzzy comparison of two string values
 /// [like PHP](https://www.php.net/manual/en/language.types.numeric-strings.php).
-#[allow(clippy::float_cmp)]
+#[expect(clippy::float_cmp, reason = "matches upstream behaviour")]
 pub fn fuzzy_cmp(lhs: &str, rhs: &str) -> bool {
     let lhs = lhs.trim_ascii();
     let rhs = rhs.trim_ascii();
@@ -530,8 +554,11 @@ pub fn strval(n: f64) -> String {
     // appear to really think about it
     let len = 14_usize;
 
-    // Clippy: Truncation and sign loss is deliberate.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "intended behaviour"
+    )]
     let whole = n.abs() as u64;
     let (len, exp) = if whole == 0 {
         (Some(len), 0)
@@ -549,8 +576,11 @@ pub fn strval(n: f64) -> String {
         s.truncate(end);
         s
     } else {
-        // Clippy: The number is always positive and in range.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            reason = "value is known to be positive and in range"
+        )]
         {
             format!("{:.13}E+{exp}", n / 10.0_f64.powi(exp as i32))
         }

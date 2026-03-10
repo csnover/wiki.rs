@@ -8,7 +8,7 @@ use crate::lua::new_vm_core;
 use piccolo::{Closure, Executor, ExternError, io};
 use std::{
     fs::{File, read_dir},
-    io::{Read, Write, stdout},
+    io::{Read as _, Write as _, stdout},
 };
 
 const BASE_DIR: &str = "./src/lua/lualib/mw_ustring/tests";

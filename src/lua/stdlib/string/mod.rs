@@ -13,7 +13,6 @@ pub(crate) mod gmatch;
 pub(crate) mod gsub;
 
 /// Loads the string library.
-#[allow(clippy::too_many_lines)]
 pub fn load_string(ctx: Context<'_>) -> Result<(), TypeError> {
     let string = ctx.get_global::<Table<'_>>("string")?;
 

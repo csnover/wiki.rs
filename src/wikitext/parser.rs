@@ -3,10 +3,10 @@
 //! This grammar converts the Wikitext document into a pretty flat token tree
 //! which requires additional context-aware processing later.
 
-// Clippy: Most of the arguments are hidden. It is not possible to apply
-// this annotation directly to the parser because rust-peg does not understand
-// it.
-#![allow(clippy::too_many_arguments)]
+#![expect(
+    clippy::too_many_arguments,
+    reason = "most of the extra arguments are hidden peg arguments; peg does not allow annotations on just the functions which need it"
+)]
 
 // This code is heavily adapted from the Parsoid grammar at
 // <https://github.com/wikimedia/mediawiki-services-parsoid>
@@ -23,9 +23,10 @@ use super::{
     codemap::{Span, Spanned},
     config::HTML5_TAGS,
 };
+use core::cell::Cell;
 use core::iter;
 use peg::RuleResult;
-use std::{cell::Cell, collections::HashSet};
+use std::collections::HashSet;
 
 peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals) for str {
     /// The top-level start rule.
@@ -2340,7 +2341,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
           // <https://www.mediawiki.org/wiki/Help:Links#Pipe_trick>
           let pipe_trick = matches!(
               content.as_slice(),
-              [Spanned { span, node: Argument { content, .. }, .. }] if span.is_empty()
+              [Spanned { span, node: Argument { content, .. } }] if span.is_empty()
           );
           if !pipe_trick && let Some(target) = target {
               Token::Link {
@@ -3606,7 +3607,10 @@ fn reduce_tree(t: impl IntoIterator<Item = Spanned<Token>>) -> Vec<Spanned<Token
 /// Parser context information required for correct handling of inline
 /// terminators (via `inline_breaks`).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "there is just a lot of state to manage"
+)]
 struct Context {
     /// After template expansion has occurred.
     after_expansion: bool,

@@ -3,7 +3,7 @@
 use super::{
     Error, Result, State,
     expand_templates::{ExpandMode, ExpandTemplates},
-    surrogate::Surrogate,
+    surrogate::Surrogate as _,
 };
 use crate::{
     common::CowExt as _,
@@ -11,16 +11,14 @@ use crate::{
     title::Title,
     wikitext::{Argument, FileMap, Span, Spanned, Token},
 };
-use ::core::slice;
-use core::fmt;
-use piccolo::{Context, StashedString, Table};
-use std::{
-    borrow::Cow,
+use core::{
     cell::{Ref, RefCell},
-    collections::HashMap,
+    fmt,
     pin::{Pin, pin},
-    rc::Rc,
+    slice,
 };
+use piccolo::{Context, StashedString, Table};
+use std::{borrow::Cow, collections::HashMap, rc::Rc};
 
 /// A template transclusion or module call stack frame.
 // TODO: There are two kinds of these, Wikitext and module. The source is always
@@ -92,9 +90,8 @@ impl<'a> StackFrame<'a> {
 
     /// Evaluates the given `expr` in the scope of this stack frame.
     pub fn eval(&'a self, state: &mut State<'_>, expr: &[Spanned<Token>]) -> Result<Cow<'a, str>> {
-        // Clippy: The semicolon is required to make this a statement which
-        // `#[rustfmt::skip]` can apply to until rust-lang/rust#15701 is fixed
-        #[allow(clippy::unnecessary_semicolon)]
+        #[allow(clippy::allow_attributes, reason = "https://github.com/rust-lang/rust-clippy/issues/13358")]
+        #[allow(clippy::unnecessary_semicolon, reason = "i want rustfmt::skip and rust-lang/rust#15701 is not fixed yet")]
         #[rustfmt::skip]
         if let [Spanned { span, node: Token::Text }] = expr {
             return Ok(Cow::Borrowed(&self.source[span.into_range()]));
@@ -269,8 +266,7 @@ impl KeyMap {
     }
 
     /// Returns true if the given index is a named key.
-    // Clippy: Value can only be 0..=7.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation, reason = "value range is 0..7")]
     #[inline]
     fn is_named(&self, index: usize) -> bool {
         let slot = index / 8;
@@ -288,8 +284,7 @@ impl KeyMap {
     }
 
     /// Marks the key at the given index as a named key.
-    // Clippy: Value can only be 0..=7.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation, reason = "value range is 0..=7")]
     #[inline]
     fn set_named(&mut self, index: usize) {
         let slot = index / 8;
@@ -400,7 +395,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
             for index in key_map.indices.len()..self.len() {
                 let (name, is_named) = if let Some(name) = self.name(state, sp, index)? {
                     key_map.set_named(index);
-                    (name.trim_ascii().to_string(), true)
+                    (name.trim_ascii().to_owned(), true)
                 } else {
                     key_map.last_unnamed_key += 1;
                     (key_map.last_unnamed_key.to_string(), false)
@@ -431,7 +426,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
             for index in key_map.indices.len()..=index {
                 let name = if let Some(name) = self.name(state, sp, index)? {
                     key_map.set_named(index);
-                    name.trim_ascii().to_string()
+                    name.trim_ascii().to_owned()
                 } else {
                     key_map.last_unnamed_key += 1;
                     key_map.last_unnamed_key.to_string()
@@ -637,7 +632,7 @@ impl Kv<'_> {
                 .vm
                 .try_enter(|ctx| {
                     let value = ctx.fetch(value).to_str()?;
-                    Ok(Cow::Owned(value.to_string()))
+                    Ok(Cow::Owned(value.to_owned()))
                 })
                 .map_err(Into::into),
         }
@@ -662,7 +657,7 @@ impl Kv<'_> {
                 .vm
                 .try_enter(|ctx| {
                     let key = ctx.fetch(key).to_str()?;
-                    Ok(Some(Cow::Owned(key.to_string())))
+                    Ok(Some(Cow::Owned(key.to_owned())))
                 })
                 .map_err(Into::into),
             Kv::Argument(argument) => argument.name().map(|name| sp.eval(state, name)).transpose(),

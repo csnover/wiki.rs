@@ -99,8 +99,8 @@ impl Index<'_> {
 
         let file = File::open(path).map_err(|err| Error::Io(err, path.into()))?;
 
+        // SAFETY: This data is only ever used immutably.
         let (data, view) = unsafe {
-            // SAFETY: This data is only ever used immutably.
             let data = Mmap::map(&file).map_err(|err| Error::Io(err, path.into()))?;
             #[cfg(unix)]
             let _ = data.advise(memmap2::Advice::Sequential);
@@ -124,7 +124,7 @@ impl Index<'_> {
             // SAFETY: The index is specified as containing utf-8 text. If it
             // is not, the worst case scenario is that titles appear to be
             // garbage.
-            (data, std::str::from_utf8_unchecked(view))
+            (data, core::str::from_utf8_unchecked(view))
         };
 
         // To reduce the amount of memory used by the index ~as much as
@@ -201,7 +201,7 @@ impl Index<'_> {
                 let title = title.into_str();
                 (title == name).then(|| make_index(self.view, title))
             });
-            self.cache.write().insert(title.to_string(), entry);
+            self.cache.write().insert(title.to_owned(), entry);
             entry
         }
     }
@@ -210,9 +210,10 @@ impl Index<'_> {
     ///
     /// Does not update the LRU.
     #[inline]
-    // Clippy: Really, this is the best interface for this for now, since
-    // consumers would just convert it back into this shape anyway.
-    #[allow(clippy::option_option)]
+    #[expect(
+        clippy::option_option,
+        reason = "really, this is the best interface for this for now, since consumers would just convert it back into this shape anyway."
+    )]
     pub(super) fn is_cached(&self, title: &str) -> Option<Option<IndexEntry>> {
         self.cache.read().peek(title).copied()
     }
@@ -266,7 +267,7 @@ impl Index<'_> {
                 let value = self.cache.read().peek(key).copied();
                 let value = value.unwrap_or_else(|| {
                     let value = Some(make_index(self.view, name));
-                    self.cache.write().insert(key.to_string(), value);
+                    self.cache.write().insert(key.to_owned(), value);
                     value
                 });
                 signal(title, value);
@@ -278,7 +279,7 @@ impl Index<'_> {
 
         let mut cache = self.cache.write();
         for (_, title) in candidates.into_inner() {
-            cache.insert(title.key().to_string(), None);
+            cache.insert(title.key().to_owned(), None);
             signal(title, None);
         }
     }

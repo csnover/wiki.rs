@@ -68,7 +68,7 @@ pub(crate) enum Error {
 
     /// An ID from the database was not a valid number.
     #[error("id error: {0}")]
-    ParseInt(#[from] std::num::ParseIntError),
+    ParseInt(#[from] core::num::ParseIntError),
 
     /// Database is from another dimension.
     #[error("could not read siteinfo from database dump")]
@@ -181,15 +181,15 @@ impl RawDatabase<'_> {
             log::warn!("Replacing {key} from hacks");
             return Ok(Arc::new(Article {
                 id: 0xdead_beef,
-                title: key.to_string(),
-                body: (*body).to_string(),
-                redirect: None,
+                title: key.to_owned(),
+                body: (*body).to_owned(),
                 model: if key.starts_with("Module:") {
                     "Scribunto"
                 } else {
                     "wikitext"
                 }
                 .into(),
+                redirect: None,
             }));
         }
 
@@ -207,7 +207,7 @@ impl RawDatabase<'_> {
                 },
                 |article| Ok(Some(Arc::new(article))),
             )?;
-            self.cache.write().insert(key.to_string(), article.clone());
+            self.cache.write().insert(key.to_owned(), article.clone());
             article
         };
 
@@ -367,7 +367,7 @@ static MODULE_HATNOTE_LIST: Hack = Hack::HorsePills(&[
 /// slightly more work, so, you know.
 static MODULE_INFOBOX: Hack = Hack::HorsePills(&[(
     r"'(</[Tt][Rr]%s*>%s*)(\127[^\127]*UNIQ%-%-templatestyles%-%x+%-QINU[^\127]*\127)'",
-    r"'(</[Tt][Rr]%s*>%s*)(<templatestyles%s+[^>]*>)'",
+    "'(</[Tt][Rr]%s*>%s*)(<templatestyles%s+[^>]*>)'",
 )]);
 
 /// A fix for 'Module:TNT'.
@@ -380,7 +380,7 @@ static MODULE_INFOBOX: Hack = Hack::HorsePills(&[(
 /// does not work because not everything uses pcall with a fallback path. So
 /// just override the whole thing with a script that does nothing.
 static MODULE_TNT: Hack = Hack::Lobotomy(
-    r"
+    "
 local p = {}
 local link, formatMessage
 function p.msg(frame)

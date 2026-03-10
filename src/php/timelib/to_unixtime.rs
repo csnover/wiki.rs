@@ -279,8 +279,10 @@ fn adjust_special_weekday(date: Date, count: i64) -> Result<Date, Error> {
         .ok_or(Error::WeekdaysRange)?;
 
     let days = count % 5;
-    // Clippy: Guaranteed to be in range, number is mod 5.
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "guaranteed to be in range, number is mod 5"
+    )]
     if days == 0 {
         Ok(match date.weekday() {
             Weekday::Saturday | Weekday::Sunday => {

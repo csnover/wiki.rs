@@ -57,7 +57,7 @@ impl<'a, T> fmt::Debug for VInspector<'a, T>
 where
     T: TInspector<'a>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_list()
             .entries(self.1.iter().map(|inspect| T::inspect(self.0, inspect)))
             .finish()
@@ -185,7 +185,7 @@ impl<'a> TInspector<'a> for TokenInspector<'a> {
 }
 
 impl fmt::Debug for TokenInspector<'_> {
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "this is just a big switch")]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.1.node {
             Token::Autolink { target, content } => f

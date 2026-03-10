@@ -442,8 +442,7 @@ where
 }
 
 /// Default implementation of [`Visitor::visit_token`].
-// Clippy: Literally impossible to be shorter.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "this is just a big switch")]
 pub fn visit_token<'tt, V, E>(visitor: &mut V, token: &'tt Spanned<Token>) -> Result<(), E>
 where
     V: Visitor<'tt, E> + ?Sized,

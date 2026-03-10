@@ -8,7 +8,7 @@ use crate::{
     wikitext::Parser,
 };
 use axum::http::Uri;
-use core::ops::ControlFlow;
+use core::{ops::ControlFlow, pin::Pin};
 use gc_arena::Rootable;
 use lualib::{LanguageLibrary, LuaEngine, TitleLibrary, UriLibrary};
 use piccolo::{
@@ -16,7 +16,7 @@ use piccolo::{
     StashedString, StashedTable, TypeError, thread::BadExecutorMode,
 };
 use prelude::*;
-use std::{pin::Pin, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 mod lualib;
 mod prelude;
@@ -41,8 +41,14 @@ pub(crate) struct LuaFrame {
 }
 
 /// A call from a Lua module back into the renderer.
-// Clippy: The fields are self-documenting.
-#[allow(clippy::missing_docs_in_private_items)]
+#[allow(
+    clippy::allow_attributes,
+    reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+)]
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "the fields are self-documenting"
+)]
 #[derive(Clone)]
 enum HostCall {
     /// A call to a [parser function](crate::renderer::call_parser_fn).
@@ -146,48 +152,13 @@ pub(super) fn reset_vm(vm: &mut Lua, title: &Title, date: &DateTime) -> Result<(
 }
 
 /// Loads and calls a Scribunto module, returning the result.
-#[allow(clippy::too_many_lines)]
 pub(super) fn run_vm(
     state: &mut State<'_>,
     sp: Pin<&StackFrame<'_>>,
     code: &Arc<Article>,
     fn_name: &str,
 ) -> Result<String, ExternError> {
-    let VmCacheEntry { module, env, .. } =
-        if let Some(cached) = state.statics.vm_cache.get(&code.id) {
-            cached.clone()
-        } else {
-            let ex = state.statics.vm.try_enter(|ctx| {
-                let mw = ctx.get_global::<Table<'_>>("mw")?;
-                let make_env = mw.get::<_, Function<'_>>(ctx, "makeEnv")?;
-                Ok(ctx.stash(Executor::start(ctx, make_env, Value::Nil)))
-            })?;
-
-            state.statics.vm.finish(&ex).map_err(RuntimeError::from)?;
-
-            // Too many modules rely on their closure being re-executed on every
-            // invocation, so that is what `mw.executeFunction` does. Some
-            // modules also expect that `packageCache` will be reset, but
-            // wiki.rs does *not* do that and instead gives those modules some
-            // free therapy in `crate::db::HACKS` until they learn to work well
-            // with others
-            let (module, env) = state.statics.vm.try_enter(|ctx| {
-                let env = ctx.fetch(&ex).take_result::<Table<'_>>(ctx)??;
-                let module =
-                    Closure::load_with_env(ctx, Some(sp.name.key()), code.body.as_bytes(), env)?;
-
-                Ok((ctx.stash(module), ctx.stash(env)))
-            })?;
-
-            let entry = VmCacheEntry { module, env };
-            state.statics.vm_cache.insert(code.id, entry.clone());
-
-            if memory_exceeded(state) {
-                return Err(RuntimeError::new(anyhow::anyhow!("memory limit exceeded")).into());
-            }
-
-            entry
-        };
+    let (module, env) = fetch_module(state, sp, code)?;
 
     let mut state = {
         let old_sp = state.statics.vm.enter(|ctx| {
@@ -255,7 +226,7 @@ pub(super) fn run_vm(
             if ex.mode() == ExecutorMode::Result {
                 let result = ex.take_result::<Value<'_>>(ctx)??;
                 if let Value::String(result) = result {
-                    Ok(ControlFlow::Break(result.to_str()?.to_string()))
+                    Ok(ControlFlow::Break(result.to_str()?.to_owned()))
                 } else if let Value::UserData(host_call) = result
                     && let Ok(host_call) = host_call.downcast_static::<HostCall>()
                 {
@@ -289,6 +260,49 @@ pub(super) fn run_vm(
             ControlFlow::Break(result) => break Ok(result),
         }
     }
+}
+
+/// Fetches a possibly cached Lua module for execution.
+fn fetch_module(
+    state: &mut State<'_>,
+    sp: Pin<&StackFrame<'_>>,
+    code: &Arc<Article>,
+) -> Result<(StashedClosure, StashedTable), ExternError> {
+    let VmCacheEntry { module, env } = if let Some(cached) = state.statics.vm_cache.get(&code.id) {
+        cached.clone()
+    } else {
+        let ex = state.statics.vm.try_enter(|ctx| {
+            let mw = ctx.get_global::<Table<'_>>("mw")?;
+            let make_env = mw.get::<_, Function<'_>>(ctx, "makeEnv")?;
+            Ok(ctx.stash(Executor::start(ctx, make_env, Value::Nil)))
+        })?;
+
+        state.statics.vm.finish(&ex).map_err(RuntimeError::from)?;
+
+        // Too many modules rely on their closure being re-executed on every
+        // invocation, so that is what `mw.executeFunction` does. Some
+        // modules also expect that `packageCache` will be reset, but
+        // wiki.rs does *not* do that and instead gives those modules some
+        // free therapy in `crate::db::HACKS` until they learn to work well
+        // with others
+        let (module, env) = state.statics.vm.try_enter(|ctx| {
+            let env = ctx.fetch(&ex).take_result::<Table<'_>>(ctx)??;
+            let module =
+                Closure::load_with_env(ctx, Some(sp.name.key()), code.body.as_bytes(), env)?;
+
+            Ok((ctx.stash(module), ctx.stash(env)))
+        })?;
+
+        let entry = VmCacheEntry { module, env };
+        state.statics.vm_cache.insert(code.id, entry.clone());
+
+        if memory_exceeded(state) {
+            return Err(RuntimeError::new(anyhow::anyhow!("memory limit exceeded")).into());
+        }
+
+        entry
+    };
+    Ok((module, env))
 }
 
 /// Naïvely reduces memory pressure on the VM if needed by running garbage

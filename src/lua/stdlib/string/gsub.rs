@@ -378,8 +378,7 @@ where
                 && let Some(c) = self.0.next()
             {
                 match c.as_ascii() {
-                    // Clippy: Values are always 0-9
-                    #[allow(clippy::cast_possible_truncation)]
+                    #[expect(clippy::cast_possible_truncation, reason = "values are always 0..=9")]
                     next_byte if next_byte.is_ascii_digit() => {
                         Ok(ReplToken::CaptureRef(next_byte.to_digit().unwrap() as u8))
                     }

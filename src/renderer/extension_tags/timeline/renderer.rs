@@ -8,8 +8,10 @@
 //! Instead, it is necessary to flip the y-coordinates everywhere in the
 //! renderer. :-(
 
-// Clippy: Values are guaranteed to be in range.
-#![allow(clippy::cast_precision_loss)]
+#![expect(
+    clippy::cast_precision_loss,
+    reason = "values are guaranteed to be in range"
+)]
 
 use super::{
     super::svg::{NS_SVG, ValueDisplay, n},
@@ -221,16 +223,16 @@ impl<'input> Renderer<'input> {
             let x = text.pen.pos.x();
             let color = self.color(text.pen.text_color)?;
             self.top_layer.append_child(make_text(&MakeText {
+                alignment: Alignment::Start,
+                base_uri: self.base_uri,
+                color,
+                font_size: text.pen.font_size,
+                line_height: text.pen.line_height,
+                link: text.link,
+                tabs: &text.pen.tabs,
+                text: &text.spans,
                 x,
                 y,
-                text: &text.spans,
-                link: text.link,
-                font_size: text.pen.font_size,
-                color,
-                alignment: Alignment::Start,
-                tabs: &text.pen.tabs,
-                line_height: text.pen.line_height,
-                base_uri: self.base_uri,
             })?);
         }
         Ok(self)
@@ -409,16 +411,16 @@ fn draw_axes(r: &mut Renderer<'_>) -> Result {
         let (x, y) = r.label_pos(Either::Right(r.calc_bar_midpoint(bar.index)));
 
         labels.append_child(make_text(&MakeText {
+            alignment,
+            base_uri: r.base_uri,
+            color,
+            font_size,
+            line_height: None,
+            link: bar.link,
+            tabs: &[],
             text: &bar.label,
             x,
             y,
-            link: bar.link,
-            font_size,
-            color,
-            alignment,
-            tabs: &[],
-            line_height: None,
-            base_uri: r.base_uri,
         })?);
     }
 
@@ -473,8 +475,11 @@ fn draw_legend(r: &mut Renderer<'_>) -> Result<()> {
         |w| w.into_abs(r.image_dims.width()),
     );
 
-    // Clippy: Truncation is intentional, and sign cannot be negative.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "truncation is intentional; value is unsigned"
+    )]
     let max_per_column = (((r.image_dims.height() - y).max(0.0) / line_height) as usize).max(1);
     let per_column = r.legends.len().div_ceil(columns).min(max_per_column);
 
@@ -493,16 +498,16 @@ fn draw_legend(r: &mut Renderer<'_>) -> Result<()> {
 
         r.top_layer.append_child(make_rect(swatch, Some(*color)));
         r.top_layer.append_child(make_text(&MakeText {
+            alignment: Alignment::Start,
+            base_uri: r.base_uri,
+            color: text_color,
+            font_size,
+            line_height: Some(line_height),
+            link: None,
+            tabs: &[],
+            text,
             x: x + dx + MARGIN,
             y: y + dy + /* TODO: No magic numbers */ 10.0,
-            text,
-            link: None,
-            font_size,
-            color: text_color,
-            alignment: Alignment::Start,
-            tabs: &[],
-            line_height: Some(line_height),
-            base_uri: r.base_uri,
         })?);
 
         index += 1;
@@ -635,16 +640,16 @@ fn draw_plots(r: &mut Renderer<'_>) -> Result<Element> {
             };
 
             let mt = MakeText {
+                alignment: plot.pen.align,
+                base_uri: r.base_uri,
+                color,
+                font_size: plot.pen.font_size,
+                line_height: None,
+                link: plot.link,
+                tabs: &[],
+                text,
                 x: x + plot.pen.shift.x(),
                 y: y + plot.pen.shift.y_shift(),
-                text,
-                link: plot.link,
-                font_size: plot.pen.font_size,
-                color,
-                alignment: plot.pen.align,
-                tabs: &[],
-                line_height: None,
-                base_uri: r.base_uri,
             };
 
             r.top_layer.append_child(make_text(&mt)?);
@@ -726,16 +731,16 @@ fn draw_scale(r: &mut Renderer<'_>, color: ColorValue, is_major: bool) -> Result
             let (x, y) = r.label_pos(Either::Left(main));
 
             labels.append_child(make_text(&MakeText {
+                alignment,
+                base_uri: r.base_uri,
+                color,
+                font_size: FontSize::Small,
+                line_height: None,
+                link: None,
+                tabs: &[],
+                text: &[TextSpan::Text(&at.v_precision(2))],
                 x,
                 y,
-                text: &[TextSpan::Text(&at.v_precision(2))],
-                link: None,
-                font_size: FontSize::Small,
-                color,
-                alignment,
-                tabs: &[],
-                line_height: None,
-                base_uri: r.base_uri,
             })?);
             at += d_at;
         }
@@ -878,8 +883,11 @@ fn next_line(
 }
 
 impl ValueDisplay for ColorValue {
-    // Clippy: Values are guaranteed to be in range.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "values guaranteed to be in range"
+    )]
     fn v_precision(self, precision: u8) -> String {
         match self {
             ColorValue::Hsb(h, s, b) => {
@@ -890,7 +898,7 @@ impl ValueDisplay for ColorValue {
                     (b * 100.0).v_precision(precision)
                 )
             }
-            ColorValue::Named(n) => PREDEFINED_COLORS.get(n).copied().unwrap().to_string(),
+            ColorValue::Named(n) => PREDEFINED_COLORS[n].to_owned(),
             ColorValue::Rgb(r, g, b) => {
                 format!(
                     "#{:02x}{:02x}{:02x}",

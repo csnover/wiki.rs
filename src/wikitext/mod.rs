@@ -3,10 +3,11 @@
 use crate::php::strtr;
 pub(crate) use codemap::{FileMap, Span, Spanned};
 pub(crate) use config::{Configuration, ConfigurationSource, MagicLinks};
+use core::cell::Cell;
 pub(crate) use inspectors::inspect;
 pub(crate) use peg::str::LineCol;
 use regex::Regex;
-use std::{borrow::Cow, cell::Cell, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet};
 
 pub(crate) mod builder;
 mod codemap;
@@ -52,7 +53,7 @@ impl<'a> Parser<'a> {
         .unwrap();
 
         let include_tags = ["noinclude", "includeonly", "onlyinclude"];
-        let mut heading_end_lookahead = "^=*(?:[ \t]|<\\!--.*?-->|</?(?:".to_string();
+        let mut heading_end_lookahead = "^=*(?:[ \t]|<\\!--.*?-->|</?(?:".to_owned();
         for (index, tag) in include_tags
             .iter()
             .chain(config.annotation_tags.iter())

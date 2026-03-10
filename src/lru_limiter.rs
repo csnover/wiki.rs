@@ -22,8 +22,8 @@ impl ByMemoryUsage {
     /// bytes.
     pub const fn new(max_bytes: usize) -> Self {
         Self {
-            max_bytes,
             heap_size: 0,
+            max_bytes,
         }
     }
 
@@ -52,12 +52,10 @@ impl<K: HeapUsageCalculator, V: HeapUsageCalculator> schnellru::Limiter<K, V> fo
     #[inline]
     fn on_insert(&mut self, _: usize, key: Self::KeyToInsert<'_>, value: V) -> Option<(K, V)> {
         let new_size = Self::size_of(&key, &value);
-        if new_size <= self.max_bytes {
+        (new_size <= self.max_bytes).then(|| {
             self.heap_size += new_size;
-            Some((key, value))
-        } else {
-            None
-        }
+            (key, value)
+        })
     }
 
     #[inline]

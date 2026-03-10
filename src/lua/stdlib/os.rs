@@ -8,7 +8,6 @@ use gc_arena::Rootable;
 use std::time::Instant;
 
 /// Loads the OS library.
-#[allow(clippy::too_many_lines)]
 pub fn load_os(ctx: Context<'_>) {
     let os = Table::new(&ctx);
     let epoch = Instant::now();

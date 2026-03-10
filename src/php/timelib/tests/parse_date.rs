@@ -6261,8 +6261,7 @@ fn timetiny24_06() {
     assert_eq!(Some(Timezone::Offset(-10800)), t.offset);
 }
 
-// Clippy: the wrapping is the whole point
-#[allow(clippy::cast_possible_wrap)]
+#[expect(clippy::cast_possible_wrap, reason = "wrapping is the point")]
 #[test]
 fn gh_124a() {
     let t = test_parse("@-9223372036854775808").state;

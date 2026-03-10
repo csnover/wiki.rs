@@ -5,14 +5,19 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyright: 1994-2025 Lua.org, PUC-Rio
 
-use core::slice::SliceIndex;
+use core::{ops::Range, slice::SliceIndex};
 use piccolo::{Context, Error as VmError, TypeError, Value};
-use std::ops::Range;
 use unicode_general_category::{GeneralCategory, get_general_category};
 
 /// A pattern string parsing error.
-// Clippy: The error fields are self-explanatory.
-#[allow(clippy::missing_docs_in_private_items)]
+#[allow(
+    clippy::allow_attributes,
+    reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+)]
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "the fields are self-documenting"
+)]
 #[derive(Debug, Eq, thiserror::Error, PartialEq)]
 pub(crate) enum Error {
     /// The pattern caused too much recursion.
@@ -113,11 +118,11 @@ pub(super) fn find_first_match<B: BackingType + ?Sized>(
 
     for (start, _) in input.start_scan(start_index) {
         let mut state = State {
-            input,
-            pattern,
-            level: 0,
-            depth: MAX_RECURSION_DEPTH,
             captures: <_>::default(),
+            depth: MAX_RECURSION_DEPTH,
+            input,
+            level: 0,
+            pattern,
         };
 
         if let Some(end) = next_match(&mut state, start, 0)? {
@@ -142,7 +147,7 @@ pub(super) fn find_first_match<B: BackingType + ?Sized>(
 }
 
 /// The main pattern matching function.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "this is just a big switch")]
 fn next_match<B: BackingType + ?Sized>(
     state: &mut State<'_, B>,
     mut s: usize,
@@ -312,16 +317,16 @@ fn next_match<B: BackingType + ?Sized>(
 /// the pattern and input cursors are maintained on the stack in the `p` and `s`
 /// variables, respectively.
 struct State<'a, B: BackingType + ?Sized> {
-    /// The input string to match.
-    input: &'a B,
-    /// The pattern to match.
-    pattern: &'a B,
-    /// Recursion depth of `full_match`.
-    depth: usize,
-    /// Number of capture groups.
-    level: usize,
     /// Intermediate capture group states.
     captures: [CaptureState; LUA_MAXCAPTURES],
+    /// Recursion depth of `full_match`.
+    depth: usize,
+    /// The input string to match.
+    input: &'a B,
+    /// Number of capture groups.
+    level: usize,
+    /// The pattern to match.
+    pattern: &'a B,
 }
 
 impl<B: BackingType + ?Sized> State<'_, B> {
@@ -478,8 +483,7 @@ impl<B: BackingType + ?Sized> State<'_, B> {
     /// Ensures the given capture index belongs to a finished capture group and
     /// returns its range if so.
     fn check_capture(&self, p: usize, level: B::Primitive) -> Result<&Range<usize>> {
-        // Clippy: The range of the number is 0-9.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation, reason = "the known range is 0..=9")]
         let (level, oops) = (level.to_digit().unwrap() as u8).overflowing_sub(1);
         let index = usize::from(level);
         if !oops
@@ -598,12 +602,13 @@ impl<B: BackingType + ?Sized> State<'_, B> {
 }
 
 /// Intermediate state representation of a capture group.
-// Clippy: Internal fields are self-documenting.
-#[allow(clippy::missing_docs_in_private_items)]
 #[derive(Clone)]
 enum CaptureState {
     /// The capture group is waiting to be closed.
-    Pending { start: usize },
+    Pending {
+        /// The byte index of the start of the range.
+        start: usize,
+    },
     /// The capture group is fully created.
     Finished(CaptureRange),
 }
@@ -806,8 +811,11 @@ impl PrimitiveType for char {
     }
     #[inline]
     fn is_alphabetic(self) -> bool {
-        // Clippy: Verbosity is not a useful thing here.
-        #[allow(clippy::enum_glob_use)]
+        #[allow(
+            clippy::allow_attributes,
+            clippy::enum_glob_use,
+            reason = "verbosity makes this harder to read"
+        )]
         use GeneralCategory::*;
         matches!(
             get_general_category(self),
@@ -844,8 +852,11 @@ impl PrimitiveType for char {
     }
     #[inline]
     fn is_punctuation(self) -> bool {
-        // Clippy: Verbosity is not a useful thing here.
-        #[allow(clippy::enum_glob_use)]
+        #[allow(
+            clippy::allow_attributes,
+            clippy::enum_glob_use,
+            reason = "verbosity makes this harder to read"
+        )]
         use GeneralCategory::*;
         matches!(
             get_general_category(self),
@@ -942,8 +953,8 @@ impl BackingType for str {
         self.chars()
     }
     #[inline]
-    fn char_count(&self, end: usize) -> usize {
-        self[..end].chars().count()
+    fn char_count(&self, index: usize) -> usize {
+        self[..index].chars().count()
     }
     #[inline]
     fn char_indices(&self) -> impl DoubleEndedIterator<Item = (usize, Self::Primitive)> {
@@ -1013,8 +1024,8 @@ impl BackingType for [u8] {
         self.iter().copied()
     }
     #[inline]
-    fn char_count(&self, end: usize) -> usize {
-        end
+    fn char_count(&self, index: usize) -> usize {
+        index
     }
     #[inline]
     fn char_indices(&self) -> impl DoubleEndedIterator<Item = (usize, Self::Primitive)> {

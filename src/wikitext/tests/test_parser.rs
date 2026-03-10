@@ -128,11 +128,11 @@ peg::parser! {grammar testfile() for str {
             *parsoid = Value::Object(<_>::default());
         } else if let Value::String(s) = parsoid {
             let mut map = Map::with_capacity(1);
-            map.insert("modes".to_string(), core::mem::take(s).into());
+            map.insert("modes".to_owned(), core::mem::take(s).into());
             *parsoid = Value::Object(map);
         } else if let Value::Array(v) = parsoid && let [s @ Value::String(_)] = v.as_mut_slice() {
             let mut map = Map::with_capacity(1);
-            map.insert("modes".to_string(), core::mem::take(s));
+            map.insert("modes".to_owned(), core::mem::take(s));
             *parsoid = Value::Object(map);
         }
     }

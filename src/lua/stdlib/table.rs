@@ -1,17 +1,18 @@
 //! Lua 5.1-compatible table standard library.
 
-#![allow(
+#![expect(
     clippy::cast_possible_wrap,
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    reason = "matches Lua"
 )]
+
 use super::extras::count_fuel;
 use crate::lua::prelude::*;
 use anyhow::Context as _;
 use piccolo::{MetaMethod, SequenceReturn, TypeError, async_sequence, meta_ops};
 
 /// Loads the table library.
-#[allow(clippy::cast_precision_loss)]
 pub fn load_table(ctx: Context<'_>) -> Result<(), TypeError> {
     let table = ctx.get_global::<Table<'_>>("table")?;
 
@@ -37,6 +38,7 @@ pub fn load_table(ctx: Context<'_>) -> Result<(), TypeError> {
         "maxn",
         Callback::from_fn(&ctx, |ctx, _, mut stack| {
             let t = stack.consume::<Table<'_>>(ctx)?;
+            #[expect(clippy::cast_precision_loss, reason = "matches Lua behaviour")]
             let max = t.into_iter().fold(Value::Integer(0), |acc, (k, _)| {
                 let lt = match (acc, k) {
                     (Value::Integer(acc), Value::Integer(k)) => acc < k,
@@ -172,7 +174,7 @@ fn table_remove_impl<'gc>(
 }
 
 /// A Lua 5.1-compatible version of `table.insert`.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "modified upstream code")]
 fn table_insert_impl<'gc>(
     ctx: Context<'gc>,
     mut exec: Execution<'gc, '_>,

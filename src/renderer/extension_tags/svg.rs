@@ -6,8 +6,10 @@ pub(crate) const NS_SVG: &str = "http://www.w3.org/2000/svg";
 /// Shorthand for XML attribute names.
 macro_rules! n {
     ($name:literal) => {
-        // Clippy: Upstream lints are leaking in.
-        #[allow(clippy::transmute_ptr_to_ptr)]
+        #[expect(
+            clippy::transmute_ptr_to_ptr,
+            reason = "unwanted upstream lints leak in through the macro expansion"
+        )]
         {
             ::minidom::rxml::xml_ncname!($name).into()
         }
@@ -37,7 +39,7 @@ impl ValueDisplay for f64 {
         let precision = 10.0_f64.powi(precision.into());
         let v = (self * precision).round() / precision;
         if v == -0.0 {
-            "0".to_string()
+            "0".to_owned()
         } else {
             format!("{v}")
         }

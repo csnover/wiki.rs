@@ -317,7 +317,7 @@ use crate::{
     wikitext::{LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, Parser},
 };
 use axum::http::Uri;
-use core::fmt;
+use core::{fmt, time::Duration};
 pub(crate) use expand_templates::{ExpandMode, ExpandTemplates};
 pub(crate) use manager::{Command, In, RenderManager as Manager, RenderOutput};
 use memchr::memmem;
@@ -329,7 +329,6 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     sync::{Arc, LazyLock, PoisonError, RwLock},
-    time::Duration,
 };
 pub(crate) use surrogate::Surrogate;
 use tags::LinkKind;
@@ -363,7 +362,7 @@ pub(crate) enum Error {
 
     /// An extension tag error.
     #[error(transparent)]
-    Extension(Box<dyn std::error::Error + Send + Sync + 'static>),
+    Extension(Box<dyn core::error::Error + Send + Sync + 'static>),
 
     /// A write to a buffer failed.
     #[error("fmt error: {0}")]

@@ -9,7 +9,7 @@ use minidom::Element;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{self, BufReader, Read},
+    io::{self, BufReader, Read as _},
     path::Path,
 };
 use time::{UtcDateTime, format_description::well_known::Iso8601};

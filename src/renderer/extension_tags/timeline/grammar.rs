@@ -1,8 +1,10 @@
 //! Parsing expression grammar for EasyTimeline scripts.
 
-// Clippy: There are a lot of imports, and little value in listing them
-// explicitly.
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::allow_attributes,
+    clippy::wildcard_imports,
+    reason = "lots of imports, little value to listing them explicitly"
+)]
 use super::{parser::*, *};
 
 /// The expected DPI for physical units.

@@ -49,7 +49,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     let title = Title::new(&target, None);
     match title.namespace().id {
         Namespace::CATEGORY if !target.starts_with(':') => {
-            state.globals.categories.insert(title.key().to_string());
+            state.globals.categories.insert(title.key().to_owned());
             if let Some(trail) = trail {
                 out.adopt_generated(state, sp, None, trail)?;
             }

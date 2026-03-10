@@ -1,17 +1,47 @@
 #![doc = include_str!("../README.md")]
 #![warn(
-    clippy::pedantic,
+    clippy::alloc_instead_of_core,
+    clippy::allow_attributes,
+    clippy::allow_attributes_without_reason,
+    clippy::clone_on_ref_ptr,
+    clippy::dbg_macro,
+    clippy::empty_enum_variants_with_brackets,
+    clippy::empty_structs_with_brackets,
+    clippy::get_unwrap,
+    clippy::if_then_some_else_none,
+    clippy::infinite_loop,
+    clippy::lossy_float_literal,
     clippy::missing_docs_in_private_items,
+    clippy::mixed_read_write_in_expression,
+    clippy::needless_raw_strings,
+    clippy::pedantic,
+    clippy::print_stderr,
+    clippy::rc_buffer,
+    clippy::rc_mutex,
+    clippy::redundant_type_annotations,
+    clippy::rest_pat_in_fully_bound_structs,
+    clippy::self_named_module_files,
+    clippy::std_instead_of_core,
+    clippy::str_to_string,
+    clippy::string_lit_chars_any,
+    clippy::undocumented_unsafe_blocks,
+    clippy::unnecessary_safety_comment,
+    clippy::unnecessary_safety_doc,
+    clippy::unneeded_field_pattern,
+    clippy::unseparated_literal_suffix,
+    clippy::unused_result_ok,
+    clippy::unused_trait_names,
     missing_docs,
     rust_2018_idioms
 )]
 
 use crate::title::Namespace;
 use axum::{Router, http::Uri, routing::get};
+use core::time::Duration;
 use db::Database;
 use r2d2::Pool;
 use renderer::Manager as RenderManager;
-use std::{ffi::OsStr, sync::Arc, time::Duration};
+use std::{ffi::OsStr, sync::Arc};
 use tokio::net::TcpListener;
 
 mod common;
@@ -70,8 +100,10 @@ struct Limits {
 }
 
 impl core::fmt::Display for Limits {
-    // Clippy: If memory limits are ever >=2**53, something sure happened.
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "if memory limits are ever ≥2**53, something sure happened"
+    )]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let db_cache = self.db_cache as f64 / 1024.0;
         let template_cache = self.template_cache as f64 / 1024.0;
@@ -119,7 +151,7 @@ impl core::str::FromStr for LoadMode {
         } else if s.eq_ignore_ascii_case("module") {
             Ok(Self::Module)
         } else {
-            Err(LoadModeError(s.to_string()))
+            Err(LoadModeError(s.to_owned()))
         }
     }
 }
@@ -190,14 +222,16 @@ impl Args {
     fn parse_duration(value: &str) -> Result<Duration, ArgsError> {
         let (number, unit) = Self::parse_number_with_unit(value)?;
         if unit.eq_ignore_ascii_case("ms") {
-            // Clippy: Sub-millisecond precision is not needed here, and the
-            // number is guaranteed to not have a sign.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "sub-ms precision not needed; parser guarantees unsigned value"
+            )]
             Ok(Duration::from_millis(number as u64))
         } else if unit.eq_ignore_ascii_case("s") {
             Ok(Duration::from_secs_f64(number))
         } else {
-            Err(ArgsError::Duration(unit.to_string()))
+            Err(ArgsError::Duration(unit.to_owned()))
         }
     }
 
@@ -216,9 +250,11 @@ impl Args {
     /// Parses a byte size in the format `\d+(\.\d+)?\s*[BbKkMmGg]?`
     fn parse_size(value: &str) -> Result<usize, ArgsError> {
         let (number, unit) = Self::parse_number_with_unit(value)?;
-        // Clippy: Truncation is desirable and the number is guaranteed to not
-        // have a sign.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "truncation is desirable; parser guarantees unsigned number"
+        )]
         Ok(match unit {
             "" | "b" | "B" => number,
             "k" => number * 1000.0,
@@ -227,7 +263,7 @@ impl Args {
             "M" => number * 1024.0 * 1024.0,
             "g" => number * 1_000_000_000.0,
             "G" => number * 1024.0 * 1024.0 * 1024.0,
-            _ => return Err(ArgsError::ByteSize(unit.to_string())),
+            _ => return Err(ArgsError::ByteSize(unit.to_owned())),
         } as usize)
     }
 
@@ -237,7 +273,7 @@ impl Args {
         let mut args = pico_args::Arguments::from_env();
         let bind = args
             .opt_value_from_str("--bind")?
-            .unwrap_or_else(|| "127.0.0.1:3000".to_string());
+            .unwrap_or_else(|| "127.0.0.1:3000".to_owned());
         let base_uri = args.opt_value_from_str("--base-uri")?;
         let load_mode = args.opt_value_from_str("--mode")?.unwrap_or_default();
         let _ = args.contains("--");
@@ -267,6 +303,7 @@ impl Args {
             articles_path,
             base_uri,
             bind,
+            index_path,
             limits: Limits {
                 db_cache,
                 template_cache,
@@ -274,13 +311,13 @@ impl Args {
                 vm_time,
                 vm_total_mem,
             },
-            index_path,
             load_mode,
         })
     }
 }
 
 /// Command line usage instructions.
+#[expect(clippy::print_stderr, reason = "this is cli help output")]
 fn usage() {
     let exe = std::env::args().next().unwrap_or_default();
     eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
@@ -307,7 +344,7 @@ fn usage() {
 
 /// Don’t run this. You’ve been warned!
 #[tokio::main]
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> Result<(), Box<dyn core::error::Error>> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
     let args = match Args::new() {
@@ -404,7 +441,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Uses the [`Display`](core::fmt::Display) formatter for an error even when
 /// the [`Debug`](core::fmt::Debug) formatter is requested.
-struct DisplayError(Box<dyn std::error::Error>);
+struct DisplayError(Box<dyn core::error::Error>);
 
 impl core::fmt::Debug for DisplayError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -412,7 +449,7 @@ impl core::fmt::Debug for DisplayError {
     }
 }
 
-impl<E: Into<Box<dyn std::error::Error>>> From<E> for DisplayError {
+impl<E: Into<Box<dyn core::error::Error>>> From<E> for DisplayError {
     fn from(e: E) -> Self {
         Self(e.into())
     }

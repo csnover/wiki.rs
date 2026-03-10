@@ -988,8 +988,7 @@ fn static_tz(parsed: &str) -> Result<&'static str, &'static str> {
 }
 
 /// Converts the decimal part of a numeric string into a microseconds integer.
-// Clippy: Always in range 0..6
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation, reason = "range is 0..6")]
 #[inline]
 fn to_micros(s: &str) -> u32 {
     const USEC_DIGITS: usize = 6;

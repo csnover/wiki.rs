@@ -12,7 +12,7 @@ use crate::{
     common::{format_date_mediawiki, format_number, parse_formatted_number},
     php::{DateTime, strval},
 };
-use std::cell::Cell;
+use core::cell::Cell;
 
 /// The localisation support library.
 #[derive(gc_arena::Collect)]

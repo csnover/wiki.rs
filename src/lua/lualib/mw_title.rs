@@ -15,13 +15,12 @@ use crate::{
 };
 use arc_cell::OptionalArcCell;
 use axum::http::Uri;
-use core::cell::Ref;
-use piccolo::StashedTable;
-use std::{
-    borrow::Cow,
-    cell::{Cell, RefCell},
+use core::{
+    cell::{Cell, Ref, RefCell},
     fmt::Write as _,
 };
+use piccolo::StashedTable;
+use std::borrow::Cow;
 
 /// The article support library.
 #[derive(gc_arena::Collect, Default)]

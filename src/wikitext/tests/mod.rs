@@ -3,7 +3,7 @@ use crate::{
     config::CONFIG,
     wikitext::{codemap::FileMap, tests::test_parser::Chunk},
 };
-use std::{fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read as _, path::Path};
 
 mod extras;
 mod test_parser;

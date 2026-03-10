@@ -5,12 +5,12 @@
 //! catastrophically.
 
 use super::prelude::*;
+use core::pin::Pin;
 #[cfg(test)]
 pub(crate) use load::load_load_text;
 pub(crate) use math::load_math;
 pub(crate) use os::load_os;
 use piccolo::{BoxSequence, Sequence, SequencePoll, meta_ops};
-use std::pin::Pin;
 pub(crate) use string::{
     calculate_start_count,
     find::{find_lua, match_lua, sub_lua},
@@ -89,6 +89,7 @@ pub(crate) fn load_debug(ctx: Context<'_>) {
     debug.set_field(
         ctx,
         "inspect",
+        #[expect(clippy::dbg_macro, reason = "this function is also a debug tool")]
         Callback::from_fn(&ctx, |_, _, mut stack| {
             for s in stack.drain(..) {
                 dbg!(s);

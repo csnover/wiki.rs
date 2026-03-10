@@ -73,7 +73,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
             log::warn!("Storing whitespace from a different frame");
             let content = &sp.source[token.span.into_range()];
             self.last_ws.push(Stored::Memoised(
-                content.to_string(),
+                content.to_owned(),
                 Spanned::new(token.node, 0, content.len()),
             ));
         }

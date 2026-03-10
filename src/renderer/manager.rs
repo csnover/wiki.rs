@@ -110,8 +110,8 @@ impl r2d2::ManageConnection for RenderManager {
         std::thread::spawn(move || {
             let vm = new_vm(&base_uri, &db, &parser).unwrap();
             let mut statics = Statics {
-                base_uri,
                 base_time,
+                base_uri,
                 db,
                 limits,
                 parser,
@@ -145,7 +145,7 @@ impl r2d2::ManageConnection for RenderManager {
                         .parser
                         .parse_redirect(&article.body)
                         .map(|redirect| RenderOutput {
-                            content: redirect.to_string(),
+                            content: redirect.to_owned(),
                             indicators: <_>::default(),
                             outline: <_>::default(),
                             styles: <_>::default(),
@@ -283,8 +283,10 @@ fn render(statics: &mut Statics, load_mode: LoadMode, sp: &StackFrame<'_>) -> Re
         log::trace!("{the_baddie}: {count} / {}s", time.as_secs_f64());
     }
 
-    // Clippy: If memory usage is ever >=2**53, something sure happened.
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "if memory usage is ever ≥2**53, something sure happened"
+    )]
     {
         let tpl_mem = {
             let cache = &state.statics.template_cache;

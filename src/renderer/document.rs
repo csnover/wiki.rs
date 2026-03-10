@@ -17,7 +17,7 @@ use crate::{
         MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
     },
 };
-use core::fmt::{self, Write};
+use core::fmt::{self, Write as _};
 use either::Either;
 use std::borrow::Cow;
 
@@ -824,7 +824,7 @@ impl Surrogate<Error> for Document {
         marker: &str,
     ) -> Result {
         let Some(tag) = state.strip_markers.get(marker) else {
-            return Err(Error::StripMarker(marker.to_string()));
+            return Err(Error::StripMarker(marker.to_owned()));
         };
 
         self.write_strip_marker(tag)?;

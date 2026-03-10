@@ -85,7 +85,10 @@ pub(super) struct Options<'a> {
 }
 
 /// Parses [`Options`] from a media node.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "not enough value in splitting this into smaller units"
+)]
 pub(super) fn media_options<'s>(
     state: &mut State<'_>,
     sp: &'s StackFrame<'_>,

@@ -603,8 +603,7 @@ where
 }
 
 /// Default implementation of [`Surrogate::adopt_token`].
-// Clippy: Literally impossible to be shorter.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "this is just a big switch")]
 pub fn adopt_token<V, E>(
     surrogate: &mut V,
     state: &mut State<'_>,

@@ -129,8 +129,10 @@
 //!    of text (`<poem>`, `<references>`, `<timeline>`), and so can do their own
 //!    typographical beautification
 
-// Clippy: Methods are implementing an interface which is invisible to clippy.
-#![allow(clippy::unnecessary_wraps)]
+#![expect(
+    clippy::unnecessary_wraps,
+    reason = "implementing an interface invisible to clippy"
+)]
 
 mod graph;
 mod svg;
@@ -660,8 +662,10 @@ impl References {
     fn make_id_alpha(mut n: usize, base: char, alphabet_size: usize) -> String {
         let mut buf = ['\0'; 8];
         let mut index = 0;
-        // Clippy: `alphabet_size` is always smaller than u32
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "`alphabet_size` is always ≤u32::MAX"
+        )]
         loop {
             buf[index] = char::from_u32(u32::from(base) + (n % alphabet_size) as u32).unwrap();
             n /= alphabet_size;
@@ -824,7 +828,7 @@ fn section(_: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
         .globals
         .sections
         .titles
-        .entry(arguments.sp.name.key().to_string())
+        .entry(arguments.sp.name.key().to_owned())
         .or_default();
 
     if let Some(name) = begin {
@@ -851,7 +855,7 @@ fn syntax_highlight(
         let mut ss = syntect::parsing::SyntaxSet::load_defaults_newlines().into_builder();
         ss.add(
             syntect::parsing::SyntaxDefinition::load_from_str(
-                include_str!("../../res/MediawikiNG.sublime-syntax"),
+                include_str!("../../../res/MediawikiNG.sublime-syntax"),
                 true,
                 Some("wikitext"),
             )
@@ -862,7 +866,7 @@ fn syntax_highlight(
 
     static THEME: LazyLock<syntect::highlighting::Theme> = LazyLock::new(|| {
         let themes = syntect::highlighting::ThemeSet::load_defaults();
-        themes.themes.get("InspiredGitHub").unwrap().clone()
+        themes.themes["InspiredGitHub"].clone()
     });
 
     let (mode, tag, attrs) = if arguments.get(state, "inline")?.is_some() {
@@ -963,7 +967,7 @@ impl Styles {
         let key = if let Some(wrapper) = wrapper {
             format!("{src}{wrapper}")
         } else {
-            src.to_string()
+            src.to_owned()
         };
 
         if self.sources.contains(&key) {
@@ -1081,9 +1085,9 @@ pub(super) fn render_extension_tag(
                 state,
                 &ExtensionTag {
                     arguments: IndexedArgs {
-                        sp,
-                        callee,
                         arguments,
+                        callee,
+                        sp,
                         span: Some(span),
                     },
                     body,

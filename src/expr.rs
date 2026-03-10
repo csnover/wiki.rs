@@ -4,15 +4,18 @@
 // <https://github.com/wikimedia/mediawiki-extensions-ParserFunctions/>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#![allow(clippy::too_many_lines)]
+#![expect(
+    clippy::too_many_lines,
+    reason = "these are just big switches with micro-ops"
+)]
 
 use crate::php::strtr;
 use arrayvec::ArrayVec;
-use std::{
-    borrow::Cow,
+use core::{
     f64::consts::{E, PI},
     num::ParseFloatError,
 };
+use std::borrow::Cow;
 
 /// An expression evaluation error.
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -120,7 +123,7 @@ pub fn do_expression(expr: &str) -> Result<Option<f64>, Error> {
             if let Some(word_op) = words(&word.to_ascii_lowercase()) {
                 op = word_op;
             } else {
-                return Err(Error::UnknownToken(pos, word.to_string().into()));
+                return Err(Error::UnknownToken(pos, word.to_owned().into()));
             }
 
             match op {
@@ -157,7 +160,7 @@ pub fn do_expression(expr: &str) -> Result<Option<f64>, Error> {
                 | Token::Ceil
                 | Token::Sqrt => {
                     if expecting != Kind::Operand {
-                        return Err(Error::UnexpectedOperator(pos, word.to_string().into()));
+                        return Err(Error::UnexpectedOperator(pos, word.to_owned().into()));
                     }
                     operators.push(op);
                     continue;
@@ -271,8 +274,14 @@ const EXPR_WHITE_CLASS: &str = " \t\r\n";
 const EXPR_NUMBER_CLASS: &str = "0123456789.";
 
 /// Operator tokens.
-// Clippy: See [`names`] to learn which token corresponds to which input.
-#[allow(clippy::missing_docs_in_private_items)]
+#[allow(
+    clippy::allow_attributes,
+    reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+)]
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "`names` describes these tokens"
+)]
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Token {
     Negative,
@@ -429,11 +438,12 @@ enum Kind {
 }
 
 /// Executes an arithmetic operation.
-#[allow(
+#[expect(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::float_cmp,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    reason = "the behaviour matches the upstream code"
 )]
 fn do_operation(op: Token, stack: &mut ArrayVec<f64, MAX_STACK_SIZE>) -> Result<(), Error> {
     match op {

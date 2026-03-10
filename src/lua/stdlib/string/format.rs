@@ -40,9 +40,10 @@ pub(super) fn format_impl<'gc>(
                     };
 
                     if let Some(value) = value {
-                        // Clippy: The spec will reconvert it back to usize.
-                        // C-style APIs: wooo!!
-                        #[allow(clippy::cast_possible_wrap)]
+                        #[expect(
+                            clippy::cast_possible_wrap,
+                            reason = "the value will be as-cast back to usize (C-style APIs: wooo!!)"
+                        )]
                         spec.write_i64(&mut result, value as i64)?;
                     } else {
                         result += "(null)";
@@ -57,10 +58,7 @@ pub(super) fn format_impl<'gc>(
                     let value = args
                         .next()
                         .and_then(|value| {
-                            // Lua 5.2 was less strict and would implicitly
-                            // convert any float to int, not just whole numbers,
-                            // and 'Module:Weather box/colors' relies on this
-                            #[allow(clippy::cast_possible_truncation)]
+                            #[expect(clippy::cast_possible_truncation, reason = "matches lua 5.2 behaviour; required by 'Module:Weather box/colors'")]
                             match value {
                                 Value::Integer(n) => Some(n),
                                 Value::Number(n) => Some(n as i64),
@@ -115,7 +113,11 @@ pub(super) fn format_impl<'gc>(
 // SPDX-SnippetBegin
 // SPDX-License-Identifier: MIT
 // SPDX-SnippetComment: Adapted from sprintf-rs, PUC-Lua, Spargue/printf, hexfloat2
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "this C-compatible API is expected to do horrible things to numbers if used improperly because that’s what C would do"
+)]
 mod lua {
     //! Support functions for `string.format`.
 
@@ -144,7 +146,10 @@ mod lua {
 
     /// A `printf`-style conversion specifier.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    #[allow(clippy::struct_excessive_bools)]
+    #[expect(
+        clippy::struct_excessive_bools,
+        reason = "there are just a lot of flags"
+    )]
     pub(crate) struct ConversionSpecifier {
         /// Flag `#`: use `0x`, etc.
         pub alt_form: bool,
@@ -192,7 +197,7 @@ mod lua {
         /// Writes `value` to `f` as a formatted string according to the
         /// properties of this specifier.
         pub fn write_f64(&self, f: &mut dyn fmt::Write, value: f64) -> fmt::Result {
-            let mut buf = [0u8; 256];
+            let mut buf = [0_u8; 256];
             let mut len = 0;
 
             let (start, zero_pad) = if value.is_nan() {
@@ -424,22 +429,19 @@ mod lua {
             };
 
             let mut len = 0;
-            {
-                let value = if self.conversion_type == ConversionType::DecInt {
+            fill_u64_part(
+                &mut buf,
+                &mut len,
+                if self.conversion_type == ConversionType::DecInt {
                     value.abs()
                 } else {
                     value
-                } as u64;
-                fill_u64_part(
-                    &mut buf,
-                    &mut len,
-                    value,
-                    base,
-                    hex_base,
-                    self.precision,
-                    None,
-                );
-            }
+                } as u64,
+                base,
+                hex_base,
+                self.precision,
+                None,
+            );
 
             if self.conversion_type == ConversionType::DecInt {
                 self.fill_zeros(&mut buf, &mut len, 0);
@@ -544,7 +546,7 @@ mod lua {
 
     /// Returns true if `value` is ~exactly 0.5.
     #[inline]
-    #[allow(clippy::double_comparisons)]
+    #[expect(clippy::double_comparisons, reason = "fear of edge cases")]
     fn is_half(value: f64) -> bool {
         !(value < 0.5 || value > 0.5)
     }

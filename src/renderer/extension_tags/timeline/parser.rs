@@ -6,9 +6,11 @@
 //! only rendered once the whole thing has been read out since otherwise it is
 //! impossible to calculate positioning information.
 
-// Clippy: There are a lot of imports, and little value in listing them
-// explicitly.
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::allow_attributes,
+    clippy::wildcard_imports,
+    reason = "lots of imports, little value to listing them explicitly"
+)]
 use super::*;
 use core::ops::Range;
 use std::collections::{BTreeMap, HashMap};
@@ -175,23 +177,23 @@ impl Timeline<'_> {
             bar_color: None,
             bar_count: 0,
             bar_layer: vec![],
-            bars: <_>::default(),
             bar_sets: <_>::default(),
+            bars: <_>::default(),
             canvas_color: None,
             colors: Colors::from([("barcoldefault".into(), ColorValue::Rgb(0.0, 0.6, 0.0))]),
             date_format: DateFormat::Decimal,
-            line_layer_back: vec![],
-            line_layer_front: vec![],
             image_size: None,
             legend: <_>::default(),
             legends: <_>::default(),
+            line_layer_back: vec![],
+            line_layer_front: vec![],
             line_pen: <_>::default(),
+            plot_area: <_>::default(),
+            plot_pen: <_>::default(),
             period: Period {
                 from: Time::Decimal(0.0),
                 till: Time::Decimal(0.0),
             },
-            plot_area: <_>::default(),
-            plot_pen: <_>::default(),
             scale_major: <_>::default(),
             scale_minor: <_>::default(),
             text_layer: vec![],
@@ -285,7 +287,7 @@ impl<'input> Timeline<'input> {
         for plot in data {
             match plot.bar {
                 Some(PlotDataTarget::Bar(id)) => {
-                    index = self.bars.get(&id.to_ascii_lowercase()).unwrap().index;
+                    index = self.bars[&id.to_ascii_lowercase()].index;
                     bar_set = None;
                 }
                 Some(PlotDataTarget::BarSet(BarsetId::Id(id))) => {

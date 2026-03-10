@@ -16,10 +16,10 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Redirect, Response},
 };
-use rayon::{iter::ParallelIterator, slice::ParallelSliceMut};
+use core::num::NonZeroUsize;
+use rayon::{iter::ParallelIterator as _, slice::ParallelSliceMut as _};
 use sailfish::TemplateSimple;
 use std::{
-    num::NonZeroUsize,
     sync::{Arc, mpsc},
     time::Instant,
 };
@@ -170,9 +170,9 @@ pub(crate) async fn article(
     ArticleTemplate {
         base_path: state.base_uri.path(),
         from: from.as_deref(),
-        title: &article.title,
         output: &output,
         site: state.database.name(),
+        title: &article.title,
     }
     .render_once()
     .map(html_result)
@@ -551,10 +551,10 @@ fn call_renderer(
 }
 
 /// Renders source code for the given data model into HTML.
-// Clippy: This syntax highlighting library sucks and should be replaced by a
-// better one anyway, whenever this breaks. There seems to be no non-deprecated
-// API for this.
-#[allow(deprecated)]
+#[expect(
+    deprecated,
+    reason = "this syntax highlighting lib has a shit API with no non-deprecated way to do this"
+)]
 fn raw_source(
     base_path: &str,
     source: &str,

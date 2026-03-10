@@ -2,9 +2,10 @@
 //!
 //! <https://www.mediawiki.org/wiki/Help:Extension:ParserFunctions>
 
-// Clippy: Functions signatures all conform to a specific API; inline modules
-// are clearer with wildcard import.
-#![allow(clippy::unnecessary_wraps, clippy::wildcard_imports)]
+#![expect(
+    clippy::unnecessary_wraps,
+    reason = "implementing an interface invisible to clippy"
+)]
 
 use super::{
     Error, Result, State, StripMarkers, extension_tags,
@@ -395,7 +396,7 @@ mod page {
             state
                 .globals
                 .variables
-                .insert(arguments.callee.to_string(), value.to_string());
+                .insert(arguments.callee.to_owned(), value.to_string());
         }
 
         Ok(())
@@ -456,10 +457,10 @@ mod site {
     use super::*;
 
     /// `{{NUMBEROFPAGES[:flag] }}`
-    // Clippy: If Wikipedia ever has >=2**53 articles, the singularity will have
-    // occurred and our new AI overlords can adjust this to fix the slight
-    // inaccuracy in its output
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "if there are ever ≥2**53 articles, the singularity will have occurred and our new AI overlords can adjust this to fix the slight statistical inaccuracy"
+    )]
     pub fn number_of_pages(
         out: &mut String,
         state: &mut State<'_>,
@@ -1239,7 +1240,6 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
 };
 
 /// Renders a parser function.
-#[allow(clippy::too_many_lines)]
 pub fn call_parser_fn(
     out: &mut String,
     state: &mut State<'_>,
@@ -1249,9 +1249,9 @@ pub fn call_parser_fn(
     arguments: &[Kv<'_>],
 ) -> Result<(), Error> {
     let args = IndexedArgs {
-        sp,
-        callee,
         arguments: KeyCacheKvs::new(arguments),
+        callee,
+        sp,
         span: bounds,
     };
     if let Some(parser_fn) = PARSER_FUNCTIONS.get(callee) {

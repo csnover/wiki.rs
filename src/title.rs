@@ -4,8 +4,9 @@ use crate::{
     common::{CowExt as _, decode_html, url_encode},
     config::CONFIG,
 };
+use core::fmt::Write as _;
 use percent_encoding::PercentEncode;
-use std::{borrow::Cow, fmt::Write as _};
+use std::borrow::Cow;
 
 /// The title casing strategy for a namespace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,7 +19,6 @@ pub(crate) enum NamespaceCase {
 
 /// An article namespace.
 #[derive(Debug, Eq)]
-#[allow(dead_code)]
 pub(crate) struct Namespace {
     /// The namespace ID.
     pub id: i32,
@@ -44,7 +44,7 @@ pub(crate) struct Namespace {
 }
 
 impl core::hash::Hash for Namespace {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
@@ -63,45 +63,52 @@ impl Namespace {
     /// The main namespace ID.
     pub const MAIN: i32 = 0;
     /// The talk namespace ID.
-    #[allow(dead_code)]
+    #[allow(
+        clippy::allow_attributes,
+        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+    )]
+    #[allow(dead_code, reason = "useful for documentation")]
     pub const TALK: i32 = 1;
     /// The user namespace ID.
     pub const USER: i32 = 2;
     /// The user talk namespace ID.
     pub const USER_TALK: i32 = 3;
     /// The project namespace ID.
-    #[allow(dead_code)]
+    #[allow(
+        clippy::allow_attributes,
+        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+    )]
+    #[allow(dead_code, reason = "useful for documentation")]
     pub const PROJECT: i32 = 4;
     /// The project talk namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const PROJECT_TALK: i32 = 5;
     /// The file namespace ID.
     pub const FILE: i32 = 6;
     /// The file talk namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const FILE_TALK: i32 = 7;
     /// The system namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const MEDIAWIKI: i32 = 8;
     /// The system talk namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const MEDIAWIKI_TALK: i32 = 9;
     /// The template namespace ID.
     pub const TEMPLATE: i32 = 10;
     /// The template talk namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const TEMPLATE_TALK: i32 = 11;
     /// The help namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const HELP: i32 = 12;
     /// The help talk namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const HELP_TALK: i32 = 13;
     /// The category namespace ID.
-    #[allow(dead_code)]
     pub const CATEGORY: i32 = 14;
     /// The category talk namespace ID.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "useful for documentation")]
     pub const CATEGORY_TALK: i32 = 15;
 
     /// Returns the associated ID (talk -> subject, or subject -> talk) of this
@@ -185,7 +192,7 @@ pub(crate) struct Title {
 }
 
 impl core::hash::Hash for Title {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.interwiki().unwrap_or_default().hash(state);
         self.namespace.hash(state);
         self.text().hash(state);
@@ -498,7 +505,7 @@ impl Title {
 
         // TODO: '/' at the end is supposed to do something to the output text
         if target.starts_with('/') {
-            Cow::Owned(self.prefixed_text().to_string() + target.trim_end_matches('/') + fragment)
+            Cow::Owned(self.prefixed_text().to_owned() + target.trim_end_matches('/') + fragment)
         } else if target.starts_with("../") {
             let suffix = target.trim_start_matches("../");
             let count = (target.len() - suffix.len()) / "../".len();

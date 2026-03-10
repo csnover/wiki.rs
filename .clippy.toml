@@ -1,2 +1,3 @@
 allow-private-module-inception = true
+check-inconsistent-struct-field-initializers = true
 doc-valid-idents = ["EasyTimeline", "GeoJSON", "MediaWiki", "ParserFunctions", "PubMed", "TopoJSON", ".."]

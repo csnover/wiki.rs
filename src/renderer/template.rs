@@ -121,7 +121,7 @@ pub(super) fn call_module(
 
     state
         .timing
-        .entry(sp.name.key().to_string())
+        .entry(sp.name.key().to_owned())
         .and_modify(|(count, duration)| {
             *count += 1;
             *duration += start.elapsed();
@@ -137,7 +137,7 @@ pub(super) fn call_module(
         }
         Err(err) => {
             let root_error = {
-                let mut err = &err as &dyn std::error::Error;
+                let mut err = &err as &dyn core::error::Error;
                 while let Some(source) = err.source() {
                     err = source;
                 }
@@ -401,7 +401,7 @@ fn split_target<'tt>(
             has_colon = true;
             if !rhs.is_empty() {
                 *first = Some(Spanned {
-                    node: Token::Generated(rhs.to_string()),
+                    node: Token::Generated(rhs.to_owned()),
                     span: part.span,
                 });
             }
@@ -430,7 +430,7 @@ fn split_target<'tt>(
                 .collect::<Vec<_>>();
 
             Target::ParserFn {
-                callee: callee.to_string(),
+                callee: callee.to_owned(),
                 arguments,
             }
         } else {
@@ -517,7 +517,7 @@ pub(crate) fn call_template(
 
     state
         .timing
-        .entry(sp.name.key().to_string())
+        .entry(sp.name.key().to_owned())
         .and_modify(|(count, duration)| {
             *count += 1;
             *duration += start.elapsed();

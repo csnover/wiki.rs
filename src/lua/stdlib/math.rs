@@ -81,7 +81,9 @@ mod extras {
     //! Utility functions extracted from piccolo.
 
     use gc_arena::Mutation;
-    use piccolo::{Callback, CallbackReturn, Context, FromMultiValue, IntoMultiValue, IntoValue};
+    use piccolo::{
+        Callback, CallbackReturn, Context, FromMultiValue, IntoMultiValue, IntoValue as _,
+    };
 
     /// A helper for writing simple callbacks which receive arguments of type
     /// `A` and return a value of type `R`.
