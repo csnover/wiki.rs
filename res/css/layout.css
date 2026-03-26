@@ -66,10 +66,10 @@
     }
 
     label {
-        cursor: text;
         inset-inline-start: var(--icon-size);
         line-height: var(--rlh);
         opacity: .3;
+        pointer-events: none;
         position: absolute;
         visibility: hidden;
     }

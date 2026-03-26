@@ -175,12 +175,12 @@ h3 {
         margin-block-start: calc(var(--box-margin) * 1.5);
 
         /* Allow many cute things to cuddle up to the heading */
-        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block, .tright),
+        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block, .tright, .sidebar),
         /* This is for containers that show up sometimes like `.excerpt` */
         + :not(blockquote):has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
         /* Things which take themselves out of the flow by float mean the next
            thing also needs to be cuddled */
-        + :is(.floatright, .mw-halign-left, .mw-halign-right, .tright) + * {
+        + :is(.floatright, .mw-halign-left, .mw-halign-right, .tright, .sidebar) + * {
             margin-block-start: 0;
         }
     }
@@ -199,7 +199,8 @@ h3 {
 
     /* Things which take themselves out of the flow by float mean the next
         thing also needs to be cuddled */
-    &:is(.mw-halign-left, .mw-halign-right) + * {
+    &:is(.mw-halign-left, .mw-halign-right) + *,
+    &:is(.mw-halign-left, .mw-halign-right) + :is(.mw-halign-left, .mw-halign-right) + * {
         margin-block-start: 0;
     }
 }

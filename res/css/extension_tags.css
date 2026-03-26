@@ -45,6 +45,8 @@
 /*= <graph> */
 
 .wiki-rs-graph {
+    font-variant-numeric: lining-nums;
+
     [font-family*=serif] {
         font-family: var(--serif);
     }
@@ -53,7 +55,7 @@
         font-family: var(--mono);
     }
 
-    [font-family*=sans-serif] {
+    [font-family*=sans-serif], text:not([font-family]) {
         font-family: var(--sans);
     }
 
