@@ -737,12 +737,18 @@ impl Surrogate<Error> for Document {
     fn adopt_parameter(
         &mut self,
         _state: &mut State<'_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
+        sp: &StackFrame<'_>,
+        span: Span,
         _name: &[Spanned<Token>],
         _default: Option<&[Spanned<Token>]>,
     ) -> Result {
-        panic!("parameters should all be resolved by now");
+        // 'Template:Human-centric' uses a parameter in an invalid way which
+        // causes it to be emitted as a literal inside of an HTML attribute
+        log::warn!(
+            "Unresolved parameter {} in output",
+            &sp.source[span.into_range()]
+        );
+        self.text_run(&sp.source[span.into_range()])
     }
 
     fn adopt_redirect(
