@@ -471,7 +471,7 @@ pub(crate) async fn search(
     let range = page * per_page..results.len().min((page + 1) * per_page);
 
     if page == 0
-        && let [result] = results.as_slice()
+        && let Some(result) = single_result(&results)
     {
         let target = Title::new(result, None);
         return make_url(None, &state.base_uri, &target, None, true)
@@ -494,6 +494,20 @@ pub(crate) async fn search(
     .map(html_result)
     .map(IntoResponse::into_response)
     .map_err(Into::into)
+}
+
+/// Returns a single result from a list of search results if there is only one
+/// matching result.
+fn single_result<'a>(results: &[&'a str]) -> Option<&'a str> {
+    if let [result] = results {
+        Some(result)
+    } else if let [a, b] = results
+        && a.eq_ignore_ascii_case(b)
+    {
+        Some(a)
+    } else {
+        None
+    }
 }
 
 /// The rendering mode for a source page.
