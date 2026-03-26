@@ -42,7 +42,7 @@ where
                 }
             };
             Some((pos, pos, vec![]))
-        } else if let Some(pos) = s[init..].find(pattern) {
+        } else if let Some(pos) = s.get(init..).and_then(|s| s.find(pattern)) {
             let start = s.char_count(init + pos);
             let end = start + pattern.chars().count();
             Some((start, end, vec![]))
