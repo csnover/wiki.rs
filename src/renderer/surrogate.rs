@@ -1,15 +1,4 @@
 //! Helper trait for implementing token tree walkers.
-//!
-//! The design approach taken here was to consider the design of Wikitext where
-//! templates would be interpolated into the root Wikitext string and then the
-//! whole thing would be re-parsed as a complete Wikitext document. As a
-//! structured tree, the same thing can be accomplished by simply emitting
-//! tokens up through an arbitrary chain of [`Surrogate`] implementations until
-//! they reach the root where they can be immediately transformed into the final
-//! HTML. This also (currently hypothetically) allows for some synchronous
-//! control flow (i.e. if the user cancels loading a page) since if the root’s
-//! [`write_str`](core::fmt::Write::write_str) returns an error, the entire
-//! stack unwinds.
 
 use super::{State, stack::StackFrame};
 use crate::wikitext::{
