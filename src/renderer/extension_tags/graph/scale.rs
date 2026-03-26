@@ -32,7 +32,7 @@ pub(super) struct Scale<'s> {
     domain: Option<Domain<'s>>,
     /// The cached derived domain.
     #[serde(skip)]
-    domain_cache: RefCell<Option<Vec<Value<'s>>>>,
+    domain_cache: RefCell<Option<CachedDomain<'s>>>,
     /// Sets or overrides the maximum of a quantitative domain.
     #[serde(borrow, default)]
     domain_max: Option<DomainValueOverride<'s>>,
@@ -159,14 +159,19 @@ impl<'s> Scale<'s> {
         // TODO: This could record a cache key too to reduce the number of
         // invalidations, if it actually is the case that is meaningfully
         // faster and anyone cares.
-        if let Some(Domain::Derived(data_ref)) = &self.domain
-            && data_ref.is_dynamic()
+        let tainted = self
+            .domain_cache
+            .borrow()
+            .as_ref()
+            .is_some_and(|cache| cache.tainted)
+            || matches!(&self.range, Some(range) if range.is_dynamic());
+
+        if tainted
+            || matches!(&self.domain, Some(Domain::Derived(data_ref)) if data_ref.is_dynamic())
         {
             *self.domain_cache.borrow_mut() = None;
         }
-        if let Some(Range::Derived(data_ref)) = &self.range
-            && data_ref.is_dynamic()
-        {
+        if tainted {
             *self.range_cache.borrow_mut() = None;
         }
     }
@@ -525,7 +530,7 @@ impl<'s> Scale<'s> {
     }
 
     /// Gets the calculated domain of the scale.
-    fn domain(&self, node: &Node<'s, '_>) -> RefMut<'_, Vec<Value<'s>>> {
+    fn domain(&self, node: &Node<'s, '_>) -> RefMut<'_, CachedDomain<'s>> {
         RefMut::map(self.domain_cache.borrow_mut(), |cache| {
             cache.get_or_insert_with(|| {
                 // TODO: Self-referential struct to avoid clones.
@@ -535,7 +540,7 @@ impl<'s> Scale<'s> {
                     .map(|domain| domain.get(node))
                     .unwrap_or_default();
 
-                match self.kind {
+                let domain = match self.kind {
                     Kind::Ordinal { .. } => domain,
                     Kind::Time { nice, .. } => {
                         let (mut min, mut max) = self.calc_quantitative_domain(
@@ -574,6 +579,11 @@ impl<'s> Scale<'s> {
                             vec![min.into(), max.into()]
                         }
                     }
+                };
+
+                CachedDomain {
+                    domain,
+                    tainted: false,
                 }
             })
         })
@@ -619,10 +629,35 @@ impl<'s> Scale<'s> {
         F: Fn(&[Value<'s>]) -> T,
     {
         if use_domain {
-            f(self.domain(node).as_slice())
+            f(&self.domain(node))
         } else {
             f(&self.range(node))
         }
+    }
+}
+
+/// A cached domain.
+#[derive(Debug)]
+struct CachedDomain<'s> {
+    /// The domain.
+    domain: Vec<Value<'s>>,
+    /// If true, missing values have been added to the domain.
+    tainted: bool,
+}
+
+impl<'s> CachedDomain<'s> {
+    /// Appends a value to back of the domain, tainting the cache.
+    fn push(&mut self, value: Value<'s>) {
+        self.domain.push(value);
+        self.tainted = true;
+    }
+}
+
+impl<'s> core::ops::Deref for CachedDomain<'s> {
+    type Target = [Value<'s>];
+
+    fn deref(&self) -> &Self::Target {
+        self.domain.as_slice()
     }
 }
 
@@ -984,6 +1019,21 @@ impl<'s> Range<'s> {
             // TODO: Self-referential struct to avoid clones.
             Range::Fixed(values) => Cow::Owned(values.clone()),
             Range::Derived(data_ref) => Cow::Owned(data_ref.get(node)),
+        }
+    }
+
+    /// Returns true if the range has a dependency on an indirect lookup which
+    /// requires cache invalidation.
+    fn is_dynamic(&self) -> bool {
+        match self {
+            Range::Width | Range::Height => true,
+            Range::Derived(data_ref) => data_ref.is_dynamic(),
+            Range::Category10
+            | Range::Category20
+            | Range::Category20b
+            | Range::Category20c
+            | Range::Shapes
+            | Range::Fixed(_) => false,
         }
     }
 }

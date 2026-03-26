@@ -279,7 +279,7 @@ impl<'s, 'b> Node<'s, 'b> {
             data: Cow::Borrowed(core::slice::from_ref(item)),
             mark: self.mark,
             now: self.now,
-            parent: Some(self),
+            parent: self.parent,
             rng: self.rng,
             spec: self.spec,
         }

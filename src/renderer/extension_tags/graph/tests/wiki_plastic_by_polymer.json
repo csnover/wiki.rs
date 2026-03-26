@@ -1,0 +1,196 @@
+{
+  "height": 110,
+  "data": [
+    {
+      "format": {
+        "parse": {
+          "x": "string",
+          "y": "number"
+        },
+        "type": "json"
+      },
+      "values": [
+        {
+          "x": "LDPE",
+          "y": 0.157
+        },
+        {
+          "x": "HDPE",
+          "y": 0.128
+        },
+        {
+          "y": 0.167,
+          "x": "PP"
+        },
+        {
+          "y": 0.061,
+          "x": "PS"
+        },
+        {
+          "y": 0.093,
+          "x": "PVC"
+        },
+        {
+          "x": "PET",
+          "y": 0.081
+        },
+        {
+          "x": "PUR",
+          "y": 0.066
+        },
+        {
+          "y": 0.145,
+          "x": "PP&A Fibers"
+        },
+        {
+          "x": "All Others",
+          "y": 0.039
+        },
+        {
+          "x": "Additives",
+          "y": 0.061
+        }
+      ],
+      "name": "chart"
+    }
+  ],
+  "legends": [
+    {
+      "fill": "color",
+      "stroke": "color",
+      "title": "Polymer",
+      "properties": {
+        "title": {
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "legend": {
+          "y": {
+            "value": -110
+          }
+        },
+        "labels": {
+          "fill": {
+            "value": "#54595d"
+          }
+        }
+      }
+    }
+  ],
+  "marks": [
+    {
+      "type": "arc",
+      "from": {
+        "data": "chart",
+        "transform": [
+          {
+            "field": "y",
+            "type": "pie"
+          }
+        ]
+      },
+      "properties": {
+        "update": {
+          "fill": {
+            "scale": "color",
+            "field": "x"
+          }
+        },
+        "enter": {
+          "innerRadius": {
+            "value": 0
+          },
+          "endAngle": {
+            "field": "layout_end"
+          },
+          "stroke": {
+            "value": "white"
+          },
+          "strokeWidth": {
+            "value": 1
+          },
+          "startAngle": {
+            "field": "layout_start"
+          },
+          "fill": {
+            "scale": "color",
+            "field": "x"
+          },
+          "outerRadius": {
+            "value": 110
+          }
+        },
+        "hover": {
+          "fill": {
+            "value": "red"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "enter": {
+          "fill": {
+            "value": "#54595d"
+          },
+          "align": {
+            "value": "center"
+          },
+          "text": {
+            "template": "{{datum.y|number:'.1%'}}"
+          },
+          "theta": {
+            "field": "layout_mid"
+          },
+          "angle": {
+            "field": "layout_mid",
+            "mult": 57.29577951308232
+          },
+          "radius": {
+            "offset": 5,
+            "value": 110
+          },
+          "baseline": {
+            "value": "bottom"
+          },
+          "x": {
+            "mult": 0.5,
+            "group": "width"
+          },
+          "y": {
+            "group": "height",
+            "mult": 0.5
+          },
+          "fontSize": {
+            "value": 11
+          }
+        }
+      },
+      "from": {
+        "transform": [
+          {
+            "field": "y",
+            "type": "pie"
+          }
+        ],
+        "data": "chart"
+      },
+      "type": "text"
+    }
+  ],
+  "scales": [
+    {
+      "type": "ordinal",
+      "range": "category10",
+      "domain": {
+        "data": "chart",
+        "field": "x"
+      },
+      "name": "color"
+    }
+  ],
+  "width": 110,
+  "version": 2,
+  "axes": []
+}

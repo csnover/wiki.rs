@@ -1,0 +1,291 @@
+{
+  "data": [
+    {
+      "format": {
+        "type": "json",
+        "parse": {
+          "y": "integer",
+          "x": "string"
+        }
+      },
+      "values": [
+        {
+          "series": "y1",
+          "y": 146,
+          "x": "Packaging"
+        },
+        {
+          "series": "y2",
+          "x": "Construction",
+          "y": 65
+        },
+        {
+          "x": "Other sectors",
+          "y": 59,
+          "series": "y3"
+        },
+        {
+          "x": "Textiles",
+          "series": "y4",
+          "y": 47
+        },
+        {
+          "y": 42,
+          "x": "Consumer products",
+          "series": "y5"
+        },
+        {
+          "y": 27,
+          "x": "Transportation",
+          "series": "y6"
+        },
+        {
+          "x": "Electronics",
+          "series": "y7",
+          "y": 18
+        },
+        {
+          "x": "Industrial Machinery",
+          "y": 3,
+          "series": "y8"
+        }
+      ],
+      "name": "chart"
+    }
+  ],
+  "height": 300,
+  "axes": [
+    {
+      "scale": "x",
+      "title": "Primary plastic production by industrial sector 2015",
+      "grid": false,
+      "properties": {
+        "labels": {
+          "angle": {
+            "value": 30
+          },
+          "align": {
+            "value": "left"
+          },
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "axis": {
+          "stroke": {
+            "value": "#54595d"
+          },
+          "strokeWidth": {
+            "value": 2
+          }
+        },
+        "grid": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        },
+        "title": {
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "ticks": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        }
+      },
+      "type": "x"
+    },
+    {
+      "type": "y",
+      "format": "d",
+      "properties": {
+        "ticks": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        },
+        "title": {
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "axis": {
+          "stroke": {
+            "value": "#54595d"
+          },
+          "strokeWidth": {
+            "value": 2
+          }
+        },
+        "labels": {
+          "fill": {
+            "value": "#54595d"
+          }
+        },
+        "grid": {
+          "stroke": {
+            "value": "#54595d"
+          }
+        }
+      },
+      "scale": "y",
+      "grid": false,
+      "title": "Million metric tonnes"
+    }
+  ],
+  "width": 600,
+  "marks": [
+    {
+      "from": {
+        "data": "chart",
+        "transform": [
+          {
+            "groupby": "x",
+            "type": "facet"
+          }
+        ]
+      },
+      "marks": [
+        {
+          "properties": {
+            "hover": {
+              "fill": {
+                "value": "red"
+              }
+            },
+            "enter": {
+              "y": {
+                "scale": "y",
+                "field": "y"
+              },
+              "fill": {
+                "field": "series",
+                "scale": "color"
+              },
+              "y2": {
+                "scale": "y",
+                "value": 0
+              },
+              "width": {
+                "band": true,
+                "offset": -1,
+                "scale": "series"
+              },
+              "x": {
+                "scale": "series",
+                "field": "series"
+              }
+            },
+            "update": {
+              "fill": {
+                "field": "series",
+                "scale": "color"
+              }
+            }
+          },
+          "type": "rect"
+        },
+        {
+          "type": "text",
+          "properties": {
+            "enter": {
+              "y": {
+                "scale": "y",
+                "offset": -4,
+                "field": "y"
+              },
+              "align": {
+                "value": "left"
+              },
+              "baseline": {
+                "value": "middle"
+              },
+              "fill": {
+                "value": "#54595d"
+              },
+              "angle": {
+                "value": -90
+              },
+              "x": {
+                "field": "series",
+                "scale": "series"
+              },
+              "dy": {
+                "mult": 0.5,
+                "band": true,
+                "scale": "series"
+              },
+              "fontSize": {
+                "value": 11
+              },
+              "text": {
+                "field": "y"
+              }
+            }
+          }
+        }
+      ],
+      "type": "group",
+      "scales": [
+        {
+          "name": "series",
+          "type": "ordinal",
+          "range": "width",
+          "domain": {
+            "field": "series"
+          }
+        }
+      ],
+      "properties": {
+        "enter": {
+          "x": {
+            "scale": "x",
+            "field": "key"
+          },
+          "width": {
+            "band": true,
+            "scale": "x"
+          }
+        }
+      }
+    }
+  ],
+  "legends": [],
+  "version": 2,
+  "scales": [
+    {
+      "zero": false,
+      "domain": {
+        "data": "chart",
+        "field": "x"
+      },
+      "name": "x",
+      "nice": true,
+      "range": "width",
+      "type": "ordinal",
+      "padding": 0.2
+    },
+    {
+      "range": "height",
+      "type": "linear",
+      "domain": {
+        "data": "chart",
+        "field": "y"
+      },
+      "nice": true,
+      "name": "y",
+      "zero": true
+    },
+    {
+      "name": "color",
+      "domain": {
+        "field": "series",
+        "data": "chart"
+      },
+      "type": "ordinal",
+      "range": "category10"
+    }
+  ]
+}

@@ -949,3 +949,26 @@ where
         })
         .collect())
 }
+
+/// A deserialisable string or list of strings.
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged)]
+enum StringList<'s> {
+    /// A single string.
+    #[serde(borrow)]
+    Single(Cow<'s, str>),
+    /// A list of strings.
+    #[serde(borrow)]
+    Multiple(Vec<Cow<'s, str>>),
+}
+
+/// A serde helper function for [`Vec<Cow<'s, str>>`] field representations.
+pub(super) fn vec_or_str<'de, D>(d: D) -> Result<Vec<Cow<'de, str>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    <StringList<'_> as serde::Deserialize<'_>>::deserialize(d).map(|list| match list {
+        StringList::Single(s) => vec![s],
+        StringList::Multiple(s) => s,
+    })
+}

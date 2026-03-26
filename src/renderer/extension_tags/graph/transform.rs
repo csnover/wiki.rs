@@ -207,7 +207,12 @@ impl Default for Accumulator<'_, '_> {
 #[derive(Debug, serde::Deserialize)]
 pub(super) struct Aggregate<'s> {
     /// The names of fields to optionally group by.
-    #[serde(borrow, default, rename = "groupby")]
+    #[serde(
+        borrow,
+        default,
+        rename = "groupby",
+        deserialize_with = "super::data::vec_or_str"
+    )]
     group_by: Vec<Cow<'s, str>>,
     /// The aggregates to compute for each group.
     #[serde(borrow, default)]
@@ -1772,7 +1777,11 @@ pub(super) struct Stack<'s> {
     field: Cow<'s, str>,
     /// A list of fields to partition the data into groups (stacks). When values
     /// are stacked vertically, this corresponds to the x-coordinates.
-    #[serde(borrow, rename = "groupby")]
+    #[serde(
+        borrow,
+        rename = "groupby",
+        deserialize_with = "super::data::vec_or_str"
+    )]
     group_by: Vec<Cow<'s, str>>,
     /// The baseline offset style.
     #[serde(default)]
@@ -1781,7 +1790,12 @@ pub(super) struct Stack<'s> {
     #[serde(borrow, default)]
     output: LayoutOutput<'s>,
     /// A list of fields to determine the order of stack layers.
-    #[serde(borrow, default, rename = "sortby")]
+    #[serde(
+        borrow,
+        default,
+        rename = "sortby",
+        deserialize_with = "super::data::vec_or_str"
+    )]
     sort_by: Vec<Cow<'s, str>>,
 }
 

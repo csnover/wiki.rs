@@ -60,5 +60,7 @@ run_tests! {
     stacked_bar,
     treemap,
     weather,
+    wiki_plastic_by_polymer,
+    wiki_plastic_by_sector,
     wordcloud,
 }

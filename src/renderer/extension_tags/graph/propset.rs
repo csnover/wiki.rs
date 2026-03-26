@@ -1060,10 +1060,18 @@ impl core::fmt::Display for StrokeDashArray {
 #[serde(rename_all = "lowercase")]
 pub(super) enum ValueRefData<'s, T> {
     /// Literal value.
-    Value(T),
+    Value(ValueRefLiteral<T>),
     /// Indirect data reference.
     #[serde(borrow)]
     Field(FieldRef<'s>),
+    /// Vega 1-compatible group data reference.
+    // TODO: For full compatibility with Vega 1, “If both the group and field
+    // parameters are specified (or group is set to true), then a double lookup
+    // will occur: first the field value will be retrieved, it will then be used
+    // as a property name to look up on the data object specified by the group
+    // parameter.”
+    #[serde(borrow)]
+    Group(Cow<'s, str>),
     /// Dynamic data reference.
     #[serde(borrow)]
     Signal(Cow<'s, str>),
@@ -1091,8 +1099,9 @@ where
     #[inline]
     fn get_raw(&self, node: &Node<'s, '_>) -> Option<Value<'s>> {
         match self {
-            Self::Value(value) => Some(value.clone().into()),
+            Self::Value(ValueRefLiteral::Value(value)) => Some(value.clone().into()),
             Self::Field(field) => field.get(node),
+            Self::Group(key) => vega_1_group(node, key),
             Self::Signal(name) => match &**name {
                 "width" => Some(Value::from(node.width())),
                 "height" => Some(Value::from(node.height())),
@@ -1104,7 +1113,7 @@ where
             Self::Band(true) => {
                 unreachable!("ScaledValueRef should not delegate to `get` in this case")
             }
-            Self::Band(false) => None,
+            Self::Band(false) | Self::Value(ValueRefLiteral::Invalid) => None,
         }
     }
 
@@ -1116,7 +1125,7 @@ where
 
 impl<T> From<T> for ValueRefData<'_, T> {
     fn from(value: T) -> Self {
-        Self::Value(value)
+        Self::Value(ValueRefLiteral::Value(value))
     }
 }
 
@@ -1129,8 +1138,9 @@ where
     #[inline]
     fn get(&self, node: &Node<'s, '_>) -> Option<Self::Item> {
         match self {
-            Self::Value(value) => Some(value.clone()),
+            Self::Value(ValueRefLiteral::Value(value)) => Some(value.clone()),
             Self::Field(field) => field.get(node).map(T::from_value),
+            Self::Group(key) => vega_1_group(node, key).map(T::from_value),
             Self::Signal(name) => {
                 log::warn!("Signal {name}");
                 None
@@ -1138,8 +1148,34 @@ where
             Self::Band(true) => {
                 unreachable!("ScaledValueRef should not delegate to `get` in this case")
             }
-            Self::Band(false) => None,
+            Self::Band(false) | Self::Value(ValueRefLiteral::Invalid) => None,
         }
+    }
+}
+
+/// A value which may be invalid.
+///
+/// This is required because Vega, despite having a JSON schema, does not
+/// validate and reject invalid input before trying to render a graph, and
+/// at least 'Plastic' contains a graph with a bogus value (tries to use a
+/// hex colour string for `strokeWidth`).
+#[derive(Clone, Debug)]
+pub(super) enum ValueRefLiteral<T> {
+    /// Literal value.
+    Value(T),
+    /// Bogus value.
+    Invalid,
+}
+
+impl<'de, T> serde::Deserialize<'de> for ValueRefLiteral<T>
+where
+    T: serde::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(T::deserialize(deserializer).map_or(Self::Invalid, Self::Value))
     }
 }
 
@@ -1186,7 +1222,7 @@ impl<'s> ValueRefNumber<'s> {
         Self {
             mult,
             offset,
-            value: ValueRefData::Value(value).into(),
+            value: ValueRefData::Value(ValueRefLiteral::Value(value)).into(),
         }
     }
 }
@@ -1249,7 +1285,7 @@ impl<'s> From<FieldRef<'s>> for ValueRefTemplateData<'s> {
 
 impl<'s, T: Into<Cow<'s, str>>> From<T> for ValueRefTemplateData<'s> {
     fn from(value: T) -> Self {
-        Self::ValueRef(ValueRefData::Value(value.into()))
+        Self::ValueRef(ValueRefData::Value(ValueRefLiteral::Value(value.into())))
     }
 }
 
@@ -1279,4 +1315,18 @@ fn ascend<'b, 's>(node: &'b Node<'s, 'b>, level: Option<f64>) -> Option<&'b Node
     };
 
     (level == 0).then_some(node)
+}
+
+/// Gets a value from the parent of the given node according to the documented
+/// Vega 1 lookup rules.
+fn vega_1_group<'s>(node: &Node<'s, '_>, key: &str) -> Option<Value<'s>> {
+    if node.spec.version != Some(1) {
+        return None;
+    }
+
+    let parent_node = ascend(node, None)?;
+    match key {
+        "height" | "width" => parent_node.visual(key),
+        key => parent_node.item.get(key).cloned(),
+    }
 }
