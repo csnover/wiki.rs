@@ -34,6 +34,7 @@ run_tests! {
     mcdonnell_douglas_md_11,
     secretary_of_state_for_defence,
     tabs,
+    timeline_of_lighting_technology,
     vertical,
     wikimedia_growth,
 }

@@ -882,7 +882,7 @@ peg::parser! {pub(super) grammar easy_timeline() for str {
   / !"&" "#" (!eol() [_])*
 
   rule text() -> Vec<TextSpan<'input>>
-  = "\"" t:text_span(<['"'|'\n'] {}>)* "\"" { t }
+  = "\"" t:text_span(<['"'|'\n'] {}>)* "\""? { t }
   / text_span(<['#'|'\n'|'\t'|'\r'|'\x0c'] {} / " " alpha()+ ":" {}>)*
 
   rule text_span(terminator: rule<()>) -> TextSpan<'input>

@@ -1,0 +1,49 @@
+
+Colors =
+  id:lightgrey  value:rgb(0.975,0.975,0.975)
+
+BackgroundColors = canvas:lightgrey
+ImageSize  = width:240 height:1024
+PlotArea   = width:200 height:1000 left:40 bottom:20
+DateFormat = yyyy
+Period     = from:1780 till:2023
+TimeAxis   = orientation:vertical order:reverse
+ScaleMajor = unit:year increment:10 start:1786
+ScaleMinor = unit:year increment:1 start:1780
+
+PlotData=
+
+  mark:(line,black)
+  shift:(15,-5)
+  at:1780 text:"[[Argand lamp]]
+  at:1794 text:"[[Gas lighting]]"
+  at:1802 text:"[[Arc lamp]]"
+  at:1856 text:"[[Geissler tube]]"
+  at:1867 text:"[[Fluorescent lamp]]"
+  at:1875 text:"[[Electric light bulb]]"
+  at:1880 text:"[[Incandescent_light_bulb#Dominance_of_carbon_filament_and_vacuum|Long lasting filament]]"
+  at:1885 text:"[[Gas mantle]]"
+  at:1893 text:"[[Gas-discharge lamp]]"
+  at:1901 text:"[[Mercury-vapor lamp]]"
+  at:1904 text:"[[Tungsten filament]]"
+  at:1910 text:"[[Neon lighting]]"
+  at:1913 text:"[[Incandescent_light_bulb#Revolution_of_the_tungsten_filament,_inert_gas,_and_the_coiled_coil|Inert gas in bulb]]"
+  at:1917 text:"[[Incandescent_light_bulb#Revolution_of_the_tungsten_filament,_inert_gas,_and_the_coiled_coil|Coiled coil filament]]"
+  at:1920 text:"[[Sodium-vapor lamp]]"
+  at:1927 text:"[[Light-emitting diode]]"
+  at:1953 text:"[[Halogen light bulb]]"
+  shift:(15,1)
+  at:1962 text:"[[Light-emitting diode|Red LED]]"
+  shift:(15,-4)
+  at:1963 text:"[[Sodium-vapor lamp#High-pressure sodium|High pressure sodium-vapor lamp]]"
+  at:1976 text:"[[Compact fluorescent lamp]]"
+  at:1987 text:"[[Organic_light-emitting_diode|OLED]]"
+  at:1990 text:"[[Sulfur lamp]]"
+  at:1995 text:"[[Light-emitting diode|Blue LED]]"
+  shift:(15,1)
+  at:2008 text:"[[LED filament]]"
+  shift:(15,-4)
+  at:2009 text:"[[Phase-out of incandescent light bulbs]]"
+  at:2018 text:"[[Phase-out of incandescent light bulbs#European_Union|Phase-out of halogen light bulbs]]
+  at:2021 text:"[[Compact fluorescent lamp#History|Phase-out of compact fluorescent light bulbs]]
+  
