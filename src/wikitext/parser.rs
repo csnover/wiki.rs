@@ -2564,7 +2564,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
               iter::once(addr).chain(target)
           );
 
-          let is_valid = if let [Spanned { span, node: Token::Text }] = parts.as_slice() {
+          let is_valid = if !parts.is_empty() && parts.iter().all(|part| matches!(part.node, Token::Text | Token::Entity { .. })) {
+              let span = Span::new(parts.first().unwrap().span.start, parts.last().unwrap().span.end);
               let target = &input[span.into_range()];
               // Protocol must be valid and there ought to be at least
               // one post-protocol character

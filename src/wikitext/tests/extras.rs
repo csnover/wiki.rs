@@ -24,6 +24,7 @@ run_extras_tests! {
     balance_2 => " '''b''' n'''i''n",
     balance_3 => "nn'''ib''' b'''i''n",
     extension_tags => "<ref/><ref>a</ref>",
+    external_notlink => "[6,300&nbsp;kJ]",
     ext_broken => "<ref><!-- oops</ref>",
     heading_1 => r#"==<span id="Alternate Section Title"></span>Section heading=="#,
     image_1 => "[[File:filename.extension|alt=a|caption]]",
