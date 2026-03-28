@@ -87,7 +87,7 @@ impl Outline {
             name
         };
 
-        let id = anchor_encode(&name);
+        let id = name.clone();
         self.0.push((level, name));
         Ok(id)
     }
