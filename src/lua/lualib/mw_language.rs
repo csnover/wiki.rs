@@ -52,11 +52,11 @@ impl LanguageLibrary {
         ctx: Context<'gc>,
         (_code, n, forms): (VmString<'gc>, i64, Table<'gc>),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        // log::warn!("stub: mw.language.convertPlural({_code:?}, {n:?}, {args:?})");
+        // log::warn!("stub: mw.language.convertPlural({_code:?}, {n:?}, {forms:?})");
         Ok(if let value @ Value::String(_) = forms.get_value(ctx, n) {
             value
         } else {
-            forms.get_value(ctx, forms.length() - 1)
+            forms.get_value(ctx, forms.length())
         })
     }
 
