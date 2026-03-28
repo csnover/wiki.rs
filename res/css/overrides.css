@@ -1094,6 +1094,10 @@ blockquote,
 
     &:where(.sidebar) {
         @apply --float-right;
+
+        .sidebar {
+            margin: 0;
+        }
     }
 
     &[style*="--mw-output-float:left;"] {
