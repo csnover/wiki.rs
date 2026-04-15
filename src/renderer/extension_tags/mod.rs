@@ -379,7 +379,15 @@ fn math(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_
         (OutputMode::Inline, math_core::MathDisplay::Inline)
     };
 
-    match math_core::LatexToMathML::default().convert_with_local_counter(latex, mode) {
+    let config = math_core::MathCoreConfig {
+        ignore_unknown_commands: true,
+        ..Default::default()
+    };
+
+    match math_core::LatexToMathML::new(config)
+        .unwrap()
+        .convert_with_local_counter(latex, mode)
+    {
         Ok(maths) => {
             out.write_str(&wikitext::escape(&maths))?;
         }
