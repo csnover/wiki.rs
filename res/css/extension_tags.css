@@ -77,6 +77,49 @@
     }
 }
 
+/*= <math> */
+
+mtext span.math-core-sans-serif-font {
+    font-family: var(--sans);
+}
+
+/* These rules are dictated by the math-core README for correct rendering in
+   Blink and WebKit. They are not really forward-compatible, and unfortunately
+   there is not any obvious way to make them forward-compatible without relying
+   on runtime scripts. */
+@supports (not (-webkit-backdrop-filter: blur(1px))) and (not (-moz-appearance: none)) {
+    menclose {
+        padding: 0.5ex 0;
+        position: relative;
+    }
+    mrow.menclose-updiagonalstrike,
+    mrow.menclose-downdiagonalstrike,
+    mrow.menclose-horizontalstrike {
+        background-color: currentColor;
+        block-size: 100%;
+        display: inline-block;
+        inline-size: 100%;
+        inset-block-end: 0;
+        inset-inline-start: 0.5px;
+        position: absolute;
+    }
+    mrow.menclose-updiagonalstrike {
+        clip-path: polygon(0.05em 100%, 0 calc(100% - 0.05em), calc(100% - 0.05em) 0, 100% 0.05em);
+    }
+    mrow.menclose-downdiagonalstrike {
+        clip-path: polygon(0em 0.05em, 0.05em 0em, 100% calc(100% - 0.05em), calc(100% - 0.05em) 100%);
+    }
+    mrow.menclose-horizontalstrike {
+        clip-path: polygon(0em calc(55% + 0.0333em), 0em calc(55% - 0.0333em), 100% calc(55% - 0.0333em), 100% calc(55% + 0.0333em));
+    }
+}
+
+@supports (not (-moz-appearance: none)) {
+    mover[accent="true" i] > mo:nth-child(2) {
+        margin-bottom: 0.15ex;
+    }
+}
+
 /*= <ref> */
 
 .reference {
