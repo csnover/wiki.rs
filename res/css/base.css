@@ -258,7 +258,7 @@ img {
 }
 
 math {
-    font-family: var(--serif);
+    font-family: inherit;
     font-weight: var(--normal-weight);
 }
 
