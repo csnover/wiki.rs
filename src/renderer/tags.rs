@@ -4,7 +4,7 @@ use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use crate::{
     common::{anchor_encode, decode_html, title_decode},
     config::CONFIG,
-    title::{Namespace, Title},
+    title::Title,
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
 use axum::http::Uri;
@@ -47,22 +47,19 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     let target = title_decode(&target);
 
     let title = Title::new(&target, None);
-    match title.namespace().id {
-        Namespace::CATEGORY if !target.starts_with(':') => {
-            state.globals.categories.insert(title.key().to_owned());
-            if let Some(trail) = trail {
-                out.adopt_generated(state, sp, None, trail)?;
-            }
+    let force_link = target.starts_with(':');
+    if !force_link && title.is_local_category() {
+        state.globals.categories.insert(title.key().to_owned());
+        if let Some(trail) = trail {
+            out.adopt_generated(state, sp, None, trail)?;
         }
-        Namespace::FILE if !target.starts_with(':') => {
-            image::render_media(out, state, sp, title, content)?;
-            if let Some(trail) = trail {
-                out.adopt_generated(state, sp, None, trail)?;
-            }
+    } else if !force_link && title.is_local_file() {
+        image::render_media(out, state, sp, title, content)?;
+        if let Some(trail) = trail {
+            out.adopt_generated(state, sp, None, trail)?;
         }
-        _ => {
-            render_internal_link(out, state, sp, &target, content, trail, title)?;
-        }
+    } else {
+        render_internal_link(out, state, sp, &target, content, trail, title)?;
     }
     Ok(())
 }

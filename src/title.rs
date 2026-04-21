@@ -365,6 +365,16 @@ impl Title {
             .map(|end_at| &self.text[..usize::from(end_at)])
     }
 
+    /// Returns true if this title corresponds to a non-interwiki category.
+    pub fn is_local_category(&self) -> bool {
+        self.interwiki().is_none() && self.namespace.id == Namespace::CATEGORY
+    }
+
+    /// Returns true if this title corresponds to a non-interwiki media file.
+    pub fn is_local_file(&self) -> bool {
+        self.interwiki().is_none() && self.namespace.id == Namespace::FILE
+    }
+
     /// The local part of the title.
     ///
     /// ```text

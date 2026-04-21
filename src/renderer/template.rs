@@ -819,7 +819,7 @@ pub(super) fn left_trim_category(
     title: &Title,
     at: usize,
 ) {
-    if title.namespace().id == Namespace::CATEGORY {
+    if title.is_local_category() {
         let mut truncated = &out[..at];
 
         // If the strip marker contains whitespace including a newline, and that

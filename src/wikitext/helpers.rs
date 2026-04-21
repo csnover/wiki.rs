@@ -4,7 +4,7 @@ use super::{
     Argument, InclusionMode, Span, Spanned, Token,
     visit::{Visitor, visit_link},
 };
-use crate::title::{Namespace, Title};
+use crate::title::Title;
 use core::fmt;
 
 /// Extracts all text from a token tree.
@@ -62,7 +62,7 @@ where
         #[rustfmt::skip]
         if let [Spanned { span, node: Token::Text }] = target {
             let title = Title::new(&self.source[span.into_range()], None);
-            if title.namespace().id == Namespace::CATEGORY {
+            if title.is_local_category() {
                 return Ok(());
             }
         };
