@@ -335,7 +335,7 @@ impl Title {
     /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
     #[inline]
-    pub(crate) fn full_text(&self) -> &str {
+    pub fn full_text(&self) -> &str {
         &self.text
     }
 
@@ -373,6 +373,78 @@ impl Title {
     /// Returns true if this title corresponds to a non-interwiki media file.
     pub fn is_local_file(&self) -> bool {
         self.interwiki().is_none() && self.namespace.id == Namespace::FILE
+    }
+
+    /// Returns true if all the bytes in the given string are valid for use in
+    /// a title.
+    pub fn is_valid(maybe_title: &str) -> bool {
+        #[inline]
+        fn is_html_entity(bytes: &[u8]) -> bool {
+            bytes[0] == b'&'
+                && bytes[1..]
+                    .iter()
+                    .position(|b| *b == b';')
+                    .is_some_and(|end| {
+                        bytes[1..end]
+                            .iter()
+                            .all(|b| b.is_ascii_alphanumeric() || *b >= 0x80)
+                    })
+        }
+
+        #[inline]
+        fn is_percent_encoding(bytes: &[u8]) -> bool {
+            bytes[0] == b'%'
+                && bytes
+                    .get(1..2)
+                    .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_hexdigit))
+        }
+
+        #[inline]
+        fn valid_byte(b: u8) -> bool {
+            CONFIG.valid_title_bytes.contains(b)
+        }
+
+        let bytes = maybe_title.as_bytes();
+        for pos in 0..maybe_title.len() {
+            if !valid_byte(bytes[pos])
+                || is_percent_encoding(&bytes[pos..])
+                || is_html_entity(&bytes[pos..])
+            {
+                return false;
+            }
+        }
+        !maybe_title.is_empty()
+    }
+
+    /// Converts a page-relative title name to an absolute title name using the
+    /// given `base` as the base title.
+    pub fn join<'a>(&self, partial: &'a str) -> Cow<'a, str> {
+        if !self.namespace().subpages {
+            return Cow::Borrowed(partial);
+        }
+
+        let (target, fragment) = if let Some(p) = partial.rfind('#') {
+            partial.split_at(p)
+        } else {
+            (partial, "")
+        };
+        let target = target.trim_ascii();
+
+        // TODO: '/' at the end is supposed to do something to the output text
+        if target.starts_with('/') {
+            Cow::Owned(self.prefixed_text().to_owned() + target.trim_end_matches('/') + fragment)
+        } else if target.starts_with("../") {
+            let suffix = target.trim_start_matches("../");
+            let count = (target.len() - suffix.len()) / "../".len();
+            self.prefixed_text()
+                .rsplitn(count + 1, '/')
+                .nth(count)
+                .map_or(<_>::default(), |last| {
+                    Cow::Owned(format!("{last}/{suffix}{fragment}"))
+                })
+        } else {
+            Cow::Borrowed(partial.trim_ascii())
+        }
     }
 
     /// The local part of the title.
@@ -413,7 +485,7 @@ impl Title {
     /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
     #[inline]
-    pub(crate) fn prefixed_text(&self) -> &str {
+    pub fn prefixed_text(&self) -> &str {
         let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
         &self.text[..end_at]
     }
@@ -456,78 +528,6 @@ impl Title {
             .map_or(0, |d| usize::from(d) + 1);
         let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
         &self.text[start_at..end_at]
-    }
-
-    /// Returns true if all the bytes in the given string are valid for use in
-    /// a title.
-    pub(crate) fn is_valid(maybe_title: &str) -> bool {
-        #[inline]
-        fn is_html_entity(bytes: &[u8]) -> bool {
-            bytes[0] == b'&'
-                && bytes[1..]
-                    .iter()
-                    .position(|b| *b == b';')
-                    .is_some_and(|end| {
-                        bytes[1..end]
-                            .iter()
-                            .all(|b| b.is_ascii_alphanumeric() || *b >= 0x80)
-                    })
-        }
-
-        #[inline]
-        fn is_percent_encoding(bytes: &[u8]) -> bool {
-            bytes[0] == b'%'
-                && bytes
-                    .get(1..2)
-                    .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_hexdigit))
-        }
-
-        #[inline]
-        fn valid_byte(b: u8) -> bool {
-            CONFIG.valid_title_bytes.contains(b)
-        }
-
-        let bytes = maybe_title.as_bytes();
-        for pos in 0..maybe_title.len() {
-            if !valid_byte(bytes[pos])
-                || is_percent_encoding(&bytes[pos..])
-                || is_html_entity(&bytes[pos..])
-            {
-                return false;
-            }
-        }
-        !maybe_title.is_empty()
-    }
-
-    /// Converts a page-relative title name to an absolute title name using the
-    /// given `base` as the base title.
-    pub(crate) fn join<'a>(&self, partial: &'a str) -> Cow<'a, str> {
-        if !self.namespace().subpages {
-            return Cow::Borrowed(partial);
-        }
-
-        let (target, fragment) = if let Some(p) = partial.rfind('#') {
-            partial.split_at(p)
-        } else {
-            (partial, "")
-        };
-        let target = target.trim_ascii();
-
-        // TODO: '/' at the end is supposed to do something to the output text
-        if target.starts_with('/') {
-            Cow::Owned(self.prefixed_text().to_owned() + target.trim_end_matches('/') + fragment)
-        } else if target.starts_with("../") {
-            let suffix = target.trim_start_matches("../");
-            let count = (target.len() - suffix.len()) / "../".len();
-            self.prefixed_text()
-                .rsplitn(count + 1, '/')
-                .nth(count)
-                .map_or(<_>::default(), |last| {
-                    Cow::Owned(format!("{last}/{suffix}{fragment}"))
-                })
-        } else {
-            Cow::Borrowed(partial.trim_ascii())
-        }
     }
 }
 
