@@ -1,7 +1,7 @@
 [
-    TableStart @ 1:1..13 {
+    TableStart @ 1:1..2:1 {
         attributes: [
-            {
+            Argument @ 1:4..13 {
                 Some(
                     [
                         "class",
@@ -12,10 +12,9 @@
             },
         ],
     },
-    \n,
-    TableHeading @ 2:1..15 {
+    TableHeading @ 2:1..14 {
         attributes: [
-            {
+            Argument @ 2:2..13 {
                 Some(
                     [
                         "colspan",
@@ -25,18 +24,15 @@
                 ],
             },
         ],
-        content: [
-            "A",
-        ],
     },
+    "A",
     \n,
-    TableRow @ 3:1..3 {
+    TableRow @ 3:1..4:1 {
         attributes: [],
     },
-    \n,
-    TableData @ 4:1..5:1 {
+    TableData @ 4:1..14 {
         attributes: [
-            {
+            Argument @ 4:2..13 {
                 Some(
                     [
                         "rowspan",
@@ -46,10 +42,8 @@
                 ],
             },
         ],
-        content: [
-            "B",
-            \n,
-        ],
     },
+    "B",
+    \n,
     TableEnd @ 5:1..3,
 ]

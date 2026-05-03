@@ -1,7 +1,7 @@
 [
-    TableStart @ 1:1..41 {
+    TableStart @ 1:1..2:1 {
         attributes: [
-            {
+            Argument @ 1:4..21 {
                 Some(
                     [
                         "class",
@@ -10,7 +10,7 @@
                     "wikitable",
                 ],
             },
-            {
+            Argument @ 1:22..41 {
                 Some(
                     [
                         "style",
@@ -21,105 +21,74 @@
             },
         ],
     },
+    TableCaption @ 2:1..3 {
+        attributes: [],
+    },
+    " Caption text",
     \n,
-    TableCaption @ 2:1..16 {
+    TableRow @ 3:1..4:1 {
         attributes: [],
-        content: [
-            " Caption text",
-        ],
     },
+    TableHeading @ 4:1..2 {
+        attributes: [],
+    },
+    " Header text ",
+    TableHeading @ 4:15..17 {
+        attributes: [],
+    },
+    " Header text ",
+    TableHeading @ 4:30..32 {
+        attributes: [],
+    },
+    " Header text",
     \n,
-    TableRow @ 3:1..3 {
+    TableRow @ 5:1..6:1 {
         attributes: [],
     },
+    TableData @ 6:1..2 {
+        attributes: [],
+    },
+    " Example ",
+    TableData @ 6:11..13 {
+        attributes: [],
+    },
+    " Example ",
+    TableData @ 6:22..24 {
+        attributes: [],
+    },
+    " Example",
     \n,
-    TableHeading @ 4:1..15 {
+    TableRow @ 7:1..8:1 {
         attributes: [],
-        content: [
-            " Header text ",
-        ],
     },
-    TableHeading @ 4:15..30 {
+    TableData @ 8:1..2 {
         attributes: [],
-        content: [
-            " Header text ",
-        ],
     },
-    TableHeading @ 4:30..44 {
+    " Example ",
+    TableData @ 8:11..13 {
         attributes: [],
-        content: [
-            " Header text",
-        ],
     },
+    " Example ",
+    TableData @ 8:22..24 {
+        attributes: [],
+    },
+    " Example",
     \n,
-    TableRow @ 5:1..3 {
+    TableRow @ 9:1..10:1 {
         attributes: [],
     },
+    TableData @ 10:1..2 {
+        attributes: [],
+    },
+    " Example ",
+    TableData @ 10:11..13 {
+        attributes: [],
+    },
+    " Example ",
+    TableData @ 10:22..24 {
+        attributes: [],
+    },
+    " Example",
     \n,
-    TableData @ 6:1..11 {
-        attributes: [],
-        content: [
-            " Example ",
-        ],
-    },
-    TableData @ 6:11..22 {
-        attributes: [],
-        content: [
-            " Example ",
-        ],
-    },
-    TableData @ 6:22..7:1 {
-        attributes: [],
-        content: [
-            " Example",
-            \n,
-        ],
-    },
-    TableRow @ 7:1..3 {
-        attributes: [],
-    },
-    \n,
-    TableData @ 8:1..11 {
-        attributes: [],
-        content: [
-            " Example ",
-        ],
-    },
-    TableData @ 8:11..22 {
-        attributes: [],
-        content: [
-            " Example ",
-        ],
-    },
-    TableData @ 8:22..9:1 {
-        attributes: [],
-        content: [
-            " Example",
-            \n,
-        ],
-    },
-    TableRow @ 9:1..3 {
-        attributes: [],
-    },
-    \n,
-    TableData @ 10:1..11 {
-        attributes: [],
-        content: [
-            " Example ",
-        ],
-    },
-    TableData @ 10:11..22 {
-        attributes: [],
-        content: [
-            " Example ",
-        ],
-    },
-    TableData @ 10:22..11:1 {
-        attributes: [],
-        content: [
-            " Example",
-            \n,
-        ],
-    },
     TableEnd @ 11:1..3,
 ]

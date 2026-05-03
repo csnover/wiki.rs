@@ -31,7 +31,7 @@
             "Help:Editing pages#Preview",
         ],
         content: [
-            {
+            Argument @ 7:30..40 {
                 None: [
                     "previewing",
                 ],
@@ -46,7 +46,7 @@
             "#See also",
         ],
         content: [
-            {
+            Argument @ 9:13..27 {
                 None: [
                     "different text",
                 ],

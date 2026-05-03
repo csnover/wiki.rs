@@ -4,14 +4,14 @@
             "a",
         ],
         parameters: [
-            {
+            Argument @ 1:5..15 {
                 None: [
                     Link @ 1:5..15 {
                         target: [
                             "b",
                         ],
                         content: [
-                            {
+                            Argument @ 1:9..13 {
                                 Some(
                                     [
                                         "alt",

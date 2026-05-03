@@ -1,16 +1,13 @@
 [
-    TableStart @ 1:1..3 {
+    TableStart @ 1:1..2:1 {
         attributes: [],
     },
+    TableData @ 2:1..2 {
+        attributes: [],
+    },
+    "B",
     \n,
-    TableData @ 2:1..4:1 {
-        attributes: [],
-        content: [
-            "B",
-            \n,
-            "C||d",
-            \n,
-        ],
-    },
+    "C||d",
+    \n,
     TableEnd @ 4:1..3,
 ]

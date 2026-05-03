@@ -60,7 +60,7 @@
                     },
                 ],
                 parameters: [
-                    {
+                    Argument @ 11:29..40 {
                         Some(
                             [
                                 "action",

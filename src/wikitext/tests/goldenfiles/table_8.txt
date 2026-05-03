@@ -2,7 +2,7 @@
     StartTag @ 1:1..23 {
         name: "div",
         attributes: [
-            {
+            Argument @ 1:6..22 {
                 Some(
                     [
                         "class",
@@ -15,9 +15,9 @@
         self_closing: false,
     },
     \n,
-    TableStart @ 2:1..21 {
+    TableStart @ 2:1..3:1 {
         attributes: [
-            {
+            Argument @ 2:4..21 {
                 Some(
                     [
                         "class",
@@ -28,10 +28,9 @@
             },
         ],
     },
-    \n,
-    TableHeading @ 3:1..29 {
+    TableHeading @ 3:1..16 {
         attributes: [
-            {
+            Argument @ 3:3..14 {
                 Some(
                     [
                         "colspan",
@@ -41,18 +40,15 @@
                 ],
             },
         ],
-        content: [
-            "Shopping List",
-        ],
     },
+    "Shopping List",
     \n,
-    TableRow @ 4:1..3 {
+    TableRow @ 4:1..5:1 {
         attributes: [],
     },
-    \n,
-    TableData @ 5:1..6:1 {
+    TableData @ 5:1..16 {
         attributes: [
-            {
+            Argument @ 5:3..14 {
                 Some(
                     [
                         "rowspan",
@@ -62,63 +58,27 @@
                 ],
             },
         ],
-        content: [
-            "Areallyreallyreallyreallylongstringwillcauseyourtableto",
-            \n,
-        ],
     },
-    TableData @ 6:1..7:1 {
-        attributes: [],
-        content: [
-            " Pie",
-            \n,
-        ],
-    },
-    TableData @ 7:1..8:1 {
-        attributes: [],
-        content: [
-            " Buns",
-            \n,
-        ],
-    },
-    TableData @ 8:1..9:1 {
-        attributes: [],
-        content: [
-            " Danish",
-            \n,
-        ],
-    },
-    TableData @ 9:1..10:1 {
-        attributes: [
-            {
-                Some(
-                    [
-                        "colspan",
-                    ],
-                ): [
-                    "2",
-                ],
-            },
-        ],
-        content: [
-            "Croissantsmaycausetexttoincreasethesizeofyourcolumnsoitbreaksoutofthecontent area if you do not wrap the table with noresize.",
-            \n,
-        ],
-    },
-    TableRow @ 10:1..3 {
-        attributes: [],
-    },
+    "Areallyreallyreallyreallylongstringwillcauseyourtableto",
     \n,
-    TableData @ 11:1..12:1 {
+    TableData @ 6:1..2 {
         attributes: [],
-        content: [
-            " Cheese",
-            \n,
-        ],
     },
-    TableData @ 12:1..13:1 {
+    " Pie",
+    \n,
+    TableData @ 7:1..2 {
+        attributes: [],
+    },
+    " Buns",
+    \n,
+    TableData @ 8:1..2 {
+        attributes: [],
+    },
+    " Danish",
+    \n,
+    TableData @ 9:1..16 {
         attributes: [
-            {
+            Argument @ 9:3..14 {
                 Some(
                     [
                         "colspan",
@@ -128,25 +88,42 @@
                 ],
             },
         ],
-        content: [
-            "Ice cream",
-            \n,
-        ],
     },
-    TableData @ 13:1..14:1 {
+    "Croissantsmaycausetexttoincreasethesizeofyourcolumnsoitbreaksoutofthecontent area if you do not wrap the table with noresize.",
+    \n,
+    TableRow @ 10:1..11:1 {
         attributes: [],
-        content: [
-            " Butter",
-            \n,
-        ],
     },
-    TableData @ 14:1..15:1 {
+    TableData @ 11:1..2 {
         attributes: [],
-        content: [
-            " Yogurt",
-            \n,
+    },
+    " Cheese",
+    \n,
+    TableData @ 12:1..16 {
+        attributes: [
+            Argument @ 12:3..14 {
+                Some(
+                    [
+                        "colspan",
+                    ],
+                ): [
+                    "2",
+                ],
+            },
         ],
     },
+    "Ice cream",
+    \n,
+    TableData @ 13:1..2 {
+        attributes: [],
+    },
+    " Butter",
+    \n,
+    TableData @ 14:1..2 {
+        attributes: [],
+    },
+    " Yogurt",
+    \n,
     TableEnd @ 15:1..3,
     \n,
     EndTag @ 16:1..7 {

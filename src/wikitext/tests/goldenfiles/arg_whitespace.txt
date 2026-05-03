@@ -4,7 +4,7 @@
             "a ",
         ],
         parameters: [
-            {
+            Argument @ 1:6..35 {
                 Some(
                     [
                         " b ",
@@ -19,7 +19,7 @@
                     " ",
                 ],
             },
-            {
+            Argument @ 1:36..42 {
                 Some(
                     [
                         " c ",

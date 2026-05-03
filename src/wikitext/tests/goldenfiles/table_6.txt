@@ -1,7 +1,7 @@
 [
-    TableStart @ 1:1..21 {
+    TableStart @ 1:1..2:1 {
         attributes: [
-            {
+            Argument @ 1:4..21 {
                 Some(
                     [
                         "class",
@@ -12,10 +12,9 @@
             },
         ],
     },
-    \n,
-    TableHeading @ 2:1..27 {
+    TableHeading @ 2:1..14 {
         attributes: [
-            {
+            Argument @ 2:2..13 {
                 Some(
                     [
                         "colspan",
@@ -25,18 +24,15 @@
                 ],
             },
         ],
-        content: [
-            "Shopping List",
-        ],
     },
+    "Shopping List",
     \n,
-    TableRow @ 3:1..3 {
+    TableRow @ 3:1..4:1 {
         attributes: [],
     },
-    \n,
-    TableData @ 4:1..5:1 {
+    TableData @ 4:1..14 {
         attributes: [
-            {
+            Argument @ 4:2..13 {
                 Some(
                     [
                         "rowspan",
@@ -46,63 +42,27 @@
                 ],
             },
         ],
-        content: [
-            "Bread & Butter",
-            \n,
-        ],
     },
-    TableData @ 5:1..6:1 {
-        attributes: [],
-        content: [
-            "Pie",
-            \n,
-        ],
-    },
-    TableData @ 6:1..7:1 {
-        attributes: [],
-        content: [
-            "Buns",
-            \n,
-        ],
-    },
-    TableData @ 7:1..8:1 {
-        attributes: [],
-        content: [
-            "Danish",
-            \n,
-        ],
-    },
-    TableData @ 8:1..9:1 {
-        attributes: [
-            {
-                Some(
-                    [
-                        "colspan",
-                    ],
-                ): [
-                    "2",
-                ],
-            },
-        ],
-        content: [
-            "Croissant",
-            \n,
-        ],
-    },
-    TableRow @ 9:1..3 {
-        attributes: [],
-    },
+    "Bread & Butter",
     \n,
-    TableData @ 10:1..11:1 {
+    TableData @ 5:1..2 {
         attributes: [],
-        content: [
-            "Cheese",
-            \n,
-        ],
     },
-    TableData @ 11:1..12:1 {
+    "Pie",
+    \n,
+    TableData @ 6:1..2 {
+        attributes: [],
+    },
+    "Buns",
+    \n,
+    TableData @ 7:1..2 {
+        attributes: [],
+    },
+    "Danish",
+    \n,
+    TableData @ 8:1..14 {
         attributes: [
-            {
+            Argument @ 8:2..13 {
                 Some(
                     [
                         "colspan",
@@ -112,24 +72,41 @@
                 ],
             },
         ],
-        content: [
-            "Ice cream",
-            \n,
-        ],
     },
-    TableData @ 12:1..13:1 {
+    "Croissant",
+    \n,
+    TableRow @ 9:1..10:1 {
         attributes: [],
-        content: [
-            "Butter",
-            \n,
-        ],
     },
-    TableData @ 13:1..14:1 {
+    TableData @ 10:1..2 {
         attributes: [],
-        content: [
-            "Yogurt",
-            \n,
+    },
+    "Cheese",
+    \n,
+    TableData @ 11:1..14 {
+        attributes: [
+            Argument @ 11:2..13 {
+                Some(
+                    [
+                        "colspan",
+                    ],
+                ): [
+                    "2",
+                ],
+            },
         ],
     },
+    "Ice cream",
+    \n,
+    TableData @ 12:1..2 {
+        attributes: [],
+    },
+    "Butter",
+    \n,
+    TableData @ 13:1..2 {
+        attributes: [],
+    },
+    "Yogurt",
+    \n,
     TableEnd @ 14:1..3,
 ]
