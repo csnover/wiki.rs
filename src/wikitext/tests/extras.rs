@@ -35,6 +35,7 @@ run_extras_tests! {
     link_stupid_args => "[[Link|link =lol]]",
     link_trail => "[[Yes]]yes [[No]]!!",
     link_with_kv_in_args => "{{a|[[b|alt=]]}}",
+    link_with_trailing_bracket => "[[A|[<span>b</span>]]] [[A|[b]]] [[A|[]b]]] [[A|b]]]",
     links_1 => "[[Main Page]]
 
 [[Help:Contents]]

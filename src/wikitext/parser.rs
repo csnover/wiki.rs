@@ -2454,6 +2454,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     rule wikilink_content(ctx: &Context) -> Vec<Spanned<Argument>>
     = ctx:({ ctx.with_linkdesc() })
       (pipe() / &"]]")
+      start:position!()
       t:spanned(<
         !"]]"
         nd:(
@@ -2473,7 +2474,15 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         )
         { make_argument(nd, value, end) }
       >)*
-    { t }
+      bracket:wikilink_content_end_bracket(start)?
+    {
+        let mut t = t;
+        if let (Some(last), Some(bracket)) = (t.last_mut(), bracket) {
+            last.span.end = bracket.span.end;
+            last.node.content.push(bracket);
+        }
+        t
+    }
 
     /// A wikilink argument.
     ///
@@ -2520,13 +2529,32 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///
     // TODO: This seems wrong, nested productions of links should be invalid?
     rule wikilink_content_text_element(ctx: &Context) -> Vec<Spanned<Token>>
-    = !inline_breaks(&ctx)
+    = !inline_breaks(ctx)
       t:(
-          inline_element(&ctx)
+          inline_element(ctx)
           / t:spanned(<"[" text_char()+ "]" &(!"]" / "]]") { Token::Text }>) { vec![t] }
           / t:spanned(<[_] { Token::Text }>) { vec![t] }
       )
     { t }
+
+    /// An ambiguous bracket at the end of a wikilink.
+    ///
+    /// ```wikitext
+    /// [[Link target|[]]]
+    ///                ^
+    /// [[Link target| ]]]
+    ///                x
+    /// ```
+    rule wikilink_content_end_bracket(start: usize) -> Spanned<Token>
+    = #{|input, pos| {
+        // In `handleInternalLinks2`: T1500, T4095
+        let consume_bracket = input[pos..].starts_with("]]]") && input[start..pos].contains('[');
+        if consume_bracket {
+            RuleResult::Matched(pos + 1, Spanned::new(Token::Text, pos, pos + 1))
+        } else {
+            RuleResult::Failed
+        }
+    }}
 
     ////////////////////
     // External links //

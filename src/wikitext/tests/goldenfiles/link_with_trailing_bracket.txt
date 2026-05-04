@@ -1,0 +1,69 @@
+[
+    Link @ 1:1..23 {
+        target: [
+            "A",
+        ],
+        content: [
+            Argument @ 1:5..21 {
+                None: [
+                    "[",
+                    StartTag @ 1:6..12 {
+                        name: "span",
+                        attributes: [],
+                        self_closing: false,
+                    },
+                    "b",
+                    EndTag @ 1:13..20 {
+                        name: "span",
+                    },
+                    "]",
+                ],
+            },
+        ],
+        trail: None,
+    },
+    " ",
+    Link @ 1:24..33 {
+        target: [
+            "A",
+        ],
+        content: [
+            Argument @ 1:28..31 {
+                None: [
+                    "[b]",
+                ],
+            },
+        ],
+        trail: None,
+    },
+    " ",
+    Link @ 1:34..44 {
+        target: [
+            "A",
+        ],
+        content: [
+            Argument @ 1:38..42 {
+                None: [
+                    "[]b",
+                    "]",
+                ],
+            },
+        ],
+        trail: None,
+    },
+    " ",
+    Link @ 1:45..52 {
+        target: [
+            "A",
+        ],
+        content: [
+            Argument @ 1:49..50 {
+                None: [
+                    "b",
+                ],
+            },
+        ],
+        trail: None,
+    },
+    "]",
+]
