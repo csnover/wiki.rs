@@ -12,6 +12,7 @@ use super::{
 };
 use crate::{
     common::{anchor_encode, decode_html},
+    php::strtr,
     wikitext::{
         AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
         MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
@@ -380,7 +381,21 @@ impl Document {
             }
             StripMarker::Inline(text) => {
                 self.graf_emitter.force_content();
-                self.html += text;
+                if matches!(self.stack.last(), Some(Node::Attribute)) {
+                    let escaped = strtr(text, &[("<", "&lt;"), (">", "&gt;")]);
+                    if matches!(escaped, Cow::Owned(_)) {
+                        // At least malformed Wikitext tables can cause this to
+                        // happen by putting extension tags in attributes.
+                        // TODO: This is supposed to take the attributes from
+                        // the outermost tag, put them into the attributes
+                        // map for the element, and then be overwritten by any
+                        // later duplicate attribute
+                        log::warn!("Stripped tags inside attributes");
+                    }
+                    self.html += &escaped;
+                } else {
+                    self.html += text;
+                }
             }
             StripMarker::Block(text) => {
                 // Using "div" is a hack but one which does not really matter
