@@ -130,18 +130,6 @@ impl<'a> Parser<'a> {
         )
     }
 
-    /// Parses a single expanded wikilink and returns its target.
-    pub fn parse_wikilink<'s>(&self, source: &'s str) -> Result<(usize, &'s str), Error> {
-        parser::wikitext::wikilink_single_target(
-            source,
-            self,
-            &Globals {
-                including: true,
-                ..Default::default()
-            },
-        )
-    }
-
     /// Parses a template argument list, for debugging purposes.
     pub fn debug_parse_args(&self, args: &str) -> Result<Vec<Spanned<Argument>>, Error> {
         parser::wikitext::debug_template_args(args, self, &<_>::default())

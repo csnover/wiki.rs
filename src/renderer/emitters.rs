@@ -47,6 +47,9 @@ pub(super) struct GrafEmitter {
     /// If true, the line contains an end tag which triggers a graf state
     /// transition.
     close_match: bool,
+    /// The line should be treated as if it contained content, even if it did
+    /// not.
+    force_content: bool,
     /// The start position of the current line of the document.
     line_start: usize,
     /// If true, the line contains a start tag which triggers a graf state
@@ -215,7 +218,8 @@ impl GrafEmitter {
         } else if self.in_list == 0 && !self.in_block && !self.in_pre {
             // If this line was not inside a graf-suppressing block or `<pre>`
             // element, maybe it’s time to emit something!
-            let has_content = out[self.line_start..].contains(|c: char| !c.is_ascii_whitespace());
+            let has_content = self.force_content
+                || out[self.line_start..].contains(|c: char| !c.is_ascii_whitespace());
 
             if self.blockquote_roots.is_empty()
                 && (self.current == GrafState::Pre || has_content)
@@ -301,6 +305,7 @@ impl GrafEmitter {
         }
 
         self.line_start = out.len();
+        self.force_content = false;
         self.open_match = false;
         self.close_match = false;
         self.pre_open_match = false;
@@ -324,6 +329,12 @@ impl GrafEmitter {
         debug_assert_eq!(self.level, 0);
         self.end_line(out);
         self.close(out, Some(self.line_start));
+    }
+
+    /// Forces the emitter to act as if content was emitted.
+    #[inline]
+    pub(super) fn force_content(&mut self) {
+        self.force_content = true;
     }
 
     /// Wraps bare plain text content within a line also containing non-phrasing

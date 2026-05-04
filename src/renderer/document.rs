@@ -8,7 +8,7 @@ use super::{
     surrogate::{self, Surrogate},
     tags::{self, PHRASING_TAGS},
     text_run,
-    trim::Trim,
+    trim::{Trim, TrimMode},
 };
 use crate::{
     common::{anchor_encode, decode_html},
@@ -375,9 +375,11 @@ impl Document {
     fn write_strip_marker(&mut self, tag: &StripMarker) -> Result {
         match tag {
             StripMarker::NoWiki(text) => {
+                self.graf_emitter.force_content();
                 self.text_run(&decode_html(text))?;
             }
             StripMarker::Inline(text) => {
+                self.graf_emitter.force_content();
                 self.html += text;
             }
             StripMarker::Block(text) => {
@@ -599,7 +601,7 @@ impl Surrogate<Error> for Document {
                 }
             )
         })?;
-        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
+        Trim::new(self, sp, TrimMode::Normal).adopt_tokens(state, sp, content)?;
         self.end_tag(level.tag_name())
     }
 
@@ -672,7 +674,7 @@ impl Surrogate<Error> for Document {
         }
 
         let list_index = self.stack.len() - 1;
-        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
+        Trim::new(self, sp, TrimMode::Normal).adopt_tokens(state, sp, content)?;
 
         // It is possible that content “inside” a list item actually contains
         // terminator tags for items outside of the list item which implicitly

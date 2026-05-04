@@ -7,12 +7,9 @@ use super::{
     surrogate::{self, Surrogate},
     tags, template,
 };
-use crate::{
-    title::Title,
-    wikitext::{
-        AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
-        Spanned, TextStyle, Token,
-    },
+use crate::wikitext::{
+    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
+    Spanned, TextStyle, Token,
 };
 use core::{
     fmt::{self, Write as _},
@@ -318,14 +315,6 @@ impl Surrogate<Error> for ExpandTemplates {
         content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,
     ) -> Result {
-        // TODO: Is it really the case that only the root expansion needs to
-        // worry about this here?
-        if self.mode == ExpandMode::Normal {
-            let title = Title::new(&sp.eval(state, target)?, None);
-            let at = self.out.len();
-            template::left_trim_category(&mut self.out, state, &title, at);
-        }
-
         self.adopt_target_arguments(state, sp, span, target, content)
     }
 
@@ -495,7 +484,6 @@ impl Surrogate<Error> for ExpandTemplates {
         arguments: &[Spanned<Argument>],
     ) -> Result {
         let line_start = self.out.is_empty() || self.out.ends_with('\n');
-        let start = self.out.len();
         let rendered = template::render_template(
             &mut self.out,
             state,
@@ -507,18 +495,6 @@ impl Surrogate<Error> for ExpandTemplates {
         )?;
 
         if rendered {
-            // Because template expansions always just results in a string, it is
-            // necessary to look at the start of whatever just got appended in order
-            // to go back and delete whitespace which needs to be erased due to the
-            // subtemplate expansion. These left-sided rules are awful.
-            // TODO: Less hacky shit. Ruin `reduce_tree` in the parser or emit a
-            // signal in the return value of `render_template` to strip whitespace
-            // or something less egregious.
-            if let Ok((at, link)) = state.statics.parser.parse_wikilink(&self.out[start..]) {
-                let at = start + at;
-                let title = Title::new(link, None);
-                template::left_trim_category(&mut self.out, state, &title, at);
-            }
             Ok(())
         } else {
             self.adopt_target_arguments(state, sp, span, target, arguments)

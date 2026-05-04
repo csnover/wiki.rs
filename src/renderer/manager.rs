@@ -7,6 +7,7 @@ use super::{
     resolve_redirects,
     stack::StackFrame,
     surrogate::Surrogate as _,
+    trim::{Trim, TrimMode},
 };
 use crate::{
     Limits, LoadMode,
@@ -274,7 +275,7 @@ fn render(statics: &mut Statics, load_mode: LoadMode, sp: &StackFrame<'_>) -> Re
     prefetcher.finish(&mut state);
 
     let mut renderer = Document::new(false);
-    renderer.adopt_output(&mut state, &sp, &root)?;
+    Trim::new(&mut renderer, &sp, TrimMode::Category).adopt_output(&mut state, &sp, &root)?;
     let mut content = renderer.finish()?;
 
     let mut timings = state.timing.into_iter().collect::<Vec<_>>();

@@ -5,11 +5,25 @@ use super::{
     stack::StackFrame,
     surrogate::{self, Surrogate},
 };
-use crate::wikitext::{
-    AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output,
-    Span, Spanned, TextStyle, Token,
+use crate::{
+    title::Title,
+    wikitext::{
+        AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+        Output, Span, Spanned, TextStyle, Token,
+    },
 };
 use core::fmt;
+
+/// String trimmer operating mode.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) enum TrimMode {
+    /// Trim whitespace normally.
+    #[default]
+    Normal,
+    /// “Strip newlines from the left hand context of Category links.
+    ///  See T2087, T87753, T174639, T359886”
+    Category,
+}
 
 /// A string trimmer for token trees that removes all whitespace from the start
 /// and end of processed tokens.
@@ -26,17 +40,20 @@ pub(super) struct Trim<'a, W: WriteSurrogate + ?Sized> {
     sp: &'a StackFrame<'a>,
     /// Whether any tokens have been emitted to [`Self::out`] yet.
     emitted: bool,
+    /// The operating mode for the string trimmer.
+    mode: TrimMode,
 }
 
 impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
     /// Creates a new [`Trim`].
     #[inline]
-    pub fn new(out: &'a mut W, sp: &'a StackFrame<'a>) -> Self {
+    pub fn new(out: &'a mut W, sp: &'a StackFrame<'a>, mode: TrimMode) -> Self {
         Self {
             last_ws: <_>::default(),
             out,
             sp,
             emitted: <_>::default(),
+            mode,
         }
     }
 
@@ -332,7 +349,19 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
     ) -> Result {
-        self.flush(state)?;
+        if self.mode == TrimMode::Category
+            && Title::new(&sp.eval(state, target)?, None).is_local_category()
+        {
+            // The original regular expression was `\n\s*` so any whitespace
+            // that appears before the first newline is supposed to be emitted
+            if let Some(index) = self.last_ws.iter().position(Stored::is_new_line) {
+                self.last_ws.drain(index..);
+            }
+            self.flush(state)?;
+            self.emitted = false;
+        } else {
+            self.flush(state)?;
+        }
         self.out.adopt_link(state, sp, span, target, content, trail)
     }
 
@@ -570,4 +599,14 @@ enum Stored {
     /// A token containing only whitespace whose contents had to be memoised
     /// because it came from a foreign stack frame.
     Memoised(String, Spanned<Token>),
+}
+
+impl Stored {
+    /// Returns true if the given token is a newline token.
+    #[inline]
+    fn is_new_line(&self) -> bool {
+        match self {
+            Self::Token(token) | Self::Memoised(_, token) => matches!(token.node, Token::NewLine),
+        }
+    }
 }
