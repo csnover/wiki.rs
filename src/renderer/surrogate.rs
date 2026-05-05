@@ -17,7 +17,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_autolink(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -30,7 +30,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_behavior_switch(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -42,7 +42,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_comment(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _content: &str,
@@ -55,7 +55,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_end_annotation(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -67,7 +67,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_end_include(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _mode: InclusionMode,
@@ -79,7 +79,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_end_tag(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -91,7 +91,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_entity(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _value: char,
@@ -103,7 +103,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_extension(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -117,7 +117,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_external_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -130,7 +130,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_generated(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Option<Span>,
         _text: &str,
@@ -142,7 +142,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_heading(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         level: HeadingLevel,
@@ -155,7 +155,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_horizontal_rule(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _line_content: bool,
@@ -167,7 +167,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_lang_variant(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         flags: Option<&LangFlags>,
@@ -181,7 +181,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -195,7 +195,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_list_item(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         bullets: &str,
@@ -208,7 +208,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_new_line(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
     ) -> Result<(), E> {
@@ -219,7 +219,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_output(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         output: &Output,
     ) -> Result<(), E> {
@@ -230,7 +230,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_parameter(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &[Spanned<Token>],
@@ -243,7 +243,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_redirect(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -257,7 +257,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_start_annotation(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -270,7 +270,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_start_include(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _mode: InclusionMode,
@@ -282,7 +282,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_start_tag(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -296,7 +296,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_strip_marker(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _marker: &str,
@@ -308,7 +308,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_text(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _text: &str,
@@ -320,7 +320,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_text_style(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _style: TextStyle,
@@ -332,7 +332,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_caption(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _attributes: &[Spanned<Argument>],
@@ -344,7 +344,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_data(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _attributes: &[Spanned<Argument>],
@@ -356,7 +356,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_end(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
     ) -> Result<(), E> {
@@ -367,7 +367,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_heading(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _attributes: &[Spanned<Argument>],
@@ -379,7 +379,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_row(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _attributes: &[Spanned<Argument>],
@@ -391,7 +391,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_table_start(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _attributes: &[Spanned<Argument>],
@@ -403,7 +403,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_template(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _target: &[Spanned<Token>],
@@ -416,7 +416,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_token(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         token: &Spanned<Token>,
     ) -> Result<(), E> {
@@ -427,7 +427,7 @@ pub trait Surrogate<E> {
     #[inline]
     fn adopt_tokens(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         tokens: &[Spanned<Token>],
     ) -> Result<(), E> {
@@ -439,7 +439,7 @@ pub trait Surrogate<E> {
 #[inline]
 pub fn adopt_autolink<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
     target: &[Spanned<Token>],
@@ -464,7 +464,7 @@ where
 #[inline]
 pub fn adopt_external_link<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
     target: &[Spanned<Token>],
@@ -485,7 +485,7 @@ where
 #[inline]
 pub fn adopt_heading<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
     _level: HeadingLevel,
@@ -501,7 +501,7 @@ where
 #[inline]
 pub fn adopt_lang_variant<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
     _flags: Option<&LangFlags>,
@@ -523,7 +523,7 @@ where
 #[inline]
 pub fn adopt_link<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
     _target: &[Spanned<Token>],
@@ -548,7 +548,7 @@ where
 #[inline]
 pub fn adopt_list_item<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
     _bullets: &str,
@@ -564,7 +564,7 @@ where
 #[inline]
 pub fn adopt_output<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     output: &Output,
 ) -> Result<(), E>
@@ -578,7 +578,7 @@ where
 #[inline]
 pub fn adopt_redirect<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     span: Span,
     target: &[Spanned<Token>],
@@ -595,7 +595,7 @@ where
 #[expect(clippy::too_many_lines, reason = "this is just a big switch")]
 pub fn adopt_token<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     token: &Spanned<Token>,
 ) -> Result<(), E>
@@ -761,7 +761,7 @@ where
 #[inline]
 pub fn adopt_tokens<V, E>(
     surrogate: &mut V,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     tokens: &[Spanned<Token>],
 ) -> Result<(), E>

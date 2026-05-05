@@ -50,7 +50,7 @@ trait MwInterface: Collect + Default + Sized + 'static {
 }
 
 /// Initialises a single interface.
-fn init_interface<'gc, T: MwInterface>(vm: &'gc mut Lua) -> Result<(), RuntimeError> {
+fn init_interface<T: MwInterface>(vm: &mut Lua) -> Result<(), RuntimeError> {
     log::debug!("Initialising lua module {}", T::NAME);
 
     let executor = vm.try_enter(|ctx| {
@@ -101,13 +101,13 @@ pub(super) fn init(vm: &mut Lua) -> Result<(), RuntimeError> {
     init_libraries!(
         using vm;
 
-        LuaEngine,
+        LuaEngine<'_>,
         mw_site::SiteLibrary,
-        mw_uri::UriLibrary,
+        mw_uri::UriLibrary<'_>,
         mw_ustring::UstringLibrary,
         mw_language::LanguageLibrary,
         mw_message::MessageLibrary,
-        mw_title::TitleLibrary,
+        mw_title::TitleLibrary<'_>,
         mw_text::TextLibrary,
         mw_html::HtmlLibrary,
         mw_hash::HashLibrary,

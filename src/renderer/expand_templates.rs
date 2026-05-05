@@ -63,7 +63,7 @@ impl ExpandTemplates {
     #[inline]
     fn adopt_attributes_content(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -83,7 +83,7 @@ impl ExpandTemplates {
     #[inline]
     fn adopt_target_arguments(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -125,7 +125,7 @@ impl fmt::Write for ExpandTemplates {
 impl Surrogate<Error> for ExpandTemplates {
     fn adopt_autolink(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -142,7 +142,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_behavior_switch(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _name: &str,
@@ -153,7 +153,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_comment(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _content: &str,
@@ -166,7 +166,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_end_annotation(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -176,7 +176,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_end_include(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         mode: InclusionMode,
@@ -189,7 +189,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_end_tag(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _name: &str,
@@ -200,7 +200,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_entity(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _value: char,
@@ -211,7 +211,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_extension(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -238,7 +238,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_external_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -255,7 +255,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_generated(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Option<Span>,
         text: &str,
@@ -266,7 +266,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_heading(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _level: HeadingLevel,
@@ -281,7 +281,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_horizontal_rule(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _line_content: bool,
@@ -292,7 +292,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_lang_variant(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _flags: Option<&LangFlags>,
@@ -308,7 +308,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -320,7 +320,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_list_item(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _bullets: &str,
@@ -343,7 +343,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_new_line(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
     ) -> Result {
@@ -359,7 +359,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_output(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         output: &Output,
     ) -> Result<(), Error> {
@@ -380,7 +380,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_parameter(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &[Spanned<Token>],
@@ -391,7 +391,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_redirect(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _target: &[Spanned<Token>],
@@ -404,7 +404,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_start_annotation(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -415,7 +415,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_start_include(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         mode: InclusionMode,
@@ -426,7 +426,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_start_tag(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         name: &str,
@@ -459,7 +459,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_strip_marker(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _marker: &str,
@@ -477,7 +477,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_template(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -503,7 +503,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_text(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _text: &str,
@@ -514,7 +514,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_text_style(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         _style: TextStyle,
@@ -525,7 +525,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_table_caption(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -535,7 +535,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_table_data(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -545,7 +545,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_table_end(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
@@ -555,7 +555,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_table_heading(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -565,7 +565,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_table_row(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -575,7 +575,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_table_start(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -585,7 +585,7 @@ impl Surrogate<Error> for ExpandTemplates {
 
     fn adopt_token(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         token: &Spanned<Token>,
     ) -> Result {

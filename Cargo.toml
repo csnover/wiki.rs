@@ -82,6 +82,7 @@ tzdb_data = "0.2"
 
 [dev-dependencies]
 goldenfile = "1.9"
+similar-asserts = "1.7"
 
 [profile.dev-fast]
 inherits = "dev"

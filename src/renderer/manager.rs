@@ -9,10 +9,12 @@ use super::{
     surrogate::Surrogate as _,
     trim::{Trim, TrimMode},
 };
+#[cfg(test)]
+use crate::wikitext::Configuration;
 use crate::{
     Limits, LoadMode,
     config::CONFIG,
-    db::{Article, Database},
+    db::{Article, Database, IDatabase as _},
     lru_limiter::ByMemoryUsage,
     lua::{new_vm, reset_vm},
     pages::EvalPp,
@@ -85,9 +87,7 @@ impl RenderManager {
             base_uri: base_uri.clone(),
             database: Arc::clone(database),
             limits,
-            template_cache: Arc::new(RwLock::new(LruMap::new(ByMemoryUsage::new(
-                limits.template_cache,
-            )))),
+            template_cache: make_template_cache(limits.template_cache),
         }
     }
 }
@@ -185,7 +185,7 @@ pub(crate) struct RenderOutput {
 
 /// Main renderer entrypoint for articles.
 fn render_article(
-    statics: &mut Statics,
+    statics: &mut Statics<'_, '_>,
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
@@ -207,7 +207,7 @@ fn render_article(
 
 /// Main renderer entrypoint for eval.
 fn render_string(
-    statics: &mut Statics,
+    statics: &mut Statics<'_, '_>,
     mut page_name: &str,
     source: &str,
     args: Option<&str>,
@@ -263,8 +263,41 @@ fn render_string(
     }
 }
 
+/// Main renderer entrypoint for wikitext tests.
+#[cfg(test)]
+pub(crate) fn render_test(
+    config: &'static Configuration,
+    db: &Arc<Database<'_>>,
+    page_name: &str,
+    source: &str,
+) -> Result<RenderOutput> {
+    let base_uri = Uri::from_static("http://example.com");
+    let limits = Limits::default();
+    let template_cache = make_template_cache(limits.template_cache);
+    let base_time = DateTime::UNIX_EPOCH;
+    let parser = Parser::new(config);
+    let vm = new_vm(&base_uri, db, &parser).unwrap();
+    let mut statics = Statics {
+        base_time,
+        base_uri,
+        db: Arc::clone(db),
+        limits,
+        parser,
+        template_cache,
+        vm,
+        vm_cache: LruMap::new(schnellru::UnlimitedCompact),
+    };
+
+    let sp = StackFrame::new(Title::new(page_name, None), FileMap::new(source));
+    render(&mut statics, LoadMode::Module, &sp)
+}
+
 /// Main renderer entrypoint.
-fn render(statics: &mut Statics, load_mode: LoadMode, sp: &StackFrame<'_>) -> Result<RenderOutput> {
+fn render(
+    statics: &mut Statics<'_, '_>,
+    load_mode: LoadMode,
+    sp: &StackFrame<'_>,
+) -> Result<RenderOutput> {
     let (mut state, source) = preprocess(statics, sp, load_mode)?;
 
     let sp = sp.clone_with_source(FileMap::new(&source));
@@ -319,11 +352,11 @@ fn render(statics: &mut Statics, load_mode: LoadMode, sp: &StackFrame<'_>) -> Re
 /// Expands all templates for the given root frame, collecting out-of-band
 /// information and returning the incomplete state and the final pre-processed
 /// Wikitext.
-fn preprocess<'a>(
-    statics: &'a mut Statics,
+fn preprocess<'a, 'b, 'c>(
+    statics: &'a mut Statics<'b, 'c>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
-) -> Result<(State<'a>, String)> {
+) -> Result<(State<'a, 'b, 'c>, String)> {
     let root = statics.parser.parse(&sp.source, false)?;
 
     reset_vm(&mut statics.vm, &sp.name, &statics.base_time)?;
@@ -341,4 +374,9 @@ fn preprocess<'a>(
     let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
     preprocessor.adopt_output(&mut state, sp, &root)?;
     Ok((state, preprocessor.finish()))
+}
+
+/// Creates a new template cache with the given size in bytes.
+fn make_template_cache(size: usize) -> TemplateCache {
+    Arc::new(RwLock::new(LruMap::new(ByMemoryUsage::new(size))))
 }

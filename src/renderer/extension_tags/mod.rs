@@ -148,7 +148,7 @@ use super::{
 };
 use crate::{
     common::{CowExt as _, anchor_encode, decode_html},
-    db::Database,
+    db::{Database, IDatabase as _},
     php::strtr,
     title::{Namespace, Title},
     wikitext::{self, Argument, FileMap, Output, Span, Spanned, Token},
@@ -197,12 +197,12 @@ impl ExtensionTag<'_, '_, '_> {
 
     /// Evaluates the body of the tag.
     #[inline]
-    pub fn eval_body(&self, state: &mut State<'_>) -> Result<String> {
+    pub fn eval_body(&self, state: &mut State<'_, '_, '_>) -> Result<String> {
         eval_string(state, self.sp, self.body())
     }
 
     /// Returns the body of the tag as a token tree.
-    pub fn parse_body(&self, state: &mut State<'_>) -> Result<(StackFrame<'_>, Output)> {
+    pub fn parse_body(&self, state: &mut State<'_, '_, '_>) -> Result<(StackFrame<'_>, Output)> {
         let sp = self.sp.clone_with_source(FileMap::new(self.body()));
         state
             .statics
@@ -216,7 +216,7 @@ impl ExtensionTag<'_, '_, '_> {
 /// The `<gallery>` extension tag.
 fn gallery(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     // TODO: params mode, showfilename, showthumbnails (for mode = slideshow),
@@ -287,7 +287,11 @@ fn gallery(
 
 /// The `<graph>` extension tag.
 /// <https://www.mediawiki.org/w/index.php?oldid=7692802>
-fn graph(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+fn graph(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
     // Possible attributes: fallback, fallbackWidth
     let result = graph::spec_to_svg(arguments.body(), state.statics.base_time)
         .map_err(|err| Error::Extension(Box::new(err)))?;
@@ -299,7 +303,7 @@ fn graph(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
 /// <https://www.mediawiki.org/wiki/Help:Page_status_indicators>
 fn indicator(
     _: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     let Some(name) = arguments.get(state, "name")? else {
@@ -339,7 +343,11 @@ fn indicator(
 
 /// The `<mapframe>` extension tag.
 /// <https://www.mediawiki.org/wiki/Extension:Kartographer>
-fn map_frame(out: &mut String, _: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+fn map_frame(
+    out: &mut String,
+    _: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
     // TODO: Params: width (number, "100%", "full"), height (number), zoom
     // (0-19, default 12), latitude, longitude, align ("left", "center",
     // "right"), mapstyle ("osm", "osm-intl"), lang (code or "local"), alt,
@@ -361,7 +369,11 @@ fn map_frame(out: &mut String, _: &mut State<'_>, arguments: &ExtensionTag<'_, '
 
 /// The `<math>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Math>
-fn math(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+fn math(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
     let latex = arguments.body();
 
     // TODO: Undocumented 'id' attribute
@@ -406,7 +418,7 @@ fn math(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_
 /// The `<nowiki>` extension tag.
 fn no_wiki(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     let body = strtr(
@@ -425,7 +437,11 @@ fn no_wiki(
 
 /// The `<poem>` extension tag.
 /// <https://www.mediawiki.org/wiki/Extension:Poem>
-fn poem(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+fn poem(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
     let source = arguments.body();
     // The lines iterator strips a trailing newline
     let source = source
@@ -473,7 +489,11 @@ fn poem(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_
 }
 
 /// The `<pre>` extension tag.
-fn pre(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+fn pre(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
     // “Backwards-compatibility hack”
     static STRIP_NOWIKI: LazyLock<Regex> = LazyLock::new(|| {
         RegexBuilder::new("<nowiki>(.*?)</nowiki>")
@@ -688,7 +708,11 @@ impl References {
 
 /// The `<ref>` extension tag.
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Cite>
-fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+fn r#ref(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
     // Due to transclusion it is necessary to render immediately instead of
     // storing the node list for later, since rendering later would require
     // retaining the stack frame too
@@ -745,7 +769,7 @@ fn r#ref(out: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Cite>
 fn references(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     // Here, someone vibed the idea that the references tag -- which is supposed
@@ -822,7 +846,11 @@ pub(crate) struct LabelledSections {
 
 /// The `<section>` extension tag.
 /// <https://en.wikipedia.org/wiki/Help:Labeled_section_transclusion>
-fn section(_: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '_, '_>) -> Result {
+fn section(
+    _: &mut String,
+    state: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
     // `{{#tag: ... }}` may have no bounds if it was invoked from a script for
     // some reason
     let Some(bounds) = arguments.span else {
@@ -856,7 +884,7 @@ fn section(_: &mut String, state: &mut State<'_>, arguments: &ExtensionTag<'_, '
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Syntaxhighlight>
 fn syntax_highlight(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     static SS: LazyLock<syntect::parsing::SyntaxSet> = LazyLock::new(|| {
@@ -923,7 +951,7 @@ fn syntax_highlight(
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:TemplateData>
 fn template_data(
     out: &mut String,
-    _: &mut State<'_>,
+    _: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     // TODO: Actually parse the JSON and emit a table
@@ -944,7 +972,7 @@ fn template_data(
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:EasyTimeline>
 fn timeline(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     if let Some(body) = arguments.body {
@@ -966,12 +994,7 @@ pub(crate) struct Styles {
 
 impl Styles {
     /// Inserts CSS from the article given in `src` using an optional wrapper.
-    pub fn insert(
-        &mut self,
-        db: &Database<'static>,
-        src: &str,
-        wrapper: Option<&str>,
-    ) -> Result<()> {
+    pub fn insert(&mut self, db: &Database<'_>, src: &str, wrapper: Option<&str>) -> Result<()> {
         let key = if let Some(wrapper) = wrapper {
             format!("{src}{wrapper}")
         } else {
@@ -1003,7 +1026,7 @@ impl Styles {
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:TemplateStyles>
 fn template_styles(
     _: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     let src = arguments.get(state, "src")?;
@@ -1018,7 +1041,7 @@ fn template_styles(
 }
 
 /// The signature of an extension tag function.
-type ExtensionTagFn = fn(&mut String, &mut State<'_>, &ExtensionTag<'_, '_, '_>) -> Result;
+type ExtensionTagFn = fn(&mut String, &mut State<'_, '_, '_>, &ExtensionTag<'_, '_, '_>) -> Result;
 
 /// All supported extension tags.
 static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
@@ -1067,7 +1090,7 @@ pub(crate) enum InArgs<'a, 'b> {
 
 /// Renders an extension tag.
 pub(super) fn render_extension_tag(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     span: Option<Span>,
     callee: &str,
@@ -1136,7 +1159,7 @@ pub(super) fn render_extension_tag(
 
 /// Evaluates a Wikitext string as a document fragment, returning the rendered
 /// fragment.
-fn eval_string(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> Result<String> {
+fn eval_string(state: &mut State<'_, '_, '_>, sp: &StackFrame<'_>, text: &str) -> Result<String> {
     let source = preprocess_frame(state, sp, text)?;
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
@@ -1146,7 +1169,11 @@ fn eval_string(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> Result
 }
 
 /// Preprocesses the given text in a root document scope.
-fn preprocess_frame(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> Result<String> {
+fn preprocess_frame(
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    text: &str,
+) -> Result<String> {
     let sp = sp.clone_with_source(FileMap::new(text));
     let root = state.statics.parser.parse(&sp.source, false)?;
     let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
@@ -1156,7 +1183,7 @@ fn preprocess_frame(state: &mut State<'_>, sp: &StackFrame<'_>, text: &str) -> R
 
 /// Re-emits an extension tag.
 fn render_raw(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     callee: &str,
     body: Option<&str>,

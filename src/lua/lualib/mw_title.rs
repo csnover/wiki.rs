@@ -10,7 +10,7 @@
 use super::prelude::*;
 use crate::{
     common::{make_url, url_encode, url_encode_bytes},
-    db::Database,
+    db::{Database, IDatabase as _},
     title::{Namespace, Title},
 };
 use arc_cell::OptionalArcCell;
@@ -25,16 +25,16 @@ use std::borrow::Cow;
 /// The article support library.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub(crate) struct TitleLibrary {
+pub(crate) struct TitleLibrary<'db> {
     /// The base URI to use when generating URLs to articles.
     base_uri: RefCell<Option<Uri>>,
     /// The article database.
-    db: OptionalArcCell<Database<'static>>,
+    db: OptionalArcCell<Database<'db>>,
     /// The title of the current article being rendered.
     this_title: Cell<Option<StashedTable>>,
 }
 
-impl TitleLibrary {
+impl<'db> TitleLibrary<'db> {
     /// Sets the title of the current (root) article.
     pub fn set_title(&self, ctx: Context<'_>, title: &Title) -> Result<(), RuntimeError> {
         let this_title = self.current_title(ctx);
@@ -42,7 +42,7 @@ impl TitleLibrary {
     }
 
     /// Sets static shared state required for the library to function.
-    pub fn set_shared(&self, base_uri: &Uri, db: &Arc<Database<'static>>) {
+    pub fn set_shared(&self, base_uri: &Uri, db: &Arc<Database<'db>>) {
         *self.base_uri.borrow_mut() = Some(base_uri.clone());
         self.db.set(Some(Arc::clone(db)));
     }
@@ -320,9 +320,9 @@ impl TitleLibrary {
     }
 }
 
-impl MwInterface for TitleLibrary {
-    const NAME: &str = "mw.title";
-    const CODE: &[u8] = include_bytes!("./modules/mw.title.lua");
+impl<'db: 'static> MwInterface for TitleLibrary<'db> {
+    const NAME: &'static str = "mw.title";
+    const CODE: &'static [u8] = include_bytes!("./modules/mw.title.lua");
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

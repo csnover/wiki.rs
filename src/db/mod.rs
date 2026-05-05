@@ -5,11 +5,16 @@ use crate::{
     lru_limiter::{ByMemoryUsage, HeapUsageCalculator},
     php::strtr,
     title::{Namespace, Title},
+    wikitext::Configuration,
 };
 use article::ArticleDatabase;
 pub(crate) use article::{Article, DatabaseNamespace};
 use index::Index;
+use indexmap::IndexSet;
+#[cfg(test)]
+pub(crate) use mock::MockDatabase as Database;
 use parking_lot::RwLock;
+#[cfg(not(test))]
 pub(crate) use prefetch::PrefetchableDatabase as Database;
 use rayon::iter::ParallelIterator;
 use schnellru::LruMap;
@@ -18,10 +23,54 @@ use time::UtcDateTime;
 
 mod article;
 mod index;
+#[cfg(test)]
+mod mock;
 mod prefetch;
 
 /// The result type for database operations.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
+
+/// A trait for implementing database backends.
+pub(crate) trait IDatabase {
+    /// Returns the current memory usage of the cache, in bytes.
+    fn cache_size(&self) -> usize;
+
+    /// Returns the configuration data for the database.
+    fn config(&self) -> &Configuration;
+
+    /// Returns true if the database contains an article with the given title.
+    fn contains(&self, title: &Title) -> bool;
+
+    /// The guessed creation date of the database.
+    fn creation_date(&self) -> Option<UtcDateTime>;
+
+    /// Gets an article with the given title from the database. The article will
+    /// be cached in memory.
+    fn get(&self, title: &Title) -> Result<Arc<Article>>;
+
+    /// The total number of articles in the database.
+    fn len(&self) -> usize;
+
+    /// The site name from the database.
+    fn name(&self) -> &str;
+
+    /// The registered namespaces in the database.
+    fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace>;
+
+    /// Prefetches a collection of titles.
+    ///
+    /// Because the MW database dump index is totally unordered, finding a title
+    /// in the index requires a full table scan. Batching titles into request
+    /// sets reduces the number of scans required, increasing performance.
+    ///
+    /// Both templates and links need to check for existence in the index, but
+    /// templates are both more time-critical and also require decompressing
+    /// article data, so they are collected separately.
+    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>);
+
+    /// Finds articles in the index whose titles match the given query.
+    fn search(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str>;
+}
 
 /// Errors that may occur when interacting with the article database.
 #[derive(Debug, thiserror::Error)]

@@ -89,7 +89,11 @@ impl<'a> StackFrame<'a> {
     }
 
     /// Evaluates the given `expr` in the scope of this stack frame.
-    pub fn eval(&'a self, state: &mut State<'_>, expr: &[Spanned<Token>]) -> Result<Cow<'a, str>> {
+    pub fn eval(
+        &'a self,
+        state: &mut State<'_, '_, '_>,
+        expr: &[Spanned<Token>],
+    ) -> Result<Cow<'a, str>> {
         #[allow(clippy::allow_attributes, reason = "https://github.com/rust-lang/rust-clippy/issues/13358")]
         #[allow(clippy::unnecessary_semicolon, reason = "i want rustfmt::skip and rust-lang/rust#15701 is not fixed yet")]
         #[rustfmt::skip]
@@ -107,7 +111,7 @@ impl<'a> StackFrame<'a> {
     }
 
     /// Evaluates the argument with the given key.
-    pub fn expand(&self, state: &mut State<'_>, key: &str) -> Result<Option<Cow<'_, str>>> {
+    pub fn expand(&self, state: &mut State<'_, '_, '_>, key: &str) -> Result<Option<Cow<'_, str>>> {
         Ok(
             if let Some(parent) = &self.parent
                 && let Some((index, is_named)) = self.arguments.get_index(state, parent, key)?
@@ -211,7 +215,7 @@ pub(crate) struct KeyIter<'a> {
 
 impl KeyIter<'_> {
     /// Advances the iterator and returns the next value.
-    pub fn next(&mut self, state: &mut State<'_>) -> Result<Option<String>> {
+    pub fn next(&mut self, state: &mut State<'_, '_, '_>) -> Result<Option<String>> {
         if let Some(sp) = self.sp
             && self.index != self.arguments.len()
         {
@@ -329,7 +333,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
     /// present in the original text.
     pub fn eval(
         &self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &'call StackFrame<'_>,
         index: usize,
     ) -> Result<Option<Cow<'call, str>>> {
@@ -345,7 +349,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
     /// present in the original text.
     pub fn get(
         &self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &'call StackFrame<'_>,
         key: &str,
     ) -> Result<Option<Cow<'call, str>>> {
@@ -384,7 +388,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
     /// Returns the index of an argument by key.
     pub fn get_index(
         &self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         key: &str,
     ) -> Result<Option<(usize, bool)>> {
@@ -413,7 +417,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
     /// Returns the trimmed key for the given index.
     pub fn key(
         &self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         index: usize,
     ) -> Result<Option<String>> {
@@ -464,7 +468,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
     /// present in the original text.
     pub fn name(
         &self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &'call StackFrame<'_>,
         index: usize,
     ) -> Result<Option<Cow<'call, str>>> {
@@ -480,7 +484,7 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
     /// present in the original text.
     pub fn value(
         &self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &'call StackFrame<'_>,
         index: usize,
     ) -> Result<Option<Cow<'call, str>>> {
@@ -538,7 +542,11 @@ impl IndexedArgs<'_, '_, '_> {
     ///
     /// The returned value will include any leading and trailing whitespace
     /// present in the original text.
-    pub fn eval(&self, state: &mut State<'_>, index: usize) -> Result<Option<Cow<'_, str>>> {
+    pub fn eval(
+        &self,
+        state: &mut State<'_, '_, '_>,
+        index: usize,
+    ) -> Result<Option<Cow<'_, str>>> {
         self.arguments.eval(state, self.sp, index)
     }
 
@@ -546,7 +554,7 @@ impl IndexedArgs<'_, '_, '_> {
     ///
     /// The returned value will include any leading and trailing whitespace
     /// present in the original text.
-    pub fn get(&self, state: &mut State<'_>, key: &str) -> Result<Option<Cow<'_, str>>> {
+    pub fn get(&self, state: &mut State<'_, '_, '_>, key: &str) -> Result<Option<Cow<'_, str>>> {
         self.arguments.get(state, self.sp, key)
     }
 
@@ -611,7 +619,7 @@ impl Kv<'_> {
     /// present in the original text.
     pub fn eval<'a>(
         &'a self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &'a StackFrame<'_>,
     ) -> Result<Cow<'a, str>> {
         match self {
@@ -644,7 +652,7 @@ impl Kv<'_> {
     /// present in the original text.
     pub fn name<'a>(
         &'a self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &'a StackFrame<'_>,
     ) -> Result<Option<Cow<'a, str>>> {
         match self {
@@ -670,7 +678,7 @@ impl Kv<'_> {
     /// present in the original text.
     pub fn value<'a>(
         &'a self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &'a StackFrame<'_>,
     ) -> Result<Cow<'a, str>> {
         match self {

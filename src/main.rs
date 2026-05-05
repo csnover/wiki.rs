@@ -38,7 +38,7 @@
 use crate::title::Namespace;
 use axum::{Router, http::Uri, routing::get};
 use core::time::Duration;
-use db::Database;
+use db::{Database, IDatabase as _};
 use r2d2::Pool;
 use renderer::Manager as RenderManager;
 use std::{ffi::OsStr, sync::Arc};
@@ -97,6 +97,18 @@ struct Limits {
     vm_time: Duration,
     /// Lua VM total memory limit, in bytes. One per renderer thread.
     vm_total_mem: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            db_cache: 32 * 1024 * 1024,
+            template_cache: 32 * 1024 * 1024,
+            threads: 1,
+            vm_time: Duration::new(10, 0),
+            vm_total_mem: 128 * 1024 * 1024,
+        }
+    }
 }
 
 impl core::fmt::Display for Limits {
@@ -280,19 +292,25 @@ impl Args {
         let index_path = Self::free_arg(&mut args, "WIKI_INDEX_FILE", ArgsError::Index)?;
         let articles_path = Self::free_arg(&mut args, "WIKI_ARTICLE_DB", ArgsError::Database)?;
 
-        let db_cache = args
-            .opt_value_from_fn("--db-cache", Self::parse_size)?
-            .unwrap_or(32 * 1024 * 1024);
-        let template_cache = args
-            .opt_value_from_fn("--template-cache", Self::parse_size)?
-            .unwrap_or(32 * 1024 * 1024);
-        let vm_time = args
-            .opt_value_from_fn("--vm-time", Self::parse_duration)?
-            .unwrap_or(Duration::new(10, 0));
-        let vm_total_mem = args
-            .opt_value_from_fn("--vm-total-mem", Self::parse_size)?
-            .unwrap_or(128 * 1024 * 1024);
-        let threads = args.opt_value_from_str("--threads")?.unwrap_or(1);
+        let mut limits = Limits::default();
+
+        if let Some(db_cache) = args.opt_value_from_fn("--db-cache", Self::parse_size)? {
+            limits.db_cache = db_cache;
+        }
+        if let Some(template_cache) =
+            args.opt_value_from_fn("--template-cache", Self::parse_size)?
+        {
+            limits.template_cache = template_cache;
+        }
+        if let Some(vm_time) = args.opt_value_from_fn("--vm-time", Self::parse_duration)? {
+            limits.vm_time = vm_time;
+        }
+        if let Some(vm_total_mem) = args.opt_value_from_fn("--vm-total-mem", Self::parse_size)? {
+            limits.vm_total_mem = vm_total_mem;
+        }
+        if let Some(threads) = args.opt_value_from_str("--threads")? {
+            limits.threads = threads;
+        }
 
         let rest = args.finish();
         if !rest.is_empty() {
@@ -304,13 +322,7 @@ impl Args {
             base_uri,
             bind,
             index_path,
-            limits: Limits {
-                db_cache,
-                template_cache,
-                threads,
-                vm_time,
-                vm_total_mem,
-            },
+            limits,
             load_mode,
         })
     }
@@ -367,11 +379,13 @@ async fn run() -> Result<(), Box<dyn core::error::Error>> {
 
     log::info!("{limits}");
 
-    let database = Arc::new(Database::from_file(
-        &args.index_path,
-        &args.articles_path,
-        limits.db_cache,
-    )?);
+    let database = {
+        #[cfg(test)]
+        let database = Database::new();
+        #[cfg(not(test))]
+        let database = Database::from_file(&args.index_path, &args.articles_path, limits.db_cache)?;
+        Arc::new(database)
+    };
 
     log::info!("Opened database {}", database.name());
 

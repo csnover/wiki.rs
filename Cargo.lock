@@ -2353,6 +2353,7 @@ dependencies = [
  "serde-transcode",
  "serde_json",
  "serde_json_borrow",
+ "similar-asserts",
  "syn",
  "syntect",
  "thiserror 2.0.18",

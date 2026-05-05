@@ -90,7 +90,7 @@ pub(super) struct Options<'a> {
     reason = "not enough value in splitting this into smaller units"
 )]
 pub(super) fn media_options<'s>(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &'s StackFrame<'_>,
     title: Title,
     arguments: &'s [Spanned<Argument>],
@@ -253,7 +253,7 @@ pub(super) fn media_options<'s>(
 /// Renders a media tag.
 pub(super) fn render_media<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     title: Title,
     arguments: &[Spanned<Argument>],
@@ -265,7 +265,7 @@ pub(super) fn render_media<W: WriteSurrogate + ?Sized>(
 /// Renders a media tag using the given media options.
 pub(super) fn render_media_with_options<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     options: &Options<'_>,
 ) -> Result {
@@ -331,7 +331,7 @@ pub(super) fn render_media_with_options<W: WriteSurrogate + ?Sized>(
 /// Renders an image tag.
 fn render_image<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     options: &Options<'_>,
 ) -> Result {
@@ -371,7 +371,7 @@ fn render_image<W: WriteSurrogate + ?Sized>(
 // most of the timed media options.
 fn render_timed_media<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     options: &Options<'_>,
 ) -> Result {

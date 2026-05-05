@@ -4,6 +4,7 @@ use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use crate::{
     common::{anchor_encode, decode_html, title_decode},
     config::CONFIG,
+    db::IDatabase as _,
     title::Title,
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
 };
@@ -13,7 +14,7 @@ use std::borrow::Cow;
 /// Renders an external web site link.
 pub(super) fn render_external_link<W: WriteSurrogate>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &[Spanned<Token>],
     content: &[Spanned<Token>],
@@ -37,7 +38,7 @@ pub(super) fn render_external_link<W: WriteSurrogate>(
 /// Renders a wikilink.
 pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &[Spanned<Token>],
     content: &[Spanned<Argument>],
@@ -67,7 +68,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
 /// Renders an internal link.
 fn render_internal_link<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &str,
     content: &[Spanned<Argument>],
@@ -108,7 +109,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
 /// Renders an anchor for a link.
 pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     link: &LinkKind<'_>,
 ) -> Result {
@@ -137,7 +138,7 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
 /// Renders an `</a>` tag. This is only suitable for use with a `Document`.
 pub(super) fn render_end_link<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
 ) -> Result {
     render_runtime(out, state, sp, |_, source| {
@@ -206,7 +207,7 @@ impl LinkKind<'_> {
 /// `{argument}{delimiter}{argument}...`.
 pub(super) fn render_single_attribute<W: WriteSurrogate + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     attributes: &[Spanned<Argument>],
 ) -> Result {
@@ -225,10 +226,10 @@ pub(super) fn render_single_attribute<W: WriteSurrogate + ?Sized>(
 /// Renders a runtime-generated token.
 pub(super) fn render_runtime<
     W: WriteSurrogate + ?Sized,
-    F: FnOnce(&mut State<'_>, &mut String) -> Spanned<Token>,
+    F: FnOnce(&mut State<'_, '_, '_>, &mut String) -> Spanned<Token>,
 >(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     f: F,
 ) -> Result {
@@ -240,10 +241,10 @@ pub(super) fn render_runtime<
 /// Renders runtime-generated tokens.
 pub(super) fn render_runtime_list<
     W: WriteSurrogate + ?Sized,
-    F: FnOnce(&mut State<'_>, &mut String) -> Vec<Spanned<Token>>,
+    F: FnOnce(&mut State<'_, '_, '_>, &mut String) -> Vec<Spanned<Token>>,
 >(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     f: F,
 ) -> Result {

@@ -9,7 +9,7 @@
 
 use super::{MwInterface, prelude::*};
 use crate::{
-    db::Database,
+    db::{Database, IDatabase as _},
     lua::{HostCall, LuaFrame},
     renderer::{
         CachedValue, ExpandMode, ExpandTemplates, Kv, StackFrame, State, Surrogate as _,
@@ -25,14 +25,14 @@ use piccolo::{ExternError, Stack, StashedString, StashedTable, StashedValue, Use
 /// The main Lua support library.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub(crate) struct LuaEngine {
+pub(crate) struct LuaEngine<'db> {
     /// The article database.
-    pub(crate) db: OptionalArcCell<Database<'static>>,
+    pub(crate) db: OptionalArcCell<Database<'db>>,
     /// The stack frame of the current call.
     pub(crate) sp: RefCell<Option<Pin<&'static StackFrame<'static>>>>,
 }
 
-impl MwInterface for LuaEngine {
+impl<'db: 'static> MwInterface for LuaEngine<'db> {
     const NAME: &'static str = "mw";
     const CODE: &'static [u8] = include_bytes!("./modules/mw.lua");
 
@@ -67,7 +67,7 @@ impl MwInterface for LuaEngine {
     }
 }
 
-impl LuaEngine {
+impl<'db> LuaEngine<'db> {
     mw_unimplemented! {
         incrementExpensiveFunctionCount = increment_expensive_function_count,
     }
@@ -395,7 +395,7 @@ impl LuaEngine {
     }
 
     /// Sets the article database.
-    pub(crate) fn set_db(&self, db: &Arc<Database<'static>>) {
+    pub(crate) fn set_db(&self, db: &Arc<Database<'db>>) {
         self.db.set(Some(Arc::clone(db)));
     }
 
@@ -450,7 +450,7 @@ fn args_from_table<'a, 'gc>(
 
 /// Runs a VM host call.
 pub(crate) fn run_host_call(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     host_call: &HostCall,
 ) -> Result<StashedValue, ExternError> {
@@ -483,7 +483,7 @@ pub(crate) fn run_host_call(
 /// Calls the parser function given by `name`, using the given `args`, in the
 /// context given by `frame_id`, and returns the expanded Wikitext.
 fn call_parser_function(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     frame_id: &StashedString,
     name: &StashedString,
@@ -529,7 +529,7 @@ fn call_parser_function(
 /// Expands the template with the given `title`, using the given `args`, in the
 /// context given by `frame_id`, and returns the expanded Wikitext.
 fn expand_template(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     frame_id: &StashedString,
     title: &StashedString,
@@ -562,7 +562,7 @@ fn expand_template(
 /// Expands an argument passed to the given `frame_id` and returns the resulting
 /// Wikitexts as a table of k-vs.
 fn get_all_expanded_arguments(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     frame_id: &StashedString,
 ) -> Result<StashedTable, ExternError> {
@@ -601,7 +601,7 @@ fn get_all_expanded_arguments(
 /// Expands an argument passed to the given `frame_id` with the given `key` and
 /// returns the resulting Wikitext.
 fn get_expanded_argument(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     frame_id: &StashedString,
     key: &StashedString,
@@ -630,7 +630,7 @@ fn get_expanded_argument(
 /// Expands templates in the given `text` in the context of the given
 /// `frame_id` and returns the resulting Wikitext.
 fn preprocess(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     frame_id: &StashedString,
     text: &StashedString,

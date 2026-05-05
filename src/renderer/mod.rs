@@ -309,7 +309,7 @@
 
 use crate::{
     Limits, LoadMode,
-    db::{Article, Database},
+    db::{Article, Database, IDatabase as _},
     lru_limiter::ByMemoryUsage,
     lua::VmCacheEntry,
     php::DateTime,
@@ -319,6 +319,8 @@ use crate::{
 use axum::http::Uri;
 use core::{fmt, time::Duration};
 pub(crate) use expand_templates::{ExpandMode, ExpandTemplates};
+#[cfg(test)]
+pub(crate) use manager::render_test;
 pub(crate) use manager::{Command, In, RenderManager as Manager, RenderOutput};
 use memchr::memmem;
 pub(crate) use parser_fns::call_parser_fn;
@@ -452,17 +454,17 @@ type TemplateCache = Arc<RwLock<LruMap<ArticleId, Arc<Output>, ByMemoryUsage>>>;
 
 /// Global variables which are used for the entire lifetime of a renderer
 /// thread.
-pub(crate) struct Statics {
+pub(crate) struct Statics<'db, 'config> {
     /// The “current” time, according to the article database.
     pub base_time: DateTime,
     /// The server’s base URI.
     pub base_uri: Uri,
     /// The article database.
-    pub db: Arc<Database<'static>>,
+    pub db: Arc<Database<'db>>,
     /// Time and memory limits.
     pub limits: Limits,
     /// The parser.
-    pub parser: Parser<'static>,
+    pub parser: Parser<'config>,
     /// Parsed template cache.
     template_cache: TemplateCache,
     /// The Lua interpreter.
@@ -639,13 +641,13 @@ impl core::ops::Deref for StripMarker {
 }
 
 /// Renderer state that is shared across stack frames.
-pub(crate) struct State<'s> {
+pub(crate) struct State<'s, 'db, 'config> {
     /// Article data.
     pub globals: ArticleState,
     /// The page load strategy.
     pub load_mode: LoadMode,
     /// Thread static global variables.
-    pub statics: &'s mut Statics,
+    pub statics: &'s mut Statics<'db, 'config>,
     /// Stripped extension tag substitutions.
     pub strip_markers: StripMarkers,
     /// Page performance timing data.
@@ -682,7 +684,7 @@ pub(crate) struct ArticleState {
 // borrowck is being unbearable today and this is a toy project so who cares
 // TODO: This should be part of Database
 pub fn resolve_redirects(
-    db: &Database<'static>,
+    db: &Database<'_>,
     mut article: Arc<Article>,
 ) -> Result<Arc<Article>, Error> {
     // “Loop to fetch the article, with up to 2 redirects”

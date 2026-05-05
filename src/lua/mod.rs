@@ -117,21 +117,30 @@ pub(super) fn new_vm_core() -> Result<Lua, ExternError> {
 }
 
 /// Creates a new Lua VM.
-pub(super) fn new_vm(
+pub(super) fn new_vm<'db, 'config>(
     base_uri: &Uri,
-    db: &Arc<Database<'static>>,
-    parser: &Parser<'static>,
+    db: &Arc<Database<'db>>,
+    parser: &Parser<'config>,
 ) -> Result<Lua, ExternError> {
     let mut vm = new_vm_core()?;
 
+    // SAFETY: The lifetime of the database and parser are always at least as
+    // long as the lifetime of the VM.
+    let (db, parser) = unsafe {
+        (
+            core::mem::transmute::<&Arc<Database<'_>>, &Arc<Database<'static>>>(db),
+            core::mem::transmute::<&Parser<'_>, &Parser<'static>>(parser),
+        )
+    };
+
     vm.enter(|ctx| {
-        let mw = ctx.singleton::<Rootable![LuaEngine]>();
+        let mw = ctx.singleton::<Rootable![LuaEngine<'static>]>();
         mw.set_db(db);
 
-        let mw_title = ctx.singleton::<Rootable![TitleLibrary]>();
+        let mw_title = ctx.singleton::<Rootable![TitleLibrary<'static>]>();
         mw_title.set_shared(base_uri, db);
 
-        let mw_uri = ctx.singleton::<Rootable![UriLibrary]>();
+        let mw_uri = ctx.singleton::<Rootable![UriLibrary<'static>]>();
         mw_uri.set_parser(parser.clone());
     });
 
@@ -141,7 +150,7 @@ pub(super) fn new_vm(
 /// Resets the Lua VM for the given `article`.
 pub(super) fn reset_vm(vm: &mut Lua, title: &Title, date: &DateTime) -> Result<(), ExternError> {
     vm.try_enter(|ctx| {
-        let mw_title = ctx.singleton::<Rootable![TitleLibrary]>();
+        let mw_title = ctx.singleton::<Rootable![TitleLibrary<'static>]>();
         mw_title.set_title(ctx, title)?;
 
         let mw_language = ctx.singleton::<Rootable![LanguageLibrary]>();
@@ -153,7 +162,7 @@ pub(super) fn reset_vm(vm: &mut Lua, title: &Title, date: &DateTime) -> Result<(
 
 /// Loads and calls a Scribunto module, returning the result.
 pub(super) fn run_vm(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: Pin<&StackFrame<'_>>,
     code: &Arc<Article>,
     fn_name: &str,
@@ -162,7 +171,7 @@ pub(super) fn run_vm(
 
     let mut state = {
         let old_sp = state.statics.vm.enter(|ctx| {
-            let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
+            let engine = ctx.singleton::<Rootable![lualib::LuaEngine<'static>]>();
             // SAFETY: So long as `old_sp` makes it into the scope guard, it
             // will be removed when this call returns.
             engine.set_sp(Some(unsafe {
@@ -171,7 +180,7 @@ pub(super) fn run_vm(
         });
         scopeguard::guard(state, move |state| {
             state.statics.vm.enter(|ctx| {
-                let engine = ctx.singleton::<Rootable![lualib::LuaEngine]>();
+                let engine = ctx.singleton::<Rootable![lualib::LuaEngine<'static>]>();
                 engine.set_sp(old_sp);
             });
         })
@@ -264,7 +273,7 @@ pub(super) fn run_vm(
 
 /// Fetches a possibly cached Lua module for execution.
 fn fetch_module(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: Pin<&StackFrame<'_>>,
     code: &Arc<Article>,
 ) -> Result<(StashedClosure, StashedTable), ExternError> {
@@ -309,7 +318,7 @@ fn fetch_module(
 /// collection and evicting cached modules. Returns true if the VM’s memory
 /// usage still exceeds the limit after doing everything possible to reduce
 /// memory.
-fn memory_exceeded(state: &mut State<'_>) -> bool {
+fn memory_exceeded(state: &mut State<'_, '_, '_>) -> bool {
     let mut old_size = state.statics.vm.total_memory();
 
     while old_size >= state.statics.limits.vm_total_mem {

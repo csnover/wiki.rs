@@ -18,12 +18,12 @@ use gc_arena::Rootable;
 /// The URI support library.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub(crate) struct UriLibrary {
+pub(crate) struct UriLibrary<'config> {
     /// The Wikitext parser.
-    parser: RefCell<Option<Parser<'static>>>,
+    parser: RefCell<Option<Parser<'config>>>,
 }
 
-impl UriLibrary {
+impl<'config, 'db: 'static> UriLibrary<'config> {
     /// Encodes the input string for use within a URL fragment-part.
     fn anchor_encode<'gc>(
         &self,
@@ -52,7 +52,7 @@ impl UriLibrary {
         ctx: Context<'gc>,
         (page, query): (VmString<'gc>, Option<Value<'gc>>),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        ctx.singleton::<Rootable![TitleLibrary]>().get_url(
+        ctx.singleton::<Rootable![TitleLibrary<'db>]>().get_url(
             ctx,
             (
                 page,
@@ -70,7 +70,7 @@ impl UriLibrary {
         ctx: Context<'gc>,
         (page, query): (VmString<'gc>, Option<Value<'gc>>),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        ctx.singleton::<Rootable![TitleLibrary]>().get_url(
+        ctx.singleton::<Rootable![TitleLibrary<'db>]>().get_url(
             ctx,
             (page, VmString::from_static(&ctx, "fullUrl"), query, None),
         )
@@ -83,7 +83,7 @@ impl UriLibrary {
         ctx: Context<'gc>,
         (page, query): (VmString<'gc>, Value<'gc>),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        ctx.singleton::<Rootable![TitleLibrary]>().get_url(
+        ctx.singleton::<Rootable![TitleLibrary<'db>]>().get_url(
             ctx,
             (
                 page,
@@ -95,14 +95,14 @@ impl UriLibrary {
     }
 
     /// Sets the Wikitext parser.
-    pub(crate) fn set_parser(&self, parser: Parser<'static>) {
+    pub(crate) fn set_parser(&self, parser: Parser<'config>) {
         *self.parser.borrow_mut() = Some(parser);
     }
 }
 
-impl MwInterface for UriLibrary {
-    const NAME: &str = "mw.uri";
-    const CODE: &[u8] = include_bytes!("./modules/mw.uri.lua");
+impl<'config: 'static> MwInterface for UriLibrary<'config> {
+    const NAME: &'static str = "mw.uri";
+    const CODE: &'static [u8] = include_bytes!("./modules/mw.uri.lua");
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

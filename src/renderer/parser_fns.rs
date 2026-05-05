@@ -18,6 +18,7 @@ use crate::{
         format_number, make_url, parse_formatted_number, url_encode,
     },
     config::CONFIG,
+    db::IDatabase as _,
     expr,
     php::{floatval, fuzzy_cmp},
     title::{Namespace, Title},
@@ -33,7 +34,7 @@ use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 
 /// The function signature of a parser function.
-type ParserFn = fn(&mut String, &mut State<'_>, &IndexedArgs<'_, '_, '_>) -> Result;
+type ParserFn = fn(&mut String, &mut State<'_, '_, '_>, &IndexedArgs<'_, '_, '_>) -> Result;
 
 mod cond {
     //! Flow control parser functions.
@@ -43,7 +44,7 @@ mod cond {
     /// `{{#expr: expression}}`
     pub fn expr(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(expr) = arguments.eval(state, 0)?.map(trim) {
@@ -70,7 +71,7 @@ mod cond {
     /// `{{#if: condition | consequent (!condition.trim().is_empty()) | alternate }}`
     pub fn r#if(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         // Article 'Television' has `{{As of|June 2021}}` which is not
@@ -97,7 +98,7 @@ mod cond {
     /// `{{#ifeq: lhs | rhs | consequent (lhs == rhs) | alternate }}`
     pub fn if_eq(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let lhs = arguments.eval(state, 0)?.map_or("".into(), decode_trim);
@@ -114,7 +115,7 @@ mod cond {
     /// `{{#iferror: condition | consequent (error) | alternate (no error) }}`
     pub fn if_error(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         static I_AM_BAD: LazyLock<Regex> = LazyLock::new(|| {
@@ -147,7 +148,7 @@ mod cond {
     /// `{{#ifexpr: expression | consequent (expression != 0.0) | alternate }}`
     pub fn if_expr(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let expr = arguments.eval(state, 0)?;
@@ -170,7 +171,7 @@ mod cond {
     /// `{{#switch: match | case [| case ...] = value | default }}`
     pub fn switch(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let lhs = arguments.eval(state, 0)?.map_or("".into(), decode_trim);
@@ -233,7 +234,7 @@ mod ext {
     /// `{{#tag: tag_name | content [| attribute [= value] ...] }}`
     pub fn extension_tag(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let (Some(name), Some(body)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
@@ -263,7 +264,7 @@ mod ext {
     /// `{{#coordinates: latitude | longitude [| primary][| GeoHack parameters][| extra parameters] }}`
     pub fn geodata_coordinates(
         _: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         // This normally converts and validates coordinates, then stashes them
@@ -276,7 +277,7 @@ mod ext {
     /// `{{#invoke: module | function [| argument [= value] ...] }}`
     pub fn invoke(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         call_module(out, state, arguments.sp, &arguments.arguments)
@@ -285,7 +286,7 @@ mod ext {
     /// `{{#property: name [| from = Qid] }}`
     pub fn wikibase_property(
         _: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(name) = arguments.eval(state, 0)? {
@@ -304,7 +305,7 @@ mod page {
     /// `{{BASEPAGENAME}}`
     pub fn base_page_name(
         out: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{}", sp.root().name.base_text())?;
@@ -314,7 +315,7 @@ mod page {
     /// `{{FULLPAGENAME}}`
     pub fn full_page_name(
         out: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{}", sp.root().name.key())?;
@@ -324,7 +325,7 @@ mod page {
     /// `{{PAGENAME}}`
     pub fn page_name(
         out: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{}", sp.root().name.text())?;
@@ -334,7 +335,7 @@ mod page {
     /// `{{PROTECTIONEXPIRY[: action [| pagename]] }}`
     pub fn protection_expiry(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         // From <https://www.mediawiki.org/wiki/Manual:Checking_for_page_existence/PROTECTIONEXPIRY_method>:
@@ -356,7 +357,7 @@ mod page {
     /// `{{[gettable variable name]}}`
     pub fn page_var(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         IndexedArgs { callee, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         // TODO: Technically the value might be a tree
@@ -368,7 +369,11 @@ mod page {
     }
 
     /// `{{REVISIONID}}`
-    pub fn revision_id(out: &mut String, _: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn revision_id(
+        out: &mut String,
+        _: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         // TODO: For the purposes of debugging, it might be worthwhile to
         // make this a toggle which can be empty string instead, since MW
         // modules will emit more warnings in that case
@@ -379,7 +384,7 @@ mod page {
     /// `{{ROOTPAGENAME}}`
     pub fn root_page_name(
         out: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{}", sp.root().name.root_text())?;
@@ -389,7 +394,7 @@ mod page {
     /// `{{[settable variable name]: value [| option ...]}}`
     pub fn set_page_var(
         _: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)? {
@@ -405,7 +410,7 @@ mod page {
     /// `{{SUBPAGENAME}}`
     pub fn sub_page_name(
         out: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{}", sp.root().name.subpage_text())?;
@@ -415,7 +420,7 @@ mod page {
     /// `{{ARTICLEPAGENAME}}` or `{{SUBJECTPAGENAME}}`
     pub fn subject_page_name(
         out: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let title = &sp.root().name;
@@ -434,7 +439,7 @@ mod page {
     /// `{{TALKPAGENAME}}`
     pub fn talk_page_name(
         out: &mut String,
-        _: &mut State<'_>,
+        _: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let title = &sp.root().name;
@@ -463,7 +468,7 @@ mod site {
     )]
     pub fn number_of_pages(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let no_separators = arguments.eval(state, 0)?.map(trim).as_deref() == Some("R");
@@ -478,7 +483,7 @@ mod site {
     /// `{{PAGESINCATEGORY: category [|flag] }}`
     pub fn pages_in_category(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if !arguments.is_empty() {
@@ -490,7 +495,11 @@ mod site {
     }
 
     /// `{{SERVER}}`
-    pub fn server(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn server(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         if let Some(authority) = state.statics.base_uri.authority() {
             write!(out, "//{authority}")?;
         }
@@ -506,7 +515,7 @@ mod string {
     /// `{{anchorencode: text }}`
     pub fn anchor_encode(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(text) = arguments.eval(state, 0)?.map(trim) {
@@ -520,7 +529,7 @@ mod string {
     /// `{{formatnum: number [|flag [|flag]] }}`
     pub fn format_number(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         bitflags::bitflags! {
@@ -616,7 +625,7 @@ mod string {
     /// `{{int: message name }}`
     pub fn interface_message(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -632,7 +641,7 @@ mod string {
     /// `{{lc: string }}`
     pub fn lc(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -650,7 +659,7 @@ mod string {
     /// `{{lcfirst: string }}`
     pub fn lc_first(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -665,7 +674,7 @@ mod string {
     /// `{{padleft: string | length [| padding value] }}`
     pub fn pad_left(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let (Some(value), Some(len)) = (
@@ -693,7 +702,7 @@ mod string {
     /// `{{plural: number [| [number = ] variant ...] }}`
     pub fn plural(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -715,7 +724,7 @@ mod string {
     /// `{{#titleparts: title [| len [| start]] }}`
     pub fn title_parts(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let page_name = arguments.eval(state, 0)?.unwrap_or_default();
@@ -770,7 +779,7 @@ mod string {
     /// `{{uc: string }}`
     pub fn uc(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -788,7 +797,7 @@ mod string {
     /// `{{ucfirst: string }}`
     pub fn uc_first(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -803,7 +812,7 @@ mod string {
     /// `{{urlencode: string }}`
     pub fn url_encode(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -823,7 +832,7 @@ mod time {
     /// `{{LOCALTIME}}` or `{{CURRENTTIME}}`
     pub fn clock_time(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let time = &state.statics.base_time;
@@ -832,13 +841,21 @@ mod time {
     }
 
     /// `{{LOCALDAY}}` or `{{CURRENTDAY}}`
-    pub fn day(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn day(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         write!(out, "{}", state.statics.base_time.day())?;
         Ok(())
     }
 
     /// `{{LOCALDAY2}}` or `{{CURRENTDAY2}}`
-    pub fn day_lz(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn day_lz(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         write!(out, "{:02}", state.statics.base_time.day())?;
         Ok(())
     }
@@ -846,7 +863,7 @@ mod time {
     /// `{{LOCALDAYNAME}}` or `{{CURRENTDAYNAME}}`
     pub fn day_name(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{}", state.statics.base_time.weekday())?;
@@ -856,7 +873,7 @@ mod time {
     /// `{{LOCALDOW}}` or `{{CURRENTDOW}}`
     pub fn day_of_week(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(
@@ -868,13 +885,21 @@ mod time {
     }
 
     /// `{{LOCALHOUR}}` or `{{CURRENTHOUR}}`
-    pub fn hour(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn hour(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         write!(out, "{:02}", state.statics.base_time.hour())?;
         Ok(())
     }
 
     /// `{{LOCALMONTH1}}` or `{{CURRENTMONTH1}}`
-    pub fn month(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn month(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         write!(out, "{}", u8::from(state.statics.base_time.month()))?;
         Ok(())
     }
@@ -882,7 +907,7 @@ mod time {
     /// `{{LOCALMONTHABBREV}}` or `{{CURRENTMONTHABBREV}}`
     pub fn month_abbr(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{:.3}", state.statics.base_time.month())?;
@@ -894,7 +919,7 @@ mod time {
     // "localmonth" | "localmonth2" | "currentmonth" | "currentmonth2" => {
     pub fn month_lz(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{:02}", u8::from(state.statics.base_time.month()))?;
@@ -905,7 +930,7 @@ mod time {
     /// `{{CURRENTMONTHNAME}}` or `{{CURRENTMONTHNAMEGEN}}`
     pub fn month_name(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         write!(out, "{}", state.statics.base_time.month())?;
@@ -915,7 +940,7 @@ mod time {
     /// `{{#time: format [| time [| language code [| local ]]] }}`
     pub fn time(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(format) = arguments.eval(state, 0)?.map(trim) {
@@ -945,7 +970,7 @@ mod time {
     /// `{{LOCALTIMESTAMP}}` or `{{CURRENTTIMESTAMP}}`
     pub fn timestamp(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let time = &state.statics.base_time;
@@ -963,13 +988,21 @@ mod time {
     }
 
     /// `{{LOCALWEEK}}` or `{{CURRENTWEEK}}`
-    pub fn week(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn week(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         write!(out, "{}", state.statics.base_time.iso_week())?;
         Ok(())
     }
 
     /// `{{LOCALYEAR}}` or `{{CURRENTYEAR}}`
-    pub fn year(out: &mut String, state: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn year(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         write!(out, "{}", state.statics.base_time.year())?;
         Ok(())
     }
@@ -981,7 +1014,11 @@ mod title {
     use super::*;
 
     /// `{{filepath: title [| 'nowiki'/size [| size/'nowiki']] }}`
-    pub fn file_path(_: &mut String, _: &mut State<'_>, _: &IndexedArgs<'_, '_, '_>) -> Result {
+    pub fn file_path(
+        _: &mut String,
+        _: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
         // Normally this would look up a file, optionally picking one based on
         // the given size hint, but since no files are included in the database
         // dump, this can just always return nothing.
@@ -991,7 +1028,7 @@ mod title {
     /// `{{fullurl: title [| query string] }}`
     pub fn full_url(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -1013,7 +1050,7 @@ mod title {
     /// `{{#ifexist: title | consequent (exists) | alternate }}`
     pub fn if_exist(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         // log::trace!("#ifexist: '{value:?}'");
@@ -1031,7 +1068,7 @@ mod title {
     /// `{{localurl: title [| query string] }}`
     pub fn local_url(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -1055,7 +1092,7 @@ mod title {
     /// `{{TALKSPACE[:title] }}`
     pub fn namespace(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let ns = if let Some(value) = arguments.eval(state, 0)?.map(trim) {
@@ -1086,7 +1123,7 @@ mod title {
     /// `{{ns: namespace name or id }}`
     pub fn namespace_by_name_or_id(
         out: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let ns = arguments.eval(state, 0)?.map(trim).and_then(|value| {
@@ -1106,7 +1143,7 @@ mod title {
     /// `{{#lst:title | section [| replacement text] }}`
     pub fn transclude_except(
         _: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         log::warn!(
@@ -1120,7 +1157,7 @@ mod title {
     /// `{{#lsth:title | section [| replacement text] }}`
     pub fn transclude_heading(
         _: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         log::warn!(
@@ -1134,7 +1171,7 @@ mod title {
     /// `{{#lst:title | section [| end section] }}`
     pub fn transclude_section(
         _: &mut String,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         log::warn!(
@@ -1242,7 +1279,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
 /// Renders a parser function.
 pub fn call_parser_fn(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     bounds: Option<Span>,
     callee: &str,

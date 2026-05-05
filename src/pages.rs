@@ -4,7 +4,7 @@ use crate::{
     AppState, LoadMode,
     common::make_url,
     config::CONFIG,
-    db,
+    db::{self, IDatabase as _},
     renderer::{self, RenderOutput},
     title::Title,
     wikitext::{FileMap, Parser, inspect},

@@ -59,7 +59,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
 
     /// Flushes any pending whitespace tokens to output.
     #[inline]
-    fn flush(&mut self, state: &mut State<'_>) -> Result {
+    fn flush(&mut self, state: &mut State<'_, '_, '_>) -> Result {
         self.emitted = true;
         for last in self.last_ws.drain(..) {
             match last {
@@ -99,7 +99,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
     /// Processes a text token.
     fn trim_text<const IS_GENERATED: bool>(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         text: &str,
@@ -170,7 +170,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_autolink(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -183,7 +183,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_behavior_switch(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -195,7 +195,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_comment(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _content: &str,
@@ -209,7 +209,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_end_annotation(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -220,7 +220,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_end_include(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         mode: InclusionMode,
@@ -231,7 +231,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_end_tag(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -243,7 +243,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_entity(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         value: char,
@@ -257,7 +257,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_extension(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -276,7 +276,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_external_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -290,7 +290,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_generated(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Option<Span>,
         text: &str,
@@ -301,7 +301,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_heading(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         level: HeadingLevel,
@@ -314,7 +314,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_horizontal_rule(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         line_content: bool,
@@ -327,7 +327,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_lang_variant(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         flags: Option<&LangFlags>,
@@ -342,7 +342,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -368,7 +368,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_list_item(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         bullets: &str,
@@ -381,7 +381,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_new_line(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
@@ -398,7 +398,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_output(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         output: &Output,
     ) -> Result {
@@ -410,7 +410,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_parameter(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &[Spanned<Token>],
@@ -422,7 +422,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_redirect(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
@@ -437,7 +437,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_start_annotation(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -450,7 +450,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_start_include(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         mode: InclusionMode,
@@ -461,7 +461,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_start_tag(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -476,7 +476,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_strip_marker(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         marker: &str,
@@ -488,7 +488,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_text(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         text: &str,
@@ -499,7 +499,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_text_style(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         style: TextStyle,
@@ -511,7 +511,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_table_caption(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -523,7 +523,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_table_data(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -535,7 +535,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_table_end(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
@@ -546,7 +546,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_table_heading(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -558,7 +558,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_table_row(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -570,7 +570,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_table_start(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Argument>],
@@ -582,7 +582,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_template(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _target: &[Spanned<Token>],

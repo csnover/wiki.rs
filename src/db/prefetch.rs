@@ -14,11 +14,22 @@
 //! article in the index requires a full table scan. The prefetcher tries to
 //! reduce the number of scans by batching these requests.
 
-use super::{Article, RawDatabase as Database, Result, index::IndexEntry, is_lobotomised};
-use crate::title::Title;
+use super::{
+    Article, DatabaseNamespace, IDatabase, RawDatabase as Database, Result, index::IndexEntry,
+    is_lobotomised,
+};
+use crate::{config::CONFIG, title::Title, wikitext::Configuration};
 use indexmap::{IndexMap, IndexSet};
 use parking_lot::{Condvar, Mutex, MutexGuard};
-use std::{collections::HashSet, path::Path, sync::Arc, time::Instant};
+use rayon::prelude::ParallelIterator;
+use regex::Regex;
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::Arc,
+    time::Instant,
+};
+use time::UtcDateTime;
 
 /// Thread pool channel.
 struct Channel {
@@ -161,36 +172,56 @@ impl PrefetchableDatabase<'_> {
             cache_size_limit,
         )?)))
     }
+}
 
-    /// Returns true if the database contains an article with the given title.
+impl IDatabase for PrefetchableDatabase<'_> {
     #[inline]
-    pub fn contains(&self, title: &Title) -> bool {
+    fn cache_size(&self) -> usize {
+        self.db.cache_size()
+    }
+
+    #[inline]
+    fn config(&self) -> &Configuration {
+        &CONFIG
+    }
+
+    #[inline]
+    fn contains(&self, title: &Title) -> bool {
         let key = title.key();
         self.db.contains_cached(title, key).unwrap_or_else(|| {
             self.cancel_prefetch(title, key, false);
-            self.index.find_article(key).is_some()
+            self.db.index.find_article(key).is_some()
         })
     }
 
-    /// Gets an article with the given title from the database. The article will
-    /// be cached in memory.
     #[inline]
-    pub fn get(&self, title: &Title) -> Result<Arc<Article>> {
+    fn creation_date(&self) -> Option<UtcDateTime> {
+        self.db.creation_date()
+    }
+
+    #[inline]
+    fn get(&self, title: &Title) -> Result<Arc<Article>> {
         let key = title.key();
         self.cancel_prefetch(title, key, true);
         self.db.get(title)
     }
 
-    /// Prefetches a collection of titles.
-    ///
-    /// Because the MW database dump index is totally unordered, finding a title
-    /// in the index requires a full table scan. Batching titles into request
-    /// sets reduces the number of scans required, increasing performance.
-    ///
-    /// Both templates and links need to check for existence in the index, but
-    /// templates are both more time-critical and also require decompressing
-    /// article data, so they are collected separately.
-    pub fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>) {
+    #[inline]
+    fn len(&self) -> usize {
+        self.db.len()
+    }
+
+    #[inline]
+    fn name(&self) -> &str {
+        self.db.name()
+    }
+
+    #[inline]
+    fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace> {
+        self.db.namespaces()
+    }
+
+    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>) {
         if templates.is_empty() && links.is_empty() {
             return;
         }
@@ -232,7 +263,7 @@ impl PrefetchableDatabase<'_> {
                     }
                     None
                 } else {
-                    let state = if let Some(entry) = self.index.is_cached(key) {
+                    let state = if let Some(entry) = self.db.index.is_cached(key) {
                         let Some(entry) = entry else {
                             // Well, turns out that this does not exist, so it
                             // does not need to be prefetched any more than it
@@ -254,7 +285,7 @@ impl PrefetchableDatabase<'_> {
         for title in links {
             let key = title.key();
             if !self.can_prefetch(&title, key)
-                || self.index.is_cached(key).is_some()
+                || self.db.index.is_cached(key).is_some()
                 || queue.jobs.contains_key(&title)
                 || insertions.contains_key(&title)
             {
@@ -278,6 +309,12 @@ impl PrefetchableDatabase<'_> {
         }
     }
 
+    fn search(&self, query: &Regex) -> impl ParallelIterator<Item = &str> {
+        self.db.search(query)
+    }
+}
+
+impl PrefetchableDatabase<'_> {
     /// Cancels a prefetch for the given title, if one exists.
     ///
     /// It would also be possible to return a condvar to have the renderer
@@ -331,7 +368,7 @@ impl PrefetchableDatabase<'_> {
     /// Returns true if the given title is in a content-prefetchable state.
     #[inline]
     fn can_prefetch(&self, title: &Title, key: &str) -> bool {
-        !is_lobotomised(key) && self.may_exist(title) && self.cache.read().peek(key).is_none()
+        !is_lobotomised(key) && self.db.may_exist(title) && self.db.cache.read().peek(key).is_none()
     }
 }
 
@@ -451,13 +488,5 @@ fn find_work(queue: &mut Queue) -> Option<Job> {
         Some(Job::Exist(titles, <_>::default()))
     } else {
         None
-    }
-}
-
-impl<'a> core::ops::Deref for PrefetchableDatabase<'a> {
-    type Target = Arc<Database<'a>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.db
     }
 }

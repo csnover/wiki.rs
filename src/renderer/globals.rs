@@ -91,6 +91,18 @@ impl Outline {
         self.0.push((level, name));
         Ok(id)
     }
+
+    /// Returns an iterator over the recorded outline.
+    #[cfg(test)]
+    pub fn iter(&self) -> impl Iterator<Item = &(HeadingLevel, String)> {
+        self.0.iter()
+    }
+
+    /// Returns the number of outline entries.
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl core::fmt::Display for Outline {

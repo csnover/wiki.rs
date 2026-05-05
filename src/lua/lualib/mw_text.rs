@@ -168,7 +168,7 @@ impl MwInterface for TextLibrary {
 /// This runs outside of the Lua VM to avoid having to wrap `StripMarkers` in
 /// `Rc<RefCell>`.
 pub(super) fn unstrip(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     text: &StashedString,
     mode: UnstripMode,
 ) -> Result<StashedString, ExternError> {

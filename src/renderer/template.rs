@@ -12,6 +12,7 @@ use crate::{
     LoadMode,
     common::{make_url, title_decode},
     config::CONFIG,
+    db::IDatabase as _,
     lua::run_vm,
     title::{Namespace, Title},
     wikitext::{Argument, FileMap, Span, Spanned, Token},
@@ -72,7 +73,7 @@ static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
 /// Calls a Lua function.
 pub(super) fn call_module(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     arguments: &KeyCacheKvs<'_, '_>,
 ) -> Result {
@@ -148,7 +149,7 @@ pub(super) fn call_module(
 /// Renders a parameter.
 pub(super) fn render_parameter(
     out: &mut ExpandTemplates,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     span: Span,
     name: &[Spanned<Token>],
@@ -213,7 +214,7 @@ pub(super) fn render_parameter(
 /// 7. Emit as text.
 pub(super) fn render_template<'tt>(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &'tt StackFrame<'_>,
     bounds: Span,
     target: &'tt [Spanned<Token>],
@@ -320,7 +321,7 @@ enum Target<'tt> {
 /// Splits a template target in the form `callee:arg` into parts without
 /// evaluating the `arg` part.
 fn split_target<'tt>(
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     first: &'tt mut Option<Spanned<Token>>,
     target: &'tt [Spanned<Token>],
@@ -450,7 +451,7 @@ fn split_target<'tt>(
 /// Transcludes a template.
 pub(crate) fn call_template(
     out: &mut String,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     callee: &Title,
     arguments: &[Kv<'_>],
@@ -562,7 +563,7 @@ pub(crate) fn resolve_callee(
 /// [`LoadMode`].
 pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     out: &mut W,
-    state: &mut State<'_>,
+    state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
 ) -> Result {
     let href = make_url(
@@ -592,7 +593,7 @@ pub(crate) struct DbPrefetch {
 
 impl DbPrefetch {
     /// Executes the prefetch, consuming this prefetcher.
-    pub(super) fn finish(self, state: &mut State<'_>) {
+    pub(super) fn finish(self, state: &mut State<'_, '_, '_>) {
         state.statics.db.prefetch_all(self.templates, self.links);
     }
 }
@@ -600,7 +601,7 @@ impl DbPrefetch {
 impl Surrogate<Error> for DbPrefetch {
     fn adopt_autolink(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _target: &[Spanned<Token>],
@@ -611,7 +612,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_external_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         target: &[Spanned<Token>],
@@ -623,7 +624,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_link(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         target: &[Spanned<Token>],
@@ -656,7 +657,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_parameter(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         name: &[Spanned<Token>],
@@ -671,7 +672,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_redirect(
         &mut self,
-        _state: &mut State<'_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         _target: &[Spanned<Token>],
@@ -683,7 +684,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_start_tag(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
@@ -698,7 +699,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_table_caption(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
@@ -711,7 +712,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_table_data(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
@@ -724,7 +725,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_table_heading(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
@@ -736,7 +737,7 @@ impl Surrogate<Error> for DbPrefetch {
     }
     fn adopt_table_row(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
@@ -748,7 +749,7 @@ impl Surrogate<Error> for DbPrefetch {
     }
     fn adopt_table_start(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Argument>],
@@ -761,7 +762,7 @@ impl Surrogate<Error> for DbPrefetch {
 
     fn adopt_template(
         &mut self,
-        state: &mut State<'_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
         target: &[Spanned<Token>],
