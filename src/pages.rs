@@ -3,7 +3,6 @@
 use crate::{
     AppState, LoadMode,
     common::make_url,
-    config::CONFIG,
     db::{self, IDatabase as _},
     renderer::{self, RenderOutput},
     title::Title,
@@ -545,7 +544,7 @@ pub(crate) async fn source(
         }
         Some(SourceMode::Tree) => {
             let source = FileMap::new(&article.body);
-            let tree = Parser::new(&CONFIG)
+            let tree = Parser::new(state.database.config())
                 .parse(&source, include.is_some())
                 .map_err(renderer::Error::from)?;
             Ok(format!("{:#?}", inspect(&source, &tree.root)).into_response())

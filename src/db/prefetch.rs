@@ -181,7 +181,7 @@ impl IDatabase for PrefetchableDatabase<'_> {
     }
 
     #[inline]
-    fn config(&self) -> &Configuration {
+    fn config(&self) -> &'static Configuration {
         &CONFIG
     }
 

@@ -1,6 +1,8 @@
 //! Types and functions for interacting with a MediaWiki compressed multistream
 //! database dump.
 
+#![cfg_attr(test, expect(dead_code, reason = "mocking database"))]
+
 use crate::{
     lru_limiter::{ByMemoryUsage, HeapUsageCalculator},
     php::strtr,
@@ -36,7 +38,7 @@ pub(crate) trait IDatabase {
     fn cache_size(&self) -> usize;
 
     /// Returns the configuration data for the database.
-    fn config(&self) -> &Configuration;
+    fn config(&self) -> &'static Configuration;
 
     /// Returns true if the database contains an article with the given title.
     fn contains(&self, title: &Title) -> bool;

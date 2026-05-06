@@ -197,6 +197,7 @@ enum ArgsError {
 }
 
 /// Command-line arguments.
+#[cfg_attr(test, expect(dead_code, reason = "mocking database"))]
 struct Args {
     /// The path to `database.xml.bz2`.
     articles_path: String,

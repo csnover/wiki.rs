@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     common::{CowExt as _, url_encode},
-    config::CONFIG,
+    db::IDatabase as _,
     title::Title,
     wikitext::{
         Argument, FileMap, Spanned, Token,
@@ -132,7 +132,7 @@ pub(super) fn media_options<'s>(
                 // not match.
                 options.link = if value.is_empty() {
                     None
-                } else if CONFIG.protocols.iter().any(|proto| {
+                } else if state.statics.db.config().protocols.iter().any(|proto| {
                     value
                         .get(..proto.len())
                         .is_some_and(|v| v.eq_ignore_ascii_case(proto))

@@ -17,7 +17,6 @@ use crate::{
         CowExt as _, anchor_encode, decode_html, format_date_mediawiki, format_message,
         format_number, make_url, parse_formatted_number, url_encode,
     },
-    config::CONFIG,
     db::IDatabase as _,
     expr,
     php::{floatval, fuzzy_cmp},
@@ -1303,7 +1302,7 @@ pub fn call_parser_fn(
                 err
             }
         })
-    } else if let Some(callee) = CONFIG.variables.get(callee) {
+    } else if let Some(callee) = state.statics.db.config().variables.get(callee) {
         if let Some(value) = args.eval(state, 0)? {
             // log::trace!("Setting {callee} to {value}");
             state

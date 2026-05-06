@@ -13,7 +13,6 @@ use super::{
 use crate::wikitext::Configuration;
 use crate::{
     Limits, LoadMode,
-    config::CONFIG,
     db::{Article, Database, IDatabase as _},
     lru_limiter::ByMemoryUsage,
     lua::{new_vm, reset_vm},
@@ -102,13 +101,12 @@ impl r2d2::ManageConnection for RenderManager {
         let base_uri = self.base_uri.clone();
         let limits = self.limits;
         let template_cache = Arc::clone(&self.template_cache);
-        // TODO: This date should be calculated from the database file.
         let db = Arc::clone(&self.database);
         let base_time = db.creation_date().map_or_else(DateTime::now, |date| {
             DateTime::from_unix_timestamp(date.unix_timestamp())
         })?;
-        let parser = Parser::new(&CONFIG);
         std::thread::spawn(move || {
+            let parser = Parser::new(db.config());
             let vm = new_vm(&base_uri, &db, &parser).unwrap();
             let mut statics = Statics {
                 base_time,
