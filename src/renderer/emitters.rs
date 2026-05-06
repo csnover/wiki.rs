@@ -1,8 +1,11 @@
 //! HTML emitters for Wikitext fragments that require state management.
 
-use super::tags;
-use crate::wikitext::TextStyle;
-use core::fmt;
+use super::{globals::Outline, tags};
+use crate::{
+    common::anchor_encode,
+    wikitext::{HeadingLevel, TextStyle},
+};
+use core::fmt::{self, Write as _};
 
 /// Implicit paragraphs (grafs) emitter. Implicit grafs may be runs of plain
 /// text, which will be wrapped by `<p>`, or runs of plain text prefixed by a
@@ -648,6 +651,146 @@ impl From<u8> for ListKind {
             b';' => Self::Term,
             b':' => Self::Detail,
             _ => unreachable!(),
+        }
+    }
+}
+
+/// Collects an outline entry to be emitted to the table of contents.
+///
+/// Because MediaWiki allows both Wikitext headings and HTML headings to
+/// contribute to the document outline, it is necessary to collect the outline
+/// information by consuming HTML instead of Wikitext nodes. MediaWiki also
+/// allows a subset of HTML to be injected to the outline.
+///
+/// This implementation tries to avoid redoing work by taking already-processed
+/// HTML directly from the corresponding processed document HTML.
+#[derive(Debug, Default)]
+pub(super) struct OutlineEmitter {
+    /// The position of the tag’s attribute list in the output.
+    attributes_pos: usize,
+    /// The accumulated inner HTML to emit to the table of contents.
+    html: String,
+    /// The ID of the current outline entry.
+    id: OutlineAnchor,
+    /// If true, the emitter is currently in attribute processing mode.
+    in_attrs: bool,
+    /// If true, the emitter is currently processing the attributes of the root
+    /// element of the outline entry.
+    in_entry_attrs: bool,
+    /// The stack of open inner HTML elements.
+    stack: Vec<&'static str>,
+    /// The current level.
+    tag: Option<HeadingLevel>,
+}
+
+/// An anchor ID.
+#[derive(Debug)]
+enum OutlineAnchor {
+    /// Generate an ID from the given text.
+    Implicit(String),
+    /// Use an existing ID.
+    Explicit(core::ops::Range<usize>),
+}
+
+impl Default for OutlineAnchor {
+    fn default() -> Self {
+        Self::Implicit(<_>::default())
+    }
+}
+
+impl OutlineEmitter {
+    /// The list of tags allowed in outlines.
+    ///
+    /// This list comes from Parsoid `Wt2Html\DOM\Handlers\Headings`.
+    const ALLOWED_TAGS: phf::Set<&'static str> = phf::phf_set! {
+        "b", "bdi", "i", "q", "s", "span", "strike", "sub", "sup"
+    };
+
+    /// Updates the outline emitter state for the given start tag.
+    pub fn after_start_tag(&mut self, name: &str) {
+        if self.stack.last() == Some(&name) {
+            self.html.push('>');
+        } else {
+            self.in_entry_attrs = false;
+        }
+        self.in_attrs = false;
+    }
+
+    /// Updates the outline emitter state with an attribute for the current tag.
+    pub fn attribute(
+        &mut self,
+        name: &str,
+        value: &str,
+        range: core::ops::Range<usize>,
+    ) -> fmt::Result {
+        if self.stack.last() == Some(&"span") && name == "dir" && !value.is_empty() {
+            write!(self.html, r#" {name}="{value}""#)?;
+        } else if self.in_entry_attrs && name == "id" {
+            self.id = OutlineAnchor::Explicit(range);
+        }
+        Ok(())
+    }
+
+    /// Updates the outline emitter state for the given end tag.
+    pub fn end_tag(&mut self, outline: &mut Outline, out: &mut String, name: &str) -> fmt::Result {
+        if self.stack.pop_if(|tag| *tag == name).is_some() {
+            write!(self.html, "</{name}>")?;
+        } else if let Ok(level) = name.parse() {
+            debug_assert_eq!(Some(level), self.tag);
+            debug_assert!(self.stack.is_empty());
+            core::mem::take(self).finish_entry(outline, out, level);
+        }
+        Ok(())
+    }
+
+    /// Updates the outline emitter state for the given start tag.
+    pub fn start_tag(&mut self, name: &str, attributes_pos: usize) -> fmt::Result {
+        if let Ok(level) = name.parse() {
+            if self.tag.is_some() {
+                todo!("invalid heading tag nesting");
+            }
+            self.tag = Some(level);
+            self.in_entry_attrs = true;
+            self.attributes_pos = attributes_pos;
+        } else if self.tag.is_some()
+            && let Some(name) = Self::ALLOWED_TAGS.get_key(name)
+        {
+            write!(self.html, "<{name}")?;
+            self.stack.push(name);
+        }
+        self.in_attrs = true;
+        Ok(())
+    }
+
+    /// Updates the outline emitter state for the given run of text.
+    pub fn text_run(&mut self, text: &str, html: &str) {
+        if self.tag.is_none() || self.in_attrs {
+            return;
+        }
+        if let OutlineAnchor::Implicit(id) = &mut self.id {
+            *id += text;
+        }
+        self.html += html;
+    }
+
+    /// Finalises an entry, emitting it to the outline.
+    fn finish_entry(self, outline: &mut Outline, out: &mut String, level: HeadingLevel) {
+        let (range, id) = match self.id {
+            OutlineAnchor::Implicit(text) => (None, anchor_encode(&text)),
+            OutlineAnchor::Explicit(range) => (Some(range.clone()), out[range].to_string()),
+        };
+        let insert_id = if let Some(id) = outline.push(level, self.html, id.clone()) {
+            if let Some(range) = range {
+                out.replace_range(range, id);
+                None
+            } else {
+                Some(id)
+            }
+        } else {
+            range.is_none().then_some(id.as_str())
+        };
+        if let Some(id) = insert_id {
+            out.insert_str(self.attributes_pos, &format!(r#" id="{id}""#));
         }
     }
 }

@@ -309,7 +309,7 @@ fn render(
 
     let mut renderer = Document::new(false);
     Trim::new(&mut renderer, &sp, TrimMode::Category).adopt_output(&mut state, &sp, &root)?;
-    let mut content = renderer.finish()?;
+    let mut content = renderer.finish(&mut state)?;
 
     let mut timings = state.timing.into_iter().collect::<Vec<_>>();
     timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));

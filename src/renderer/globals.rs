@@ -1,10 +1,7 @@
 //! Collections for semi-structured article data.
 
-use super::{Result, text_run};
-use crate::{
-    common::anchor_encode,
-    wikitext::{HeadingLevel, Span, Spanned, Token, helpers::TextContent, visit::Visitor as _},
-};
+use super::Result;
+use crate::wikitext::HeadingLevel;
 use core::fmt;
 use std::collections::{BTreeSet, HashMap};
 
@@ -67,53 +64,64 @@ impl core::fmt::Display for Indicators {
 
 /// An article outline (table of contents).
 #[derive(Debug, Default)]
-pub(crate) struct Outline(Vec<(HeadingLevel, String)>);
+pub(crate) struct Outline {
+    /// The contents of the outline.
+    entries: Vec<OutlineEntry>,
+    /// A map from a base anchor ID to the next free suffix for that base ID.
+    /// Used to ensure globally unique heading IDs.
+    ids: HashMap<String, u32>,
+}
+
+/// An outline entry.
+#[derive(Debug)]
+pub(crate) struct OutlineEntry {
+    /// The level of the entry.
+    pub level: HeadingLevel,
+    /// The HTML for the entry.
+    pub html: String,
+    /// The encoded anchor ID for the entry.
+    pub id: String,
+}
 
 impl Outline {
-    /// Push a new entry to the outline at the given heading level.
-    pub(super) fn push(
-        &mut self,
-        source: &str,
-        span: Span,
-        level: HeadingLevel,
-        content: &[Spanned<Token>],
-    ) -> Result<String> {
-        // TODO: Duplicate headings should get unique IDs.
-        let name = {
-            let mut name = String::new();
-            let mut extractor = TextContent::new(source, String::new());
-            extractor.visit_heading(span, level, content)?;
-            text_run(&mut name, '\n', &extractor.finish(), false, false)?;
-            name
+    /// Pushes a new entry to the outline at the given heading level. If the
+    /// given ID conflicted with an existing one, a new unique ID is returned.
+    pub(super) fn push(&mut self, level: HeadingLevel, html: String, id: String) -> Option<&str> {
+        let (conflict, id) = if let Some(suffix) = self.ids.get_mut(&id) {
+            *suffix += 1;
+            (true, format!("{id}_{suffix}"))
+        } else {
+            self.ids.insert(id.clone(), 1);
+            (false, id)
         };
 
-        let id = name.clone();
-        self.0.push((level, name));
-        Ok(id)
+        self.entries.push(OutlineEntry { level, html, id });
+
+        conflict.then(|| self.entries.last().unwrap().id.as_str())
     }
 
     /// Returns an iterator over the recorded outline.
     #[cfg(test)]
-    pub fn iter(&self) -> impl Iterator<Item = &(HeadingLevel, String)> {
-        self.0.iter()
+    pub fn iter(&self) -> impl Iterator<Item = &OutlineEntry> {
+        self.entries.iter()
     }
 
     /// Returns the number of outline entries.
     #[cfg(test)]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.entries.len()
     }
 }
 
 impl core::fmt::Display for Outline {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if self.0.is_empty() {
+        if self.entries.is_empty() {
             return Ok(());
         }
 
         write!(f, r##"<ul><li><a href="#">(Top)</a></li>"##)?;
         let mut current = 2;
-        for (level, name) in &self.0 {
+        for OutlineEntry { html, id, level } in &self.entries {
             while current > u8::from(*level) {
                 write!(f, "</ul>")?;
                 current -= 1;
@@ -122,12 +130,7 @@ impl core::fmt::Display for Outline {
                 write!(f, "<ul>")?;
                 current += 1;
             }
-            write!(
-                f,
-                r##"<li><a href="#{}">{}</a></li>"##,
-                anchor_encode(name),
-                html_escape::encode_text_minimal(name)
-            )?;
+            write!(f, r##"<li><a href="#{id}">{html}</a></li>"##)?;
         }
         while current > 1 {
             write!(f, "</ul>")?;

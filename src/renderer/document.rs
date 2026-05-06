@@ -2,8 +2,9 @@
 
 use super::{
     Error, Result, State, StripMarker,
-    emitters::{GrafEmitter, ListEmitter, ListKind, TextStyleEmitter},
+    emitters::{GrafEmitter, ListEmitter, ListKind, OutlineEmitter, TextStyleEmitter},
     extension_tags,
+    globals::Outline,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags::{self, PHRASING_TAGS},
@@ -36,6 +37,8 @@ pub(crate) struct Document {
     in_include: Vec<InclusionMode>,
     /// The last visible character rendered to the output.
     last_char: char,
+    /// The heading outline emitter.
+    outline_emitter: OutlineEmitter,
     /// The stack of open HTML elements.
     stack: Vec<Node>,
     /// The template processing stack used to identify which template was the
@@ -62,6 +65,7 @@ impl Document {
             html: <_>::default(),
             in_include: <_>::default(),
             last_char: '\n',
+            outline_emitter: <_>::default(),
             stack: <_>::default(),
             tag_blocks: <_>::default(),
             text_style_emitter: <_>::default(),
@@ -70,7 +74,7 @@ impl Document {
     }
 
     /// Ends an HTML element with the given tag name.
-    fn end_tag(&mut self, name: &str) -> Result<(), Error> {
+    fn end_tag(&mut self, state: &mut State<'_, '_, '_>, name: &str) -> Result {
         // TODO: Avoid ownership
         let name = Cow::Owned(name.to_ascii_lowercase());
 
@@ -82,7 +86,12 @@ impl Document {
 
         if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(&name)) {
             for e in self.stack.drain(pair..).rev() {
-                e.close(&mut self.html, &mut self.graf_emitter)?;
+                e.close(
+                    &mut self.html,
+                    &mut self.graf_emitter,
+                    &mut self.outline_emitter,
+                    &mut state.globals.outline,
+                )?;
             }
         } else {
             log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
@@ -93,11 +102,16 @@ impl Document {
     }
 
     /// Finalises the document and returns the resulting output.
-    pub(crate) fn finish(mut self) -> Result<String> {
+    pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> Result<String> {
         self.text_style_emitter.finish(&mut self.html)?;
 
         for rest in self.stack.drain(..).rev() {
-            rest.close(&mut self.html, &mut self.graf_emitter)?;
+            rest.close(
+                &mut self.html,
+                &mut self.graf_emitter,
+                &mut self.outline_emitter,
+                &mut state.globals.outline,
+            )?;
         }
 
         self.graf_emitter.finish(&mut self.html);
@@ -163,8 +177,9 @@ impl Document {
         name: &str,
         value: &[Spanned<Token>],
     ) -> Result {
+        let name = name.to_ascii_lowercase();
         // TODO: This probably should all be unstripping?
-        let value = match name.to_ascii_lowercase().as_str() {
+        let value = match name.as_str() {
             "class" => {
                 // TODO: Look for the mw-collapse classes and dump appropriate
                 // form hooks into the HTML to allow arbitrary collapsing
@@ -223,10 +238,13 @@ impl Document {
         };
 
         write!(self.html, r#"=""#)?;
+        let before = self.html.len();
         match value {
             Either::Left(value) => self.text_run(&value)?,
             Either::Right(value) => self.adopt_tokens(state, sp, value)?,
         }
+        self.outline_emitter
+            .attribute(&name, &self.html[before..], before..self.html.len())?;
         self.html.write_char('"')?;
 
         Ok(())
@@ -284,7 +302,12 @@ impl Document {
                 // cell requires extra recovery gymnastics to avoid walking too
                 // far up the stack. 'Template:Football squad start' does this.
                 let in_caption = matches!(e, Node::Tag(ref name) if name == "caption");
-                e.close(&mut self.html, &mut self.graf_emitter)?;
+                e.close(
+                    &mut self.html,
+                    &mut self.graf_emitter,
+                    &mut self.outline_emitter,
+                    &mut state.globals.outline,
+                )?;
                 if in_caption && matches!(&*name, "td" | "th") {
                     self.start_tag(state, sp, "tr", &[])?;
                 }
@@ -293,6 +316,7 @@ impl Document {
 
         self.graf_emitter.before_start_tag(&self.html, &name);
         write!(self.html, "<{name}")?;
+        self.outline_emitter.start_tag(&name, self.html.len())?;
         if !attributes.is_empty() {
             self.stack.push(Node::Attribute);
             for attribute in attributes {
@@ -332,9 +356,12 @@ impl Document {
 
         self.html.write_char('>')?;
         self.graf_emitter.after_start_tag(&self.html, &name);
+        self.outline_emitter.after_start_tag(&name);
         if VOID_TAGS.contains(&name) {
             self.graf_emitter.before_end_tag(&self.html, &name);
             self.graf_emitter.after_end_tag(&self.html, &name);
+            self.outline_emitter
+                .end_tag(&mut state.globals.outline, &mut self.html, &name)?;
             if name == "br" || name == "hr" {
                 self.last_char = '\n';
             }
@@ -364,7 +391,9 @@ impl Document {
                 .rev()
                 .any(|e| matches!(e, Node::Tag(tag) if is_code(tag)));
 
+        let before = self.html.len();
         let prev = text_run(&mut self.html, self.last_char, text, in_code, true)?;
+        self.outline_emitter.text_run(text, &self.html[before..]);
         if !in_attr {
             self.last_char = prev;
         }
@@ -373,7 +402,7 @@ impl Document {
     }
 
     /// Writes the contents of a strip marker to the output.
-    fn write_strip_marker(&mut self, tag: &StripMarker) -> Result {
+    fn write_strip_marker(&mut self, outline: &mut Outline, tag: &StripMarker) -> Result {
         match tag {
             StripMarker::NoWiki(text) => {
                 self.graf_emitter.force_content();
@@ -402,7 +431,12 @@ impl Document {
                 // since anything that cannot parent a `<div>` cannot parent any
                 // other block-level element
                 while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
-                    e.close(&mut self.html, &mut self.graf_emitter)?;
+                    e.close(
+                        &mut self.html,
+                        &mut self.graf_emitter,
+                        &mut self.outline_emitter,
+                        outline,
+                    )?;
                 }
                 self.graf_emitter.block_start(&self.html);
                 self.html += text;
@@ -499,7 +533,7 @@ impl Surrogate<Error> for Document {
 
     fn adopt_end_tag(
         &mut self,
-        _state: &mut State<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
         name: &str,
@@ -514,7 +548,7 @@ impl Surrogate<Error> for Document {
             return self.text_run(&sp.source[span.into_range()]);
         }
 
-        self.end_tag(name)?;
+        self.end_tag(state, name)?;
         Ok(())
     }
 
@@ -561,7 +595,7 @@ impl Surrogate<Error> for Document {
                 if self.fragment {
                     state.strip_markers.push(&mut self.html, &name, marker);
                 } else {
-                    self.write_strip_marker(&marker)?;
+                    self.write_strip_marker(&mut state.globals.outline, &marker)?;
                 }
             }
             Some(Either::Right(_)) => todo!("this should never happen?"),
@@ -597,27 +631,13 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        span: Span,
+        _span: Span,
         level: HeadingLevel,
         content: &[Spanned<Token>],
     ) -> Result {
-        let id = state
-            .globals
-            .outline
-            .push(&sp.source, span, level, content)?;
-
-        tags::render_runtime(self, state, sp, |_, source| {
-            token!(
-                source,
-                Token::StartTag {
-                    name: token!(source, Span { level.tag_name() }),
-                    attributes: token![source, [ "id" => id ]].into(),
-                    self_closing: false,
-                }
-            )
-        })?;
+        self.start_tag(state, sp, level.tag_name(), &[])?;
         Trim::new(self, sp, TrimMode::Normal).adopt_tokens(state, sp, content)?;
-        self.end_tag(level.tag_name())
+        self.end_tag(state, level.tag_name())
     }
 
     fn adopt_horizontal_rule(
@@ -679,7 +699,12 @@ impl Surrogate<Error> for Document {
             // anything that cannot parent an `<ol>` cannot parent any of the
             // other list kinds either
             while let Some(e) = self.stack.pop_if(|e| !e.can_parent("ol")) {
-                e.close(&mut self.html, &mut self.graf_emitter)?;
+                e.close(
+                    &mut self.html,
+                    &mut self.graf_emitter,
+                    &mut self.outline_emitter,
+                    &mut state.globals.outline,
+                )?;
             }
 
             self.graf_emitter.start_list(&mut self.html);
@@ -699,7 +724,12 @@ impl Surrogate<Error> for Document {
         // elements here will corrupt the tree.
         if self.stack.len() > list_index && matches!(self.stack[list_index], Node::List(_)) {
             for e in self.stack.drain(list_index + 1..).rev() {
-                e.close(&mut self.html, &mut self.graf_emitter)?;
+                e.close(
+                    &mut self.html,
+                    &mut self.graf_emitter,
+                    &mut self.outline_emitter,
+                    &mut state.globals.outline,
+                )?;
             }
 
             // The parser removes the newlines between list items in order to
@@ -786,7 +816,7 @@ impl Surrogate<Error> for Document {
             &attributes,
         )?;
         tags::render_wikilink(self, state, sp, target, content, trail.map(|v| &**v))?;
-        self.end_tag("p")?;
+        self.end_tag(state, "p")?;
         Ok(())
     }
 
@@ -834,7 +864,7 @@ impl Surrogate<Error> for Document {
 
         self.start_tag(state, sp, name, attributes)?;
         if self_closing {
-            self.end_tag(name)?;
+            self.end_tag(state, name)?;
         }
         Ok(())
     }
@@ -850,7 +880,7 @@ impl Surrogate<Error> for Document {
             return Err(Error::StripMarker(marker.to_owned()));
         };
 
-        self.write_strip_marker(tag)?;
+        self.write_strip_marker(&mut state.globals.outline, tag)?;
 
         Ok(())
     }
@@ -913,7 +943,7 @@ impl Surrogate<Error> for Document {
 
     fn adopt_table_end(
         &mut self,
-        _state: &mut State<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
@@ -922,7 +952,7 @@ impl Surrogate<Error> for Document {
         } else {
             self.wikitext_table_count -= 1;
             if self.in_table() {
-                self.end_tag("table")
+                self.end_tag(state, "table")
             } else {
                 Ok(())
             }
@@ -1052,13 +1082,20 @@ impl Node {
     }
 
     /// Writes the terminator for this element to the given output.
-    fn close(self, out: &mut String, graf_emitter: &mut GrafEmitter) -> fmt::Result {
+    fn close(
+        self,
+        out: &mut String,
+        graf_emitter: &mut GrafEmitter,
+        outline_emitter: &mut OutlineEmitter,
+        outline: &mut Outline,
+    ) -> fmt::Result {
         match self {
             Node::Attribute => {}
             Node::Tag(name) => {
                 debug_assert!(!VOID_TAGS.contains(&name));
                 graf_emitter.before_end_tag(out, &name);
                 write!(out, "</{name}>")?;
+                outline_emitter.end_tag(outline, out, &name)?;
                 graf_emitter.after_end_tag(out, &name);
             }
             Node::List(mut list) => {

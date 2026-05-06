@@ -468,21 +468,44 @@ pub(crate) enum Token {
 #[error("{0} is not a valid HTML heading level")]
 pub(crate) struct HeadingRangeError(u8);
 
+/// A conversion error for non-heading HTML tags.
+#[derive(Debug, thiserror::Error)]
+#[error("not a valid HTML heading tag")]
+pub(crate) struct ParseHeadingError;
+
 /// A heading level.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct HeadingLevel(u8);
 
 impl HeadingLevel {
+    /// The list of HTML heading tags.
+    pub const TAGS: [&str; 6] = ["h1", "h2", "h3", "h4", "h5", "h6"];
+
     /// Returns the HTML tag name corresponding to this heading level.
     pub fn tag_name(self) -> &'static str {
-        const TAGS: [&str; 6] = ["h1", "h2", "h3", "h4", "h5", "h6"];
-        TAGS[usize::from(self.0) - 1]
+        Self::TAGS[usize::from(self.0) - 1]
     }
 }
 
 impl From<HeadingLevel> for u8 {
     fn from(value: HeadingLevel) -> Self {
         value.0
+    }
+}
+
+impl core::str::FromStr for HeadingLevel {
+    type Err = ParseHeadingError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "Self::TAGS is only 6 elements"
+        )]
+        Self::TAGS
+            .iter()
+            .position(|t| *t == s)
+            .map(|index| HeadingLevel(index as u8 + 1))
+            .ok_or(ParseHeadingError)
     }
 }
 
