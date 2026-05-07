@@ -77,6 +77,11 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Returns the parser configuration.
+    pub fn config(&self) -> &Configuration {
+        self.config
+    }
+
     /// Parses Wikitext from `source` into a token tree.
     pub fn parse(&self, source: &str, including: bool) -> Result<Output, Error> {
         let globals = Globals {

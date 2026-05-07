@@ -139,7 +139,11 @@ pub(super) fn media_options<'s>(
                 }) {
                     Some(LinkKind::External(value))
                 } else {
-                    Some(LinkKind::Internal(Title::new(&value, None)))
+                    Some(LinkKind::Internal(Title::new(
+                        state.statics.db.config(),
+                        &value,
+                        None,
+                    )))
                 };
             } else if name == "alt" {
                 // “If there is a space character between alt and the equals
@@ -234,7 +238,7 @@ pub(super) fn media_options<'s>(
     if matches!(options.format.as_deref(), Some("thumb" | "frame")) {
         options.align.get_or_insert("right".into());
     } else if let Some(caption) = options.caption.take() {
-        let mut extractor = TextContent::new(&sp.source, String::new());
+        let mut extractor = TextContent::new(state.statics.db.config(), &sp.source, String::new());
         extractor.visit_tokens(caption)?;
         let mut title = String::new();
         text_run(

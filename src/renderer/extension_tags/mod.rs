@@ -265,11 +265,15 @@ fn gallery(
         };
 
         let target = percent_encoding::percent_decode_str(target).decode_utf8_lossy();
-        if !Title::is_valid(&target) {
+        if !Title::is_valid(state.statics.db.config(), &target) {
             continue;
         }
 
-        let title = Title::new(&target, Namespace::find_by_id(Namespace::FILE));
+        let title = Title::new(
+            state.statics.db.config(),
+            &target,
+            Namespace::find_by_id(state.statics.db.config(), Namespace::FILE),
+        );
 
         let args = preprocess_frame(state, arguments.sp, rest)?;
         let sp = arguments.sp.clone_with_source(FileMap::new(&args));
@@ -325,7 +329,7 @@ fn indicator(
             };
 
             let target = match sp.eval(state, target) {
-                Ok(target) => Title::new(&target, None),
+                Ok(target) => Title::new(state.statics.db.config(), &target, None),
                 Err(err) => return Some(Err(err)),
             };
 
@@ -989,9 +993,14 @@ fn timeline(
                 TextSpan::ExternalLink { target, text } => {
                     (text, Some(LinkKind::External((*target).into())))
                 }
-                TextSpan::Link { target, text } => {
-                    (text, Some(LinkKind::Internal(Title::new(target, None))))
-                }
+                TextSpan::Link { target, text } => (
+                    text,
+                    Some(LinkKind::Internal(Title::new(
+                        state.statics.db.config(),
+                        target,
+                        None,
+                    ))),
+                ),
                 TextSpan::Text(text) => (
                     text,
                     request.url.map(|target| LinkKind::External(target.into())),
@@ -1030,7 +1039,11 @@ impl Styles {
             return Ok(());
         }
 
-        let title = Title::new(src, Namespace::find_by_id(Namespace::TEMPLATE));
+        let title = Title::new(
+            db.config(),
+            src,
+            Namespace::find_by_id(db.config(), Namespace::TEMPLATE),
+        );
         if let Ok(css) = db.get(&title) {
             if let Some(wrapper) = wrapper {
                 writeln!(self.text, "{wrapper} {{ {} }}", &css.body)?;

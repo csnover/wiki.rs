@@ -10,6 +10,7 @@
 use super::prelude::*;
 use crate::{
     common::{format_date_mediawiki, format_number, parse_formatted_number},
+    db::Database,
     php::{DateTime, strval},
 };
 use core::cell::Cell;
@@ -368,7 +369,7 @@ impl MwInterface for LanguageLibrary {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(Table::new(&ctx))
     }
 }

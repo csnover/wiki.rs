@@ -6,6 +6,7 @@ use super::{
     surrogate::{self, Surrogate},
 };
 use crate::{
+    db::IDatabase as _,
     title::Title,
     wikitext::{
         AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
@@ -350,7 +351,8 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         trail: Option<Spanned<&str>>,
     ) -> Result {
         if self.mode == TrimMode::Category
-            && Title::new(&sp.eval(state, target)?, None).is_local_category()
+            && Title::new(state.statics.db.config(), &sp.eval(state, target)?, None)
+                .is_local_category()
         {
             // The original regular expression was `\n\s*` so any whitespace
             // that appears before the first newline is supposed to be emitted

@@ -5,6 +5,7 @@
 //! try to use them.
 
 use super::prelude::*;
+use crate::db::Database;
 
 /// A fake extension which stubs various `mw` extension modules.
 #[derive(gc_arena::Collect, Default)]
@@ -158,7 +159,7 @@ impl MwInterface for WikiRsStubs {
         Table::new(&ctx)
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(Table::new(&ctx))
     }
 }

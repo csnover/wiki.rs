@@ -10,6 +10,7 @@
 use super::{TitleLibrary, prelude::*};
 use crate::{
     common::anchor_encode,
+    db::Database,
     wikitext::{Parser, helpers::TextContent, visit::Visitor as _},
 };
 use core::cell::{Ref, RefCell};
@@ -36,7 +37,7 @@ impl<'config, 'db: 'static> UriLibrary<'config> {
             .map_err(|_| "missing parser".into_value(ctx))?;
         let s = {
             let root = parser.parse_no_expansion(s)?;
-            let mut extractor = TextContent::new(s, String::new());
+            let mut extractor = TextContent::new(parser.config(), s, String::new());
             let _ = extractor.visit_output(&root);
             extractor.finish()
         };
@@ -115,7 +116,7 @@ impl<'config: 'static> MwInterface for UriLibrary<'config> {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {
             using ctx;
 

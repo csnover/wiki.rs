@@ -137,7 +137,7 @@ pub(crate) async fn article(
         title: &'a str,
     }
 
-    let title = Title::new(&name, None);
+    let title = Title::new(state.database.config(), &name, None);
     let article = state.database.get(&title)?;
 
     let redirect = redirect.as_deref() != Some("no");
@@ -145,7 +145,7 @@ pub(crate) async fn article(
         // Of course, the recorded redirect target is missing any fragment-part
         // so it is necessary to parse the article to actually get that.
         let target = call_renderer(&state, renderer::Command::Redirect { article })?;
-        let target = Title::new(&target.content, None);
+        let target = Title::new(state.database.config(), &target.content, None);
         let query = format!("from={}", title.partial_url());
         return make_url(None, &state.base_uri, &target, Some(&query), true)
             .map(|s| Redirect::permanent(&s))
@@ -472,7 +472,7 @@ pub(crate) async fn search(
     if page == 0
         && let Some(result) = single_result(&results)
     {
-        let target = Title::new(result, None);
+        let target = Title::new(state.database.config(), result, None);
         return make_url(None, &state.base_uri, &target, None, true)
             .map(|s| Redirect::permanent(&s))
             .map(IntoResponse::into_response)
@@ -534,7 +534,7 @@ pub(crate) async fn source(
     Path(name): Path<String>,
     Query(SourceQuery { mode, include }): Query<SourceQuery>,
 ) -> Result<impl IntoResponse, Error> {
-    let title = Title::new(&name, None);
+    let title = Title::new(state.database.config(), &name, None);
     let article = state.database.get(&title).map_err(Error::Database)?;
 
     match mode {

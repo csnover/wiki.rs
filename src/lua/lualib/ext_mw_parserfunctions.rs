@@ -8,7 +8,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use crate::expr::do_expression;
+use crate::{db::Database, expr::do_expression};
 
 /// MediaWiki `ParserFunctions` extension.
 #[derive(gc_arena::Collect, Default)]
@@ -34,7 +34,7 @@ impl MwInterface for LuaLibrary {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(Table::new(&ctx))
     }
 }

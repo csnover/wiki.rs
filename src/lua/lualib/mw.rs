@@ -58,7 +58,7 @@ impl<'db: 'static> MwInterface for LuaEngine<'db> {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {
             using ctx;
 
@@ -118,7 +118,7 @@ impl<'db> LuaEngine<'db> {
         // log::trace!("mw.expandTemplate({frame_id:?}, {title:?}, {args:?})");
 
         let title_str = title.to_str()?;
-        if !Title::is_valid(title_str) {
+        if !Title::is_valid(self.db().config(), title_str) {
             return Err(anyhow::anyhow!(r#"expandTemplate: invalid title "{title_str}""#).into());
         }
 
@@ -267,9 +267,14 @@ impl<'db> LuaEngine<'db> {
                 .map_err(Into::into);
         }
 
-        let title = Title::new(name.to_str()?, Namespace::find_by_id(Namespace::MODULE));
+        let db = self.db();
+        let title = Title::new(
+            db.config(),
+            name.to_str()?,
+            Namespace::find_by_id(db.config(), Namespace::MODULE),
+        );
 
-        if let Ok(article) = self.db.get().unwrap().get(&title)
+        if let Ok(article) = db.get(&title)
             && article.model == "Scribunto"
         {
             Closure::load_with_env(
@@ -325,9 +330,10 @@ impl<'db> LuaEngine<'db> {
         ctx: Context<'gc>,
         title: VmString<'gc>,
     ) -> Result<Value<'gc>, VmError<'gc>> {
+        let db = self.db();
         let title = title.to_str()?;
-        let title_obj = Title::new(title, None);
-        let Ok(article) = self.db.get().unwrap().get(&title_obj) else {
+        let title_obj = Title::new(db.config(), title, None);
+        let Ok(article) = db.get(&title_obj) else {
             return Err(anyhow::anyhow!(
                 "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
             ))?;
@@ -359,7 +365,11 @@ impl<'db> LuaEngine<'db> {
 
         let frame = with_sp(frame_id.to_str()?, self.sp.borrow().as_deref(), |sp| {
             let title = if title.to_bool() {
-                Title::new(title.into_string(ctx).unwrap().to_str()?, None)
+                Title::new(
+                    self.db().config(),
+                    title.into_string(ctx).unwrap().to_str()?,
+                    None,
+                )
             } else {
                 sp.name.clone()
             };
@@ -405,6 +415,16 @@ impl<'db> LuaEngine<'db> {
         sp: Option<Pin<&'static StackFrame<'static>>>,
     ) -> Option<Pin<&'static StackFrame<'static>>> {
         core::mem::replace(&mut self.sp.borrow_mut(), sp)
+    }
+
+    /// Returns a clone of the database.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the database is not set.
+    #[inline]
+    fn db(&self) -> Arc<Database<'db>> {
+        self.db.get().unwrap()
     }
 }
 
@@ -514,9 +534,10 @@ fn call_parser_function(
 
     with_sp(&frame_id, Some(sp), |sp| {
         let mut result = String::new();
-        let callee = resolve_callee(args.is_empty(), true, &callee).ok_or_else(|| {
-            anyhow::anyhow!("callParserFunction: function \"{callee}\" was not found")
-        })?;
+        let callee = resolve_callee(state.statics.db.config(), args.is_empty(), true, &callee)
+            .ok_or_else(|| {
+                anyhow::anyhow!("callParserFunction: function \"{callee}\" was not found")
+            })?;
         call_parser_fn(&mut result, state, sp, None, callee, &args)?;
         Ok(state
             .statics
@@ -543,12 +564,17 @@ fn expand_template(
     })?;
 
     with_sp(&frame_id, Some(sp), |sp| {
+        let config = state.statics.db.config();
         let mut result = String::new();
         call_template(
             &mut result,
             state,
             sp,
-            &Title::new(&title, Namespace::find_by_id(Namespace::TEMPLATE)),
+            &Title::new(
+                config,
+                &title,
+                Namespace::find_by_id(config, Namespace::TEMPLATE),
+            ),
             &arguments,
         )?;
         Ok(state

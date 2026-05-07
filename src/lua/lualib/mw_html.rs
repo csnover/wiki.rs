@@ -8,7 +8,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use crate::wikitext::{MARKER_PREFIX, MARKER_SUFFIX};
+use crate::{
+    db::Database,
+    wikitext::{MARKER_PREFIX, MARKER_SUFFIX},
+};
 
 /// The HTML support library.
 #[derive(gc_arena::Collect, Default)]
@@ -23,7 +26,7 @@ impl MwInterface for HtmlLibrary {
         Table::new(&ctx)
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {
             using ctx;
 

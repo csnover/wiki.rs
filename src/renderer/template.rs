@@ -11,11 +11,10 @@ use super::{
 use crate::{
     LoadMode,
     common::{make_url, title_decode},
-    config::CONFIG,
     db::IDatabase as _,
     lua::run_vm,
     title::{Namespace, Title},
-    wikitext::{Argument, FileMap, Span, Spanned, Token},
+    wikitext::{Argument, Configuration, FileMap, Span, Spanned, Token},
 };
 use core::fmt::{self, Write as _};
 use indexmap::IndexSet;
@@ -90,7 +89,11 @@ pub(super) fn call_module(
         return Err(Error::MissingFunctionName);
     };
 
-    let callee = Title::new(&callee, Namespace::find_by_id(Namespace::MODULE));
+    let callee = Title::new(
+        state.statics.db.config(),
+        &callee,
+        Namespace::find_by_id(state.statics.db.config(), Namespace::MODULE),
+    );
 
     let code = match state.statics.db.get(&callee) {
         Ok(code) => resolve_redirects(&state.statics.db, code)?,
@@ -412,7 +415,12 @@ fn split_target<'tt>(
     // eprintln!("{callee_lower} / {first:?} / {rest:?}");
 
     Ok(
-        if let Some(callee) = resolve_callee(arguments.is_empty(), has_colon, &callee_lower) {
+        if let Some(callee) = resolve_callee(
+            state.statics.db.config(),
+            arguments.is_empty(),
+            has_colon,
+            &callee_lower,
+        ) {
             // It is important to actually not pass a zeroth argument if there
             // is not one because this changes behaviour (e.g. `{{VAR}}` gets
             // `VAR`; `{{VAR:}}` calls `VAR` with an empty string)
@@ -437,8 +445,12 @@ fn split_target<'tt>(
             callee += &sp.eval(state, rest)?;
             let callee = sp.name.join(&callee);
             let callee = callee.trim_ascii();
-            if Title::is_valid(callee) {
-                let callee = Title::new(callee, Namespace::find_by_id(Namespace::TEMPLATE));
+            if Title::is_valid(state.statics.db.config(), callee) {
+                let callee = Title::new(
+                    state.statics.db.config(),
+                    callee,
+                    Namespace::find_by_id(state.statics.db.config(), Namespace::TEMPLATE),
+                );
                 let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
                 Target::Template { callee, arguments }
             } else {
@@ -467,7 +479,7 @@ pub(crate) fn call_template(
         return Ok(None);
     };
 
-    let resolved_title = Title::new(&template.title, None);
+    let resolved_title = Title::new(state.statics.db.config(), &template.title, None);
     let resolved_key = resolved_title.key();
     let wrapper_key = TACKY_TEMPLATES.contains(resolved_key).then(|| {
         resolved_key
@@ -490,7 +502,7 @@ pub(crate) fn call_template(
     // The 'Module:Arguments' wrapper argument requires that redirects are
     // using the final name, not a redirect alias
     let sp = sp.chain(
-        Title::new(&template.title, None),
+        Title::new(state.statics.db.config(), &template.title, None),
         FileMap::new(&template.body),
         arguments,
     )?;
@@ -528,11 +540,12 @@ pub(crate) fn call_template(
 /// Technically, aliases may be either case-sensitive *or* case-insensitive,
 /// but in practice this does not seem to really matter so this implementation
 /// just always uses case-insensitive matching.
-pub(crate) fn resolve_callee(
+pub(crate) fn resolve_callee<'a>(
+    config: &Configuration,
     empty_arguments: bool,
     has_colon: bool,
-    callee_lower: &str,
-) -> Option<&str> {
+    callee_lower: &'a str,
+) -> Option<&'a str> {
     // Variable names can technically be arbitrary strings matching the entire
     // name-part, but in practice they are basic sequences optionally ending
     // with ':' (though registering a variable with a colon is deprecated,
@@ -542,7 +555,7 @@ pub(crate) fn resolve_callee(
     // causing template shadowing and a requirement to change it later to
     // support very cursed wikis. MW only checks variables if there are no
     // `{{...|args}}`, so this risk is low.
-    if empty_arguments && let callee @ Some(_) = CONFIG.variables.get(callee_lower).copied() {
+    if empty_arguments && let callee @ Some(_) = config.variables.get(callee_lower).copied() {
         callee
     } else if has_colon {
         // The list of function hooks and aliases from the MediaWiki API does
@@ -553,7 +566,7 @@ pub(crate) fn resolve_callee(
         // order to cause a mismatch it would mean that someone made a namespace
         // alias that matches a parser function name, which is unlikely.
         let callee_lower = callee_lower.strip_prefix('#').unwrap_or(callee_lower);
-        CONFIG.function_hooks.get(callee_lower).copied()
+        config.function_hooks.get(callee_lower).copied()
     } else {
         None
     }
@@ -646,7 +659,8 @@ impl Surrogate<Error> for DbPrefetch {
         ] = target
         {
             let target = title_decode(&sp.source[span.into_range()]);
-            self.links.insert(Title::new(&target, None));
+            self.links
+                .insert(Title::new(state.statics.db.config(), &target, None));
         }
 
         for argument in content {
@@ -777,8 +791,9 @@ impl Surrogate<Error> for DbPrefetch {
                 if callee == "#invoke" {
                     let target = arguments[0].eval(state, sp)?;
                     self.templates.insert(Title::new(
+                        state.statics.db.config(),
                         target.trim_ascii(),
-                        Namespace::find_by_id(Namespace::MODULE),
+                        Namespace::find_by_id(state.statics.db.config(), Namespace::MODULE),
                     ));
                 }
             }

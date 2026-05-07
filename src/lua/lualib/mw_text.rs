@@ -10,6 +10,7 @@
 use super::prelude::*;
 use crate::{
     common::CowExt as _,
+    db::Database,
     lua::{HostCall, UnstripMode},
     php::strtr,
     renderer::{State, StripMarker, StripMarkers},
@@ -150,7 +151,7 @@ impl MwInterface for TextLibrary {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {
             using ctx;
 

@@ -12,20 +12,15 @@ impl Namespace {
     /// The ID of the Scribunto `Module:` namespace.
     pub const MODULE: i32 = 828;
 
-    /// Returns a list of all namespaces for this installation.
-    pub fn all() -> &'static [Self] {
-        CONFIG.namespaces
-    }
-
     /// Finds the namespace with the given numeric ID.
-    pub fn find_by_id(id: i32) -> Option<&'static Self> {
-        CONFIG.namespaces.iter().find(|ns| ns.id == id)
+    pub fn find_by_id(config: &Configuration, id: i32) -> Option<&'static Self> {
+        config.namespaces.iter().find(|ns| ns.id == id)
     }
 
     /// Finds the namespace with the given case-insensitive name. Searches the
     /// name and all aliases.
-    pub fn find_by_name(name: &str) -> Option<&'static Self> {
-        CONFIG.namespaces.iter().find(|ns| {
+    pub fn find_by_name(config: &Configuration, name: &str) -> Option<&'static Self> {
+        config.namespaces.iter().find(|ns| {
             ns.name.eq_ignore_ascii_case(name)
                 || ns
                     .canonical
@@ -38,8 +33,8 @@ impl Namespace {
     }
 
     /// Returns the main namespace.
-    pub fn main() -> &'static Self {
-        Namespace::find_by_id(Namespace::MAIN).unwrap()
+    pub fn main(config: &Configuration) -> &'static Self {
+        Namespace::find_by_id(config, Namespace::MAIN).unwrap()
     }
 }
 

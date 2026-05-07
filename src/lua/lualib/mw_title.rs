@@ -12,6 +12,7 @@ use crate::{
     common::{make_url, url_encode, url_encode_bytes},
     db::{Database, IDatabase as _},
     title::{Namespace, Title},
+    wikitext::Configuration,
 };
 use arc_cell::OptionalArcCell;
 use axum::http::Uri;
@@ -89,11 +90,12 @@ impl<'db> TitleLibrary<'db> {
             return Err("wrong type passed to new_title".into_value(ctx).into());
         };
 
+        let config = self.db.get().unwrap().config();
         let text = text.to_str()?;
         let default_ns = default_ns
-            .map(|ns| namespace_from_value(ctx, ns))
+            .map(|ns| namespace_from_value(config, ctx, ns))
             .transpose()?;
-        let title = Title::new(text, default_ns);
+        let title = Title::new(config, text, default_ns);
 
         make_title_table(ctx, self.current_title(ctx), &title)
     }
@@ -122,9 +124,8 @@ impl<'db> TitleLibrary<'db> {
         full_text: VmString<'_>,
     ) -> Result<Value<'gc>, VmError<'gc>> {
         log::trace!("mw.title.getContent({full_text:?})");
-        let title = Title::new(full_text.to_str()?, None);
-        let db = self.db.get().unwrap();
-        Ok(db.get(&title).map_or(Value::Nil, |article| {
+        let title = Title::new(self.db().config(), full_text.to_str()?, None);
+        Ok(self.db().get(&title).map_or(Value::Nil, |article| {
             Value::String(ctx.intern(article.body.as_bytes()))
         }))
     }
@@ -136,8 +137,9 @@ impl<'db> TitleLibrary<'db> {
         text: VmString<'_>,
     ) -> Result<Table<'gc>, VmError<'gc>> {
         // log::trace!("getExpensiveData({text:?})");
-        let title = Title::new(text.to_str()?, None);
-        let article = self.db.get().unwrap().get(&title).ok();
+        let db = self.db();
+        let title = Title::new(db.config(), text.to_str()?, None);
+        let article = db.get(&title).ok();
         let article = article.as_deref();
 
         Ok(table! {
@@ -159,7 +161,7 @@ impl<'db> TitleLibrary<'db> {
         ctx: Context<'gc>,
         text: VmString<'_>,
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        let title = Title::new(text.to_str()?, None);
+        let title = Title::new(self.db().config(), text.to_str()?, None);
         Ok(
             if [Namespace::FILE, Namespace::MEDIA].contains(&title.namespace().id) {
                 table! {
@@ -224,7 +226,7 @@ impl<'db> TitleLibrary<'db> {
             _ => return Err("invalid 'which' argument".into_value(ctx).into()),
         };
 
-        let title = Title::new(text.to_str()?, None);
+        let title = Title::new(self.db().config(), text.to_str()?, None);
         let url = make_url(proto, &base_uri, &title, query.as_deref(), is_local)?;
         Ok(url.into_value(ctx))
     }
@@ -243,7 +245,7 @@ impl<'db> TitleLibrary<'db> {
     ) -> Result<Value<'gc>, VmError<'gc>> {
         // log::trace!("mw.title.makeTitle({ns:?}, {text:?}, {fragment:?}, {interwiki:?})");
 
-        let ns = namespace_from_value(ctx, ns)?;
+        let ns = namespace_from_value(self.db().config(), ctx, ns)?;
         let text = text.to_str()?;
         let fragment = fragment.map(VmString::to_str).transpose()?;
         let interwiki = interwiki.map(VmString::to_str).transpose()?;
@@ -294,14 +296,11 @@ impl<'db> TitleLibrary<'db> {
         // about mw.title.lua is that if this ever fails it returns false and
         // that breaks basically every module since they blindly expect to get
         // a table.
-        if let Ok(target) = self
-            .db
-            .get()
-            .unwrap()
-            .get(&Title::new(text.to_str()?, None))
+        let db = self.db();
+        if let Ok(target) = db.get(&Title::new(db.config(), text.to_str()?, None))
             && let Some(target) = &target.redirect
         {
-            let title = Title::new(target, None);
+            let title = Title::new(db.config(), target, None);
             make_title_table(ctx, self.current_title(ctx), &title)
         } else {
             Ok(Value::Nil)
@@ -317,6 +316,16 @@ impl<'db> TitleLibrary<'db> {
         let this_title = ctx.fetch(stashed_title.as_ref().unwrap());
         self.this_title.set(stashed_title);
         this_title
+    }
+
+    /// Returns a clone of the database.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the database is not set.
+    #[inline]
+    fn db(&self) -> Arc<Database<'db>> {
+        self.db.get().unwrap()
     }
 }
 
@@ -344,7 +353,7 @@ impl<'db: 'static> MwInterface for TitleLibrary<'db> {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         // The title will get filled in later by `set_title` when a new page is
         // rendered, but the object is needed now because it is held by
         // reference by the lua script
@@ -424,13 +433,14 @@ fn make_title_table<'gc>(
 
 /// Gets a [`Namespace`] from a Lua value.
 fn namespace_from_value<'gc>(
+    config: &Configuration,
     ctx: Context<'gc>,
     ns: Value<'gc>,
 ) -> Result<&'static Namespace, VmError<'gc>> {
     let ns = if let Some(id) = ns.to_integer() {
-        Namespace::find_by_id(id.try_into()?)
+        Namespace::find_by_id(config, id.try_into()?)
     } else if let Some(name) = ns.into_string(ctx) {
-        Namespace::find_by_name(name.to_str()?)
+        Namespace::find_by_name(config, name.to_str()?)
     } else {
         return Err(format!("invalid ns type {}", ns.type_name())
             .into_value(ctx)

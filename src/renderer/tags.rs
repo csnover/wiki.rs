@@ -46,7 +46,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     let target = sp.eval(state, target)?;
     let target = title_decode(&target);
 
-    let title = Title::new(&target, None);
+    let title = Title::new(state.statics.db.config(), &target, None);
     let force_link = target.starts_with(':');
     if !force_link && title.is_local_category() {
         state.globals.categories.insert(title.key().to_owned());

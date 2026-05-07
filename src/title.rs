@@ -2,7 +2,7 @@
 
 use crate::{
     common::{CowExt as _, decode_html, url_encode},
-    config::CONFIG,
+    wikitext::Configuration,
 };
 use core::fmt::Write as _;
 use percent_encoding::PercentEncode;
@@ -131,8 +131,8 @@ impl Namespace {
     /// Returns the talk namespace for this namespace. If this namespace
     /// is a talk namespace, it is the same as this namespace.
     #[inline]
-    pub fn talk(&self) -> Option<&'static Namespace> {
-        Namespace::find_by_id(self.talk_id())
+    pub fn talk(&self, config: &Configuration) -> Option<&'static Namespace> {
+        Namespace::find_by_id(config, self.talk_id())
     }
 
     /// Returns the talk namespace ID for this namespace. If this namespace
@@ -145,8 +145,8 @@ impl Namespace {
     /// Returns the subject namespace for this namespace. If this namespace
     /// is a subject namespace, it is the same as this namespace.
     #[inline]
-    pub fn subject(&self) -> Option<&'static Namespace> {
-        Namespace::find_by_id(self.subject_id())
+    pub fn subject(&self, config: &Configuration) -> Option<&'static Namespace> {
+        Namespace::find_by_id(config, self.subject_id())
     }
 
     /// Returns the subject namespace ID for this namespace. If this namespace
@@ -266,7 +266,7 @@ impl Title {
     /// namespace.
     ///
     /// In MediaWiki, this is like `newFromText`.
-    pub fn new(text: &str, default_ns: Option<&'static Namespace>) -> Self {
+    pub fn new(config: &Configuration, text: &str, default_ns: Option<&'static Namespace>) -> Self {
         let text = normalize(text);
         let text = &*text;
 
@@ -285,10 +285,10 @@ impl Title {
         let (ns, iw) = text.split_once(':').map_or(<_>::default(), |(lhs, rhs)| {
             let lhs = lhs.trim_end();
             let rhs = rhs.trim_start();
-            if let Some(ns) = Namespace::find_by_name(lhs) {
+            if let Some(ns) = Namespace::find_by_name(config, lhs) {
                 text = rhs;
                 (Some(ns), None)
-            } else if CONFIG.interwiki_map.contains_key(&lhs.to_ascii_lowercase()) {
+            } else if config.interwiki_map.contains_key(&lhs.to_ascii_lowercase()) {
                 text = rhs;
                 (None, Some(lhs))
             } else {
@@ -298,14 +298,14 @@ impl Title {
 
         let ns = ns.unwrap_or_else(|| {
             if let Some((lhs, rhs)) = text.split_once(':')
-                && let Some(ns) = Namespace::find_by_name(lhs.trim_end())
+                && let Some(ns) = Namespace::find_by_name(config, lhs.trim_end())
             {
                 text = rhs.trim_start();
                 ns
             } else if empty_start {
-                Namespace::main()
+                Namespace::main(config)
             } else {
-                default_ns.unwrap_or_else(Namespace::main)
+                default_ns.unwrap_or_else(|| Namespace::main(config))
             }
         });
 
@@ -377,7 +377,7 @@ impl Title {
 
     /// Returns true if all the bytes in the given string are valid for use in
     /// a title.
-    pub fn is_valid(maybe_title: &str) -> bool {
+    pub fn is_valid(config: &Configuration, maybe_title: &str) -> bool {
         #[inline]
         fn is_html_entity(bytes: &[u8]) -> bool {
             bytes[0] == b'&'
@@ -399,14 +399,9 @@ impl Title {
                     .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_hexdigit))
         }
 
-        #[inline]
-        fn valid_byte(b: u8) -> bool {
-            CONFIG.valid_title_bytes.contains(b)
-        }
-
         let bytes = maybe_title.as_bytes();
         for pos in 0..maybe_title.len() {
-            if !valid_byte(bytes[pos])
+            if !config.valid_title_bytes.contains(bytes[pos])
                 || is_percent_encoding(&bytes[pos..])
                 || is_html_entity(&bytes[pos..])
             {
@@ -598,10 +593,12 @@ fn trimmable(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::{Database, IDatabase as _};
 
     #[test]
     fn join() {
-        let base = Title::new("Talk:A/b/c", None);
+        let db = Database::new();
+        let base = Title::new(db.config(), "Talk:A/b/c", None);
         assert_eq!(base.join("Absolute"), Cow::Borrowed("Absolute"));
         assert_eq!(base.join("/d"), "Talk:A/b/c/d");
         assert_eq!(base.join("/d#F"), "Talk:A/b/c/d#F");
@@ -615,7 +612,8 @@ mod tests {
 
     #[test]
     fn from_str() {
-        let title = Title::new("Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
+        let db = Database::new();
+        let title = Title::new(db.config(), "Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
         assert_eq!(title.namespace().id, Namespace::TALK);
         assert_eq!(title.base_text(), "Aa/Bb");
         assert_eq!(title.fragment(), "Dd/Ee/Ff");
@@ -630,45 +628,46 @@ mod tests {
 
     #[test]
     fn interwiki() {
-        let title = Title::new("Wikidata:File:A.png", None);
+        let db = Database::new();
+        let title = Title::new(db.config(), "Wikidata:File:A.png", None);
         assert_eq!(title.interwiki(), Some("Wikidata"));
         assert_eq!(title.namespace().id, Namespace::FILE);
         assert_eq!(title.key(), "File:A.png");
 
-        let title = Title::new(":Wikidata:File:A.png", None);
+        let title = Title::new(db.config(), ":Wikidata:File:A.png", None);
         assert_eq!(title.interwiki(), Some("Wikidata"));
         assert_eq!(title.namespace().id, Namespace::FILE);
         assert_eq!(title.key(), "File:A.png");
 
-        let title = Title::new(":File:A.png", None);
+        let title = Title::new(db.config(), ":File:A.png", None);
         assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::FILE);
         assert_eq!(title.key(), "File:A.png");
 
-        let title = Title::new("File:A.png", None);
+        let title = Title::new(db.config(), "File:A.png", None);
         assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::FILE);
         assert_eq!(title.key(), "File:A.png");
 
-        let title = Title::new(":Wikipedia:Wikipedia:Foo", None);
+        let title = Title::new(db.config(), ":Wikipedia:Wikipedia:Foo", None);
         assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::PROJECT);
         assert_eq!(title.key(), "Wikipedia:Wikipedia:Foo");
         assert_eq!(title.text(), "Wikipedia:Foo");
 
-        let title = Title::new("Wikipedia:Wikipedia:Foo", None);
+        let title = Title::new(db.config(), "Wikipedia:Wikipedia:Foo", None);
         assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::PROJECT);
         assert_eq!(title.key(), "Wikipedia:Wikipedia:Foo");
         assert_eq!(title.text(), "Wikipedia:Foo");
 
-        let title = Title::new("Wikipedia:Foo", None);
+        let title = Title::new(db.config(), "Wikipedia:Foo", None);
         assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::PROJECT);
         assert_eq!(title.key(), "Wikipedia:Foo");
         assert_eq!(title.text(), "Foo");
 
-        let title = Title::new(":Wikipedia:Foo", None);
+        let title = Title::new(db.config(), ":Wikipedia:Foo", None);
         assert_eq!(title.interwiki(), None);
         assert_eq!(title.namespace().id, Namespace::PROJECT);
         assert_eq!(title.key(), "Wikipedia:Foo");

@@ -691,7 +691,7 @@ pub fn resolve_redirects(
     for _ in 0..2 {
         if let Some(target) = &article.redirect {
             // log::trace!("Redirection #{} to {target}", attempt + 1);
-            article = db.get(&Title::new(target, None))?;
+            article = db.get(&Title::new(db.config(), target, None))?;
         } else {
             break;
         }

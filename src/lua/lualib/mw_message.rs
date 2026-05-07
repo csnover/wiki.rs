@@ -8,7 +8,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use crate::common::{MESSAGES, format_message, format_raw_message};
+use crate::{
+    common::{MESSAGES, format_message, format_raw_message},
+    db::Database,
+};
 use std::borrow::Cow;
 
 /// The internationalisation support library.
@@ -118,7 +121,7 @@ impl MwInterface for MessageLibrary {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {
             using ctx;
 

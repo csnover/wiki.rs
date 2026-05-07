@@ -8,16 +8,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use crate::title::{Namespace, NamespaceCase};
+use crate::{
+    db::{Database, IDatabase as _},
+    title::{Namespace, NamespaceCase},
+    wikitext::Configuration,
+};
+use core::cell::Cell;
 use regex::Regex;
 use std::sync::LazyLock;
 
 /// The site information support library.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub(super) struct SiteLibrary;
+pub(crate) struct SiteLibrary<'db> {
+    /// The database configuration.
+    config: Cell<Option<&'db Configuration>>,
+}
 
-impl SiteLibrary {
+impl<'db: 'static> SiteLibrary<'db> {
     /// Returns the ID of the namespace with the given name, if one exists.
     fn get_ns_index<'gc>(
         &self,
@@ -27,7 +35,11 @@ impl SiteLibrary {
         static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\s_]+").unwrap());
         let name = RE.replace_all(name.to_str()?, "_");
         let name = name.trim_matches('_');
-        Ok(Namespace::all()
+        Ok(self
+            .config
+            .get()
+            .unwrap()
+            .namespaces
             .iter()
             .find_map(|ns| {
                 ns.name
@@ -107,11 +119,16 @@ impl SiteLibrary {
         // log::warn!("stub: usersInGroup({group:?})");
         Ok(0)
     }
+
+    /// Sets the article database configuration.
+    pub fn set_config(&self, config: &'db Configuration) {
+        self.config.set(Some(config));
+    }
 }
 
-impl MwInterface for SiteLibrary {
-    const NAME: &str = "mw.site";
-    const CODE: &[u8] = include_bytes!("./modules/mw.site.lua");
+impl<'db: 'static> MwInterface for SiteLibrary<'db> {
+    const NAME: &'static str = "mw.site";
+    const CODE: &'static [u8] = include_bytes!("./modules/mw.site.lua");
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {
@@ -125,8 +142,8 @@ impl MwInterface for SiteLibrary {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
-        let namespaces = make_namespaces(ctx)?;
+    fn setup<'gc>(&self, db: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+        let namespaces = make_namespaces(db.config(), ctx)?;
 
         // TODO: Correct path information should come from base_uri
         Ok(table! {
@@ -136,12 +153,12 @@ impl MwInterface for SiteLibrary {
             namespaces = namespaces,
             scriptPath = "/",
             server = "",
-            siteName = "wiki.rs",
+            siteName = ctx.intern(db.name().as_bytes()),
             stats = table! {
                 using ctx;
 
-                pages = 1,
-                articles = 1,
+                pages = i64::try_from(db.len())?,
+                articles = i64::try_from(db.len())?,
                 files = 0,
                 edits = 1,
                 users = 1,
@@ -154,9 +171,12 @@ impl MwInterface for SiteLibrary {
 }
 
 /// Builds the table of namespaces to be exposed to Lua.
-fn make_namespaces(ctx: Context<'_>) -> Result<Table<'_>, RuntimeError> {
+fn make_namespaces<'gc>(
+    config: &Configuration,
+    ctx: Context<'gc>,
+) -> Result<Table<'gc>, RuntimeError> {
     let namespaces = Table::new(&ctx);
-    for ns in Namespace::all() {
+    for ns in config.namespaces {
         let aliases = Table::new(&ctx);
         for (index, alias) in ns.aliases.iter().enumerate() {
             aliases.set(ctx, i32::try_from(index)?, *alias)?;

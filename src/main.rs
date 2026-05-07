@@ -394,7 +394,7 @@ async fn run() -> Result<(), Box<dyn core::error::Error>> {
     // actually build the configuration from the dump, but it does at least
     // allow a sanity check of what namespace information is recorded.
     for (id, namespace) in database.namespaces() {
-        if let Some(other) = Namespace::find_by_id(*id) {
+        if let Some(other) = Namespace::find_by_id(database.config(), *id) {
             if other.case != namespace.case {
                 log::warn!("Configuration mismatch: namespace {id} letter case does not match");
             }

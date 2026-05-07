@@ -1,7 +1,7 @@
 //! Wikitext parser helpers.
 
 use super::{
-    Argument, InclusionMode, Span, Spanned, Token,
+    Argument, Configuration, InclusionMode, Span, Spanned, Token,
     visit::{Visitor, visit_link},
 };
 use crate::title::Title;
@@ -12,6 +12,8 @@ pub(crate) struct TextContent<'tt, W>
 where
     W: fmt::Write,
 {
+    /// The parser configuration.
+    config: &'tt Configuration,
     /// The accumulated text.
     content: W,
     /// The token tree source.
@@ -23,8 +25,12 @@ where
     W: fmt::Write,
 {
     /// Creates a new text content extractor with the given source and output.
-    pub fn new(source: &'tt str, content: W) -> Self {
-        Self { content, source }
+    pub fn new(config: &'tt Configuration, source: &'tt str, content: W) -> Self {
+        Self {
+            config,
+            content,
+            source,
+        }
     }
 
     /// Returns the text content, consuming the extractor.
@@ -54,14 +60,10 @@ where
         trail: Option<&'tt str>,
     ) -> Result<(), fmt::Error> {
         // TODO: Actually evaluate the target (which requires making this helper
-        // capable of evaluating wikitext, which is annoying, but then again,
-        // Title is going to need to access the site configuration from memory
-        // eventually instead of getting it from static memory, which is going
-        // to mean this visitor needs access to the runtime state globals
-        // anyway).
+        // capable of evaluating wikitext, which is annoying).
         #[rustfmt::skip]
         if let [Spanned { span, node: Token::Text }] = target {
-            let title = Title::new(&self.source[span.into_range()], None);
+            let title = Title::new(self.config, &self.source[span.into_range()], None);
             if title.is_local_category() {
                 return Ok(());
             }

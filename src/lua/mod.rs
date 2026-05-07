@@ -1,7 +1,7 @@
 //! Lua interpreter support.
 
 use crate::{
-    db::{Article, Database},
+    db::{Article, Database, IDatabase as _},
     php::DateTime,
     renderer::{Kv, StackFrame, State},
     title::Title,
@@ -10,7 +10,7 @@ use crate::{
 use axum::http::Uri;
 use core::{ops::ControlFlow, pin::Pin};
 use gc_arena::Rootable;
-use lualib::{LanguageLibrary, LuaEngine, TitleLibrary, UriLibrary};
+use lualib::{LanguageLibrary, LuaEngine, SiteLibrary, TitleLibrary, UriLibrary};
 use piccolo::{
     Executor, ExecutorMode, ExternError, Fuel, Function, Lua, RuntimeError, StashedClosure,
     StashedString, StashedTable, TypeError, thread::BadExecutorMode,
@@ -111,8 +111,6 @@ pub(super) fn new_vm_core() -> Result<Lua, ExternError> {
         Ok(())
     })?;
 
-    lualib::init(&mut vm)?;
-
     Ok(vm)
 }
 
@@ -123,6 +121,7 @@ pub(super) fn new_vm<'db, 'config>(
     parser: &Parser<'config>,
 ) -> Result<Lua, ExternError> {
     let mut vm = new_vm_core()?;
+    lualib::init(&mut vm, db)?;
 
     // SAFETY: The lifetime of the database and parser are always at least as
     // long as the lifetime of the VM.
@@ -136,6 +135,9 @@ pub(super) fn new_vm<'db, 'config>(
     vm.enter(|ctx| {
         let mw = ctx.singleton::<Rootable![LuaEngine<'static>]>();
         mw.set_db(db);
+
+        let mw_site = ctx.singleton::<Rootable![SiteLibrary<'static>]>();
+        mw_site.set_config(db.config());
 
         let mw_title = ctx.singleton::<Rootable![TitleLibrary<'static>]>();
         mw_title.set_shared(base_uri, db);

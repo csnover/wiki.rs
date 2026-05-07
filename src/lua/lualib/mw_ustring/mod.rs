@@ -8,8 +8,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use crate::lua::stdlib::{
-    calculate_start_count, find_lua, gmatch_next, gsub::gsub_lua, match_lua, sub_lua,
+use crate::{
+    db::Database,
+    lua::stdlib::{
+        calculate_start_count, find_lua, gmatch_next, gsub::gsub_lua, match_lua, sub_lua,
+    },
 };
 use core::cell::Cell;
 use piccolo::{Stack, UserData};
@@ -350,7 +353,7 @@ impl MwInterface for UstringLibrary {
         clippy::cast_possible_wrap,
         reason = "the value is a known in-range const"
     )]
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {
             using ctx;
 

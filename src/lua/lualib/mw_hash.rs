@@ -8,6 +8,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
+use crate::db::Database;
 
 /// The cryptographic hash support library.
 #[derive(gc_arena::Collect, Default)]
@@ -34,7 +35,7 @@ impl MwInterface for HashLibrary {
         }
     }
 
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError> {
         Ok(Table::new(&ctx))
     }
 }

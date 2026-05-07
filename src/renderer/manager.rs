@@ -9,8 +9,6 @@ use super::{
     surrogate::Surrogate as _,
     trim::{Trim, TrimMode},
 };
-#[cfg(test)]
-use crate::wikitext::Configuration;
 use crate::{
     Limits, LoadMode,
     db::{Article, Database, IDatabase as _},
@@ -196,7 +194,7 @@ fn render_article(
     };
 
     let sp = StackFrame::new(
-        Title::new(&article.title, None),
+        Title::new(statics.db.config(), &article.title, None),
         FileMap::new(&article.body),
     );
 
@@ -221,10 +219,17 @@ fn render_string(
     })?;
     let kvs = kvs.iter().map(super::Kv::Argument).collect::<Vec<_>>();
 
-    let mut sp = StackFrame::new(Title::new(page_name, None), FileMap::new(source));
+    let mut sp = StackFrame::new(
+        Title::new(statics.db.config(), page_name, None),
+        FileMap::new(source),
+    );
     let sp = if let Some(args) = args {
         let source = core::mem::replace(&mut sp.source, FileMap::new(args));
-        sp.chain(Title::new("(include-eval)", None), source, &kvs)?
+        sp.chain(
+            Title::new(statics.db.config(), "(include-eval)", None),
+            source,
+            &kvs,
+        )?
     } else {
         sp
     };
@@ -264,7 +269,6 @@ fn render_string(
 /// Main renderer entrypoint for wikitext tests.
 #[cfg(test)]
 pub(crate) fn render_test(
-    config: &'static Configuration,
     db: &Arc<Database<'_>>,
     page_name: &str,
     source: &str,
@@ -273,7 +277,7 @@ pub(crate) fn render_test(
     let limits = Limits::default();
     let template_cache = make_template_cache(limits.template_cache);
     let base_time = DateTime::UNIX_EPOCH;
-    let parser = Parser::new(config);
+    let parser = Parser::new(db.config());
     let vm = new_vm(&base_uri, db, &parser).unwrap();
     let mut statics = Statics {
         base_time,
@@ -286,7 +290,10 @@ pub(crate) fn render_test(
         vm_cache: LruMap::new(schnellru::UnlimitedCompact),
     };
 
-    let sp = StackFrame::new(Title::new(page_name, None), FileMap::new(source));
+    let sp = StackFrame::new(
+        Title::new(db.config(), page_name, None),
+        FileMap::new(source),
+    );
     render(&mut statics, LoadMode::Module, &sp)
 }
 

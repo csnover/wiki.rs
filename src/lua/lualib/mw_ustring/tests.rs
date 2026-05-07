@@ -4,7 +4,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-use crate::lua::new_vm_core;
+use crate::lua::{lualib, new_vm_core};
 use piccolo::{Closure, Executor, ExternError, io};
 use std::{
     fs::{File, read_dir},
@@ -14,7 +14,9 @@ use std::{
 const BASE_DIR: &str = "./src/lua/lualib/mw_ustring/tests";
 
 fn run_lua_code(name: &str, code: &[u8]) -> Result<(), ExternError> {
+    let db = crate::db::Database::new();
     let mut lua = new_vm_core()?;
+    lualib::init(&mut lua, &db)?;
 
     let exec = lua.try_enter(|ctx| {
         piccolo::stdlib::load_io(ctx);

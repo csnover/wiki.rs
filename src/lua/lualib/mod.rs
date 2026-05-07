@@ -6,9 +6,11 @@
     reason = "implementing an interface invisible to clippy"
 )]
 
+use crate::db::Database;
 use gc_arena::{Collect, Rootable};
 pub(super) use mw::{LuaEngine, run_host_call};
 pub(super) use mw_language::LanguageLibrary;
+pub(super) use mw_site::SiteLibrary;
 pub(super) use mw_title::TitleLibrary;
 pub(super) use mw_uri::UriLibrary;
 use piccolo::{Executor, Function, Lua, Stack};
@@ -46,11 +48,11 @@ trait MwInterface: Collect + Default + Sized + 'static {
     fn register(ctx: Context<'_>) -> Table<'_>;
 
     /// Returns the options for the correpsonding Lua `setupInterface` function.
-    fn setup<'gc>(&self, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError>;
+    fn setup<'gc>(&self, _: &Database<'_>, ctx: Context<'gc>) -> Result<Table<'gc>, RuntimeError>;
 }
 
 /// Initialises a single interface.
-fn init_interface<T: MwInterface>(vm: &mut Lua) -> Result<(), RuntimeError> {
+fn init_interface<T: MwInterface>(vm: &mut Lua, db: &Database<'_>) -> Result<(), RuntimeError> {
     log::debug!("Initialising lua module {}", T::NAME);
 
     let executor = vm.try_enter(|ctx| {
@@ -69,7 +71,7 @@ fn init_interface<T: MwInterface>(vm: &mut Lua) -> Result<(), RuntimeError> {
         let interface = T::register(ctx);
         ctx.set_global("mw_interface", interface);
 
-        let options = instance.setup(ctx)?;
+        let options = instance.setup(db, ctx)?;
         Ok(ctx.stash(Executor::start(ctx, setup, (options,))))
     })?;
 
@@ -80,13 +82,13 @@ fn init_interface<T: MwInterface>(vm: &mut Lua) -> Result<(), RuntimeError> {
 
 /// Shorthand for running [`init_interface`] on a list of modules.
 macro_rules! init_libraries {
-    (using $vm:ident; $($ty:ty),* $(,)?) => {
-        $(init_interface::<$ty>($vm)?;)*
+    (using $vm:ident, $db:ident; $($ty:ty),* $(,)?) => {
+        $(init_interface::<$ty>($vm, $db)?;)*
     }
 }
 
 /// Initialises all the interfaces required for Wikipedia modules to work.
-pub(super) fn init(vm: &mut Lua) -> Result<(), RuntimeError> {
+pub(super) fn init(vm: &mut Lua, db: &Database<'_>) -> Result<(), RuntimeError> {
     const MW_INIT: &[u8] = include_bytes!("./modules/mwInit.lua");
 
     log::debug!("Loading mwInit");
@@ -99,10 +101,10 @@ pub(super) fn init(vm: &mut Lua) -> Result<(), RuntimeError> {
     vm.finish(&executor)?;
 
     init_libraries!(
-        using vm;
+        using vm, db;
 
         LuaEngine<'_>,
-        mw_site::SiteLibrary,
+        mw_site::SiteLibrary<'_>,
         mw_uri::UriLibrary<'_>,
         mw_ustring::UstringLibrary,
         mw_language::LanguageLibrary,

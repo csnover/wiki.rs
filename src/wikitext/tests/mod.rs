@@ -1,7 +1,6 @@
 use super::{codemap::FileMap, *};
 use crate::{
-    config::CONFIG,
-    db::Database,
+    db::{Database, IDatabase as _},
     renderer::{RenderOutput, render_test},
 };
 use std::{collections::HashMap, fs::File, io::Read as _, path::Path, sync::Arc};
@@ -52,7 +51,7 @@ test_from_file! {
 }
 
 #[track_caller]
-fn run_tests_from_file(config: &'static Configuration, path: impl AsRef<Path>) {
+fn run_tests_from_file(path: impl AsRef<Path>) {
     let empty_options = SectionText::Kv(HashMap::new());
 
     let _ = env_logger::try_init();
@@ -90,7 +89,7 @@ fn run_tests_from_file(config: &'static Configuration, path: impl AsRef<Path>) {
 
                 let options = sections.get("options").unwrap_or(&empty_options);
                 let page_name = options.get("title").unwrap_or("Parser test");
-                let result = match render_test(config, &db, page_name, wikitext) {
+                let result = match render_test(&db, page_name, wikitext) {
                     Ok(result) => result,
                     Err(err) => {
                         log::error!("Render failed: {err}");
@@ -214,7 +213,8 @@ fn run_test_for_goldenfile(test_name: &str, input: &str) {
 
     let mut mint = goldenfile::Mint::new(format!("{BASE_DIR}/goldenfiles"));
     let mut file = mint.new_goldenfile(format!("{test_name}.txt")).unwrap();
-    let result = Parser::new(&CONFIG).parse(input, false).unwrap();
+    let config = Database::new().config();
+    let result = Parser::new(config).parse(input, false).unwrap();
     let _ = writeln!(
         file,
         "{:#?}",
@@ -226,7 +226,7 @@ macro_rules! test_from_file {
     ($($ident:ident => $path:literal),* $(,)?) => {
         $(#[test]
         fn $ident() {
-            run_tests_from_file(&CONFIG, format!("{BASE_DIR}/parser/{}.txt", $path));
+            run_tests_from_file(format!("{BASE_DIR}/parser/{}.txt", $path));
         })*
     }
 }

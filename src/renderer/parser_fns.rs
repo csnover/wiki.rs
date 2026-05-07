@@ -343,10 +343,12 @@ mod page {
         //  whether a page exists. It returns `infinity` if the page exists and
         //  is not protected, the actual expiry time if it is protected, and the
         //  empty string if it doesn't exist.”
-        let exists = arguments
-            .eval(state, 1)?
-            .map(trim)
-            .is_none_or(|page_name| state.statics.db.contains(&Title::new(&page_name, None)));
+        let exists = arguments.eval(state, 1)?.map(trim).is_none_or(|page_name| {
+            state
+                .statics
+                .db
+                .contains(&Title::new(state.statics.db.config(), &page_name, None))
+        });
         if exists {
             write!(out, "infinity")?;
         }
@@ -419,11 +421,11 @@ mod page {
     /// `{{ARTICLEPAGENAME}}` or `{{SUBJECTPAGENAME}}`
     pub fn subject_page_name(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let title = &sp.root().name;
-        if let Some(subject) = title.namespace().subject() {
+        if let Some(subject) = title.namespace().subject(state.statics.db.config()) {
             write!(
                 out,
                 "{}{}{}",
@@ -438,11 +440,11 @@ mod page {
     /// `{{TALKPAGENAME}}`
     pub fn talk_page_name(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
         IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let title = &sp.root().name;
-        if let Some(talk) = title.namespace().talk() {
+        if let Some(talk) = title.namespace().talk(state.statics.db.config()) {
             write!(
                 out,
                 "{}{}{}",
@@ -1032,7 +1034,7 @@ mod title {
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             let query = arguments.eval(state, 1)?.map(trim);
-            let title = Title::new(&value, None);
+            let title = Title::new(state.statics.db.config(), &value, None);
             let url = make_url(
                 None,
                 &state.statics.base_uri,
@@ -1053,10 +1055,12 @@ mod title {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         // log::trace!("#ifexist: '{value:?}'");
-        let exists = arguments
-            .eval(state, 0)?
-            .map(trim)
-            .is_some_and(|value| state.statics.db.contains(&Title::new(&value, None)));
+        let exists = arguments.eval(state, 0)?.map(trim).is_some_and(|value| {
+            state
+                .statics
+                .db
+                .contains(&Title::new(state.statics.db.config(), &value, None))
+        });
         if let Some(value) = arguments.eval(state, 1 + usize::from(!exists))?.map(trim) {
             write!(out, "{value}")?;
         }
@@ -1071,7 +1075,7 @@ mod title {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let title = Title::new(&value, None);
+            let title = Title::new(state.statics.db.config(), &value, None);
             let query = arguments.eval(state, 1)?.map(trim);
             let url = make_url(
                 None,
@@ -1095,7 +1099,10 @@ mod title {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         let ns = if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            Namespace::find_by_name(value.split_once(':').map_or("", |(ns, _)| ns))
+            Namespace::find_by_name(
+                state.statics.db.config(),
+                value.split_once(':').map_or("", |(ns, _)| ns),
+            )
         } else {
             Some(arguments.sp.root().name.namespace())
         };
@@ -1104,11 +1111,11 @@ mod title {
             if arguments.callee == "namespace" {
                 write!(out, "{}", ns.name)?;
             } else if arguments.callee == "articlespace" || arguments.callee == "subjectspace" {
-                if let Some(ns) = ns.subject() {
+                if let Some(ns) = ns.subject(state.statics.db.config()) {
                     write!(out, "{}", ns.name)?;
                 }
             } else if arguments.callee == "talkspace" {
-                if let Some(ns) = ns.talk() {
+                if let Some(ns) = ns.talk(state.statics.db.config()) {
                     write!(out, "{}", ns.name)?;
                 }
             } else {
@@ -1127,9 +1134,9 @@ mod title {
     ) -> Result {
         let ns = arguments.eval(state, 0)?.map(trim).and_then(|value| {
             if let Ok(id) = value.parse::<i32>() {
-                Namespace::find_by_id(id)
+                Namespace::find_by_id(state.statics.db.config(), id)
             } else {
-                Namespace::find_by_name(&value)
+                Namespace::find_by_name(state.statics.db.config(), &value)
             }
         });
         if let Some(ns) = ns {
