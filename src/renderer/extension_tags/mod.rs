@@ -139,7 +139,7 @@ mod svg;
 mod timeline;
 
 use super::{
-    Error, ExpandMode, ExpandTemplates, State, StripMarker,
+    Error, ExpandMode, ExpandTemplates, LinkKind, LinkKindOptions, State, StripMarker,
     document::Document,
     image,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
@@ -978,8 +978,31 @@ fn timeline(
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     if let Some(body) = arguments.body {
-        let result = timeline::timeline_to_svg(body, &state.statics.base_uri)
-            .map_err(|err| Error::Extension(Box::new(err)))?;
+        let options = LinkKindOptions {
+            base_uri: &state.statics.base_uri,
+            interwiki_map: &state.statics.db.config().interwiki_map,
+        };
+
+        let result = timeline::timeline_to_svg(body, |request| {
+            use timeline::{TextSpan, TranslateResponse};
+            let (text, link) = match request.span {
+                TextSpan::ExternalLink { target, text } => {
+                    (text, Some(LinkKind::External((*target).into())))
+                }
+                TextSpan::Link { target, text } => {
+                    (text, Some(LinkKind::Internal(Title::new(target, None))))
+                }
+                TextSpan::Text(text) => (
+                    text,
+                    request.url.map(|target| LinkKind::External(target.into())),
+                ),
+            };
+            TranslateResponse {
+                text: Cow::Borrowed(text),
+                url: link.map(|link| Cow::Owned(link.to_string(&options, None))),
+            }
+        })
+        .map_err(|err| Error::Extension(Box::new(err)))?;
         write!(out, r#"<figure class="wiki-rs-timeline">{result}</figure>"#)?;
     }
     Ok(OutputMode::Block)

@@ -3,7 +3,6 @@
 use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use crate::{
     common::{anchor_encode, decode_html, title_decode},
-    config::CONFIG,
     db::IDatabase as _,
     title::Title,
     wikitext::{Argument, FileMap, Span, Spanned, Token, builder::token},
@@ -121,7 +120,11 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     } else {
         None
     };
-    let href = link.to_string(&state.statics.base_uri, query);
+    let options = LinkKindOptions {
+        base_uri: &state.statics.base_uri,
+        interwiki_map: &state.statics.db.config().interwiki_map,
+    };
+    let href = link.to_string(&options, query);
 
     render_runtime(out, state, sp, |_, source| {
         token!(
@@ -151,6 +154,14 @@ pub(super) fn render_end_link<W: WriteSurrogate + ?Sized>(
     })
 }
 
+/// Static option data for [`LinkKind::to_string`].
+pub(crate) struct LinkKindOptions<'a> {
+    /// The base URI for an internal link.
+    pub base_uri: &'a Uri,
+    /// The map of interwiki prefixes.
+    pub interwiki_map: &'a phf::Map<&'static str, &'static str>,
+}
+
 /// A kind of link to render.
 #[derive(Clone, Debug)]
 pub(super) enum LinkKind<'a> {
@@ -163,7 +174,7 @@ pub(super) enum LinkKind<'a> {
 impl LinkKind<'_> {
     /// Converts the link to a URI-encoded string suitable for use in an HTML
     /// `href` attribute.
-    pub fn to_string(&self, base_uri: &Uri, query: Option<&str>) -> String {
+    pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
         match self {
             LinkKind::External(url) => {
                 // TODO: Hack together some URL parsing good enough that there is an
@@ -171,23 +182,27 @@ impl LinkKind<'_> {
                 if url.starts_with('/') {
                     url.to_string()
                 } else {
-                    format!("{}/external/{url}", base_uri.path())
+                    format!("{}/external/{url}", options.base_uri.path())
                 }
             }
             LinkKind::Internal(title) => {
                 if let Some(iw) = title
                     .interwiki()
-                    .and_then(|iw| CONFIG.interwiki_map.get(&iw.to_ascii_lowercase()))
+                    .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
                 {
                     format!(
                         "{}/external/{}",
-                        base_uri.path(),
+                        options.base_uri.path(),
                         iw.replace("$1", &title.partial_url().to_string())
                     )
                 } else if title.text().is_empty() {
                     format!("#{}", anchor_encode(title.fragment()))
                 } else {
-                    let mut link = format!("{}/article/{}", base_uri.path(), title.partial_url());
+                    let mut link = format!(
+                        "{}/article/{}",
+                        options.base_uri.path(),
+                        title.partial_url()
+                    );
                     if let Some(query) = query {
                         link.push('?');
                         link += query;

@@ -333,7 +333,7 @@ use std::{
     sync::{Arc, LazyLock, PoisonError, RwLock},
 };
 pub(crate) use surrogate::Surrogate;
-use tags::LinkKind;
+use tags::{LinkKind, LinkKindOptions};
 pub(crate) use template::{call_template, resolve_callee};
 
 mod document;

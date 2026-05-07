@@ -17,15 +17,15 @@ use super::{
     super::svg::{NS_SVG, ValueDisplay, n},
     AlignBars, Alignment, ColorId, ColorValue, Dims, Either, Error, FontSize, ImageSize,
     LegendPosition, Line, LineDataInstr, Orientation, PREDEFINED_COLORS, PlotDataPos, Rect, Result,
-    ScaleUnit, TabStop, TextSpan, Uri, Url,
+    ScaleUnit, TabStop, TextSpan, TranslateFn, TranslateRequest, TranslateResponse, Url,
     parser::Timeline,
 };
 use core::ops::Deref;
 use minidom::{Element, ElementBuilder};
 
 /// Renders a timeline into an SVG element.
-pub(super) fn render(pen: Timeline<'_>, base_uri: &Uri) -> Result<Element> {
-    let mut renderer = Renderer::new(pen, base_uri)?;
+pub(super) fn render<T: TranslateFn>(pen: Timeline<'_>, link_fn: T) -> Result<Element> {
+    let mut renderer = Renderer::new(pen, &link_fn)?;
 
     renderer
         .add_global_styles()?
@@ -42,9 +42,10 @@ pub(super) fn render(pen: Timeline<'_>, base_uri: &Uri) -> Result<Element> {
 
 /// An SVG renderer.
 #[derive(Debug)]
-struct Renderer<'input> {
-    /// The base URI for links.
-    base_uri: &'input Uri,
+struct Renderer<'input, TFn>
+where
+    TFn: TranslateFn,
+{
     /// The background drawing layer.
     bg_layer: Element,
     /// Fully resolved image dimensions.
@@ -61,12 +62,17 @@ struct Renderer<'input> {
     top_layer: Element,
     /// The timeline data.
     timeline: Timeline<'input>,
+    /// The callback function for translating text and links.
+    translate: &'input TFn,
 }
 
-impl<'input> Renderer<'input> {
+impl<'input, TFn> Renderer<'input, TFn>
+where
+    TFn: TranslateFn,
+{
     /// Creates a new renderer for the given `timeline`, using the given
-    /// `base_uri` for generating URLs.
-    fn new(timeline: Timeline<'input>, base_uri: &'input Uri) -> Result<Self> {
+    /// `translate` function for processing text spans.
+    fn new(timeline: Timeline<'input>, translate: &'input TFn) -> Result<Self> {
         let image_dims = match timeline.image_size {
             Some(ImageSize::AutoHeight { bar, width }) => Dims(
                 width,
@@ -120,7 +126,6 @@ impl<'input> Renderer<'input> {
             .build();
 
         Ok(Self {
-            base_uri,
             bg_layer: Element::bare("g", NS_SVG),
             image_dims,
             max_bar_width,
@@ -129,6 +134,7 @@ impl<'input> Renderer<'input> {
             svg,
             top_layer: Element::bare("g", NS_SVG),
             timeline,
+            translate,
         })
     }
 
@@ -224,13 +230,13 @@ impl<'input> Renderer<'input> {
             let color = self.color(text.pen.text_color)?;
             self.top_layer.append_child(make_text(&MakeText {
                 alignment: Alignment::Start,
-                base_uri: self.base_uri,
                 color,
                 font_size: text.pen.font_size,
                 line_height: text.pen.line_height,
                 link: text.link,
                 tabs: &text.pen.tabs,
                 text: &text.spans,
+                translate: self.translate,
                 x,
                 y,
             })?);
@@ -354,7 +360,7 @@ impl<'input> Renderer<'input> {
     }
 }
 
-impl<'input> Deref for Renderer<'input> {
+impl<'input, TFn: TranslateFn> Deref for Renderer<'input, TFn> {
     type Target = Timeline<'input>;
 
     fn deref(&self) -> &Self::Target {
@@ -363,7 +369,7 @@ impl<'input> Deref for Renderer<'input> {
 }
 
 /// Draws the timeline axes.
-fn draw_axes(r: &mut Renderer<'_>) -> Result {
+fn draw_axes<TFn: TranslateFn>(r: &mut Renderer<'_, TFn>) -> Result {
     let color = r.color("black")?;
 
     let has_labels = r.bar_count > 1;
@@ -412,13 +418,13 @@ fn draw_axes(r: &mut Renderer<'_>) -> Result {
 
         labels.append_child(make_text(&MakeText {
             alignment,
-            base_uri: r.base_uri,
             color,
             font_size,
             line_height: None,
             link: bar.link,
             tabs: &[],
             text: &bar.label,
+            translate: r.translate,
             x,
             y,
         })?);
@@ -430,7 +436,7 @@ fn draw_axes(r: &mut Renderer<'_>) -> Result {
 }
 
 /// Draws the timeline legend.
-fn draw_legend(r: &mut Renderer<'_>) -> Result<()> {
+fn draw_legend<TFn: TranslateFn>(r: &mut Renderer<'_, TFn>) -> Result<()> {
     const SWATCH_SIZE: f64 = 12.0;
     const MARGIN: f64 = SWATCH_SIZE + 8.0;
 
@@ -499,13 +505,13 @@ fn draw_legend(r: &mut Renderer<'_>) -> Result<()> {
         r.top_layer.append_child(make_rect(swatch, Some(*color)));
         r.top_layer.append_child(make_text(&MakeText {
             alignment: Alignment::Start,
-            base_uri: r.base_uri,
             color: text_color,
             font_size,
             line_height: Some(line_height),
             link: None,
             tabs: &[],
             text,
+            translate: r.translate,
             x: x + dx + MARGIN,
             y: y + dy + /* TODO: No magic numbers */ 10.0,
         })?);
@@ -524,7 +530,7 @@ fn draw_legend(r: &mut Renderer<'_>) -> Result<()> {
 }
 
 /// Draws the given lines and returns the result as an SVG group element.
-fn draw_lines(r: &Renderer<'_>, lines: &[Line<'_>]) -> Result<Element> {
+fn draw_lines<TFn: TranslateFn>(r: &Renderer<'_, TFn>, lines: &[Line<'_>]) -> Result<Element> {
     let mut group = Element::builder("g", NS_SVG);
     let reverse = r.time_axis.reverse_order();
     for line in lines {
@@ -592,7 +598,7 @@ fn draw_lines(r: &Renderer<'_>, lines: &[Line<'_>]) -> Result<Element> {
 }
 
 /// Draws all time series segments.
-fn draw_plots(r: &mut Renderer<'_>) -> Result<Element> {
+fn draw_plots<TFn: TranslateFn>(r: &mut Renderer<'_, TFn>) -> Result<Element> {
     let mut group = Element::bare("g", NS_SVG);
     let mut marks = Vec::new();
 
@@ -641,13 +647,13 @@ fn draw_plots(r: &mut Renderer<'_>) -> Result<Element> {
 
             let mt = MakeText {
                 alignment: plot.pen.align,
-                base_uri: r.base_uri,
                 color,
                 font_size: plot.pen.font_size,
                 line_height: None,
                 link: plot.link,
                 tabs: &[],
                 text,
+                translate: r.translate,
                 x: x + plot.pen.shift.x(),
                 y: y + plot.pen.shift.y_shift(),
             };
@@ -664,7 +670,11 @@ fn draw_plots(r: &mut Renderer<'_>) -> Result<Element> {
 }
 
 /// Draws a main axis scale.
-fn draw_scale(r: &mut Renderer<'_>, color: ColorValue, is_major: bool) -> Result {
+fn draw_scale<TFn: TranslateFn>(
+    r: &mut Renderer<'_, TFn>,
+    color: ColorValue,
+    is_major: bool,
+) -> Result {
     let scale = if is_major {
         &r.scale_major
     } else {
@@ -732,13 +742,13 @@ fn draw_scale(r: &mut Renderer<'_>, color: ColorValue, is_major: bool) -> Result
 
             labels.append_child(make_text(&MakeText {
                 alignment,
-                base_uri: r.base_uri,
                 color,
                 font_size: FontSize::Small,
                 line_height: None,
                 link: None,
                 tabs: &[],
                 text: &[TextSpan::Text(&at.v_precision(2))],
+                translate: r.translate,
                 x,
                 y,
             })?);
@@ -783,11 +793,12 @@ fn make_rect(rect: Rect, color: Option<ColorValue>) -> Element {
 }
 
 /// Text properties.
-struct MakeText<'input> {
+struct MakeText<'input, TFn>
+where
+    TFn: TranslateFn,
+{
     /// The text alignment relative to the text origin.
     alignment: Alignment,
-    /// The base URI for generating links.
-    base_uri: &'input Uri,
     /// The text colour.
     color: ColorValue,
     /// The font size.
@@ -800,6 +811,8 @@ struct MakeText<'input> {
     tabs: &'input [TabStop],
     /// The text to render.
     text: &'input [TextSpan<'input>],
+    /// The function for generating link URLs.
+    translate: TFn,
     /// Baseline origin x-coordinate, relative to the left edge of the image.
     x: f64,
     /// Baseline origin y-coordinate, relative to the top edge of the image.
@@ -807,7 +820,7 @@ struct MakeText<'input> {
 }
 
 /// Makes a text element from a [`MakeText`].
-fn make_text(mt: &MakeText<'_>) -> Result<Element> {
+fn make_text<TFn: TranslateFn>(mt: &MakeText<'_, TFn>) -> Result<Element> {
     let mut group = Element::builder("g", NS_SVG);
     let mut x = mt.x;
     let mut y = mt.y;
@@ -816,7 +829,10 @@ fn make_text(mt: &MakeText<'_>) -> Result<Element> {
     let mut tabs = mt.tabs.iter();
     let line_height = mt.line_height.unwrap_or_else(|| mt.font_size.line_height());
     for span in mt.text {
-        let (text, target) = span.into_content_link(mt.link, mt.base_uri);
+        let TranslateResponse { text, url: target } = (mt.translate)(TranslateRequest {
+            span: *span,
+            url: mt.link,
+        });
         for (index, line_text) in text.split('~').enumerate() {
             if index != 0 {
                 tabs = mt.tabs.iter();
@@ -842,7 +858,7 @@ fn make_text(mt: &MakeText<'_>) -> Result<Element> {
                 if let Some(target) = &target {
                     line = line.append(
                         Element::builder("a", NS_SVG)
-                            .attr(n!("href"), target)
+                            .attr(n!("href"), target.to_string())
                             .append(text_span)
                             .build(),
                     );

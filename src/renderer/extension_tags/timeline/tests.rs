@@ -1,5 +1,5 @@
-use super::timeline_to_svg as render;
-use axum::http::Uri;
+use super::{TextSpan, TranslateResponse, timeline_to_svg as render};
+use std::borrow::Cow;
 
 const BASE_DIR: &str = "./src/renderer/extension_tags/timeline/tests";
 
@@ -21,7 +21,20 @@ fn run_test(test_name: &str, input: &str) {
 
     let mut mint = goldenfile::Mint::new(format!("{BASE_DIR}/goldenfiles"));
     let mut file = mint.new_goldenfile(format!("{test_name}.svg")).unwrap();
-    let result = render(input, &Uri::from_static("http://example.com")).unwrap();
+    let result = render(input, |request| {
+        let (text, url) = match request.span {
+            TextSpan::ExternalLink { target, text } => (text, Some(Cow::Borrowed(target))),
+            TextSpan::Link { target, text } => {
+                (text, Some(Cow::Owned(format!("/article/{target}"))))
+            }
+            TextSpan::Text(text) => (text, request.url.map(Cow::Borrowed)),
+        };
+        TranslateResponse {
+            text: Cow::Borrowed(text),
+            url,
+        }
+    })
+    .unwrap();
     let _ = writeln!(file, "{result}");
 }
 

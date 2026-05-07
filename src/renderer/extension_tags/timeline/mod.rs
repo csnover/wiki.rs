@@ -1,8 +1,7 @@
 //! Implementation of the EasyTimeline extension.
 
-use crate::{renderer::LinkKind, title::Title};
-use axum::http::Uri;
 use either::Either;
+use std::borrow::Cow;
 
 mod grammar;
 mod parser;
@@ -10,11 +9,46 @@ mod renderer;
 #[cfg(test)]
 mod tests;
 
+/// The EasyTimeline result type.
+pub type Result<T = (), E = Error> = core::result::Result<T, E>;
+
+/// A callback function for translating text spans.
+pub trait TranslateFn: for<'a> Fn(TranslateRequest<'a>) -> TranslateResponse<'a> {}
+
+impl<T> TranslateFn for T where T: for<'a> Fn(TranslateRequest<'a>) -> TranslateResponse<'a> {}
+
+/// A translation request for a text span.
+#[derive(Clone, Copy, Debug)]
+pub struct TranslateRequest<'input> {
+    /// The text span to translate.
+    pub span: TextSpan<'input>,
+
+    /// The fallback URL for a text span. This field is populated when an
+    /// external link was given separately for an entire line of text.
+    ///
+    /// It is possible for this field to be populated at the same time that a
+    /// text span is also a wikilink. In this case, the translation provider
+    /// decides which one wins. Normally, the wikilink URL should be preferred
+    /// over the fallback URL.
+    pub url: Option<&'input str>,
+}
+
+/// A translation response.
+#[derive(Clone, Debug)]
+pub struct TranslateResponse<'input> {
+    /// The text of the span.
+    pub text: Cow<'input, str>,
+
+    /// The URL of the text span. If this is `None`, the text will be rendered
+    /// without a link.
+    pub url: Option<Cow<'input, str>>,
+}
+
 /// Converts an EasyTimeline script into a serialised SVG image.
-pub fn timeline_to_svg(input: &str, base_uri: &Uri) -> Result<String> {
+pub fn timeline_to_svg<TFn: TranslateFn>(input: &str, translate: TFn) -> Result<String> {
     let (expanded, deltas) = parser::expand(input.trim_ascii_end())?;
     let pen = parser::parse(&expanded, input, &deltas)?;
-    let svg = renderer::render(pen, base_uri)?;
+    let svg = renderer::render(pen, translate)?;
 
     let mut out = Vec::new();
     svg.write_to(&mut out)?;
@@ -50,8 +84,6 @@ pub(crate) enum Error {
 
 /// A colour identifier.
 type ColorId<'input> = &'input str;
-/// The EasyTimeline result type.
-pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 /// A URL string.
 type Url<'input> = &'input str;
 
@@ -715,7 +747,7 @@ struct Text<'input> {
 
 /// A span of text within a text label.
 #[derive(Clone, Copy, Debug)]
-enum TextSpan<'input> {
+pub enum TextSpan<'input> {
     /// An external link.
     ExternalLink {
         /// The target URL.
@@ -732,30 +764,6 @@ enum TextSpan<'input> {
     },
     /// Plain text.
     Text(&'input str),
-}
-
-impl<'input> TextSpan<'input> {
-    /// Gets the text content and optional URL suitable for use in an `href`
-    /// attribute.
-    fn into_content_link(
-        self,
-        fallback: Option<&'input str>,
-        base_uri: &Uri,
-    ) -> (&'input str, Option<String>) {
-        let (text, link) = match self {
-            TextSpan::ExternalLink { target, text } => {
-                (text, Some(LinkKind::External(target.into())))
-            }
-            TextSpan::Link { target, text } => {
-                (text, Some(LinkKind::Internal(Title::new(target, None))))
-            }
-            TextSpan::Text(text) => (
-                text,
-                fallback.map(|target| LinkKind::External(target.into())),
-            ),
-        };
-        (text, link.map(|link| link.to_string(base_uri, None)))
-    }
 }
 
 /// A time.
