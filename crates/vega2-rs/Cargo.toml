@@ -1,0 +1,37 @@
+[package]
+name = "vega2-rs"
+description = "A pure Rust port of the Vega 2 visualisation library"
+edition.workspace = true
+license = "BSD-3-Clause"
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bitflags.workspace = true
+csscolorparser.workspace = true
+either.workspace = true
+indexmap.workspace = true
+libmisc.workspace = true
+libphp-rs.workspace = true
+log.workspace = true
+minidom.workspace = true
+peeknth.workspace = true
+peg.workspace = true
+phf.workspace = true
+rand.workspace = true
+regex.workspace = true
+rustybuzz.workspace = true
+rxml.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_json_borrow.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tiny-skia.workspace = true
+unicode-general-category.workspace = true
+wuff.workspace = true
+
+[dev-dependencies]
+goldenfile.workspace = true

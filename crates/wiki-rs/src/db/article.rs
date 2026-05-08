@@ -1,0 +1,212 @@
+//! Types and functions for extracting articles from a compressed multistream
+//! dump.
+
+use super::{Error, Result, index::IndexEntry};
+use bzip2_rs::DecoderReader;
+use libwikitext_common::{
+    db::{Article, DatabaseNamespace},
+    title::NamespaceCase,
+};
+use memmap2::Mmap;
+use minidom::Element;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{self, BufReader, Read as _},
+    path::Path,
+};
+use time::{UtcDateTime, format_description::well_known::Iso8601};
+
+/// Information about the database.
+pub(crate) struct Metadata {
+    /// The date when the database was probably created.
+    pub creation_date: Option<UtcDateTime>,
+    /// The namespaces from the database.
+    pub namespaces: HashMap<i32, DatabaseNamespace>,
+    /// The name of the site from the database.
+    pub site_name: String,
+}
+
+/// A reader for a compressed multistream MediaWiki dump.
+pub(super) struct ArticleDatabase {
+    /// Read-only memory-mapped compressed `database.xml.bz2`.
+    data: Mmap,
+    /// Database metadata.
+    metadata: Metadata,
+}
+
+impl ArticleDatabase {
+    /// Opens a raw `multistream.xml.bz2` file using memory mapping.
+    pub(super) fn from_file(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let file = File::open(path).map_err(|err| Error::Io(err, path.into()))?;
+        // SAFETY: This data is only ever used immutably.
+        let data = unsafe { Mmap::map(&file).map_err(|err| Error::Io(err, path.into()))? };
+
+        // Maybe someone decompressed the file, or mixed up the index and
+        // database files.
+        if &data[0..2] != b"BZ" || &data[4..10] != b"\x31\x41\x59\x26\x53\x59" {
+            return Err(Error::Format(path.into()));
+        }
+
+        let metadata = Self::database_info(path, &data)?;
+
+        Ok(Self { data, metadata })
+    }
+
+    /// Gets the article at the given index.
+    pub(super) fn get_article(&self, entry: &IndexEntry) -> Result<Article> {
+        let chunk = self.get_article_chunk(entry.offset)?;
+        let root = chunk.parse::<Element>()?;
+        let article = root.children().find(|el| {
+            el.get_child("id", "")
+                .is_some_and(|id| id.text() == entry.id.to_string())
+        });
+
+        match article {
+            Some(article) => Self::parse_article(article),
+            None => Err(Error::NotFound),
+        }
+    }
+
+    /// Returns the metadata for this database.
+    #[inline]
+    pub(super) fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    /// Reconstitutes a compressed multistream XML chunk into at the given
+    /// offset.
+    fn get_article_chunk(&self, offset: u64) -> Result<String> {
+        let offset = usize::try_from(offset)?;
+        let bzip_data = &self.data[offset..];
+
+        let mut decoded = Vec::from(br#"<pages xmlns="">"#);
+        let mut reader = DecoderReader::new(bzip_data);
+        io::copy(&mut reader, &mut decoded).map_err(Error::Decompression)?;
+        decoded.extend(b"</pages>");
+        Ok(String::from_utf8(decoded)?)
+    }
+
+    /// Parses basic information about the database from the `<siteinfo>` in the
+    /// first chunk.
+    fn database_info(path: &Path, data: &[u8]) -> Result<Metadata> {
+        // In case someone tries to load a non-multistream database, the number
+        // of bytes read is limited to some amount well above the expected size
+        // (the true expected data size is only ~2KiB).
+        const OOPS_PROTECTION: usize = 128 * 1024;
+
+        let mut decoded = BufReader::new(DecoderReader::new(data))
+            .bytes()
+            .take(OOPS_PROTECTION)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Error::Decompression)?;
+
+        if decoded.len() == OOPS_PROTECTION {
+            return Err(Error::NotMultistream);
+        }
+
+        decoded.extend(b"</mediawiki>");
+
+        let root = String::from_utf8(decoded)?
+            .parse::<Element>()
+            .map_err(|_| Error::Siteinfo)?;
+        let root_ns = root.ns();
+
+        let siteinfo = try_get_child_ns(&root, "siteinfo", &root_ns)?;
+
+        let site_name = try_get_child_ns(siteinfo, "sitename", &root_ns)?.text();
+        let namespaces = try_get_child_ns(siteinfo, "namespaces", &root_ns)?;
+        let namespaces = namespaces
+            .children()
+            .filter(|&ns| ns.name() == "namespace")
+            .map(|ns| {
+                let key = ns
+                    .attr("key")
+                    .ok_or(Error::XmlProperty("key".into()))?
+                    .parse::<i32>()?;
+                let case = ns.attr("case").ok_or(Error::XmlProperty("case".into()))?;
+                let case = match case {
+                    "first-letter" => NamespaceCase::FirstLetter,
+                    "case-sensitive" => NamespaceCase::CaseSensitive,
+                    _ => return Err(Error::NamespaceCase(case.into())),
+                };
+                let name = ns.text();
+
+                Ok((key, DatabaseNamespace { case, name }))
+            })
+            .collect::<Result<_, _>>()?;
+
+        // As of the time this code was written, the database does not contain
+        // metadata that describes the date when the database was dumped, and as
+        // far as the bz2 format is documented, it does not document storing any
+        // metadata like this, and the bzip2 code appears to just copy the stat
+        // infile to outfile, which does not really persist over the internet.
+        // So the filename and stat data are the only things that are available
+        // without scanning the wholeeee database to find the latest article
+        // date. The date in the file name, if one exists, will be the most
+        // likely accurate thing.
+        let creation_date = path.to_str().and_then(|mut path| {
+            while let Some(start) = path.find(|c: char| c.is_ascii_digit()) {
+                if let Some(maybe_date) = path.get(start..start + 8)
+                    && let Ok(date) = time::Date::parse(maybe_date, &Iso8601::PARSING)
+                {
+                    return Some(UtcDateTime::new(date, time::Time::MIDNIGHT));
+                }
+                path = &path[start + 1..];
+            }
+            None
+        });
+
+        Ok(Metadata {
+            creation_date,
+            namespaces,
+            site_name,
+        })
+    }
+
+    /// Extracts article data from an XML element.
+    fn parse_article(article: &Element) -> Result<Article> {
+        let id = try_get_child(article, "id")?.text().parse::<u64>()?;
+        let title = try_get_child(article, "title")?.text();
+        let revision = try_get_child(article, "revision")?;
+        let body = try_get_child(revision, "text")?.text();
+        // TODO: This may be needed eventually, so remember it exists
+        // let date = UtcDateTime::parse(
+        //     &try_get_child(revision, "timestamp")?.text(),
+        //     &Iso8601::DEFAULT,
+        // )?;
+        let model = try_get_child(revision, "model")?.text();
+        let redirect = try_get_child(article, "redirect")
+            .ok()
+            .and_then(|r| r.attr("title").map(ToString::to_string));
+        // TODO: This may be needed eventually, so remember it exists
+        // let last_changed_by = revision
+        //     .try_get_child("contributor")?
+        //     .try_get_child("username")?
+        //     .text();
+
+        Ok(Article {
+            id,
+            title,
+            body,
+            model,
+            redirect,
+        })
+    }
+}
+
+/// Tries to get a child element by name and returns an [`Error`] if it does not
+/// exist.
+#[inline]
+fn try_get_child<'a>(element: &'a Element, name: &str) -> Result<&'a Element> {
+    try_get_child_ns(element, name, "")
+}
+
+/// Tries to get a child element by name and namespace and returns an [`Error`]
+/// if it does not exist.
+#[inline]
+fn try_get_child_ns<'a>(element: &'a Element, name: &str, ns: &str) -> Result<&'a Element> {
+    let child = element.get_child(name, ns);
+    child.ok_or_else(|| Error::XmlProperty(name.into()))
+}

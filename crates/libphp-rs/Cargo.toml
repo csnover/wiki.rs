@@ -1,0 +1,17 @@
+[package]
+name = "libphp-rs"
+description = "A pure Rust implementation of a subset of the PHP standard library"
+edition.workspace = true
+license = "BSD-3-Clause"
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+log.workspace = true
+thiserror.workspace = true
+time.workspace = true
+timelib-rs.workspace = true
+tz-rs.workspace = true
+tzdb_data.workspace = true

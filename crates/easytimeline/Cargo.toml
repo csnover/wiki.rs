@@ -1,0 +1,23 @@
+[package]
+name = "easytimeline"
+description = "A pure Rust implementation of the EasyTimeline extension for MediaWiki"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+either.workspace = true
+memchr.workspace = true
+minidom.workspace = true
+libmisc.workspace = true
+peg.workspace = true
+phf.workspace = true
+rxml.workspace = true
+thiserror.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+goldenfile.workspace = true

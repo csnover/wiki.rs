@@ -1,0 +1,813 @@
+//! Template rendering types and functions.
+
+use super::{
+    Error, LoadMode, Result, State, StripMarker,
+    expand_templates::{ExpandMode, ExpandTemplates},
+    lua::run_vm,
+    parser_fns::call_parser_fn,
+    resolve_redirects,
+    stack::{KeyCacheKvs, Kv, StackFrame},
+    surrogate::Surrogate,
+};
+use core::fmt::{self, Write as _};
+use indexmap::IndexSet;
+use libwikitext_common::{
+    db::IDatabase as _,
+    make_url,
+    title::{Namespace, Title},
+    title_decode,
+};
+use libwikitext_parse::{Argument, Configuration, FileMap, Span, Spanned, Token};
+use std::{borrow::Cow, pin::pin, sync::Arc, time::Instant};
+
+/// Templates that need to be spruced up a bit, but don’t have any hooks of
+/// their own for styling.
+///
+/// It is necessary to use a whitelist instead of just marking everything
+/// because:
+///
+/// 1. 'Module:Citation/CS1' is unbearable and complains visibly if a strip
+///    marker exists inside of any of its parameters instead of just ignoring or
+///    stripping them itself (is it any wonder it runs so slowly?); and
+/// 2. More importantly, 'Module:Infobox' (in `fixChildBoxes`) does that thing
+///    that script writers love to do and uses pattern matching expressions to
+///    find HTML tags in strings, and expects that those strings will be in a
+///    very specific format without any changes to whitespace, strip markers,
+///    etc., since that causes its anchored pattern match to fail. Probably
+///    other modules do this too, but Infobox was the first one where the brain
+///    damage was terminal for the patient. This is noticeable on at least
+///    'Template:Nutritionalvalue'.
+///
+/// On the other hand, 'Module:Documentation' is also an ouroboros where
+/// stripping all the wiki.rs markers from `mw.getExpandedArgument(s)` to avoid
+/// breaking scripts generally means that *its* output ends up losing style
+/// hooks that are necessary to not be ugly. So, whitelist it is!
+static TACKY_TEMPLATES: phf::Set<&str> = phf::phf_set! {
+    "Template:Ahnentafel",
+    "Template:Article for improvement banner",
+    "Template:Bar percent",
+    "Template:Chart top",
+    "Template:Climate chart",
+    "Template:Climate chart/celsius column",
+    "Template:Climate chart/celsius column i",
+    "Template:Climate chart/fahrenheit column",
+    "Template:Climate chart/fahrenheit column i",
+    "Template:Football kit",
+    "Template:Fossil range/bar",
+    "Template:Graphical timeline",
+    "Template:Historical populations",
+    "Template:Infobox drug",
+    "Template:Largest cities",
+    "Template:Markup",
+    "Template:Periodic table (micro)",
+    "Template:Phanerozoic 220px",
+    "Template:Portal description",
+    "Template:Portals browsebar",
+    "Template:Tree chart",
+    "Template:Tree chart/start",
+    "Template:Weather box",
+    "Wikipedia:Contents/TOC navbar",
+};
+
+/// Calls a Lua function.
+pub(super) fn call_module(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    arguments: &KeyCacheKvs<'_, '_>,
+) -> Result {
+    if state.load_mode != LoadMode::Module {
+        return render_fallback(out, state, sp);
+    }
+
+    let Some(callee) = arguments.eval(state, sp, 0)? else {
+        log::warn!("tried to call #invoke with no module name");
+        return Ok(());
+    };
+
+    let Some(fn_name) = arguments.eval(state, sp, 1)? else {
+        return Err(Error::MissingFunctionName);
+    };
+
+    let callee = Title::new(
+        state.statics.db.config(),
+        &callee,
+        Namespace::find_by_id(state.statics.db.config(), Namespace::MODULE),
+    );
+
+    let code = match state.statics.db.get(&callee) {
+        Ok(code) => resolve_redirects(&state.statics.db, code)?,
+        Err(err) => {
+            log::warn!("could not load module {callee}: {err}");
+            sp.backtrace();
+            return Ok(());
+        }
+    };
+
+    // TODO: The source code in the frame has to be the one associated with the
+    // `arguments`, not the module source code, for arguments lookups to work
+    // correctly, which is bad.
+    let sp = sp.chain(callee, sp.source.clone(), &arguments[2..])?;
+
+    // log::trace!("Invoking {}|{}", &code.title, fn_name);
+    let start = Instant::now();
+    let result = run_vm(state, pin!(&sp), &code, &fn_name).map_err(|err| Error::Module {
+        name: code.title.clone(),
+        fn_name: fn_name.to_string(),
+        err: Box::new(err.into()),
+    });
+
+    state
+        .timing
+        .entry(sp.name.key().to_owned())
+        .and_modify(|(count, duration)| {
+            *count += 1;
+            *duration += start.elapsed();
+        })
+        .or_insert_with(|| (1, start.elapsed()));
+
+    // 'Module:Maplink' absolutely relies on Wikidata, with no error guards,
+    // relying on MW just emitting HTML whenever an error occurs instead of
+    // any structured error handling.
+    match result {
+        Ok(result) => {
+            write!(out, "{result}")?;
+        }
+        Err(err) => {
+            let root_error = {
+                let mut err = &err as &dyn core::error::Error;
+                while let Some(source) = err.source() {
+                    err = source;
+                }
+                err
+            };
+            log::error!("{}: {err:#}", sp.name);
+            write!(out, r#"<span class="error">{root_error}</span>"#)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Renders a parameter.
+pub(super) fn render_parameter(
+    out: &mut ExpandTemplates,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    span: Span,
+    name: &[Spanned<Token>],
+    default: Option<&[Spanned<Token>]>,
+) -> Result {
+    if state.load_mode == LoadMode::Base {
+        return render_fallback(out, state, sp);
+    }
+
+    let key = sp.eval(state, name)?;
+
+    if let Some(value) = sp.expand(state, key.trim_ascii())? {
+        write!(out, "{value}")?;
+    } else if let Some(default) = default {
+        out.adopt_tokens(state, sp, default)?;
+    } else {
+        // This cannot simply adopt the whole text of the parameter as-is
+        // because if the parameter contained inclusion control tags, e.g.
+        // `{{{1<noinclude>|default</noinclude>}}}` then the wrong result
+        // will be emitted.
+        let fragment = Span::new(span.start, span.start + 3);
+        out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
+        for token in name {
+            out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
+        }
+        if let Some(default) = default {
+            let first = default
+                .first()
+                .map_or(span.end - 3, |first| first.span.start);
+            let fragment = Span::new(first - 1, first);
+            out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
+            for token in default {
+                out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
+            }
+        }
+        let fragment = Span::new(span.end - 3, span.end);
+        out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
+    }
+
+    Ok(())
+}
+
+/// Renders a template.
+///
+/// Whilst the documentation at
+/// <https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Magic_words#How_magic_words_work>
+/// makes claims about the order of operations of magic words, they are
+/// actually processed thus:
+///
+/// 1. Is it a subst, and the parser is configured to retain the output
+///    as literal text? If so, emit as text and do no more work.
+/// 2. If no args, try to match as a variable, and expand the variable
+///    if so.
+/// 3. Change configuration settings based on special symbols 'msgnw',
+///    'msg', and 'raw'.
+/// 4. Is there a ':' in the name? If so, assume it is a parser function,
+///    try to call the parser function, and allow processing to continue
+///    if the parser function does not match.
+/// 5. Check if it is a template, and if so, process the template, with
+///    stack recursion limits.
+/// 6. Query a database.
+/// 7. Emit as text.
+pub(super) fn render_template<'tt>(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    sp: &'tt StackFrame<'_>,
+    bounds: Span,
+    target: &'tt [Spanned<Token>],
+    arguments: &'tt [Spanned<Argument>],
+    line_start: bool,
+) -> Result<bool> {
+    // eprintln!("render_template {sp:?} {:?}", inspect(&sp.source, target));
+
+    if state.load_mode == LoadMode::Base {
+        render_fallback(out, state, sp)?;
+        return Ok(true);
+    }
+
+    // TODO: There is some undocumented stuff to remove 'msgnw', 'msg', or 'raw'
+    // magic words from the callee and then to change some options before
+    // continuing.
+
+    // At least 'Template:Color' builds HTML elements in pieces in a way
+    // where it is impossible to parse them correctly before template
+    // expansion is completed, which is very annoying because it requires
+    // this buffering and double-parsing where it would not otherwise be
+    // necessary.
+    let mut partial = String::new();
+
+    let mut first = None;
+    let wrapper_key = match split_target(state, sp, &mut first, target, arguments)? {
+        Target::ParserFn { callee, arguments } => {
+            call_parser_fn(&mut partial, state, sp, Some(bounds), &callee, &arguments)?;
+            None
+        }
+
+        Target::Template { arguments, callee } => {
+            call_template(&mut partial, state, sp, &callee, &arguments)?
+        }
+
+        Target::Text => {
+            return Ok(false);
+        }
+    };
+
+    // “T2529: if the template begins with a table or block-level
+    //  element, it should be treated as beginning a new line.
+    //  This behavior is somewhat controversial.”
+    let needs_newline =
+        !line_start && (partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*']));
+
+    if let Some(key) = wrapper_key {
+        // It is necessary to inject strip markers rather than extension tags
+        // or else the start-of-line rules break
+        state
+            .strip_markers
+            .push(out, "wiki-rs", StripMarker::WikiRsSourceStart(key.clone()));
+        if needs_newline {
+            writeln!(out)?;
+        }
+        write!(out, "{partial}")?;
+        state
+            .strip_markers
+            .push(out, "wiki-rs", StripMarker::WikiRsSourceEnd(key));
+    } else {
+        if needs_newline {
+            writeln!(out)?;
+        }
+        write!(out, "{partial}")?;
+    }
+
+    Ok(true)
+}
+
+/// Template target information.
+enum Target<'tt> {
+    /// The target is a parser function (or a variable, which is implemented in
+    /// wiki.rs using parser functions).
+    ParserFn {
+        /// The parser function to invoke.
+        callee: String,
+        /// The arguments to the function.
+        arguments: Vec<Kv<'tt>>,
+    },
+    /// The target is a template.
+    Template {
+        /// The arguments to the template.
+        arguments: Vec<Kv<'tt>>,
+        /// The template to expand.
+        callee: Title,
+    },
+    /// The target looked like a template, but after further consideration, this
+    /// is actually just plain text.
+    ///
+    /// The Wikitext grammar parser cannot disambiguate on its own whether a
+    /// template call containing an extension tag is valid or not because
+    /// extension tags are valid in the first argument to a parser function, but
+    /// it is impossible to know whether this is a parser function call until
+    /// any inner templates are expanded, since it is legal in most towns for
+    /// `{{{{Trenchcoat}}<nowiki/>}}` to become `{{#threechildren:<nowiki/>}}`
+    /// once the inner template is expanded.
+    ///
+    /// 'Template:Date and time templates' contains a
+    /// `{{<nowiki/>{{template call which returns wikilink}}<nowiki/>}}` which
+    /// triggers this path.
+    Text,
+}
+
+/// Splits a template target in the form `callee:arg` into parts without
+/// evaluating the `arg` part.
+fn split_target<'tt>(
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    first: &'tt mut Option<Spanned<Token>>,
+    target: &'tt [Spanned<Token>],
+    arguments: &'tt [Spanned<Argument>],
+) -> Result<Target<'tt>, Error> {
+    let mut callee = String::new();
+    let mut rest = target.iter();
+    let mut has_colon = false;
+    for part in rest.by_ref() {
+        // It is not good enough to just look for text nodes because there are
+        // insane but legal constructions like `{{ {{#if:1|#if:}} 1|y|n }}`
+        // (evaluates to "y").
+        #[rustfmt::skip]
+        let text = if let Spanned { span, node: Token::Text } = part {
+            Cow::Borrowed(&sp.source[span.into_range()])
+        } else if let Spanned { node: Token::Generated(text), .. } = part {
+            Cow::Borrowed(text.as_str())
+        } else {
+            sp.eval(state, core::slice::from_ref(part))?
+        };
+
+        if let Some((lhs, mut rhs)) = text.split_once(':') {
+            callee += lhs;
+
+            // Normally, template expressions are saved in the Wikitext and
+            // expanded at the time a page is rendered; `subst` and `safesubst`
+            // both cause the expression to be expanded at save time instead.
+            //
+            // `subst` does not expand recursively, so if a template *evaluates*
+            // to `{{subst:foo}}` (i.e. contains a horror like
+            // `{{{{{|subst:}}}foo}}` which prevents it from being expanded at
+            // the template’s own save time), the expanded text in the caller
+            // will be `{{subst:foo}}`.
+            //
+            // `safesubst` *does* expand recursively, so if a template evaluates
+            // to `{{safesubst:foo}}` (again by e.g.
+            // `{{{{{|safesubst:}}}foo}}`), the text in the caller will be the
+            // same as if it were written as `{{foo}}`.
+            //
+            // Parent          | Child                      | Output
+            // ----------------+----------------------------+-------------------
+            //   At render time:
+            // -----------------------------------------------------------------
+            // `{{foo}}`       | `{{bar}}`                  | content of bar
+            // `{{foo}}`       | `{{{{{|subst:}}}bar}}`     | `{{subst:bar}}`
+            // `{{foo}}`       | `{{{{{|safesubst:}}}bar}}` | content of bar
+            // ----------------+----------------------------+-------------------
+            //   At save time:
+            // ----------------+----------------------------+-------------------
+            // `{{subst:foo}}` | `{{bar}}`                  | `{{bar}}`
+            // `{{subst:foo}}` | `{{{{{|subst:}}}bar}}`     | content of bar
+            // `{{subst:foo}}` | `{{{{{|safesubst:}}}bar}}` | content of bar
+            let trimmed = callee.trim_ascii();
+            if trimmed.eq_ignore_ascii_case("subst") {
+                // Since wiki.rs is never in save mode, subst will always just
+                // emit the original text
+                return Ok(Target::Text);
+            } else if trimmed.eq_ignore_ascii_case("safesubst") {
+                callee.clear();
+
+                if let Some((lhs, rest)) = rhs.split_once(':') {
+                    // `safesubst:foo:...`
+                    callee += lhs;
+                    rhs = rest;
+                } else {
+                    // `safesubst:...`
+                    callee += rhs;
+                    continue;
+                }
+            }
+
+            has_colon = true;
+            if !rhs.is_empty() {
+                *first = Some(Spanned {
+                    node: Token::Generated(rhs.to_owned()),
+                    span: part.span,
+                });
+            }
+            break;
+        }
+
+        callee += &text;
+    }
+    let rest = rest.as_slice();
+
+    let callee_lower = callee.trim_ascii().to_lowercase();
+
+    // eprintln!("{callee_lower} / {first:?} / {rest:?}");
+
+    Ok(
+        if let Some(callee) = resolve_callee(
+            state.statics.db.config(),
+            arguments.is_empty(),
+            has_colon,
+            &callee_lower,
+        ) {
+            // It is important to actually not pass a zeroth argument if there
+            // is not one because this changes behaviour (e.g. `{{VAR}}` gets
+            // `VAR`; `{{VAR:}}` calls `VAR` with an empty string)
+            let first = has_colon
+                .then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
+
+            let arguments = first
+                .into_iter()
+                .chain(arguments.iter().map(Kv::Argument))
+                .collect::<Vec<_>>();
+
+            Target::ParserFn {
+                callee: callee.to_owned(),
+                arguments,
+            }
+        } else {
+            #[rustfmt::skip]
+            if let Some(Spanned { node: Token::Generated(first), .. }) = first {
+                callee.push(':');
+                callee += first;
+            };
+            callee += &sp.eval(state, rest)?;
+            let callee = sp.name.join(&callee);
+            let callee = callee.trim_ascii();
+            if Title::is_valid(state.statics.db.config(), callee) {
+                let callee = Title::new(
+                    state.statics.db.config(),
+                    callee,
+                    Namespace::find_by_id(state.statics.db.config(), Namespace::TEMPLATE),
+                );
+                let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
+                Target::Template { callee, arguments }
+            } else {
+                Target::Text
+            }
+        },
+    )
+}
+
+/// Transcludes a template.
+pub(crate) fn call_template(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    callee: &Title,
+    arguments: &[Kv<'_>],
+) -> Result<Option<String>> {
+    let Ok(template) = state.statics.db.get(callee) else {
+        log::warn!("No template found for '{callee}'");
+        write!(out, "[[{}]]", callee.key())?;
+        return Ok(None);
+    };
+
+    let Ok(template) = resolve_redirects(&state.statics.db, template) else {
+        log::warn!("Template redirects failed for {callee}");
+        return Ok(None);
+    };
+
+    let resolved_title = Title::new(state.statics.db.config(), &template.title, None);
+    let resolved_key = resolved_title.key();
+    let wrapper_key = TACKY_TEMPLATES.contains(resolved_key).then(|| {
+        resolved_key
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+    });
+
+    log::trace!("Expanding {resolved_title}");
+
+    let start = Instant::now();
+    let mut expansion = ExpandTemplates::new(ExpandMode::Include);
+
+    // The 'Module:Arguments' wrapper argument requires that redirects are
+    // using the final name, not a redirect alias
+    let sp = sp.chain(
+        Title::new(state.statics.db.config(), &template.title, None),
+        FileMap::new(&template.body),
+        arguments,
+    )?;
+    // For now, just assume that the cache will always be big enough and unwrap
+    let root = Arc::clone(
+        state
+            .statics
+            .template_cache
+            .write()?
+            .get_or_insert_fallible(template.id, || {
+                state.statics.parser.parse(&sp.source, true).map(Arc::new)
+            })?
+            .unwrap(),
+    );
+
+    expansion.adopt_output(state, &sp, &root)?;
+    // TODO: Could just write directly to the out.
+    write!(out, "{}", expansion.finish())?;
+
+    state
+        .timing
+        .entry(sp.name.key().to_owned())
+        .and_modify(|(count, duration)| {
+            *count += 1;
+            *duration += start.elapsed();
+        })
+        .or_insert_with(|| (1, start.elapsed()));
+
+    Ok(wrapper_key)
+}
+
+/// Returns the canonical variable or parser function name if the given
+/// template target is a registered variable or parser function alias.
+///
+/// Technically, aliases may be either case-sensitive *or* case-insensitive,
+/// but in practice this does not seem to really matter so this implementation
+/// just always uses case-insensitive matching.
+pub(crate) fn resolve_callee<'a>(
+    config: &Configuration,
+    empty_arguments: bool,
+    has_colon: bool,
+    callee_lower: &'a str,
+) -> Option<&'a str> {
+    // Variable names can technically be arbitrary strings matching the entire
+    // name-part, but in practice they are basic sequences optionally ending
+    // with ':' (though registering a variable with a colon is deprecated,
+    // probably for this exact reason: it is dumb and it sucks and makes the
+    // implementation stupid). fetch-config normalises a trailing colon away for
+    // implementation simplicity, with the related risk that this ends up
+    // causing template shadowing and a requirement to change it later to
+    // support very cursed wikis. MW only checks variables if there are no
+    // `{{...|args}}`, so this risk is low.
+    if empty_arguments && let callee @ Some(_) = config.variables.get(callee_lower).copied() {
+        callee
+    } else if has_colon {
+        // The list of function hooks and aliases from the MediaWiki API does
+        // not specify which ones were registered using `SFH_NO_HASH`, so there
+        // is no way to know for sure whether a parser function is supposed to
+        // start with '#' or not. Since MW only checks for parser functions if
+        // there is a ':' in the name-part, this is probably fine, since in
+        // order to cause a mismatch it would mean that someone made a namespace
+        // alias that matches a parser function name, which is unlikely.
+        let callee_lower = callee_lower.strip_prefix('#').unwrap_or(callee_lower);
+        config.function_hooks.get(callee_lower).copied()
+    } else {
+        None
+    }
+}
+
+/// Handles a template or parameter which is disabled due to the current
+/// [`LoadMode`].
+pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
+    out: &mut W,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+) -> Result {
+    let href = make_url(
+        None,
+        &state.statics.base_uri,
+        &sp.root().name,
+        Some("mode=module"),
+        false,
+    )?;
+
+    write!(
+        out,
+        r#"[{href} <span class="wiki-rs-incomplete">Run scripts</span>]"#
+    )?;
+    Ok(())
+}
+
+/// Scans for templates and links to allow database entries to be fetched whilst
+/// the renderer is busy doing its own thing.
+#[derive(Default)]
+pub(crate) struct DbPrefetch {
+    /// Template targets to prefetch.
+    templates: IndexSet<Title>,
+    /// Link targets to prefetch.
+    links: IndexSet<Title>,
+}
+
+impl DbPrefetch {
+    /// Executes the prefetch, consuming this prefetcher.
+    pub(super) fn finish(self, state: &mut State<'_, '_, '_>) {
+        state.statics.db.prefetch_all(self.templates, self.links);
+    }
+}
+
+impl Surrogate<Error> for DbPrefetch {
+    fn adopt_autolink(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _target: &[Spanned<Token>],
+        _content: &[Spanned<Token>],
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn adopt_external_link(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        target: &[Spanned<Token>],
+        content: &[Spanned<Token>],
+    ) -> Result<(), Error> {
+        self.adopt_tokens(state, sp, target)?;
+        self.adopt_tokens(state, sp, content)
+    }
+
+    fn adopt_link(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        target: &[Spanned<Token>],
+        content: &[Spanned<Argument>],
+        _trail: Option<Spanned<&str>>,
+    ) -> Result<(), Error> {
+        self.adopt_tokens(state, sp, target)?;
+
+        // Prefetching targets from the index is for redlinks.
+        // TODO: Allow redlinks to be configurable, to make things faster, with
+        // the downside that you might click on a dead link.
+        // TODO: Add a utility to rebuild the index so that binary search is
+        // possible.
+        if let [
+            Spanned {
+                node: Token::Text,
+                span,
+            },
+        ] = target
+        {
+            let target = title_decode(&sp.source[span.into_range()]);
+            self.links
+                .insert(Title::new(state.statics.db.config(), &target, None));
+        }
+
+        for argument in content {
+            self.adopt_tokens(state, sp, &argument.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_parameter(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        name: &[Spanned<Token>],
+        default: Option<&[Spanned<Token>]>,
+    ) -> Result<(), Error> {
+        self.adopt_tokens(state, sp, name)?;
+        if let Some(default) = default {
+            self.adopt_tokens(state, sp, default)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_redirect(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _target: &[Spanned<Token>],
+        _content: &[Spanned<Argument>],
+        _trail: Option<Spanned<&str>>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn adopt_start_tag(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        _name: &str,
+        attributes: &[Spanned<Argument>],
+        _self_closing: bool,
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_table_caption(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_table_data(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_table_heading(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+    fn adopt_table_row(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+    fn adopt_table_start(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        attributes: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        for attribute in attributes {
+            self.adopt_tokens(state, sp, &attribute.content)?;
+        }
+        Ok(())
+    }
+
+    fn adopt_template(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        target: &[Spanned<Token>],
+        arguments: &[Spanned<Argument>],
+    ) -> Result<(), Error> {
+        let mut first = None;
+        match split_target(state, sp, &mut first, target, arguments)? {
+            Target::Template { callee, .. } => {
+                self.templates.insert(callee);
+            }
+            Target::ParserFn { callee, arguments } => {
+                if callee == "#invoke" {
+                    let target = arguments[0].eval(state, sp)?;
+                    self.templates.insert(Title::new(
+                        state.statics.db.config(),
+                        target.trim_ascii(),
+                        Namespace::find_by_id(state.statics.db.config(), Namespace::MODULE),
+                    ));
+                }
+            }
+            Target::Text => {
+                self.adopt_tokens(state, sp, target)?;
+            }
+        }
+        if let Some(first) = first {
+            self.adopt_token(state, sp, &first)?;
+        }
+        for argument in arguments {
+            self.adopt_tokens(state, sp, &argument.content)?;
+        }
+
+        Ok(())
+    }
+}

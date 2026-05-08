@@ -1,0 +1,21 @@
+[package]
+name = "libwikitext-lua"
+description = "A pure Rust implementation of the Scribunto Lua interpreter for Wikitext (non-GPL parts)"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+gc-arena.workspace = true
+libphp-rs.workspace = true
+libwikitext-common.workspace = true
+log.workspace = true
+memchr.workspace = true
+piccolo.workspace = true
+thiserror.workspace = true
+time.workspace = true
+unicode-general-category.workspace = true

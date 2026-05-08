@@ -1,0 +1,30 @@
+[package]
+name = "libwikitext-common"
+description = "Common types and functions for parsing and rendering Wikitext (non-GPL parts)"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fancy-regex.workspace = true
+html-escape.workspace = true
+http.workspace = true
+indexmap.workspace = true
+libmisc.workspace = true
+libphp-rs.workspace = true
+memchr.workspace = true
+percent-encoding.workspace = true
+phf.workspace = true
+rayon.workspace = true
+regex.workspace = true
+schnellru.workspace = true
+serde_json.workspace = true
+serde_json_borrow.workspace = true
+thiserror.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+libwikitext-data.workspace = true

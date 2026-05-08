@@ -1,0 +1,665 @@
+//! Types and functions for parsing and formatting MediaWiki title strings.
+
+use super::{config::Configuration, decode_html, url_encode};
+use core::fmt::Write as _;
+use libmisc::CowExt as _;
+use percent_encoding::PercentEncode;
+use std::borrow::Cow;
+
+/// The title casing strategy for a namespace.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NamespaceCase {
+    /// The first letter of the namespace name is capitalised.
+    FirstLetter,
+    /// The namespace name is case-sensitive.
+    CaseSensitive,
+}
+
+/// An article namespace.
+#[derive(Debug, Eq)]
+pub struct Namespace {
+    /// The namespace ID.
+    pub id: i32,
+    /// The display name of the namespace.
+    pub name: &'static str,
+    /// The canonical name of the namespace.
+    ///
+    /// For example, the canonical 'Project' namespace, present on all MW
+    /// installations, is normally given a display name matching the name of the
+    /// wiki.
+    pub canonical: Option<&'static str>,
+    /// The case folding strategy for titles in the namespace.
+    pub case: NamespaceCase,
+    /// The default content model for titles in the namespace.
+    pub default_content_model: Option<&'static str>,
+    /// Whether the namespace supports subpages.
+    pub subpages: bool,
+    /// Whether pages within this namespace should be considered the ‘main’
+    /// content of the wiki.
+    pub content: bool,
+    /// Named aliases for the namespace.
+    pub aliases: &'static [&'static str],
+}
+
+impl core::hash::Hash for Namespace {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl PartialEq for Namespace {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Namespace {
+    /// The special namespace ID used for direct links to media files.
+    pub const MEDIA: i32 = -2;
+    /// The special namespace ID used for dynamic pages.
+    pub const SPECIAL: i32 = -1;
+    /// The main namespace ID.
+    pub const MAIN: i32 = 0;
+    /// The talk namespace ID.
+    #[allow(
+        clippy::allow_attributes,
+        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
+    )]
+    #[allow(dead_code, reason = "useful for documentation")]
+    pub const TALK: i32 = 1;
+    /// The user namespace ID.
+    pub const USER: i32 = 2;
+    /// The user talk namespace ID.
+    pub const USER_TALK: i32 = 3;
+    /// The project namespace ID.
+    pub const PROJECT: i32 = 4;
+    /// The project talk namespace ID.
+    pub const PROJECT_TALK: i32 = 5;
+    /// The file namespace ID.
+    pub const FILE: i32 = 6;
+    /// The file talk namespace ID.
+    pub const FILE_TALK: i32 = 7;
+    /// The system namespace ID.
+    pub const MEDIAWIKI: i32 = 8;
+    /// The system talk namespace ID.
+    pub const MEDIAWIKI_TALK: i32 = 9;
+    /// The template namespace ID.
+    pub const TEMPLATE: i32 = 10;
+    /// The template talk namespace ID.
+    pub const TEMPLATE_TALK: i32 = 11;
+    /// The help namespace ID.
+    pub const HELP: i32 = 12;
+    /// The help talk namespace ID.
+    pub const HELP_TALK: i32 = 13;
+    /// The category namespace ID.
+    pub const CATEGORY: i32 = 14;
+    /// The category talk namespace ID.
+    pub const CATEGORY_TALK: i32 = 15;
+
+    /// Returns the associated ID (talk -> subject, or subject -> talk) of this
+    /// namespace.
+    #[inline]
+    #[must_use]
+    pub const fn associated_id(&self) -> i32 {
+        if self.is_talk() {
+            self.id - 1
+        } else {
+            self.id + 1
+        }
+    }
+
+    /// Finds the namespace with the given numeric ID.
+    #[must_use]
+    pub fn find_by_id(config: &Configuration, id: i32) -> Option<&'static Self> {
+        config.namespaces.iter().find(|ns| ns.id == id)
+    }
+
+    /// Finds the namespace with the given case-insensitive name. Searches the
+    /// name and all aliases.
+    #[must_use]
+    pub fn find_by_name(config: &Configuration, name: &str) -> Option<&'static Self> {
+        config.namespaces.iter().find(|ns| {
+            ns.name.eq_ignore_ascii_case(name)
+                || ns
+                    .canonical
+                    .is_some_and(|canonical| name.eq_ignore_ascii_case(canonical))
+                || ns
+                    .aliases
+                    .iter()
+                    .any(|alias| alias.eq_ignore_ascii_case(name))
+        })
+    }
+
+    /// Returns true if this is a talk namespace.
+    #[inline]
+    #[must_use]
+    pub const fn is_talk(&self) -> bool {
+        self.id > Namespace::MAIN && self.id % 2 == 1
+    }
+
+    /// Returns the main namespace.
+    ///
+    /// # Panics
+    ///
+    /// * `configuration` contains no main namespace
+    #[must_use]
+    pub fn main(config: &Configuration) -> &'static Self {
+        Self::find_by_id(config, Self::MAIN).unwrap()
+    }
+
+    /// Returns the talk namespace for this namespace. If this namespace
+    /// is a talk namespace, it is the same as this namespace.
+    #[inline]
+    #[must_use]
+    pub fn talk(&self, config: &Configuration) -> Option<&'static Namespace> {
+        Self::find_by_id(config, self.talk_id())
+    }
+
+    /// Returns the talk namespace ID for this namespace. If this namespace
+    /// is a talk namespace, it is the same ID as this namespace ID.
+    #[inline]
+    #[must_use]
+    pub const fn talk_id(&self) -> i32 {
+        if self.is_talk() { self.id } else { self.id + 1 }
+    }
+
+    /// Returns the subject namespace for this namespace. If this namespace
+    /// is a subject namespace, it is the same as this namespace.
+    #[inline]
+    #[must_use]
+    pub fn subject(&self, config: &Configuration) -> Option<&'static Namespace> {
+        Self::find_by_id(config, self.subject_id())
+    }
+
+    /// Returns the subject namespace ID for this namespace. If this namespace
+    /// is a subject namespace, it is the same ID as this namespace ID.
+    #[inline]
+    #[must_use]
+    pub const fn subject_id(&self) -> i32 {
+        if self.is_talk() { self.id - 1 } else { self.id }
+    }
+}
+
+impl Namespace {
+    /// The ID of the Scribunto `Module:` namespace.
+    pub const MODULE: i32 = 828;
+}
+
+/// A normalised article title.
+#[derive(Clone, Debug, Eq)]
+pub struct Title {
+    /// The location of the fragment delimiter in the title, if one exists.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                                   ^
+    /// ```
+    fragment_delimiter: Option<u16>,
+
+    /// The location of the interwiki delimiter in the title, if one exists.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///          ^
+    /// ```
+    iw_delimiter: Option<u16>,
+
+    /// The namespace of the title.
+    namespace: &'static Namespace,
+
+    /// The location of the namespace delimiter in the title, if one exists.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                    ^
+    /// ```
+    ns_delimiter: Option<u16>,
+
+    /// The full title text.
+    text: String,
+}
+
+impl core::hash::Hash for Title {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.interwiki().unwrap_or_default().hash(state);
+        self.namespace.hash(state);
+        self.text().hash(state);
+    }
+}
+
+impl PartialEq for Title {
+    fn eq(&self, other: &Self) -> bool {
+        self.interwiki().unwrap_or_default() == other.interwiki().unwrap_or_default()
+            && self.namespace == other.namespace
+            && self.text() == other.text()
+    }
+}
+
+impl Title {
+    /// Creates a title from a known namespace plus text parts.
+    ///
+    /// # Errors
+    ///
+    /// * A write to the internal buffer fails
+    ///
+    /// # Panics
+    ///
+    /// * `title.len() > u16::MAX`
+    pub fn from_parts(
+        namespace: &'static Namespace,
+        title: &str,
+        fragment: Option<&str>,
+        interwiki: Option<&str>,
+    ) -> Result<Self, core::fmt::Error> {
+        let mut text = String::with_capacity(title.len());
+
+        let iw_delimiter = interwiki
+            .map(|interwiki| {
+                let interwiki = normalize(interwiki);
+                let iw_delimiter = interwiki.len();
+                write!(text, "{interwiki}:")?;
+                Ok(u16::try_from(iw_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        let ns_delimiter = (!namespace.name.is_empty())
+            .then(|| {
+                let ns_delimiter = text.len() + namespace.name.len();
+                write!(text, "{}:", namespace.name)?;
+                Ok(u16::try_from(ns_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        let title = normalize(title);
+        if namespace.case == NamespaceCase::FirstLetter
+            && let Some(first) = title.chars().next()
+            && first.is_lowercase()
+        {
+            let rest = &title[first.len_utf8()..];
+            write!(text, "{}{rest}", first.to_uppercase())?;
+        } else {
+            text += &title;
+        }
+
+        let fragment_delimiter = fragment
+            .map(|fragment| {
+                let fragment_delimiter = text.len();
+                write!(text, "#{}", normalize(fragment))?;
+                Ok(u16::try_from(fragment_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        Ok(Self {
+            fragment_delimiter,
+            iw_delimiter,
+            namespace,
+            ns_delimiter,
+            text,
+        })
+    }
+
+    /// Creates a new [`Title`] from a title string and optional default
+    /// namespace.
+    ///
+    /// In MediaWiki, this is like `newFromText`.
+    ///
+    /// # Panics
+    ///
+    /// * [`Self::from_parts`] returns an error
+    #[must_use]
+    pub fn new(config: &Configuration, text: &str, default_ns: Option<&'static Namespace>) -> Self {
+        let text = normalize(text);
+        let text = &*text;
+
+        // Namespaced & interwiki titles that start with ':' are given special
+        // rendering behaviour, but it could also be an explicit main namespace.
+        // It is not possible to know at this point.
+        let (empty_start, mut text) = text
+            .strip_prefix(':')
+            .map_or((false, text), |text| (true, text));
+
+        // Namespaces and interwiki prefixes may have the same name, and
+        // namespaces are given priority. (It does not make much sense that
+        // namespaces from one wiki are treated as if they might exist on a
+        // foreign wiki, but the Lua mw.title interface acts like this is the
+        // case, so wiki.rs does too.)
+        let (ns, iw) = text.split_once(':').map_or(<_>::default(), |(lhs, rhs)| {
+            let lhs = lhs.trim_end();
+            let rhs = rhs.trim_start();
+            if let Some(ns) = Namespace::find_by_name(config, lhs) {
+                text = rhs;
+                (Some(ns), None)
+            } else if config.interwiki_map.contains_key(&lhs.to_ascii_lowercase()) {
+                text = rhs;
+                (None, Some(lhs))
+            } else {
+                <_>::default()
+            }
+        });
+
+        let ns = ns.unwrap_or_else(|| {
+            if let Some((lhs, rhs)) = text.split_once(':')
+                && let Some(ns) = Namespace::find_by_name(config, lhs.trim_end())
+            {
+                text = rhs.trim_start();
+                ns
+            } else if empty_start {
+                Namespace::main(config)
+            } else {
+                default_ns.unwrap_or_else(|| Namespace::main(config))
+            }
+        });
+
+        let (text, fragment) = text
+            .split_once('#')
+            .map_or((text, None), |(text, frag)| (text.trim_end(), Some(frag)));
+
+        Self::from_parts(ns, text, fragment, iw).unwrap()
+    }
+
+    /// The parent path of the page.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                     ^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn base_text(&self) -> &str {
+        let text = self.text();
+        text.rsplit_once('/').map_or(text, |(base, _)| base)
+    }
+
+    /// The full text of the title.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn full_text(&self) -> &str {
+        &self.text
+    }
+
+    /// The page fragment.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                                    ^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn fragment(&self) -> &str {
+        let start_at = self
+            .fragment_delimiter
+            .map_or(self.text.len(), |d| usize::from(d) + 1);
+        &self.text[start_at..]
+    }
+
+    /// The title interwiki identifier.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn interwiki(&self) -> Option<&str> {
+        self.iw_delimiter
+            .map(|end_at| &self.text[..usize::from(end_at)])
+    }
+
+    /// Returns true if this title corresponds to a non-interwiki category.
+    #[must_use]
+    pub fn is_local_category(&self) -> bool {
+        self.interwiki().is_none() && self.namespace.id == Namespace::CATEGORY
+    }
+
+    /// Returns true if this title corresponds to a non-interwiki media file.
+    #[must_use]
+    pub fn is_local_file(&self) -> bool {
+        self.interwiki().is_none() && self.namespace.id == Namespace::FILE
+    }
+
+    /// Returns true if all the bytes in the given string are valid for use in
+    /// a title.
+    #[must_use]
+    pub fn is_valid(config: &Configuration, maybe_title: &str) -> bool {
+        #[inline]
+        fn is_html_entity(bytes: &[u8]) -> bool {
+            bytes[0] == b'&'
+                && bytes[1..]
+                    .iter()
+                    .position(|b| *b == b';')
+                    .is_some_and(|end| {
+                        bytes[1..end]
+                            .iter()
+                            .all(|b| b.is_ascii_alphanumeric() || *b >= 0x80)
+                    })
+        }
+
+        #[inline]
+        fn is_percent_encoding(bytes: &[u8]) -> bool {
+            bytes[0] == b'%'
+                && bytes
+                    .get(1..2)
+                    .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_hexdigit))
+        }
+
+        let bytes = maybe_title.as_bytes();
+        for pos in 0..maybe_title.len() {
+            if !config.valid_title_bytes.contains(bytes[pos])
+                || is_percent_encoding(&bytes[pos..])
+                || is_html_entity(&bytes[pos..])
+            {
+                return false;
+            }
+        }
+        !maybe_title.is_empty()
+    }
+
+    /// Converts a page-relative title name to an absolute title name using the
+    /// given `base` as the base title.
+    #[must_use]
+    pub fn join<'a>(&self, partial: &'a str) -> Cow<'a, str> {
+        if !self.namespace().subpages {
+            return Cow::Borrowed(partial);
+        }
+
+        let (target, fragment) = if let Some(p) = partial.rfind('#') {
+            partial.split_at(p)
+        } else {
+            (partial, "")
+        };
+        let target = target.trim_ascii();
+
+        // TODO: '/' at the end is supposed to do something to the output text
+        if target.starts_with('/') {
+            Cow::Owned(self.prefixed_text().to_owned() + target.trim_end_matches('/') + fragment)
+        } else if target.starts_with("../") {
+            let suffix = target.trim_start_matches("../");
+            let count = (target.len() - suffix.len()) / "../".len();
+            self.prefixed_text()
+                .rsplitn(count + 1, '/')
+                .nth(count)
+                .map_or(<_>::default(), |last| {
+                    Cow::Owned(format!("{last}/{suffix}{fragment}"))
+                })
+        } else {
+            Cow::Borrowed(partial.trim_ascii())
+        }
+    }
+
+    /// The local part of the title.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///           ^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn key(&self) -> &str {
+        let start_at = usize::from(self.iw_delimiter.map_or(0, |d| d + 1));
+        let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
+        &self.text[start_at..end_at]
+    }
+
+    /// The title’s namespace object.
+    #[inline]
+    #[must_use]
+    pub fn namespace(&self) -> &'static Namespace {
+        self.namespace
+    }
+
+    /// The local part of the title, in a URI component encoded form.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///           ^^^^^^^^^^^^^^^^^^^^^^^^
+    ///       (Namespace%3ATitle%25Sub%25Page)
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn partial_url(&self) -> PercentEncode<'_> {
+        url_encode(self.key())
+    }
+
+    /// The prefixed text of the title.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn prefixed_text(&self) -> &str {
+        let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
+        &self.text[..end_at]
+    }
+
+    /// The root path of the page.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                     ^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn root_text(&self) -> &str {
+        let text = self.text();
+        text.split_once('/').map_or(text, |(root, _)| root)
+    }
+
+    /// The subpage path of the page.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                               ^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn subpage_text(&self) -> &str {
+        let text = self.text();
+        text.rsplit_once('/').map_or(text, |(_, sub)| sub)
+    }
+
+    /// The path of the page.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                     ^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn text(&self) -> &str {
+        let start_at = self
+            .ns_delimiter
+            .or(self.iw_delimiter)
+            .map_or(0, |d| usize::from(d) + 1);
+        let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
+        &self.text[start_at..end_at]
+    }
+}
+
+impl core::fmt::Display for Title {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.full_text())
+    }
+}
+
+/// Returns true if the given character `c` is a bidirectional text control
+/// character.
+#[inline]
+fn bidi(c: char) -> bool {
+    ('\u{200e}'..='\u{200f}').contains(&c) || ('\u{202a}'..='\u{202e}').contains(&c)
+}
+
+/// Normalises a title text part by decoding HTML entities and converting
+/// runs of whitespace + underscore to a single space character.
+pub fn normalize(text: &str) -> Cow<'_, str> {
+    let decoded = decode_html(text);
+    let mut out = String::new();
+    let mut flushed = 0;
+    let mut iter = decoded.char_indices().peekable();
+
+    while let Some((index, c)) = iter.next() {
+        // Peek to avoid switching to owned-mode when encountering a single
+        // space
+        if trimmable(c) && (c != ' ' || matches!(iter.peek(), Some((_, c)) if trimmable(*c))) {
+            // Non-space whitespace + underscores are converted to space and
+            // runs of whitespace are collapsed into a single character
+            while iter.next_if(|(_, c)| trimmable(*c)).is_some() {}
+
+            // This acts like `trim`, not emitting a space at the start
+            // (`index == 0`) or end (`peek().is_none()`) of the text.
+            if let Some((next_index, _)) = iter.peek() {
+                out += &decoded[flushed..index];
+                flushed = *next_index;
+                // Bidi markers get stripped because “Sometimes they slip
+                // into cut-n-pasted page titles”
+                if index != 0 && spacelike(c) {
+                    out.push(' ');
+                }
+            }
+        }
+    }
+
+    if flushed == 0 {
+        decoded.map_ref(|b| b.trim_matches(trimmable))
+    } else {
+        out += decoded[flushed..].trim_end_matches(trimmable);
+        Cow::Owned(out)
+    }
+}
+
+/// Returns true if the character `c` is considered like whitespace in title
+/// text.
+#[inline]
+fn spacelike(c: char) -> bool {
+    c == '_' || c.is_whitespace()
+}
+
+/// Returns true if the character `c` is trimmable in title text.
+#[inline]
+fn trimmable(c: char) -> bool {
+    bidi(c) || spacelike(c)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize() {
+        assert_eq!(super::normalize("A b"), Cow::Borrowed("A b"));
+        assert_eq!(super::normalize("A_b"), "A b");
+        assert_eq!(super::normalize("A_______b"), "A b");
+        assert_eq!(super::normalize("A__  __b"), "A b");
+        assert_eq!(super::normalize("A  b"), "A b");
+        assert_eq!(super::normalize("   A b   "), Cow::Borrowed("A b"));
+        assert_eq!(super::normalize(" \t A b"), Cow::Borrowed("A b"));
+        assert_eq!(super::normalize("A b   "), Cow::Borrowed("A b"));
+        assert_eq!(super::normalize("\u{200e}A b   \u{202e}"), "A b");
+    }
+}

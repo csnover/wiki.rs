@@ -1,0 +1,13 @@
+[package]
+name = "barely-css"
+description = "Barely parses and compiles a subset of CSS"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+barely-css_derive = { path = "derive" }
+barely-css_impl = { path = "impl" }

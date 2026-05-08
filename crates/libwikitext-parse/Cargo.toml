@@ -1,0 +1,18 @@
+[package]
+name = "libwikitext-parse"
+description = "A Wikitext to AST parser (non-GPL parts)"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+either.workspace = true
+libphp-rs.workspace = true
+libwikitext-common.workspace = true
+memchr.workspace = true
+peg.workspace = true
+phf.workspace = true
+thiserror.workspace = true

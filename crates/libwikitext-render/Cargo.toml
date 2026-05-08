@@ -1,0 +1,46 @@
+[package]
+name = "libwikitext-render"
+description = "A Wikitext AST to HTML renderer (non-GPL parts)"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+barely-css.workspace = true
+bitflags.workspace = true
+easytimeline.workspace = true
+either.workspace = true
+gc-arena.workspace = true
+html-escape.workspace = true
+http.workspace = true
+indexmap.workspace = true
+libmisc.workspace = true
+libphp-rs.workspace = true
+libwikitext-common.workspace = true
+libwikitext-common-gpl.workspace = true
+libwikitext-lua.workspace = true
+libwikitext-lua-gpl.workspace = true
+libwikitext-parse.workspace = true
+libwikitext-parse-gpl.workspace = true
+log.workspace = true
+math-core.workspace = true
+memchr.workspace = true
+numerals.workspace = true
+percent-encoding.workspace = true
+phf.workspace = true
+piccolo.workspace = true
+regex.workspace = true
+schnellru.workspace = true
+scopeguard.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_json_borrow.workspace = true
+syntect.workspace = true
+thiserror.workspace = true
+typed-builder.workspace = true
+unicode-general-category.workspace = true
+vega2-rs.workspace = true

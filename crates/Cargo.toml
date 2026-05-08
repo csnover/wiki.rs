@@ -1,0 +1,148 @@
+# https://github.com/rust-lang/cargo/issues/5042 makes life bad
+[workspace]
+members = [
+	"barely-css",
+	"barely-css/derive",
+	"barely-css/impl",
+	"easytimeline",
+	"libmisc",
+	"libphp-rs",
+	"libwikitext-common",
+	"libwikitext-common-gpl",
+	"libwikitext-data",
+	"libwikitext-lua",
+	"libwikitext-lua-gpl",
+	"libwikitext-parse",
+	"libwikitext-parse-gpl",
+	"libwikitext-render",
+	"libwikitext-render-gpl",
+	"timelib-rs",
+	"vega2-rs",
+	"wiki-rs"
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "1.0.0"
+
+[workspace.lints.clippy]
+alloc_instead_of_core = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+clone_on_ref_ptr = "warn"
+dbg_macro = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+get_unwrap = "warn"
+if_then_some_else_none = "warn"
+infinite_loop = "warn"
+lossy_float_literal = "warn"
+missing_docs_in_private_items = "warn"
+mixed_read_write_in_expression = "warn"
+needless_raw_strings = "warn"
+pedantic = "warn"
+print_stderr = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+redundant_type_annotations = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+self_named_module_files = "warn"
+std_instead_of_core = "warn"
+str_to_string = "warn"
+string_lit_chars_any = "warn"
+undocumented_unsafe_blocks = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unneeded_field_pattern = "warn"
+unseparated_literal_suffix = "warn"
+unused_result_ok = "warn"
+unused_trait_names = "warn"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+rust_2018_idioms = "warn"
+
+[workspace.dependencies]
+anyhow = "1.0"
+arrayvec = "0.7"
+barely-css = { path = "barely-css" }
+bitflags = "2.10"
+csscolorparser = "0.8"
+easytimeline = { path = "easytimeline" }
+either = "1.15"
+env_logger = "0.11"
+fancy-regex = "0.16"
+gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "5a7534b883b703f23cfb8c3cfdf033460aa77ea9", features = ["allocator-api2", "hashbrown"] }
+goldenfile = "1.9"
+html-escape = "0.2"
+http = "1.0.0"
+indexmap = { version = "2.12", features = ["serde"] }
+libmisc = { path = "libmisc" }
+libphp-rs = { path = "libphp-rs" }
+timelib-rs = { path = "timelib-rs" }
+vega2-rs = { path = "vega2-rs" }
+libwikitext-common = { path = "libwikitext-common" }
+libwikitext-common-gpl = { path = "libwikitext-common-gpl" }
+libwikitext-data = { path = "libwikitext-data" }
+libwikitext-lua = { path = "libwikitext-lua" }
+libwikitext-lua-gpl = { path = "libwikitext-lua-gpl" }
+libwikitext-parse = { path = "libwikitext-parse" }
+libwikitext-parse-gpl = { path = "libwikitext-parse-gpl" }
+libwikitext-render = { path = "libwikitext-render" }
+libwikitext-render-gpl = { path = "libwikitext-render-gpl" }
+log = "0.4"
+math-core = "0.6"
+memchr = "2.7"
+minidom = "0.18"
+numerals = "0.1"
+peeknth = { version = "0.3", features = ["peekdn"] }
+peg = { git = "https://github.com/csnover/rust-peg.git", rev = "68a910801dbcf6acc19ba2f81c352435a9072cb4" }
+# urlencoding is smaller, but percent-encoding is already a sub-dependency
+percent-encoding = "2"
+phf = { version = "0.13.1", features = ["macros"] }
+piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
+piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
+rand = { version = "0.9", default-features = false, features = ["small_rng", "std"] }
+rayon = "1"
+regex = "1"
+rustybuzz = "0.20"
+rxml = { version = "0.13", features = ["macros"] }
+scopeguard = "1.2"
+schnellru = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_json_borrow = { git = "https://github.com/csnover/serde_json_borrow.git", rev = "9707f0083c196ffd453c469d00e5d308a8e23551" }
+serde-transcode = "1"
+similar-asserts = "1.7"
+syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "html", "parsing", "regex-fancy", "yaml-load"] }
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
+tiny-skia = { version = "0.12", default-features = false, features = ["simd", "std"] }
+typed-builder = "0.23"
+tz-rs = { version = "0.7.1", features = [] }
+tzdb_data = "0.2"
+unicode-general-category = "1.1"
+unicode-normalization = "0.1"
+wuff = "0.2"
+
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 3
+
+[profile.dev-fast.package.gc-arena]
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev-fast.package.piccolo]
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev-fast.package.piccolo-util]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+debug = "line-tables-only"
+lto = "thin"

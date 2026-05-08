@@ -1,0 +1,13 @@
+[package]
+name = "barely-css_impl"
+description = "Barely parses and compiles a subset of CSS at runtime"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+peg.workspace = true
+thiserror.workspace = true

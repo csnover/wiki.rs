@@ -1,0 +1,9 @@
+[package]
+name = "libmisc"
+description = "Simple things which are useful"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

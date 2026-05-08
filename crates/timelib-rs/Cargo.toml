@@ -1,0 +1,20 @@
+[package]
+name = "timelib-rs"
+description = "A pure Rust port of timelib, the date string parsing library used by PHP and MongoDB"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+peg.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tz-rs.workspace = true
+tzdb_data.workspace = true
+
+[build-dependencies]
+regex.workspace = true
+tzdb_data.workspace = true

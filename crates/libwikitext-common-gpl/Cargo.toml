@@ -1,0 +1,14 @@
+[package]
+name = "libwikitext-common-gpl"
+description = "Common types and functions for parsing and rendering Wikitext (GPL parts)"
+edition.workspace = true
+license = "GPL-2.0-or-later"
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arrayvec.workspace = true
+libphp-rs.workspace = true
+thiserror.workspace = true
