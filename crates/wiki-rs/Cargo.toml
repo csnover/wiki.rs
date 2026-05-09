@@ -34,7 +34,7 @@ quote = { version = "1", optional = true }
 r2d2 = "0.8"
 rayon.workspace = true
 regex.workspace = true
-sailfish = "0.10"
+sailfish = "0.11"
 schnellru.workspace = true
 serde.workspace = true
 serde_json.workspace = true
