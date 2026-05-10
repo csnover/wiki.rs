@@ -755,7 +755,7 @@ pub struct Statics<'config> {
         transform = |config: &'config Configuration| Parser::new(config))
     )]
     pub parser: Parser<'config>,
-    /// Parsed template cache.
+    /// Template AST cache.
     #[builder(
         default = make_template_cache(1024 * 1024),
         setter(doc = "Sets the global template cache. If unspecified, a 1MiB cache will be created.")
