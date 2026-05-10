@@ -810,8 +810,17 @@ pub(super) enum TextStyleEmitter {
 }
 
 impl TextStyleEmitter {
+    /// Close tag.
+    const CLOSE_TAG: bool = true;
+    /// Open tag.
+    const OPEN_TAG: bool = false;
+
     /// Emits HTML to match the new state given by `style`.
-    pub fn emit<W: fmt::Write + ?Sized>(&mut self, out: &mut W, style: TextStyle) -> fmt::Result {
+    pub fn emit<E, F: FnMut(&'static str, bool) -> Result<(), E>>(
+        self,
+        mut cb: F,
+        style: TextStyle,
+    ) -> Result<Self, E> {
         // Because I don’t care and we aren’t buffering tags, this does not
         // bother with the pedantic attempt to avoid extra formatting tags by
         // recording the position of a None -> BoldItalic transition and then
@@ -821,87 +830,103 @@ impl TextStyleEmitter {
         // IB (which, technically, because the HTML5 spec has defined rules
         // about fixing mismatched tags, it does not even really matter if they
         // are emitted in order).
-        match style {
+        Ok(match style {
             TextStyle::Bold(..) => match self {
                 Self::B => {
-                    out.write_str("</b>")?;
-                    *self = Self::None;
+                    cb("b", Self::CLOSE_TAG)?;
+                    Self::None
                 }
                 Self::BI => {
-                    out.write_str("</i></b><i>")?;
-                    *self = Self::I;
+                    cb("i", Self::CLOSE_TAG)?;
+                    cb("b", Self::CLOSE_TAG)?;
+                    cb("i", Self::OPEN_TAG)?;
+                    Self::I
                 }
                 Self::None => {
-                    out.write_str("<b>")?;
-                    *self = Self::B;
+                    cb("b", Self::OPEN_TAG)?;
+                    Self::B
                 }
                 Self::I => {
-                    out.write_str("<b>")?;
-                    *self = Self::IB;
+                    cb("b", Self::OPEN_TAG)?;
+                    Self::IB
                 }
                 Self::IB => {
-                    out.write_str("</b>")?;
-                    *self = Self::I;
+                    cb("b", Self::CLOSE_TAG)?;
+                    Self::I
                 }
             },
             TextStyle::BoldItalic => match self {
                 Self::None => {
-                    out.write_str("<b><i>")?;
-                    *self = Self::BI;
+                    cb("b", Self::OPEN_TAG)?;
+                    cb("i", Self::OPEN_TAG)?;
+                    Self::BI
                 }
                 Self::B => {
-                    out.write_str("</b><i>")?;
-                    *self = Self::I;
+                    cb("b", Self::CLOSE_TAG)?;
+                    cb("i", Self::OPEN_TAG)?;
+                    Self::I
                 }
                 Self::BI => {
-                    out.write_str("</i></b>")?;
-                    *self = Self::None;
+                    cb("i", Self::CLOSE_TAG)?;
+                    cb("b", Self::CLOSE_TAG)?;
+                    Self::None
                 }
                 Self::I => {
-                    out.write_str("</i><b>")?;
-                    *self = Self::B;
+                    cb("i", Self::CLOSE_TAG)?;
+                    cb("b", Self::OPEN_TAG)?;
+                    Self::B
                 }
                 Self::IB => {
-                    out.write_str("</b></i>")?;
-                    *self = Self::None;
+                    cb("b", Self::CLOSE_TAG)?;
+                    cb("i", Self::CLOSE_TAG)?;
+                    Self::None
                 }
             },
             TextStyle::Italic => match self {
                 Self::None => {
-                    out.write_str("<i>")?;
-                    *self = Self::I;
+                    cb("i", Self::OPEN_TAG)?;
+                    Self::I
                 }
                 Self::B => {
-                    out.write_str("<i>")?;
-                    *self = Self::BI;
+                    cb("i", Self::OPEN_TAG)?;
+                    Self::BI
                 }
                 Self::BI => {
-                    out.write_str("</i>")?;
-                    *self = Self::B;
+                    cb("i", Self::CLOSE_TAG)?;
+                    Self::B
                 }
                 Self::I => {
-                    out.write_str("</i>")?;
-                    *self = Self::None;
+                    cb("i", Self::CLOSE_TAG)?;
+                    Self::None
                 }
                 Self::IB => {
-                    out.write_str("</b></i><b>")?;
-                    *self = Self::B;
+                    cb("b", Self::CLOSE_TAG)?;
+                    cb("i", Self::CLOSE_TAG)?;
+                    cb("b", Self::OPEN_TAG)?;
+                    Self::B
                 }
             },
-        }
-        Ok(())
+        })
     }
 
     /// Emits HTML to finish any incomplete style.
-    pub fn finish<W: fmt::Write + ?Sized>(&mut self, out: &mut W) -> fmt::Result {
+    pub fn finish<E, F: FnMut(&'static str, bool) -> Result<(), E>>(
+        self,
+        mut cb: F,
+    ) -> Result<Self, E> {
         match self {
             Self::None => {}
-            Self::B => out.write_str("</b>")?,
-            Self::BI => out.write_str("</i></b>")?,
-            Self::I => out.write_str("</i>")?,
-            Self::IB => out.write_str("</b></i>")?,
+            Self::B => cb("b", Self::CLOSE_TAG)?,
+            Self::BI => {
+                cb("i", Self::CLOSE_TAG)?;
+                cb("b", Self::CLOSE_TAG)?;
+            }
+            Self::I => cb("i", Self::CLOSE_TAG)?,
+            Self::IB => {
+                cb("b", Self::CLOSE_TAG)?;
+                cb("i", Self::CLOSE_TAG)?;
+            }
         }
-        *self = Self::None;
-        Ok(())
+        Ok(Self::None)
     }
 }

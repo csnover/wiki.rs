@@ -224,7 +224,10 @@ impl Document {
 
     /// Finalises the document and returns the resulting output.
     pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> Result<String> {
-        self.text_style_emitter.finish(&mut self.html)?;
+        self.text_style_emitter.finish(|name, close| {
+            debug_assert!(close);
+            self.end_tag(state, name)
+        })?;
 
         for rest in self.stack.drain(..).rev() {
             rest.close(
@@ -241,8 +244,11 @@ impl Document {
     }
 
     /// Finishes formatting a line of Wikitext.
-    pub(crate) fn finish_line(&mut self) -> Result {
-        self.text_style_emitter.finish(&mut self.html)?;
+    pub(crate) fn finish_line(&mut self, state: &mut State<'_, '_, '_>) -> Result {
+        self.text_style_emitter = self.text_style_emitter.finish(|name, close| {
+            debug_assert!(close);
+            self.end_tag(state, name)
+        })?;
         self.graf_emitter.end_line(&mut self.html);
         self.last_char = '\n';
         Ok(())
@@ -734,7 +740,7 @@ impl Surrogate<Error> for Document {
             // make it easier to disambiguate the list-terminating newline.
             // Since the list item must have ended at a newline, finish the line
             // now.
-            self.finish_line()?;
+            self.finish_line(state)?;
         }
 
         Ok(())
@@ -742,7 +748,7 @@ impl Surrogate<Error> for Document {
 
     fn adopt_new_line(
         &mut self,
-        _state: &mut State<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
     ) -> Result {
@@ -751,11 +757,11 @@ impl Surrogate<Error> for Document {
             Some(Node::List(list)) => {
                 list.finish(&mut self.html)?;
                 self.stack.pop();
-                self.finish_line()?;
+                self.finish_line(state)?;
                 self.graf_emitter.end_list();
             }
             None | Some(Node::Tag(_)) => {
-                self.finish_line()?;
+                self.finish_line(state)?;
             }
         }
         Ok(())
@@ -1005,12 +1011,21 @@ impl Surrogate<Error> for Document {
 
     fn adopt_text_style(
         &mut self,
-        _state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
         _span: Span,
         style: TextStyle,
     ) -> Result {
-        self.text_style_emitter.emit(&mut self.html, style)?;
+        self.text_style_emitter = self.text_style_emitter.emit(
+            |name, close| {
+                if close {
+                    self.end_tag(state, name)
+                } else {
+                    self.start_tag(state, sp, name, &[])
+                }
+            },
+            style,
+        )?;
         Ok(())
     }
 
