@@ -60,54 +60,55 @@ fn run_tests_from_file(path: impl AsRef<Path>) {
 
     let tests = Testfile::parse(&code).unwrap();
 
-    let mut db = Arc::new(MockDatabase::new(&CONFIG));
+    let mut db = MockDatabase::new(&CONFIG);
 
     let mut total = 0;
     let mut fails = 0;
 
-    for chunk in tests.chunks {
+    // Like everything in MediaWiki, multiple passes are *required* to parse the
+    // file correctly
+    for chunk in &tests.chunks {
         match chunk {
             Chunk::Article { title, text } => {
-                Arc::get_mut(&mut db).unwrap().insert(title, text);
+                db.insert(title, text);
             }
             Chunk::FunctionHooks => {
                 panic!("but no tests use this?!");
             }
-            Chunk::Test { name, sections } => {
-                let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
-                    log::warn!("Could not find wikitext for {name}!");
-                    continue;
-                };
-
-                log::info!("Running {name} ...");
-                total += 1;
-
-                let options = sections.get("options").unwrap_or(&empty_options);
-                let page_name = options.get("title").unwrap_or("Parser test");
-                let result = match render_test(
-                    &(Arc::clone(&db) as Arc<dyn DatabaseProvider + '_>),
-                    &MESSAGES,
-                    page_name,
-                    wikitext,
-                ) {
-                    Ok(result) => result,
-                    Err(err) => {
-                        log::error!("Render failed: {err}");
-                        fails += 1;
-                        continue;
-                    }
-                };
-
-                let fail = run_test_from_file(&sections, options, &result);
-                fails += i32::from(fail);
-                if !fail {
-                    log::info!("pass!");
-                }
+            Chunk::Comment | Chunk::Line | Chunk::Hooks | Chunk::Test { .. } => {
+                // Hooks is used only by timedMediaHandlerParserTests and
+                // Line and Comment are just garbage
             }
-            Chunk::Comment | Chunk::Line | Chunk::Hooks => {
-                // just ignore these, hooks is used only by
-                // timedMediaHandlerParserTests and the other ones are just to
-                // collect garbage
+        }
+    }
+
+    let db = Arc::new(db) as Arc<dyn DatabaseProvider>;
+
+    for chunk in tests.chunks {
+        if let Chunk::Test { name, sections } = chunk {
+            let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
+                log::warn!("Could not find wikitext for {name}!");
+                continue;
+            };
+
+            log::info!("Running {name} ...");
+            total += 1;
+
+            let options = sections.get("options").unwrap_or(&empty_options);
+            let page_name = options.get("title").unwrap_or("Parser test");
+            let result = match render_test(&db, &MESSAGES, page_name, wikitext) {
+                Ok(result) => result,
+                Err(err) => {
+                    log::error!("Render failed: {err}");
+                    fails += 1;
+                    continue;
+                }
+            };
+
+            let fail = run_test_from_file(&sections, options, &result);
+            fails += i32::from(fail);
+            if !fail {
+                log::info!("pass!");
             }
         }
     }
@@ -152,55 +153,53 @@ fn run_test_from_file(
     if let Some(meta) = expected_meta {
         if meta.flags.is_some() {
             log::warn!("TODO: Compare flags");
-        } else if options.get("showflags").is_some() {
+        } else if options.contains("showflags") {
             log::error!("Expected flags");
             fail = true;
         }
 
         if meta.title.is_some() {
             log::warn!("TODO: Compare title");
-        } else if options.get("showtitle").is_some() {
+        } else if options.contains("showtitle") {
             log::error!("Expected title");
             fail = true;
         }
 
-        if options.get("showtocdata").is_some() != meta.toc.is_empty() {
-            log::error!(
-                "TOC data mismatch: expected {}, got {}",
-                options.get("showtocdata").is_some(),
-                !meta.toc.is_empty()
-            );
-            fail = true;
-        }
-
-        if meta.toc.len() != result.outline.len() {
-            log::error!(
-                "Outline length mismatch: expected {}, got {}",
-                meta.toc.len(),
-                result.outline.len()
-            );
-            fail = true;
-        }
-
-        // Keep going even if the length mismatch since maybe the
-        // knowledge of where the mismatch happened is useful
-        for (index, (expected, actual)) in meta.toc.iter().zip(result.outline.iter()).enumerate() {
-            if expected.tag != actual.level.tag_name() {
+        if let Some(expected_toc) = &meta.toc {
+            if expected_toc.len() != result.outline.len() {
                 log::error!(
-                    "Outline {index} tag mismatch: expected {}, got {}",
-                    actual.level.tag_name(),
-                    expected.tag
+                    "Outline length mismatch: expected {}, got {}",
+                    expected_toc.len(),
+                    result.outline.len()
                 );
                 fail = true;
             }
-            if expected.line != actual.html {
-                log::error!(
-                    "Outline {index} title mismatch: expected {:?}, got {:?}",
-                    expected.line,
-                    actual.html
-                );
-                fail = true;
+
+            // Keep going even if the length mismatch since maybe the
+            // knowledge of where the mismatch happened is useful
+            for (index, (expected, actual)) in
+                expected_toc.iter().zip(result.outline.iter()).enumerate()
+            {
+                if expected.tag != actual.level.tag_name() {
+                    log::error!(
+                        "Outline {index} tag mismatch: expected {}, got {}",
+                        actual.level.tag_name(),
+                        expected.tag
+                    );
+                    fail = true;
+                }
+                if expected.line != actual.html {
+                    log::error!(
+                        "Outline {index} title mismatch: expected {:?}, got {:?}",
+                        expected.line,
+                        actual.html
+                    );
+                    fail = true;
+                }
             }
+        } else if options.contains("showtocdata") {
+            log::error!("Missing expected TOC");
+            fail = true;
         }
     }
 

@@ -62,13 +62,14 @@ pub(super) enum Chunk<'input> {
 }
 
 /// A semi-structured result metadata chunk for a test.
+#[derive(Debug)]
 pub(super) struct Metadata<'input> {
     /// The expected flags.
     pub flags: Option<&'input str>,
     /// The expected page display title.
     pub title: Option<&'input str>,
     /// The expected table of contents outline.
-    pub toc: Vec<Toc<'input>>,
+    pub toc: Option<Vec<Toc<'input>>>,
 }
 
 /// A partially processed metadata part.
@@ -82,6 +83,7 @@ enum MetadataPart<'input> {
 }
 
 /// A test section.
+#[derive(Debug)]
 pub(super) struct Section<'input> {
     /// The name of the section.
     pub name: &'input str,
@@ -90,6 +92,7 @@ pub(super) struct Section<'input> {
 }
 
 /// Test section content.
+#[derive(Debug)]
 pub(super) enum SectionText<'input> {
     /// A key-value section.
     Kv(HashMap<Cow<'input, str>, Value<'input>>),
@@ -100,7 +103,16 @@ pub(super) enum SectionText<'input> {
 }
 
 impl SectionText<'_> {
-    /// Gets a value with the given `key` from a key-value section.
+    /// Returns true if a value with the given `key` exists in a key-value
+    /// section.
+    pub fn contains(&self, key: &str) -> bool {
+        match self {
+            SectionText::Kv(kv) => kv.get(key).is_some(),
+            SectionText::Meta(_) | SectionText::Text(_) => false,
+        }
+    }
+
+    /// Gets a string value with the given `key` from a key-value section.
     pub fn get(&self, key: &str) -> Option<&str> {
         match self {
             SectionText::Kv(kv) => kv.get(key).and_then(Value::as_str),
@@ -126,6 +138,7 @@ impl SectionText<'_> {
 }
 
 /// A table of contents entry.
+#[derive(Debug)]
 pub(super) struct Toc<'input> {
     // pub anchor: &'input str,
     // pub index: &'input str,
@@ -271,12 +284,12 @@ peg::parser! {grammar testfile() for str {
   {
       let mut flags = None;
       let mut title = None;
-      let mut toc = vec![];
+      let mut toc = None;
       for part in parts {
           match part {
               MetadataPart::Flags(f) => flags = Some(f),
               MetadataPart::Title(t) => title = Some(t),
-              MetadataPart::Toc(t) => toc = t,
+              MetadataPart::Toc(t) => toc = Some(t),
           }
       }
       Metadata { flags, title, toc }
@@ -303,7 +316,7 @@ peg::parser! {grammar testfile() for str {
     " toclevel:" _level:number()
     " number:" _number:$(['0'..='9'|'.']+)
     " title:" _title:("NULL" { None } / s:$([^' ']*) { Some(s) })
-    " off:" _offset:(n:number() { Some(n) } / "NULL" { None })
+    " off:" _offset:("NULL" { None } / n:number() { Some(n) })
     " anchor/linkAnchor:" _anchor:$([^' ']*)
     " line:" line:rest_of_line()
   { Toc { line, tag } }

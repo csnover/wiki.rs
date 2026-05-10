@@ -498,6 +498,7 @@ pub fn render_string(
 /// # Errors
 ///
 /// * Rendering fails
+// TODO: This function should not exist here.
 pub fn render_test(
     db: &Arc<dyn DatabaseProvider>,
     messages: &serde_json_borrow::Value<'_>,

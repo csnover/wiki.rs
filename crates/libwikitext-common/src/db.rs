@@ -149,16 +149,17 @@ impl<'config> MockDatabase<'config> {
 
     /// Inserts a Wikitext article with the given `title` and `body` text.
     pub fn insert(&mut self, title: &str, body: &str) {
+        let title = Title::new(self.config, title, None).key().to_owned();
         let id = self.next_id;
         self.next_id += 1;
         self.articles.insert(
-            title.into(),
+            title.clone(),
             Arc::new(Article {
                 body: body.into(),
                 id,
                 model: "wikitext".into(),
                 redirect: None,
-                title: title.into(),
+                title,
             }),
         );
     }
