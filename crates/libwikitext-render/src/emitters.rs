@@ -169,8 +169,8 @@ impl GrafEmitter {
 
         let tag = match core::mem::take(&mut self.current) {
             GrafState::None => return,
-            GrafState::Graf => "</p>",
-            GrafState::Pre => "</pre>",
+            GrafState::Graf => "</p>\n",
+            GrafState::Pre => "</pre>\n",
         };
 
         if let Some(index) = index {
@@ -298,10 +298,7 @@ impl GrafEmitter {
         // This is the point where the “buffered” text would be emitted, so
         // anything before now needs to be `insert`, and anything after here
         // needs to be `append`
-        if self.pending == GrafPendingState::None
-            && self.current != GrafState::None
-            && self.in_list == 0
-        {
+        if self.pending == GrafPendingState::None && self.in_list == 0 {
             out.push('\n');
         }
 
