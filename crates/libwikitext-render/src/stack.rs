@@ -3,7 +3,7 @@
 use super::{
     Error, Result, State,
     expand_templates::{ExpandMode, ExpandTemplates},
-    lua::with_sp,
+    lua::{args_from_table, with_sp},
     surrogate::Surrogate as _,
 };
 use core::{
@@ -14,8 +14,7 @@ use core::{
 };
 use libmisc::CowExt as _;
 use libwikitext_common::title::Title;
-use libwikitext_lua::prelude::*;
-use libwikitext_lua_gpl::HostFrame;
+use libwikitext_lua::{HostFrame, prelude::*};
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
 use piccolo::StashedString;
 use std::{borrow::Cow, collections::HashMap, rc::Rc};
@@ -38,59 +37,6 @@ pub(crate) struct StackFrame<'a> {
     // TODO: This should not be a FileMap, FileMap is only needed when there is
     // an error.
     pub source: FileMap<'a>,
-}
-
-impl HostFrame for Pin<&StackFrame<'_>> {
-    fn child_frame_exists(&self, name: &str) -> bool {
-        self.children.borrow().contains_key(name)
-    }
-
-    fn expand_all_cached<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        frame_id: &str,
-    ) -> Result<Option<Table<'gc>>, VmError<'gc>> {
-        with_sp(frame_id, self, |sp| Ok(sp.expand_all_cached(ctx)))
-    }
-
-    fn expand_cached<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        frame_id: &str,
-        key: &str,
-    ) -> Result<Option<VmString<'gc>>, VmError<'gc>> {
-        with_sp(frame_id, self, |sp| {
-            Ok(match sp.expand_cached(key) {
-                CachedValue::Nil | CachedValue::Unknown => None,
-                CachedValue::Cached(value) => Some(ctx.intern(value.as_bytes())),
-            })
-        })
-    }
-
-    fn insert<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        frame_id: &str,
-        title: Title,
-        args: Table<'gc>,
-    ) -> Result<VmString<'gc>, VmError<'gc>> {
-        with_sp(frame_id, self, |sp| {
-            // In MW, the frame ID starts at 2 because 'current' and 'parent' always
-            // exist. This value seems to be hidden to other Lua modules, but there
-            // is no reason to not just follow the same convention since a string
-            // must be made.
-            let mut children = sp.children.borrow_mut();
-            let new_frame_id = format!("frame{}", children.len() + 2);
-            let interned = ctx.intern(new_frame_id.as_bytes());
-            let arguments = super::lua::args_from_table(ctx, args)?;
-            children.insert(new_frame_id, LuaFrame { arguments, title });
-            Ok(interned)
-        })
-    }
-
-    fn name<'gc>(&self, frame_id: &str) -> Result<Title, VmError<'gc>> {
-        with_sp(frame_id, self, |sp| Ok(sp.name.clone()))
-    }
 }
 
 impl<'a> StackFrame<'a> {
@@ -239,6 +185,59 @@ impl<'a> StackFrame<'a> {
             sp = parent;
         }
         sp
+    }
+}
+
+impl HostFrame for Pin<&StackFrame<'_>> {
+    fn child_frame_exists(&self, name: &str) -> bool {
+        self.children.borrow().contains_key(name)
+    }
+
+    fn expand_all_cached<'gc>(
+        &self,
+        ctx: Context<'gc>,
+        frame_id: &str,
+    ) -> Result<Option<Table<'gc>>, VmError<'gc>> {
+        with_sp(frame_id, self, |sp| Ok(sp.expand_all_cached(ctx)))
+    }
+
+    fn expand_cached<'gc>(
+        &self,
+        ctx: Context<'gc>,
+        frame_id: &str,
+        key: &str,
+    ) -> Result<Option<VmString<'gc>>, VmError<'gc>> {
+        with_sp(frame_id, self, |sp| {
+            Ok(match sp.expand_cached(key) {
+                CachedValue::Nil | CachedValue::Unknown => None,
+                CachedValue::Cached(value) => Some(ctx.intern(value.as_bytes())),
+            })
+        })
+    }
+
+    fn insert<'gc>(
+        &self,
+        ctx: Context<'gc>,
+        frame_id: &str,
+        title: Title,
+        args: Table<'gc>,
+    ) -> Result<VmString<'gc>, VmError<'gc>> {
+        with_sp(frame_id, self, |sp| {
+            // In MW, the frame ID starts at 2 because 'current' and 'parent' always
+            // exist. This value seems to be hidden to other Lua modules, but there
+            // is no reason to not just follow the same convention since a string
+            // must be made.
+            let mut children = sp.children.borrow_mut();
+            let new_frame_id = format!("frame{}", children.len() + 2);
+            let interned = ctx.intern(new_frame_id.as_bytes());
+            let arguments = args_from_table(ctx, args)?;
+            children.insert(new_frame_id, LuaFrame { arguments, title });
+            Ok(interned)
+        })
+    }
+
+    fn name<'gc>(&self, frame_id: &str) -> Result<Title, VmError<'gc>> {
+        with_sp(frame_id, self, |sp| Ok(sp.name.clone()))
     }
 }
 

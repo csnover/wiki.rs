@@ -6,7 +6,7 @@ use super::{
     surrogate::{self, Surrogate},
 };
 use core::fmt;
-use libwikitext_common::{db::IDatabase as _, title::Title};
+use libwikitext_common::{db::DatabaseProvider as _, title::Title};
 use libwikitext_parse::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output,
     Span, Spanned, TextStyle, Token,

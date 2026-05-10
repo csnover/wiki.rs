@@ -5,11 +5,11 @@ mod article;
 mod index;
 mod prefetch;
 
-use article::ArticleDatabase;
+use article::{ArticleDatabase, DatabaseNamespace};
 use index::Index;
 use libphp_rs::strtr;
 use libwikitext_common::{
-    db::{Article, DatabaseNamespace},
+    db::Article,
     lru_limiter::ByMemoryUsage,
     title::{Namespace, Title},
 };

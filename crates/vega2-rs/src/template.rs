@@ -383,7 +383,7 @@ peg::parser! {grammar handlebars() for str {
 }}
 
 // SPDX-SnippetBegin
-// SPDX-License-Identifier: MIT-or-Apache-2.0
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // SPDX-SnippetComment: Adapted from widestring 1.2.1
 
 /// An iterator over the positions of UTF-16 codepoints in a string slice.

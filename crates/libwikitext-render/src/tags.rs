@@ -3,7 +3,7 @@
 use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use http::Uri;
 use libwikitext_common::{
-    anchor_encode, db::IDatabase as _, decode_html, title::Title, title_decode,
+    anchor_encode, db::DatabaseProvider as _, decode_html, title::Title, title_decode,
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
 use std::borrow::Cow;

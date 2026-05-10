@@ -11,7 +11,7 @@ use super::prelude::*;
 use core::cell::Cell;
 use libwikitext_common::{
     config::Configuration,
-    db::IDatabase,
+    db::DatabaseProvider,
     title::{Namespace, NamespaceCase},
 };
 use regex::Regex;
@@ -144,7 +144,7 @@ impl<'db: 'static> MwInterface for SiteLibrary<'db> {
         }
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         db: &Db,
         ctx: Context<'gc>,

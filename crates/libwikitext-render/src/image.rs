@@ -7,7 +7,7 @@ use super::{
 };
 use core::iter;
 use libmisc::CowExt as _;
-use libwikitext_common::{db::IDatabase as _, title::Title, url_encode};
+use libwikitext_common::{db::DatabaseProvider as _, title::Title, url_encode};
 use libwikitext_parse::{
     Argument, FileMap, Spanned, Token,
     builder::{tok_arg, token},

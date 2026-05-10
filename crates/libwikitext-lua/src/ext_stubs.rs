@@ -4,13 +4,13 @@
 //! scripts do not crash when they assume that these extensions must exist and
 //! try to use them.
 
-use super::prelude::*;
-use libwikitext_common::db::IDatabase;
+use super::{MwInterface, prelude::*};
+use libwikitext_common::db::DatabaseProvider;
 
 /// A fake extension which stubs various `mw` extension modules.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub(super) struct WikiRsStubs;
+pub struct WikiRsStubs;
 
 impl MwInterface for WikiRsStubs {
     const CODE: &[u8] = br#"
@@ -159,7 +159,7 @@ impl MwInterface for WikiRsStubs {
         Table::new(&ctx)
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         _: &Db,
         ctx: Context<'gc>,

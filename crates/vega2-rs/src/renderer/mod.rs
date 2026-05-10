@@ -26,7 +26,7 @@ use tiny_skia::{Path, PathBuilder};
 
 /// Common default visual properties.
 mod defaults {
-    /// Applies default values to a [`Propset`].
+    /// Applies default values to a [`Propset`](super::Propset).
     macro_rules! apply {
         ($properties:ident, {
             $($key:ident => $value:expr),* $(,)?
@@ -37,20 +37,22 @@ mod defaults {
 
     pub(crate) use apply;
 
-    /// The default for the [`size`](Propset::size) of a symbol mark.
+    /// The default for the [`size`](super::Propset::size) of a symbol mark.
     ///
     /// This default is defined in multiple places with different values. This
     /// is the default from `vega-scenegraph` which appears to actually be used.
     pub(crate) const SYMBOL_SIZE: f64 = 100.0;
-    /// The default for the [`fill`](Propset::fill) of an axis or legend title.
+    /// The default for the [`fill`](super::Propset::fill) of an axis or legend
+    /// title.
     pub(crate) const TITLE_COLOR: &str = "#000";
-    /// The default for the [`font`](Propset::font) of an axis or legend title.
+    /// The default for the [`font`](super::Propset::font) of an axis or legend
+    /// title.
     pub(crate) const TITLE_FONT: &str = "sans-serif";
-    /// The default for the [`font_size`](Propset::font_size) of an axis or
-    /// legend title.
+    /// The default for the [`font_size`](super::Propset::font_size) of an axis
+    /// or legend title.
     pub(crate) const TITLE_FONT_SIZE: f64 = 11.0;
-    /// The default for the [`font_weight`](Propset::font_weight) of an axis or
-    /// legend title.
+    /// The default for the [`font_weight`](super::Propset::font_weight) of an
+    /// axis or legend title.
     pub(crate) const TITLE_FONT_WEIGHT: &str = "bold";
 }
 
@@ -1029,7 +1031,8 @@ impl core::ops::Sub for Vec3 {
     }
 }
 
-/// Shorthand for applying a [`Propset`] or [`Scene`] to an SVG element.
+/// Shorthand for applying a [`Propset`] or [`Scene`](crate::spec::Scene) to an
+/// SVG element.
 macro_rules! to_svg {
     ($element:expr, $scene:ident, {
         $($prop:ident => $attr:literal),* $(,)?

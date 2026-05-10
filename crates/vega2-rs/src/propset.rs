@@ -108,7 +108,7 @@ bag_o_crap! {
         #[serde(borrow, default)]
         pub clip: Option<Property<'s, bool>>,
         /// For hover effects. CSS mouse cursor style. Only applicable in the
-        /// [hover set](super::mark::MarkProperties::hover).
+        /// [hover set](crate::mark::Propsets::hover).
         #[serde(borrow, default)]
         pub cursor: Option<StringProperty<'s>>,
         /// For text labels. Horizontal offset relative to its origin, in pixels.

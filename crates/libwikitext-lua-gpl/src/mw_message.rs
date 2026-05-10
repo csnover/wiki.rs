@@ -9,7 +9,7 @@
 
 use super::prelude::*;
 use core::cell::Cell;
-use libwikitext_common::{db::IDatabase, format_message, format_raw_message};
+use libwikitext_common::{db::DatabaseProvider, format_message, format_raw_message};
 use std::borrow::Cow;
 
 /// The internationalisation support library.
@@ -139,7 +139,7 @@ impl<'dict: 'static> MwInterface for MessageLibrary<'dict> {
         }
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         _: &Db,
         ctx: Context<'gc>,

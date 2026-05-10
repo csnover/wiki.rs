@@ -143,7 +143,7 @@ use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
     anchor_encode,
-    db::IDatabase,
+    db::DatabaseProvider,
     decode_html,
     title::{Namespace, Title},
 };
@@ -1021,9 +1021,9 @@ pub(crate) struct Styles {
 
 impl Styles {
     /// Inserts CSS from the article given in `src` using an optional wrapper.
-    pub fn insert<Database: IDatabase>(
+    pub fn insert<Db: DatabaseProvider>(
         &mut self,
-        db: &Database,
+        db: &Db,
         src: &str,
         wrapper: Option<&str>,
     ) -> Result<()> {

@@ -1,7 +1,7 @@
 //! Interpolation functions.
 
-// Adapted from d3 3.5.17 by Mike Bostock
-// SPDX-License-Identifier: ISC
+// Adapted from d3-shape 1.3 by Mike Bostock
+// SPDX-License-Identifier: BSD-3-Clause
 
 use super::{
     super::{DoubleSizeIterator, mark::Interpolate},

@@ -12,7 +12,7 @@ use super::{
 use core::fmt::{self, Write as _};
 use indexmap::IndexSet;
 use libwikitext_common::{
-    db::IDatabase as _,
+    db::DatabaseProvider as _,
     make_url,
     title::{Namespace, Title},
     title_decode,

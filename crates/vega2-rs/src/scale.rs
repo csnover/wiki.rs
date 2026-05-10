@@ -1218,7 +1218,7 @@ struct ScaleDataRefPart<'s> {
     #[serde(borrow)]
     field: ScaleDataRefField<'s>,
     /// The name of the field to group by for sorting, overriding the sort field
-    /// given in the parent [`DomainRefSort::Aggregate::field`].
+    /// given in the parent [`ScaleDataRefSort::Aggregate::field`].
     ///
     /// In the Vega JSON schema this was defined as being a string or a sort
     /// object, but this is incorrect. Vega uses this field only as a field name
@@ -1302,7 +1302,7 @@ impl Default for ScaleDataRefSort<'_> {
 }
 
 // SPDX-SnippetBegin
-// SPDX-License-Identifier: ISC
+// SPDX-License-Identifier: BSD-3-Clause
 // SPDX-SnippetComment: Adapted from d3 3.5.17 by Mike Bostock
 /// Generates an iterator for logarithmic ticks using base 10.
 fn log_ticks(min: f64, max: f64, count: f64) -> impl Iterator<Item = f64> {

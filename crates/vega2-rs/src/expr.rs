@@ -28,7 +28,7 @@
 //!    end up in the expression result (i.e. object keys and string literals)
 //!    are always parsed into owned strings with `'static` lifetime.
 
-// SPDX-License-Identifier: BSD-3-clause
+// SPDX-License-Identifier: BSD-3-Clause
 // Adapted from Vega 2 by Trifacta, Inc., Univerity of Washington Interactive
 // Data Lab
 

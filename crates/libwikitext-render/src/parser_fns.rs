@@ -22,7 +22,7 @@ use libmisc::CowExt as _;
 use libphp_rs::{floatval, fuzzy_cmp};
 use libwikitext_common::{
     anchor_encode,
-    db::IDatabase as _,
+    db::DatabaseProvider as _,
     decode_html, format_date_mediawiki, format_message, format_number, make_url,
     parse_formatted_number,
     title::{Namespace, Title},

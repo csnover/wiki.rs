@@ -315,7 +315,7 @@ impl<'s, 'b> Node<'s, 'b> {
 /// This struct binds together a scale and its associated container node so that
 /// calls always use the correct associated node.
 ///
-/// [`Container`]: super::spec::Container
+/// [`Container`]: spec::Container
 #[derive(Clone, Copy, Debug)]
 struct ScaleNode<'s, 'b> {
     /// The associated container node for the scale.

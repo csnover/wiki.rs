@@ -10,6 +10,7 @@
 ///   // ...
 /// }
 /// ```
+#[macro_export]
 macro_rules! interface {
     (@rule $Self:ty, $ctx:ident, $table:ident; $(,)?) => {};
 
@@ -24,12 +25,12 @@ macro_rules! interface {
     };
 
     (using $Self:ty, $ctx:ident; $($rest:tt)*) => {{
-        let table = Table::new(&$ctx);
+        let table = ::piccolo::Table::new(&$ctx);
         interface!(@rule $Self, $ctx, table; $($rest)*);
         table
     }}
 }
-pub(super) use interface;
+pub use interface;
 
 /// Generates unimplemented stub functions for a Scribunto library which always
 /// return the Lua error "{luaFnName} not implemented yet" when invoked.
@@ -42,16 +43,17 @@ pub(super) use interface;
 ///     }
 /// }
 /// ```
+#[macro_export]
 macro_rules! mw_unimplemented {
     ($($camelName:ident = $name:ident),+ $(,)?) => {
         $(
-            fn $name<'gc>(&self, ctx: Context<'gc>, (): ()) -> Result<Value<'gc>, VmError<'gc>> {
-                Err(concat!(stringify!($camelName), " not implemented yet").into_value(ctx).into())
+            fn $name<'gc>(&self, ctx: ::piccolo::Context<'gc>, (): ()) -> Result<::piccolo::Value<'gc>, ::piccolo::Error<'gc>> {
+                ::core::result::Result::Err(concat!(stringify!($camelName), " not implemented yet").into_value(ctx).into())
             }
         )+
     }
 }
-pub(super) use mw_unimplemented;
+pub use mw_unimplemented;
 
 /// Shorthand for creating a Lua table with multiple fields.
 ///
@@ -63,11 +65,12 @@ pub(super) use mw_unimplemented;
 ///     // ...
 /// }
 /// ```
+#[macro_export]
 macro_rules! table {
     (using $ctx:ident; $($key:ident = $value:expr),* $(,)?) => {{
-        let table = piccolo::Table::new(&$ctx);
+        let table = ::piccolo::Table::new(&$ctx);
         $(table.set_field($ctx, stringify!($key), $value);)*
         table
     }}
 }
-pub(super) use table;
+pub use table;

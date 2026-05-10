@@ -1,11 +1,8 @@
-//! Functions used by both the Scribunto and ParserFunctions extensions which do
-//! not correspond to a host language’s standard library functions (i.e. do not
-//! correspond to PHP nor Lua built-ins).
+//! Common Wikitext types and functions.
 
 pub mod config;
 pub mod db;
 pub mod lru_limiter;
-pub mod mock;
 pub mod title;
 
 use core::fmt::{self, Write as _};

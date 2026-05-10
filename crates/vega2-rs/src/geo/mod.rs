@@ -1,6 +1,6 @@
 //! Geographic graph types and functions.
 
-// SPDX-License-Identifier: BSD-3-clause
+// SPDX-License-Identifier: BSD-3-Clause
 // Adapted from d3 3.5.17 by Mike Bostock
 
 mod clip;
@@ -1447,7 +1447,7 @@ mod svg_path_output {
 /// representing geometries discretely, geometries in TopoJSON files are
 /// stitched together from shared line segments called *arcs*.”
 // SPDX-SnippetBegin
-// SPDX-License-Identifier: BSD-3-clause
+// SPDX-License-Identifier: BSD-3-Clause
 // SPDX-SnippetComment: Adapted from topojson 1.6 by Michael Bostock
 pub(super) mod topojson {
     use super::super::data::ValueExt;

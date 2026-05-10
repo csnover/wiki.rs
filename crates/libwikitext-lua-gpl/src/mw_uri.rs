@@ -13,21 +13,21 @@ use core::{
     marker::PhantomData,
 };
 use gc_arena::Rootable;
-use libwikitext_common::{anchor_encode, db::IDatabase};
+use libwikitext_common::{anchor_encode, db::DatabaseProvider};
 use libwikitext_parse::{helpers::TextContent, visit::Visitor as _};
 use libwikitext_parse_gpl::Parser;
 
 /// The URI support library.
 #[derive(gc_arena::Collect)]
 #[collect(require_static)]
-pub struct UriLibrary<'config, Db: IDatabase> {
+pub struct UriLibrary<'config, Db: DatabaseProvider> {
     /// The Wikitext parser.
     parser: RefCell<Option<Parser<'config>>>,
     /// Phantom for generic.
     __: PhantomData<Db>,
 }
 
-impl<Db: IDatabase> Default for UriLibrary<'_, Db> {
+impl<Db: DatabaseProvider> Default for UriLibrary<'_, Db> {
     fn default() -> Self {
         Self {
             parser: <_>::default(),
@@ -36,7 +36,7 @@ impl<Db: IDatabase> Default for UriLibrary<'_, Db> {
     }
 }
 
-impl<'config, Db: IDatabase + 'static> UriLibrary<'config, Db> {
+impl<'config, Db: DatabaseProvider + 'static> UriLibrary<'config, Db> {
     /// Encodes the input string for use within a URL fragment-part.
     fn anchor_encode<'gc>(
         &self,
@@ -113,7 +113,7 @@ impl<'config, Db: IDatabase + 'static> UriLibrary<'config, Db> {
     }
 }
 
-impl<'config: 'static, Db: IDatabase + 'static> MwInterface for UriLibrary<'config, Db> {
+impl<'config: 'static, Db: DatabaseProvider + 'static> MwInterface for UriLibrary<'config, Db> {
     const CODE: &'static [u8] = include_bytes!("./modules/mw.uri.lua");
     const NAME: &'static str = "mw.uri";
 
@@ -128,7 +128,7 @@ impl<'config: 'static, Db: IDatabase + 'static> MwInterface for UriLibrary<'conf
         }
     }
 
-    fn setup<'gc, SetupDb: IDatabase>(
+    fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
         _: &SetupDb,
         ctx: Context<'gc>,

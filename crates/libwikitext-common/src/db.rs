@@ -1,13 +1,87 @@
 //! Database traits and types.
 
-use super::{
-    config::Configuration,
-    lru_limiter::HeapUsageCalculator,
-    title::{NamespaceCase, Title},
-};
+use super::{config::Configuration, lru_limiter::HeapUsageCalculator, title::Title};
 use indexmap::IndexSet;
 use std::{collections::HashMap, sync::Arc};
-use time::UtcDateTime;
+
+/// A trait for implementing database backends.
+#[expect(
+    clippy::len_without_is_empty,
+    reason = "knowing a database is empty is not useful information"
+)]
+pub trait DatabaseProvider {
+    /// Returns the current memory usage of the cache, in bytes.
+    fn cache_size(&self) -> usize;
+
+    /// Returns the configuration data for the database.
+    fn config(&self) -> &Configuration;
+
+    /// Returns true if the database contains an article with the given title.
+    fn contains(&self, title: &Title) -> bool;
+
+    /// Gets an article with the given title from the database. The article will
+    /// be cached in memory.
+    ///
+    /// # Errors
+    ///
+    /// * An article with the given `title` does not exist
+    /// * The database implementation returns an error
+    fn get(&self, title: &Title) -> Result<Arc<Article>, Error>;
+
+    /// The total number of articles in the database.
+    fn len(&self) -> usize;
+
+    /// The site name from the database.
+    fn name(&self) -> &str;
+
+    /// Prefetches a collection of titles.
+    ///
+    /// Because the MW database dump index is totally unordered, finding a title
+    /// in the index requires a full table scan. Batching titles into request
+    /// sets reduces the number of scans required, increasing performance.
+    ///
+    /// Both templates and links need to check for existence in the index, but
+    /// templates are both more time-critical and also require decompressing
+    /// article data, so they are collected separately.
+    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>);
+}
+
+impl DatabaseProvider for Arc<dyn DatabaseProvider> {
+    #[inline]
+    fn cache_size(&self) -> usize {
+        (**self).cache_size()
+    }
+
+    #[inline]
+    fn config(&self) -> &Configuration {
+        (**self).config()
+    }
+
+    #[inline]
+    fn contains(&self, title: &Title) -> bool {
+        (**self).contains(title)
+    }
+
+    #[inline]
+    fn get(&self, title: &Title) -> Result<Arc<Article>, Error> {
+        (**self).get(title)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    #[inline]
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+
+    #[inline]
+    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>) {
+        (**self).prefetch_all(templates, links);
+    }
+}
 
 /// A single MediaWiki article.
 #[derive(Debug, Clone)]
@@ -51,105 +125,78 @@ pub enum Error {
     NotFound,
 }
 
-/// A trait for implementing database backends.
-#[expect(
-    clippy::len_without_is_empty,
-    reason = "knowing a database is empty is not useful information"
-)]
-pub trait IDatabase {
-    /// Returns the current memory usage of the cache, in bytes.
-    fn cache_size(&self) -> usize;
-
-    /// Returns the configuration data for the database.
-    fn config(&self) -> &Configuration;
-
-    /// Returns true if the database contains an article with the given title.
-    fn contains(&self, title: &Title) -> bool;
-
-    /// The guessed creation date of the database.
-    fn creation_date(&self) -> Option<UtcDateTime>;
-
-    /// Gets an article with the given title from the database. The article will
-    /// be cached in memory.
-    ///
-    /// # Errors
-    ///
-    /// * An article with the given `title` does not exist
-    /// * The database implementation returns an error
-    fn get(&self, title: &Title) -> Result<Arc<Article>, Error>;
-
-    /// The total number of articles in the database.
-    fn len(&self) -> usize;
-
-    /// The site name from the database.
-    fn name(&self) -> &str;
-
-    /// The registered namespaces in the database.
-    fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace>;
-
-    /// Prefetches a collection of titles.
-    ///
-    /// Because the MW database dump index is totally unordered, finding a title
-    /// in the index requires a full table scan. Batching titles into request
-    /// sets reduces the number of scans required, increasing performance.
-    ///
-    /// Both templates and links need to check for existence in the index, but
-    /// templates are both more time-critical and also require decompressing
-    /// article data, so they are collected separately.
-    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>);
+/// A fake database used for testing.
+pub struct MockDatabase<'config> {
+    /// The mock articles.
+    articles: HashMap<String, Arc<Article>>,
+    /// The mock configuration.
+    config: &'config Configuration,
+    /// The article ID for the next inserted article.
+    next_id: u64,
 }
 
-impl IDatabase for Arc<dyn IDatabase> {
+impl<'config> MockDatabase<'config> {
+    /// Creates a new database using the given `config`.
+    #[inline]
+    #[must_use]
+    pub fn new(config: &'config Configuration) -> Self {
+        Self {
+            articles: <_>::default(),
+            config,
+            next_id: 1,
+        }
+    }
+
+    /// Inserts a Wikitext article with the given `title` and `body` text.
+    pub fn insert(&mut self, title: &str, body: &str) {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.articles.insert(
+            title.into(),
+            Arc::new(Article {
+                body: body.into(),
+                id,
+                model: "wikitext".into(),
+                redirect: None,
+                title: title.into(),
+            }),
+        );
+    }
+}
+
+impl DatabaseProvider for MockDatabase<'_> {
     #[inline]
     fn cache_size(&self) -> usize {
-        (**self).cache_size()
+        0
     }
 
     #[inline]
     fn config(&self) -> &Configuration {
-        (**self).config()
+        self.config
     }
 
     #[inline]
     fn contains(&self, title: &Title) -> bool {
-        (**self).contains(title)
+        self.articles.contains_key(title.key())
     }
 
-    #[inline]
-    fn creation_date(&self) -> Option<UtcDateTime> {
-        (**self).creation_date()
-    }
-
-    #[inline]
     fn get(&self, title: &Title) -> Result<Arc<Article>, Error> {
-        (**self).get(title)
+        self.articles
+            .get(title.key())
+            .cloned()
+            .ok_or(Error::NotFound)
     }
 
     #[inline]
     fn len(&self) -> usize {
-        (**self).len()
+        self.articles.len()
     }
 
     #[inline]
-    fn name(&self) -> &str {
-        (**self).name()
+    fn name(&self) -> &'static str {
+        "Mock"
     }
 
     #[inline]
-    fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace> {
-        (**self).namespaces()
-    }
-
-    #[inline]
-    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>) {
-        (**self).prefetch_all(templates, links);
-    }
-}
-
-/// A database namespace.
-pub struct DatabaseNamespace {
-    /// The letter casing of the namespace name.
-    pub case: NamespaceCase,
-    /// The name of the namespace.
-    pub name: String,
+    fn prefetch_all(&self, _templates: IndexSet<Title>, _links: IndexSet<Title>) {}
 }

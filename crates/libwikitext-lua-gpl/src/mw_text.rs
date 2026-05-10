@@ -7,10 +7,11 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-use super::{HostCall, UnstripMode, prelude::*};
+use super::prelude::*;
 use core::cell::RefCell;
 use libmisc::CowExt as _;
-use libwikitext_common::db::IDatabase;
+use libwikitext_common::db::DatabaseProvider;
+use libwikitext_lua::{HostCall, UnstripMode};
 use libwikitext_parse::strip;
 use piccolo::{Stack, StashedTable, UserData};
 
@@ -146,7 +147,7 @@ impl MwInterface for TextLibrary {
         }
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         _: &Db,
         ctx: Context<'gc>,

@@ -14,11 +14,11 @@
 //! article in the index requires a full table scan. The prefetcher tries to
 //! reduce the number of scans by batching these requests.
 
-use super::{RawDatabase as Database, Result, index::IndexEntry, is_lobotomised};
+use super::{RawDatabase, Result, article::DatabaseNamespace, index::IndexEntry, is_lobotomised};
 use indexmap::{IndexMap, IndexSet};
 use libwikitext_common::{
     config::Configuration,
-    db::{Article, DatabaseNamespace, IDatabase},
+    db::{Article, DatabaseProvider},
     title::Title,
 };
 use libwikitext_data::CONFIG;
@@ -33,66 +33,12 @@ use std::{
 };
 use time::UtcDateTime;
 
-/// Thread pool channel.
-struct Channel {
-    /// Signal variable.
-    cvar: Condvar,
-    /// Queue of article titles to prefetch.
-    queue: Mutex<Queue>,
-}
-
-/// The job queue.
-#[derive(Default)]
-struct Queue {
-    /// The number of in-flight jobs.
-    in_flight: usize,
-    /// Queued jobs.
-    jobs: IndexMap<Title, PrefetchState>,
-    /// The number of pending high-priority content prefetches in the job queue.
-    pending_content: usize,
-    /// The number of pending low-priority existence checks in the job queue.
-    pending_exist: usize,
-    /// The number of pending high-priority existence-then-content prefetches in
-    /// the job queue.
-    pending_exist_content: usize,
-    /// Thread termination signal.
-    terminate: bool,
-}
-
-/// The prefetch state of a title.
-#[derive(Debug)]
-enum PrefetchState {
-    /// Title content preload is in progress.
-    InFlightContent,
-    /// Title existence check is in progress.
-    InFlightExist,
-    /// Title existence check is in progress and then will transition to a
-    /// content request.
-    InFlightExistContent,
-    /// Title is pending a request for content preload.
-    PendingContent(IndexEntry),
-    /// Title is pending a request for an existence check.
-    PendingExist,
-    /// Title is pending a request for an existence check and then content
-    /// preload.
-    PendingExistContent,
-}
-
-/// A prefetch job.
-enum Job {
-    /// Fetch the content for the given title.
-    Content(Title, IndexEntry),
-    /// Fetch the exists state for all of the titles in the first hash set,
-    /// and content for the titles in the second hash set.
-    Exist(HashSet<Title>, HashSet<Title>),
-}
-
 /// An article database with non-blocking prefetching.
 pub(crate) struct PrefetchableDatabase<'a> {
     /// Thread pool channel.
     channel: Arc<Channel>,
     /// Article database.
-    db: Arc<Database<'a>>,
+    db: Arc<RawDatabase<'a>>,
 }
 
 impl Drop for PrefetchableDatabase<'_> {
@@ -105,7 +51,7 @@ impl Drop for PrefetchableDatabase<'_> {
 impl PrefetchableDatabase<'_> {
     /// Creates a new prefetchable database using the given database as the
     /// main database.
-    fn from_db(db: Arc<Database<'static>>) -> Self {
+    fn from_db(db: Arc<RawDatabase<'static>>) -> Self {
         let cvar = Condvar::new();
         let queue = Mutex::new(Queue {
             // The initial capacity is mostly arbitrary, based on the number of
@@ -168,7 +114,7 @@ impl PrefetchableDatabase<'_> {
         articles_path: impl AsRef<Path>,
         cache_size_limit: usize,
     ) -> Result<Self> {
-        Ok(Self::from_db(Arc::new(Database::from_file(
+        Ok(Self::from_db(Arc::new(RawDatabase::from_file(
             index_path,
             articles_path,
             cache_size_limit,
@@ -231,13 +177,25 @@ impl PrefetchableDatabase<'_> {
         }
     }
 
+    /// The guessed creation date of the database.
+    #[inline]
+    pub fn creation_date(&self) -> Option<UtcDateTime> {
+        self.db.creation_date()
+    }
+
+    /// The registered namespaces in the database.
+    #[inline]
+    pub fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace> {
+        self.db.namespaces()
+    }
+
     /// Finds articles in the index whose titles match the given query.
     pub fn search(&self, query: &Regex) -> impl ParallelIterator<Item = &str> {
         self.db.search(query)
     }
 }
 
-impl IDatabase for PrefetchableDatabase<'_> {
+impl DatabaseProvider for PrefetchableDatabase<'_> {
     #[inline]
     fn cache_size(&self) -> usize {
         self.db.cache_size()
@@ -258,11 +216,6 @@ impl IDatabase for PrefetchableDatabase<'_> {
     }
 
     #[inline]
-    fn creation_date(&self) -> Option<UtcDateTime> {
-        self.db.creation_date()
-    }
-
-    #[inline]
     fn get(&self, title: &Title) -> Result<Arc<Article>, libwikitext_common::db::Error> {
         let key = title.key();
         self.cancel_prefetch(title, key, true);
@@ -280,11 +233,6 @@ impl IDatabase for PrefetchableDatabase<'_> {
     #[inline]
     fn name(&self) -> &str {
         self.db.name()
-    }
-
-    #[inline]
-    fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace> {
-        self.db.namespaces()
     }
 
     fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>) {
@@ -376,9 +324,63 @@ impl IDatabase for PrefetchableDatabase<'_> {
     }
 }
 
+/// Thread pool channel.
+struct Channel {
+    /// Signal variable.
+    cvar: Condvar,
+    /// Queue of article titles to prefetch.
+    queue: Mutex<Queue>,
+}
+
+/// A prefetch job.
+enum Job {
+    /// Fetch the content for the given title.
+    Content(Title, IndexEntry),
+    /// Fetch the exists state for all of the titles in the first hash set,
+    /// and content for the titles in the second hash set.
+    Exist(HashSet<Title>, HashSet<Title>),
+}
+
+/// The prefetch state of a title.
+#[derive(Debug)]
+enum PrefetchState {
+    /// Title content preload is in progress.
+    InFlightContent,
+    /// Title existence check is in progress.
+    InFlightExist,
+    /// Title existence check is in progress and then will transition to a
+    /// content request.
+    InFlightExistContent,
+    /// Title is pending a request for content preload.
+    PendingContent(IndexEntry),
+    /// Title is pending a request for an existence check.
+    PendingExist,
+    /// Title is pending a request for an existence check and then content
+    /// preload.
+    PendingExistContent,
+}
+
+/// The job queue.
+#[derive(Default)]
+struct Queue {
+    /// The number of in-flight jobs.
+    in_flight: usize,
+    /// Queued jobs.
+    jobs: IndexMap<Title, PrefetchState>,
+    /// The number of pending high-priority content prefetches in the job queue.
+    pending_content: usize,
+    /// The number of pending low-priority existence checks in the job queue.
+    pending_exist: usize,
+    /// The number of pending high-priority existence-then-content prefetches in
+    /// the job queue.
+    pending_exist_content: usize,
+    /// Thread termination signal.
+    terminate: bool,
+}
+
 /// Wake up, brush your teeth, go to work.
 #[inline]
-fn do_work(db: &Database<'_>, channel: &Channel, job: Job) {
+fn do_work(db: &RawDatabase<'_>, channel: &Channel, job: Job) {
     match job {
         Job::Exist(titles, then_fetch) => {
             let start = Instant::now();

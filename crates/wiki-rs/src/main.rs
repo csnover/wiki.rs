@@ -7,7 +7,7 @@ mod renderer;
 use axum::{Router, http::Uri, routing::get};
 use core::time::Duration;
 use db::Database;
-use libwikitext_common::{db::IDatabase as _, title::Namespace};
+use libwikitext_common::{db::DatabaseProvider as _, title::Namespace};
 use libwikitext_render::LoadMode;
 use r2d2::Pool;
 use renderer::Manager as RenderManager;

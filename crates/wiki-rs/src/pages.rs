@@ -10,7 +10,7 @@ use axum::{
 };
 use core::num::NonZeroUsize;
 use libwikitext_common::{
-    db::{self, IDatabase as _},
+    db::{self, DatabaseProvider as _},
     make_url,
     title::Title,
 };

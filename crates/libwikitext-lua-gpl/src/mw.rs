@@ -7,81 +7,26 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-use super::{HostCall, MwInterface, prelude::*};
+use super::prelude::*;
 use core::cell::{Ref, RefCell};
 use libwikitext_common::{
-    db::IDatabase,
+    db::DatabaseProvider,
     title::{Namespace, Title},
 };
+use libwikitext_lua::{HostCall, HostFrame, MwInterface};
 use piccolo::{Stack, UserData};
-
-/// A trait for interacting with the stack frame of the current Lua call in the
-/// renderer.
-pub trait HostFrame {
-    /// Returns true if a child frame with the given `frame_id` exists.
-    fn child_frame_exists(&self, frame_id: &str) -> bool;
-
-    /// Returns all cached arguments for the given Lua context from the given
-    /// `frame_id`.
-    ///
-    /// This is a performance optimisation.
-    ///
-    /// # Errors
-    ///
-    /// * The given `frame_id` is invalid
-    fn expand_all_cached<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        frame_id: &str,
-    ) -> Result<Option<Table<'gc>>, VmError<'gc>>;
-
-    /// Returns the cached argument with the given `key` from the given
-    /// `frame_id`.
-    ///
-    /// # Errors
-    ///
-    /// * The given `frame_id` is invalid
-    fn expand_cached<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        frame_id: &str,
-        key: &str,
-    ) -> Result<Option<VmString<'gc>>, VmError<'gc>>;
-
-    /// Adds a fake child frame to the given `frame_id` with the given `title`
-    /// and `arguments`. Returns the ID of the new frame.
-    ///
-    /// # Errors
-    ///
-    /// * The given `frame_id` is invalid
-    /// * `args` cannot be converted to a renderer argument list
-    fn insert<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        frame_id: &str,
-        title: Title,
-        args: Table<'gc>,
-    ) -> Result<VmString<'gc>, VmError<'gc>>;
-
-    /// Returns the title of the frame with the given `frame_id`.
-    ///
-    /// # Errors
-    ///
-    /// * The given `frame_id` is invalid
-    fn name<'gc>(&self, frame_id: &str) -> Result<Title, VmError<'gc>>;
-}
 
 /// The main Lua support library.
 #[derive(gc_arena::Collect)]
 #[collect(require_static)]
-pub struct LuaEngine<Db: IDatabase, Sp: HostFrame> {
+pub struct LuaEngine<Db: DatabaseProvider, Sp: HostFrame> {
     /// The article database.
     pub(crate) db: RefCell<Option<Db>>,
     /// The stack frame of the current call.
     pub(crate) sp: RefCell<Option<Sp>>,
 }
 
-impl<Db: IDatabase, Sp: HostFrame> Default for LuaEngine<Db, Sp> {
+impl<Db: DatabaseProvider, Sp: HostFrame> Default for LuaEngine<Db, Sp> {
     fn default() -> Self {
         Self {
             db: <_>::default(),
@@ -90,7 +35,7 @@ impl<Db: IDatabase, Sp: HostFrame> Default for LuaEngine<Db, Sp> {
     }
 }
 
-impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
+impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
     /// Returns a reference to the database.
     ///
     /// # Panics
@@ -122,7 +67,7 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
     }
 }
 
-impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
+impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
     mw_unimplemented! {
         incrementExpensiveFunctionCount = increment_expensive_function_count,
     }
@@ -433,7 +378,7 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
     }
 }
 
-impl<Db: IDatabase + 'static, Sp: HostFrame + 'static> MwInterface for LuaEngine<Db, Sp> {
+impl<Db: DatabaseProvider + 'static, Sp: HostFrame + 'static> MwInterface for LuaEngine<Db, Sp> {
     const CODE: &'static [u8] = include_bytes!("./modules/mw.lua");
     const NAME: &'static str = "mw";
 
@@ -459,7 +404,7 @@ impl<Db: IDatabase + 'static, Sp: HostFrame + 'static> MwInterface for LuaEngine
         }
     }
 
-    fn setup<'gc, SetupDb: IDatabase>(
+    fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
         _: &SetupDb,
         ctx: Context<'gc>,

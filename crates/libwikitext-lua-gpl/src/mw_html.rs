@@ -8,7 +8,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use libwikitext_common::db::IDatabase;
+use libwikitext_common::db::DatabaseProvider;
 use libwikitext_parse::{MARKER_PREFIX, MARKER_SUFFIX};
 
 /// The HTML support library.
@@ -24,7 +24,7 @@ impl MwInterface for HtmlLibrary {
         Table::new(&ctx)
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         _: &Db,
         ctx: Context<'gc>,

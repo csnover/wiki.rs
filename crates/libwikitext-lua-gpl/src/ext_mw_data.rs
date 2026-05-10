@@ -8,7 +8,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use libwikitext_common::db::IDatabase;
+use libwikitext_common::db::DatabaseProvider;
 
 /// MediaWiki `JsonConfig` extension.
 #[derive(gc_arena::Collect, Default)]
@@ -53,7 +53,7 @@ impl MwInterface for JCLuaLibrary {
         }
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         _: &Db,
         ctx: Context<'gc>,

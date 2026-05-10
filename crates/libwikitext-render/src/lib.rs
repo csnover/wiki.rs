@@ -331,7 +331,7 @@ use expand_templates::{ExpandMode, ExpandTemplates};
 use http::Uri;
 use libphp_rs::DateTime;
 use libwikitext_common::{
-    db::{Article, IDatabase},
+    db::{Article, DatabaseProvider},
     lru_limiter::ByMemoryUsage,
     title::Title,
 };
@@ -499,7 +499,7 @@ pub fn render_string(
 ///
 /// * Rendering fails
 pub fn render_test(
-    db: &Arc<dyn IDatabase>,
+    db: &Arc<dyn DatabaseProvider>,
     messages: &serde_json_borrow::Value<'_>,
     page_name: &str,
     source: &str,
@@ -678,7 +678,7 @@ pub enum Error {
     #[error("template stack overflow: {0}")]
     StackOverflow(String),
 
-    /// A [`StripMarker`](crate::wikitext::Token::StripMarker) was encountered
+    /// A [`StripMarker`](libwikitext_parse::Token::StripMarker) was encountered
     /// without a corresponding entry.
     #[error("invalid strip marker {0}")]
     StripMarker(String),
@@ -742,7 +742,7 @@ pub struct Statics<'config> {
     base_uri: Uri,
     /// The article database.
     #[builder(setter(doc = "Sets the article database."))]
-    db: Arc<dyn IDatabase>,
+    db: Arc<dyn DatabaseProvider>,
     /// Time and memory limits.
     #[builder(
         default,
@@ -892,7 +892,7 @@ struct ArticleState {
 // TODO: This should really just resolve the redirects and then do the work, but
 // borrowck is being unbearable today and this is a toy project so who cares
 // TODO: This should be part of Database
-pub fn resolve_redirects<Db: IDatabase>(
+pub fn resolve_redirects<Db: DatabaseProvider>(
     db: &Db,
     mut article: Arc<Article>,
 ) -> Result<Arc<Article>, Error> {

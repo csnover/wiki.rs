@@ -3,7 +3,7 @@
 use crate::{Limits, db::Database};
 use axum::http::Uri;
 use libphp_rs::DateTime;
-use libwikitext_common::db::{Article, IDatabase};
+use libwikitext_common::db::{Article, DatabaseProvider};
 use libwikitext_data::MESSAGES;
 use libwikitext_render::{
     Error, EvalPp, LoadMode, RenderOutput, Statics, TemplateCache, make_template_cache,
@@ -93,7 +93,7 @@ impl r2d2::ManageConnection for Manager {
         })?;
         std::thread::spawn(move || {
             let config = db.config();
-            let db = Arc::clone(&db) as Arc<dyn IDatabase>;
+            let db = Arc::clone(&db) as Arc<dyn DatabaseProvider>;
             let mut statics = Statics::builder()
                 .base_time(base_time)
                 .base_uri(base_uri)

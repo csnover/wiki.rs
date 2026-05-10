@@ -1115,7 +1115,7 @@ pub(super) struct Force<'s> {
     #[serde(default, rename = "interactive")]
     _interactive: bool,
     /// The number of iterations to run the force directed layout when
-    /// [`Self::interactive`] is false.
+    /// [`Self::_interactive`] is false.
     #[serde(default = "Force::default_iterations")]
     iterations: f64,
     /// The length of edges, in pixels.
@@ -2451,7 +2451,7 @@ fn make_key_string(item: &Value<'_>, fields: &[Cow<'_, str>]) -> String {
 }
 
 // SPDX-SnippetBegin
-// SPDX-License-Identifier: ISC
+// SPDX-License-Identifier: BSD-3-Clause
 // SPDX-SnippetComment: Adapted from d3 3.5.17 by Mike Bostock
 
 /// Types and functions for Gauss-Seidel force layout.
@@ -2895,7 +2895,7 @@ mod force {
         }
     }
 
-    /// Creates a visitor function for [`QuadtreeRoot::visit`] which adjusts
+    /// Creates a visitor function for [`Quadtree::visit`] which adjusts
     /// the position of `node` according to its distance from other nodes.
     fn repulse(
         sq_charge_distance: f64,
@@ -3294,7 +3294,7 @@ mod treemap {
 // SPDX-SnippetEnd
 
 // SPDX-SnippetBegin
-// SPDX-License-Identifier: BSD-3-clause
+// SPDX-License-Identifier: BSD-3-Clause
 // SPDX-SnippetComment: Adapted from d3-cloud 1.2.8 by Jason Davies
 
 /// Types and functions for making a word cloud.

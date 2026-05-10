@@ -1,5 +1,8 @@
 //! Over 9,000 map projection functions.
 
+// SPDX-License-Identifier: BSD-3-Clause
+// Adapted from d3 3.5.17 and d3-geo-projection 0.2.16 by Mike Bostock
+
 #![expect(
     clippy::float_cmp,
     reason = "good enough for D3, good enough for me for now"

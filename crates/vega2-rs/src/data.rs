@@ -433,12 +433,12 @@ struct TreeJson<'s> {
 }
 
 impl<'s> TreeJson<'s> {
-    /// The default value for [`Self::TreeJson`]`::children`.
+    /// The default value for [`Self::children`].
     const fn default_children() -> Cow<'static, str> {
         Cow::Borrowed("children")
     }
 
-    /// The default value for [`Self::TreeJson`]`::parent`.
+    /// The default value for [`Self::parent`].
     const fn default_parent() -> Cow<'static, str> {
         Cow::Borrowed("parent")
     }

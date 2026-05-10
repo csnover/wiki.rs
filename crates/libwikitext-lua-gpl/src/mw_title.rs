@@ -15,7 +15,7 @@ use core::{
 use http::Uri;
 use libwikitext_common::{
     config::Configuration,
-    db::IDatabase,
+    db::DatabaseProvider,
     make_url,
     title::{Namespace, Title},
     url_encode, url_encode_bytes,
@@ -26,7 +26,7 @@ use std::borrow::Cow;
 /// The article support library.
 #[derive(gc_arena::Collect)]
 #[collect(require_static)]
-pub struct TitleLibrary<Db: IDatabase> {
+pub struct TitleLibrary<Db: DatabaseProvider> {
     /// The base URI to use when generating URLs to articles.
     base_uri: RefCell<Option<Uri>>,
     /// The article database.
@@ -35,7 +35,7 @@ pub struct TitleLibrary<Db: IDatabase> {
     this_title: Cell<Option<StashedTable>>,
 }
 
-impl<Db: IDatabase> Default for TitleLibrary<Db> {
+impl<Db: DatabaseProvider> Default for TitleLibrary<Db> {
     fn default() -> Self {
         Self {
             base_uri: <_>::default(),
@@ -45,7 +45,7 @@ impl<Db: IDatabase> Default for TitleLibrary<Db> {
     }
 }
 
-impl<Db: IDatabase> TitleLibrary<Db> {
+impl<Db: DatabaseProvider> TitleLibrary<Db> {
     /// Gets the current Lua title object from stashed context.
     // TODO: This sucks and comes from before the `Title` struct was a thing.
     // Most of the code to do with changing titles should be uplifted into the
@@ -80,7 +80,7 @@ impl<Db: IDatabase> TitleLibrary<Db> {
     }
 }
 
-impl<Db: IDatabase> TitleLibrary<Db> {
+impl<Db: DatabaseProvider> TitleLibrary<Db> {
     mw_unimplemented! {
         getCategories = get_categories,
         getPageLangCode = get_page_lang_code,
@@ -258,7 +258,7 @@ impl<Db: IDatabase> TitleLibrary<Db> {
     /// Makes a new Lua title object for an article.
     ///
     /// `text_or_id` can be the title of an article or an
-    /// [article ID](crate::db::Article::id).
+    /// [article ID](libwikitext_common::db::Article::id).
     fn new_title<'gc>(
         &self,
         ctx: Context<'gc>,
@@ -342,7 +342,7 @@ impl<Db: IDatabase> TitleLibrary<Db> {
     }
 }
 
-impl<Db: IDatabase + 'static> MwInterface for TitleLibrary<Db> {
+impl<Db: DatabaseProvider + 'static> MwInterface for TitleLibrary<Db> {
     const CODE: &'static [u8] = include_bytes!("./modules/mw.title.lua");
     const NAME: &'static str = "mw.title";
 
@@ -366,7 +366,7 @@ impl<Db: IDatabase + 'static> MwInterface for TitleLibrary<Db> {
         }
     }
 
-    fn setup<'gc, SetupDb: IDatabase>(
+    fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
         _: &SetupDb,
         ctx: Context<'gc>,

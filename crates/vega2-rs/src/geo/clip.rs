@@ -380,7 +380,7 @@ mod clip {
         c.raw_ring = Some(vec![]);
     }
 
-    /// The comparator to use with [`clip_polygon`](super::fn@clip_polygon).
+    /// The comparator to use with [`clip_polygon`](fn@super::clip_polygon).
     pub(super) fn sort(a: Vec2, b: Vec2) -> Ordering {
         let a = if a.x < 0.0 {
             a.y - FRAC_PI_2 - EPSILON
@@ -1208,7 +1208,7 @@ mod clip_extent {
         }
     }
 
-    /// The comparator to use with [`clip_polygon`](super::fn@clip_polygon).
+    /// The comparator to use with [`clip_polygon`](fn@super::clip_polygon).
     pub(super) fn compare_points(extent: &Rect, a: Vec2, b: Vec2) -> Ordering {
         let ca = corner(extent, a, Direction::Forward);
         let cb = corner(extent, b, Direction::Forward);

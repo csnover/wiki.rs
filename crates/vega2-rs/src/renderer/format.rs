@@ -1,7 +1,7 @@
 //! D3-style string formatter.
 
 // SPDX-SnippetBegin
-// SPDX-License-Identifier: BSD-3-clause
+// SPDX-License-Identifier: BSD-3-Clause
 // Adapted from Vega 2 by Trifacta, Inc., Univerity of Washington Interactive
 // Data Lab
 
@@ -202,7 +202,7 @@ fn auto_time_format(date: DateTime) -> &'static str {
 // SPDX-SnippetEnd
 
 // SPDX-SnippetBegin
-// SPDX-License-Identifier: ISC
+// SPDX-License-Identifier: BSD-3-Clause
 // Adapted from d3 3.5.17 by Mike Bostock
 
 /// Fill alignment.

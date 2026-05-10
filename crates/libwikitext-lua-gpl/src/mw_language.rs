@@ -11,7 +11,7 @@ use super::prelude::*;
 use gc_arena::Rootable;
 use libphp_rs::strval;
 use libwikitext_common::{
-    db::IDatabase, format_date_mediawiki, format_number, parse_formatted_number,
+    db::DatabaseProvider, format_date_mediawiki, format_number, parse_formatted_number,
 };
 use libwikitext_lua::WallTime;
 
@@ -349,7 +349,7 @@ impl MwInterface for LanguageLibrary {
         }
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         _: &Db,
         ctx: Context<'gc>,

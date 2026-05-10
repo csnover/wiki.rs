@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: MIT
 
 use crate::{HostFrame, init};
-use libwikitext_common::{mock::MockDatabase, title::Title};
+use libwikitext_common::{db::MockDatabase, title::Title};
 use libwikitext_data::CONFIG;
 use libwikitext_lua::{new_vm_core, prelude::*};
 use piccolo::{Closure, Executor, ExternError, io};

@@ -3,10 +3,7 @@
 
 use super::{Error, Result, index::IndexEntry};
 use bzip2_rs::DecoderReader;
-use libwikitext_common::{
-    db::{Article, DatabaseNamespace},
-    title::NamespaceCase,
-};
+use libwikitext_common::{db::Article, title::NamespaceCase};
 use memmap2::Mmap;
 use minidom::Element;
 use std::{
@@ -16,6 +13,14 @@ use std::{
     path::Path,
 };
 use time::{UtcDateTime, format_description::well_known::Iso8601};
+
+/// A database namespace.
+pub(crate) struct DatabaseNamespace {
+    /// The letter casing of the namespace name.
+    pub case: NamespaceCase,
+    /// The name of the namespace.
+    pub name: String,
+}
 
 /// Information about the database.
 pub(crate) struct Metadata {

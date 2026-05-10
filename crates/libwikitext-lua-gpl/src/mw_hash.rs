@@ -8,7 +8,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use libwikitext_common::db::IDatabase;
+use libwikitext_common::db::DatabaseProvider;
 
 /// The cryptographic hash support library.
 #[derive(gc_arena::Collect, Default)]
@@ -35,7 +35,7 @@ impl MwInterface for HashLibrary {
         }
     }
 
-    fn setup<'gc, Db: IDatabase>(
+    fn setup<'gc, Db: DatabaseProvider>(
         &self,
         _: &Db,
         ctx: Context<'gc>,

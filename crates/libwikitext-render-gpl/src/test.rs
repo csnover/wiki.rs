@@ -1,5 +1,5 @@
 use super::test_parser::{Chunk, SectionText, Sections, Testfile};
-use libwikitext_common::{db::IDatabase, mock::MockDatabase};
+use libwikitext_common::db::{DatabaseProvider, MockDatabase};
 use libwikitext_data::{CONFIG, MESSAGES};
 use libwikitext_render::{RenderOutput, render_test};
 use std::{collections::HashMap, fs::File, io::Read as _, path::Path, sync::Arc};
@@ -85,7 +85,7 @@ fn run_tests_from_file(path: impl AsRef<Path>) {
                 let options = sections.get("options").unwrap_or(&empty_options);
                 let page_name = options.get("title").unwrap_or("Parser test");
                 let result = match render_test(
-                    &(Arc::clone(&db) as Arc<dyn IDatabase + '_>),
+                    &(Arc::clone(&db) as Arc<dyn DatabaseProvider + '_>),
                     &MESSAGES,
                     page_name,
                     wikitext,
