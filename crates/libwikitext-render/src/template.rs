@@ -579,13 +579,14 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
 ) -> Result {
+    let page_name = &sp.root().name;
     let href = make_url(
-        None,
         &state.statics.base_uri,
-        &sp.root().name,
+        None,
+        page_name.partial_url(),
         Some("mode=module"),
-        false,
-    )?;
+        page_name.fragment(),
+    );
 
     write!(
         out,

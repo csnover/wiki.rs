@@ -5,13 +5,12 @@ pub mod db;
 pub mod lru_limiter;
 pub mod title;
 
-use core::fmt::{self, Write as _};
+use core::fmt::Write as _;
 use html_escape::NAMED_ENTITIES;
 use http::Uri;
 use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval};
 use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
-use title::Title;
 
 /// Encodes section heading text into a format suitable for use as a URL anchor.
 #[must_use]
@@ -245,46 +244,51 @@ where
 /// Creates a URL for the given title using the given protocol, base URI, path,
 /// and query string.
 ///
-/// # Errors
+/// To create a protocol-relative URL, pass `Some("")` to `proto`.
+///
+/// The `query` and `fragment` arguments should *not* include any `?` or `#`
+/// prefix.
+///
+/// The value passed to `fragment` will be anchor-encoded.
+///
+/// # Panics
 ///
 /// * A write to the output buffer fails
-pub fn make_url(
-    proto: Option<&str>,
+pub fn make_url<P: core::fmt::Display>(
     base_uri: &Uri,
-    title: &Title,
+    proto: Option<&str>,
+    path: P,
     query: Option<&str>,
-    is_local: bool,
-) -> Result<String, fmt::Error> {
-    let mut url = String::new();
-    if let Some(proto) = proto {
-        url += proto;
-    }
-    if !is_local {
-        url += "//";
-    }
+    fragment: Option<&str>,
+) -> String {
+    // http::Uri confuses authority and path if a protocol-relative URI is used
     let (authority, base_path) = if let Some(authority) = base_uri.authority() {
         (authority.as_str(), base_uri.path())
-    } else if base_uri.path().starts_with("//") {
-        let (_, authority) = base_uri.path().split_at(2);
+    } else if let Some(authority) = base_uri.path().strip_prefix("//") {
         authority.split_once('/').unwrap_or((authority, ""))
     } else {
         ("localhost", base_uri.path())
     };
-    if !is_local {
-        url += authority;
+    // http::Uri will also give "/" instead of "" for e.g. "http://foo.example/"
+    let base_path = base_path.trim_start_matches('/');
+
+    let mut url = String::new();
+    if let Some(proto) = proto {
+        write!(url, "{proto}//{authority}").unwrap();
     }
     if !base_path.is_empty() {
-        url.push('/');
-        url += base_path;
+        write!(url, "/{base_path}").unwrap();
     }
-    write!(url, "/article/{}", title.partial_url())?;
+    write!(url, "/{path}").unwrap();
     if let Some(query) = query {
-        write!(url, "?{query}")?;
+        write!(url, "?{query}").unwrap();
     }
-    if !title.fragment().is_empty() {
-        write!(url, "#{}", anchor_encode(title.fragment()))?;
+    if let Some(fragment) = fragment
+        && !fragment.is_empty()
+    {
+        write!(url, "#{}", anchor_encode(fragment)).unwrap();
     }
-    Ok(url)
+    url
 }
 
 /// Strips formatting characters from a numeric string.

@@ -148,10 +148,14 @@ pub(crate) async fn article(
         let target = call_renderer(&state, renderer::Command::Redirect { article })?;
         let target = Title::new(state.database.config(), &target.content, None);
         let query = format!("from={}", title.partial_url());
-        return make_url(None, &state.base_uri, &target, Some(&query), true)
-            .map(|s| Redirect::permanent(&s))
-            .map(IntoResponse::into_response)
-            .map_err(Into::into);
+        let url = make_url(
+            &state.base_uri,
+            None,
+            target.partial_url(),
+            Some(&query),
+            target.fragment(),
+        );
+        return Ok(Redirect::permanent(&url).into_response());
     }
 
     let start = Instant::now();
@@ -459,10 +463,14 @@ pub(crate) async fn search(
         && let Some(result) = single_result(&results)
     {
         let target = Title::new(state.database.config(), result, None);
-        return make_url(None, &state.base_uri, &target, None, true)
-            .map(|s| Redirect::permanent(&s))
-            .map(IntoResponse::into_response)
-            .map_err(Into::into);
+        let url = make_url(
+            &state.base_uri,
+            None,
+            target.partial_url(),
+            None,
+            target.fragment(),
+        );
+        return Ok(Redirect::permanent(&url).into_response());
     }
 
     SearchResult {

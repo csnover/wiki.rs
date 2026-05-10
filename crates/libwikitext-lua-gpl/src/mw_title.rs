@@ -46,6 +46,18 @@ impl<Db: DatabaseProvider> Default for TitleLibrary<Db> {
 }
 
 impl<Db: DatabaseProvider> TitleLibrary<Db> {
+    /// Returns a reference to the base URI.
+    ///
+    /// # Panics
+    ///
+    /// * The database is not set
+    #[inline]
+    fn base_uri(&self) -> Ref<'_, Uri> {
+        Ref::map(self.base_uri.borrow(), |base_uri| {
+            base_uri.as_ref().unwrap()
+        })
+    }
+
     /// Gets the current Lua title object from stashed context.
     // TODO: This sucks and comes from before the `Title` struct was a thing.
     // Most of the code to do with changing titles should be uplifted into the
@@ -57,7 +69,7 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         this_title
     }
 
-    /// Returns a clone of the database.
+    /// Returns a reference to the database.
     ///
     /// # Panics
     ///
@@ -207,29 +219,28 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
             None
         };
 
-        let base_uri = Ref::filter_map(self.base_uri.borrow(), Option::as_ref)
-            .map_err(|_| "missing base uri".into_value(ctx))?;
-        let (proto, is_local) = match which.as_bytes() {
-            b"fullUrl" => {
-                let proto = if let Some(proto) = proto {
-                    match proto.to_str()? {
-                        proto @ ("http" | "https") => Some(proto),
-                        "relative" => None,
-                        "canonical" => base_uri.scheme_str(),
-                        _ => return Err("invalid 'proto' argument".into_value(ctx).into()),
-                    }
-                } else {
-                    None
-                };
-                (proto, false)
-            }
-            b"canonicalUrl" => (base_uri.scheme_str(), false),
-            b"localUrl" => (None, true),
+        let base_uri = self.base_uri();
+        let proto = match which.as_bytes() {
+            b"fullUrl" => match proto.map(VmString::to_str).transpose()? {
+                proto @ Some("http" | "https") => proto,
+                Some("relative") => Some(""),
+                Some("canonical") => base_uri.scheme_str().or(Some("")),
+                Some(_) => return Err("invalid 'proto' argument".into_value(ctx).into()),
+                None => None,
+            },
+            b"canonicalUrl" => base_uri.scheme_str().or(Some("")),
+            b"localUrl" => None,
             _ => return Err("invalid 'which' argument".into_value(ctx).into()),
         };
 
         let title = Title::new(self.db().config(), text.to_str()?, None);
-        let url = make_url(proto, &base_uri, &title, query.as_deref(), is_local)?;
+        let url = make_url(
+            &base_uri,
+            proto,
+            title.partial_url(),
+            query.as_deref(),
+            title.fragment(),
+        );
         Ok(url.into_value(ctx))
     }
 
@@ -484,7 +495,11 @@ fn update_title<'gc>(table: Table<'gc>, ctx: Context<'gc>, title: &Title, is_cur
     table.set_field(ctx, "namespace", title.namespace().id);
     table.set_field(ctx, "nsText", title.namespace().name);
     table.set_field(ctx, "text", ctx.intern(title.text().as_bytes()));
-    table.set_field(ctx, "fragment", ctx.intern(title.fragment().as_bytes()));
+    table.set_field(
+        ctx,
+        "fragment",
+        ctx.intern(title.fragment().unwrap_or_default().as_bytes()),
+    );
     table.set_field(
         ctx,
         "thePartialUrl",

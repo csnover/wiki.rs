@@ -375,11 +375,11 @@ impl Title {
     /// ```
     #[inline]
     #[must_use]
-    pub fn fragment(&self) -> &str {
-        let start_at = self
-            .fragment_delimiter
-            .map_or(self.text.len(), |d| usize::from(d) + 1);
-        &self.text[start_at..]
+    pub fn fragment(&self) -> Option<&str> {
+        self.fragment_delimiter.map(|d| {
+            let start_at = usize::from(d) + 1;
+            &self.text[start_at..]
+        })
     }
 
     /// The full text of the title.

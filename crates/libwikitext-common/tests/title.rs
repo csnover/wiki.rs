@@ -23,7 +23,7 @@ fn from_str() {
     let title = Title::new(&CONFIG, "Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None);
     assert_eq!(title.namespace().id, Namespace::TALK);
     assert_eq!(title.base_text(), "Aa/Bb");
-    assert_eq!(title.fragment(), "Dd/Ee/Ff");
+    assert_eq!(title.fragment(), Some("Dd/Ee/Ff"));
     assert_eq!(title.full_text(), "Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
     assert_eq!(title.interwiki(), Some("Wikidata"));
     assert_eq!(title.key(), "Talk:Aa/Bb/Cc");

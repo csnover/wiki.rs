@@ -1033,12 +1033,12 @@ mod title {
             let query = arguments.eval(state, 1)?.map(trim);
             let title = Title::new(state.statics.db.config(), &value, None);
             let url = make_url(
-                None,
                 &state.statics.base_uri,
-                &title,
+                Some(""),
+                title.partial_url(),
                 query.as_deref(),
-                false,
-            )?;
+                title.fragment(),
+            );
             write!(out, "{url}")?;
         }
 
@@ -1075,12 +1075,12 @@ mod title {
             let title = Title::new(state.statics.db.config(), &value, None);
             let query = arguments.eval(state, 1)?.map(trim);
             let url = make_url(
-                None,
                 &state.statics.base_uri,
-                &title,
+                None,
+                title.partial_url(),
                 query.as_deref(),
-                true,
-            )?;
+                title.fragment(),
+            );
             write!(out, "{url}")?;
         }
 

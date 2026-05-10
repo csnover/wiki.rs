@@ -7,7 +7,7 @@ use super::{
 };
 use core::iter;
 use libmisc::CowExt as _;
-use libwikitext_common::{db::DatabaseProvider as _, title::Title, url_encode};
+use libwikitext_common::{db::DatabaseProvider as _, make_url, title::Title, url_encode};
 use libwikitext_parse::{
     Argument, FileMap, Spanned, Token,
     builder::{tok_arg, token},
@@ -106,10 +106,12 @@ pub(super) fn media_options<'s>(
 
     options.attrs.insert(
         "src".into(),
-        Cow::Owned(format!(
-            "{}/media/{}",
-            state.statics.base_uri.path(),
-            url_encode(title.text())
+        Cow::Owned(make_url(
+            &state.statics.base_uri,
+            None,
+            format_args!("media/{}", url_encode(title.text())),
+            None,
+            None,
         )),
     );
 

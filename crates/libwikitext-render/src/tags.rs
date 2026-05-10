@@ -3,7 +3,7 @@
 use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use http::Uri;
 use libwikitext_common::{
-    anchor_encode, db::DatabaseProvider as _, decode_html, title::Title, title_decode,
+    anchor_encode, db::DatabaseProvider as _, decode_html, make_url, title::Title, title_decode,
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
 use std::borrow::Cow;
@@ -72,7 +72,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     trail: Option<&str>,
     title: Title,
 ) -> Result<(), Error> {
-    if title.fragment().is_empty() && sp.root().name == title {
+    if title.fragment().is_none() && sp.root().name == title {
         render_runtime(out, state, sp, |_, source| {
             token!(
                 source,
@@ -175,12 +175,18 @@ impl LinkKind<'_> {
     pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
         match self {
             LinkKind::External(url) => {
-                // TODO: Hack together some URL parsing good enough that there is an
-                // actual way to check that the origin is the same
-                if url.starts_with('/') {
+                // TODO: Hack together some URL parsing good enough that there
+                // is an actual way to check that the origin is the same
+                if url.starts_with('/') && !url.starts_with("//") {
                     url.to_string()
                 } else {
-                    format!("{}/external/{url}", options.base_uri.path())
+                    make_url(
+                        options.base_uri,
+                        None,
+                        format_args!("external/{url}"),
+                        None,
+                        None,
+                    )
                 }
             }
             LinkKind::Internal(title) => {
@@ -188,28 +194,24 @@ impl LinkKind<'_> {
                     .interwiki()
                     .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
                 {
-                    format!(
-                        "{}/external/{}",
-                        options.base_uri.path(),
-                        iw.replace("$1", &title.partial_url().to_string())
+                    let url = iw.replace("$1", &title.partial_url().to_string());
+                    make_url(
+                        options.base_uri,
+                        None,
+                        format_args!("external/{url}"),
+                        None,
+                        None,
                     )
                 } else if title.text().is_empty() {
-                    format!("#{}", anchor_encode(title.fragment()))
+                    format!("#{}", anchor_encode(title.fragment().unwrap_or_default()))
                 } else {
-                    let mut link = format!(
-                        "{}/article/{}",
-                        options.base_uri.path(),
-                        title.partial_url()
-                    );
-                    if let Some(query) = query {
-                        link.push('?');
-                        link += query;
-                    }
-                    if !title.fragment().is_empty() {
-                        link.push('#');
-                        link += &anchor_encode(title.fragment());
-                    }
-                    link
+                    make_url(
+                        options.base_uri,
+                        None,
+                        format_args!("article/{}", title.partial_url()),
+                        query,
+                        title.fragment(),
+                    )
                 }
             }
         }
