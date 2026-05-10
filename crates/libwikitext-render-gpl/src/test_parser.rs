@@ -56,6 +56,8 @@ pub(super) enum Chunk<'input> {
     Test {
         /// The name of the test.
         name: &'input str,
+        /// The byte position of the test in the test file.
+        pos: usize,
         /// The subsections of the test.
         sections: Sections<'input>,
     },
@@ -216,7 +218,8 @@ peg::parser! {grammar testfile() for str {
   { Chunk::FunctionHooks }
 
   rule test() -> Chunk<'input>
-  = start(<"test">)
+  = pos:position!()
+    start(<"test">)
     name:text()
     sections:(config_section() / option_section() / metadata_section() / section())*
     end(<>)
@@ -247,7 +250,7 @@ peg::parser! {grammar testfile() for str {
         }
     }
 
-    Chunk::Test { name: name.trim_ascii_end(), sections }
+    Chunk::Test { name: name.trim_ascii_end(), pos, sections }
   }
 
   rule section() -> Section<'input>

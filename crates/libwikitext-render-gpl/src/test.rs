@@ -1,6 +1,7 @@
 use super::test_parser::{Chunk, SectionText, Sections, Testfile};
 use libwikitext_common::db::{DatabaseProvider, MockDatabase};
 use libwikitext_data::{CONFIG, MESSAGES};
+use libwikitext_parse::FileMap;
 use libwikitext_render::{RenderOutput, render_test};
 use std::{collections::HashMap, fs::File, io::Read as _, path::Path, sync::Arc};
 
@@ -59,6 +60,7 @@ fn run_tests_from_file(path: impl AsRef<Path>) {
     };
 
     let tests = Testfile::parse(&code).unwrap();
+    let file_map = FileMap::new(&code);
 
     let mut db = MockDatabase::new(&CONFIG);
 
@@ -85,13 +87,19 @@ fn run_tests_from_file(path: impl AsRef<Path>) {
     let db = Arc::new(db) as Arc<dyn DatabaseProvider>;
 
     for chunk in tests.chunks {
-        if let Chunk::Test { name, sections } = chunk {
+        if let Chunk::Test {
+            name,
+            pos,
+            sections,
+        } = chunk
+        {
             let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
                 log::warn!("Could not find wikitext for {name}!");
                 continue;
             };
 
-            log::info!("Running {name} ...");
+            let line = file_map.find_line_col(pos).line;
+            log::info!("[{line}] Running {name} ...");
             total += 1;
 
             let options = sections.get("options").unwrap_or(&empty_options);
