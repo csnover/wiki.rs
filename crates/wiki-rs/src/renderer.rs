@@ -144,11 +144,11 @@ impl r2d2::ManageConnection for Manager {
         Ok(tx)
     }
 
-    fn is_valid(&self, _: &mut Self::Connection) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
         false
+    }
+
+    fn is_valid(&self, _: &mut Self::Connection) -> Result<(), Self::Error> {
+        Ok(())
     }
 }

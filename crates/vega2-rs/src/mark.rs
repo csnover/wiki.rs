@@ -15,27 +15,20 @@ use std::borrow::Cow;
 /// A visualisation.
 #[derive(Debug, serde::Deserialize)]
 pub(super) struct Mark<'s> {
-    /// A function to modify the properties of a mark immediately before it is
-    /// drawn.
-    #[serde(skip)]
-    pub encoder: Option<Box<dyn Encoder>>,
-    /// The kind of mark.
-    #[serde(borrow, flatten)]
-    pub kind: Kind<'s>,
-    /// The name of the mark. Used to look up group marks and to give a CSS
-    /// class to a mark.
-    #[serde(borrow, default)]
-    pub name: Option<Cow<'s, str>>,
-    /// The data to visualise. If undefined, a “default, single element data
-    /// set” is used.
-    #[serde(borrow, default)]
-    pub from: Option<MarkData<'s>>,
     /// The transition delay for mark updates, in milliseconds.
     #[serde(borrow, default, rename = "delay")]
     _delay: IgnoredAny<Option<NumberProperty<'s>>>,
     /// The easing function to use for mark updates.
     #[serde(default, rename = "ease")]
     _ease: IgnoredAny<Option<EasingFunction>>,
+    /// A function to modify the properties of a mark immediately before it is
+    /// drawn.
+    #[serde(skip)]
+    pub encoder: Option<Box<dyn Encoder>>,
+    /// The data to visualise. If undefined, a “default, single element data
+    /// set” is used.
+    #[serde(borrow, default)]
+    pub from: Option<MarkData<'s>>,
     /// Undocumented. If true, allows pointer interaction with the mark.
     #[serde(default, rename = "interactive")]
     _interactive: IgnoredAny<bool>,
@@ -44,6 +37,13 @@ pub(super) struct Mark<'s> {
     /// data elements to existing mark instances.
     #[serde(borrow, default, rename = "key")]
     _key: IgnoredAny<Option<Cow<'s, str>>>,
+    /// The kind of mark.
+    #[serde(borrow, flatten)]
+    pub kind: Kind<'s>,
+    /// The name of the mark. Used to look up group marks and to give a CSS
+    /// class to a mark.
+    #[serde(borrow, default)]
+    pub name: Option<Cow<'s, str>>,
     /// The visual properties of the mark. For group marks, these properties are
     /// inherited by child marks.
     #[serde(borrow, default)]
@@ -62,14 +62,14 @@ impl<'s> Mark<'s> {
         properties: Propset<'s>,
     ) -> Self {
         Self {
-            encoder: <_>::default(),
-            kind,
-            name,
-            from,
             _delay: <_>::default(),
             _ease: <_>::default(),
+            encoder: <_>::default(),
+            from,
             _interactive: <_>::default(),
             _key: <_>::default(),
+            kind,
+            name,
             properties: Some(Propsets {
                 enter: Some(properties),
                 ..Default::default()
@@ -109,6 +109,16 @@ impl<'s> Mark<'s> {
         } else {
             None
         }
+    }
+
+    /// Gets a property of this mark from the given property set.
+    #[inline]
+    fn property<F, T, G>(&self, node: &Node<'s, '_>, which: PropsetKind, f: F) -> Option<T>
+    where
+        F: for<'a> FnOnce(&'a Propset<'s>) -> &'a G,
+        G: Getter<'s, Item = T>,
+    {
+        self.propset(which).and_then(|propset| f(propset).get(node))
     }
 
     /// Gets a property set from this mark.
@@ -157,37 +167,6 @@ impl<'s> Mark<'s> {
             None
         }
     }
-
-    /// Gets a property of this mark from the given property set.
-    #[inline]
-    fn property<F, T, G>(&self, node: &Node<'s, '_>, which: PropsetKind, f: F) -> Option<T>
-    where
-        F: for<'a> FnOnce(&'a Propset<'s>) -> &'a G,
-        G: Getter<'s, Item = T>,
-    {
-        self.propset(which).and_then(|propset| f(propset).get(node))
-    }
-}
-
-/// A trait for functions that update a mark immediately before it is rendered.
-pub(super) trait Encoder:
-    for<'a, 's> Fn(&'a Propset<'s>, &Node<'s, '_>) -> Cow<'a, Propset<'s>> + private::Sealed
-{
-}
-
-#[doc(hidden)]
-mod private {
-    pub trait Sealed {}
-    impl<T> Sealed for T where T: super::Encoder {}
-}
-
-impl<T> Encoder for T where T: for<'a, 's> Fn(&'a Propset<'s>, &Node<'s, '_>) -> Cow<'a, Propset<'s>>
-{}
-
-impl core::fmt::Debug for dyn Encoder {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Encoder")
-    }
 }
 
 /// Data for a mark.
@@ -221,15 +200,15 @@ impl<'s> From<Vec<Value<'s>>> for MarkData<'s> {
 /// A reference to a data source.
 #[derive(Debug, serde::Deserialize)]
 pub(super) struct DataRef<'s> {
+    /// Cached synthesised data.
+    #[serde(skip)]
+    data_cache: OnceCell<Vec<Value<'s>>>,
     /// The name of the data set.
     #[serde(borrow, flatten)]
     target: DataRefTarget<'s>,
     /// A list of transformations to apply to the source data.
     #[serde(borrow, default)]
     transform: Vec<Transform<'s>>,
-    /// Cached synthesised data.
-    #[serde(skip)]
-    data_cache: OnceCell<Vec<Value<'s>>>,
 }
 
 impl<'s> DataRef<'s> {
@@ -312,34 +291,55 @@ pub(super) enum DataRefTarget<'s> {
     reason = "since this is not used now, it is a waste of time to document it"
 )]
 pub enum EasingFunction {
+    BounceIn,
+    BounceInOut,
+    BounceOut,
+    BounceOutIn,
+    CircleIn,
+    CircleInOut,
+    CircleOut,
+    CircleOutIn,
+    CubicIn,
+    CubicInOut,
+    CubicOut,
+    CubicOutIn,
+    ExpIn,
+    ExpInOut,
+    ExpOut,
+    ExpOutIn,
     LinearIn,
-    LinearOut,
     LinearInOut,
+    LinearOut,
     LinearOutIn,
     QuadIn,
-    QuadOut,
     QuadInOut,
+    QuadOut,
     QuadOutIn,
-    CubicIn,
-    CubicOut,
-    CubicInOut,
-    CubicOutIn,
     SinIn,
-    SinOut,
     SinInOut,
+    SinOut,
     SinOutIn,
-    ExpIn,
-    ExpOut,
-    ExpInOut,
-    ExpOutIn,
-    CircleIn,
-    CircleOut,
-    CircleInOut,
-    CircleOutIn,
-    BounceIn,
-    BounceOut,
-    BounceInOut,
-    BounceOutIn,
+}
+
+/// A trait for functions that update a mark immediately before it is rendered.
+pub(super) trait Encoder:
+    for<'a, 's> Fn(&'a Propset<'s>, &Node<'s, '_>) -> Cow<'a, Propset<'s>> + private::Sealed
+{
+}
+
+#[doc(hidden)]
+mod private {
+    pub trait Sealed {}
+    impl<T> Sealed for T where T: super::Encoder {}
+}
+
+impl<T> Encoder for T where T: for<'a, 's> Fn(&'a Propset<'s>, &Node<'s, '_>) -> Cow<'a, Propset<'s>>
+{}
+
+impl core::fmt::Debug for dyn Encoder {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Encoder")
+    }
 }
 
 /// A line interpolation method.
@@ -409,27 +409,27 @@ from_value_impl!(Interpolate);
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub(crate) enum Kind<'s> {
-    /// A plain rectangle.
-    Rect,
-    /// A symbol drawn at a point.
-    Symbol,
-    /// An arbitrary SVG path.
-    Path,
     /// A circular arc.
     Arc,
     /// A filled area.
     Area,
-    /// A line.
-    Line,
-    /// A horizontal or vertical rule.
-    Rule,
-    /// A bitmap.
-    Image,
-    /// A text label.
-    Text,
     /// A group of marks.
     #[serde(borrow)]
     Group(Box<Container<'s>>),
+    /// A bitmap.
+    Image,
+    /// A line.
+    Line,
+    /// An arbitrary SVG path.
+    Path,
+    /// A plain rectangle.
+    Rect,
+    /// A horizontal or vertical rule.
+    Rule,
+    /// A symbol drawn at a point.
+    Symbol,
+    /// A text label.
+    Text,
 }
 
 impl core::fmt::Display for Kind<'_> {
@@ -501,16 +501,16 @@ pub(super) enum Shape {
     /// ○
     #[default]
     Circle,
-    /// □
-    Square,
     /// +
     Cross,
     /// ◇
     Diamond,
-    /// △
-    TriangleUp,
+    /// □
+    Square,
     /// ▽
     TriangleDown,
+    /// △
+    TriangleUp,
 }
 
 impl From<Value<'_>> for Shape {

@@ -154,28 +154,6 @@ impl<'s> Scale<'s> {
         }
     }
 
-    /// Invalidates caches, if necessary.
-    pub fn invalidate(&self) {
-        // TODO: This could record a cache key too to reduce the number of
-        // invalidations, if it actually is the case that is meaningfully
-        // faster and anyone cares.
-        let tainted = self
-            .domain_cache
-            .borrow()
-            .as_ref()
-            .is_some_and(|cache| cache.tainted)
-            || matches!(&self.range, Some(range) if range.is_dynamic());
-
-        if tainted
-            || matches!(&self.domain, Some(Domain::Derived(data_ref)) if data_ref.is_dynamic())
-        {
-            *self.domain_cache.borrow_mut() = None;
-        }
-        if tainted {
-            *self.range_cache.borrow_mut() = None;
-        }
-    }
-
     /// Applies a quantitative scale to the given input value, returning the
     /// scaled value.
     fn apply_quantitative(
@@ -249,73 +227,6 @@ impl<'s> Scale<'s> {
                 .unwrap_or_else(|index| index)
         });
         self.with_ordinal_range(node, invert, |range| range[index].clone())
-    }
-
-    /// Gets the minimum and maximum for a quantitative domain. The returned
-    /// values are guaranteed to be sorted.
-    pub fn input_range(&self, node: &Node<'s, '_>) -> (f64, f64) {
-        let domain = self.domain(node);
-        let min = domain.first().map_or(<_>::default(), ValueExt::to_f64);
-        let max = domain.last().map_or(<_>::default(), ValueExt::to_f64);
-        (min.min(max), max.max(min))
-    }
-
-    /// Returns true if this is a scale with discrete output values.
-    pub fn is_discrete(&self) -> bool {
-        matches!(
-            self.kind,
-            Kind::Ordinal { .. }
-                | Kind::Quantitative {
-                    kind: QuantitativeScale::Quantile
-                        | QuantitativeScale::Quantize
-                        | QuantitativeScale::Threshold,
-                    ..
-                }
-        )
-    }
-
-    /// Returns true if this is an ordinal (categorical) scale.
-    pub fn is_ordinal(&self) -> bool {
-        matches!(self.kind, Kind::Ordinal { .. })
-    }
-
-    /// Returns true if this is a time scale.
-    // TODO: Technically, this does need to discriminate local vs UTC.
-    pub fn is_time(&self) -> bool {
-        matches!(self.kind, Kind::Time { .. })
-    }
-
-    /// Gets the name of this scale.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Gets the calculated width of the bands in the range.
-    pub fn range_band(&self, node: &Node<'s, '_>) -> f64 {
-        self.cached_range(node).band_width
-    }
-
-    /// Gets the sorted minimum and maximum for a range. The returned values are
-    /// guaranteed to be sorted.
-    pub fn range_extent(&self, node: &Node<'s, '_>) -> (f64, f64) {
-        let (min, max) = self.output_range(node);
-        (min.min(max), max.max(min))
-    }
-
-    /// Gets an iterator of approximately `count` representative values from
-    /// the domain, or the domain itself if this is not a quantitative scale.
-    pub fn ticks(&self, node: &Node<'s, '_>, count: f64) -> Vec<Value<'s>> {
-        match self.kind {
-            Kind::Time { .. } => {
-                let (min, max) = self.input_range(node);
-                time_ticks(min, max, count).map(Value::from).collect()
-            }
-            Kind::Quantitative { kind, .. } if kind.can_ticks() => {
-                let (min, max) = self.input_range(node);
-                kind.ticks(min, max, count).into_iter().flatten().collect()
-            }
-            _ => self.domain(node).iter().cloned().collect(),
-        }
     }
 
     /// Calculates and returns the cached range.
@@ -589,6 +500,67 @@ impl<'s> Scale<'s> {
         })
     }
 
+    /// Gets the minimum and maximum for a quantitative domain. The returned
+    /// values are guaranteed to be sorted.
+    pub fn input_range(&self, node: &Node<'s, '_>) -> (f64, f64) {
+        let domain = self.domain(node);
+        let min = domain.first().map_or(<_>::default(), ValueExt::to_f64);
+        let max = domain.last().map_or(<_>::default(), ValueExt::to_f64);
+        (min.min(max), max.max(min))
+    }
+
+    /// Invalidates caches, if necessary.
+    pub fn invalidate(&self) {
+        // TODO: This could record a cache key too to reduce the number of
+        // invalidations, if it actually is the case that is meaningfully
+        // faster and anyone cares.
+        let tainted = self
+            .domain_cache
+            .borrow()
+            .as_ref()
+            .is_some_and(|cache| cache.tainted)
+            || matches!(&self.range, Some(range) if range.is_dynamic());
+
+        if tainted
+            || matches!(&self.domain, Some(Domain::Derived(data_ref)) if data_ref.is_dynamic())
+        {
+            *self.domain_cache.borrow_mut() = None;
+        }
+        if tainted {
+            *self.range_cache.borrow_mut() = None;
+        }
+    }
+
+    /// Returns true if this is a scale with discrete output values.
+    pub fn is_discrete(&self) -> bool {
+        matches!(
+            self.kind,
+            Kind::Ordinal { .. }
+                | Kind::Quantitative {
+                    kind: QuantitativeScale::Quantile
+                        | QuantitativeScale::Quantize
+                        | QuantitativeScale::Threshold,
+                    ..
+                }
+        )
+    }
+
+    /// Returns true if this is an ordinal (categorical) scale.
+    pub fn is_ordinal(&self) -> bool {
+        matches!(self.kind, Kind::Ordinal { .. })
+    }
+
+    /// Returns true if this is a time scale.
+    // TODO: Technically, this does need to discriminate local vs UTC.
+    pub fn is_time(&self) -> bool {
+        matches!(self.kind, Kind::Time { .. })
+    }
+
+    /// Gets the name of this scale.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Gets the minimum and maximum for a quantitative range.
     fn output_range(&self, node: &Node<'s, '_>) -> (f64, f64) {
         let cached_range = self.cached_range(node);
@@ -607,6 +579,18 @@ impl<'s> Scale<'s> {
         self.reverse(node, &self.cached_range(node).range)
     }
 
+    /// Gets the calculated width of the bands in the range.
+    pub fn range_band(&self, node: &Node<'s, '_>) -> f64 {
+        self.cached_range(node).band_width
+    }
+
+    /// Gets the sorted minimum and maximum for a range. The returned values are
+    /// guaranteed to be sorted.
+    pub fn range_extent(&self, node: &Node<'s, '_>) -> (f64, f64) {
+        let (min, max) = self.output_range(node);
+        (min.min(max), max.max(min))
+    }
+
     /// Reverses the output range if required by the associated node.
     fn reverse<'b>(&self, node: &Node<'s, '_>, range: &'b [Value<'s>]) -> Vec<Value<'s>> {
         // This references a field on the associated group data object which is
@@ -620,6 +604,22 @@ impl<'s> Scale<'s> {
             range.reverse();
         }
         range
+    }
+
+    /// Gets an iterator of approximately `count` representative values from
+    /// the domain, or the domain itself if this is not a quantitative scale.
+    pub fn ticks(&self, node: &Node<'s, '_>, count: f64) -> Vec<Value<'s>> {
+        match self.kind {
+            Kind::Time { .. } => {
+                let (min, max) = self.input_range(node);
+                time_ticks(min, max, count).map(Value::from).collect()
+            }
+            Kind::Quantitative { kind, .. } if kind.can_ticks() => {
+                let (min, max) = self.input_range(node);
+                kind.ticks(min, max, count).into_iter().flatten().collect()
+            }
+            _ => self.domain(node).iter().cloned().collect(),
+        }
     }
 
     /// Calls `f` with either the ordinal domain or ordinal range depending on
@@ -850,19 +850,24 @@ pub(super) enum QuantitativeScale {
     Log,
     /// Apply an exponential transform to the input domain value.
     Pow,
-    /// Apply an exponential transform of 0.5 to the input domain value.
-    Sqrt,
     /// Maps a sampled input domain to a discrete range.
     Quantile,
     /// Divides a continuous input domain into uniform segments based on the
     /// number of values in the output range.
     Quantize,
+    /// Apply an exponential transform of 0.5 to the input domain value.
+    Sqrt,
     /// Similar to quantize, except maps arbitrary subsets of the domain to
     /// discrete values in the range.
     Threshold,
 }
 
 impl QuantitativeScale {
+    /// Returns true if this kind of scale can calculate ticks.
+    fn can_ticks(self) -> bool {
+        !matches!(self, Self::Quantile | Self::Threshold)
+    }
+
     /// Returns an iterator that generates approximately `count` evenly
     /// distributed steps for the given range.
     fn ticks<'s>(self, min: f64, max: f64, count: f64) -> Option<impl Iterator<Item = Value<'s>>> {
@@ -874,23 +879,12 @@ impl QuantitativeScale {
             Self::Quantile | Self::Threshold => None,
         }
     }
-
-    /// Returns true if this kind of scale can calculate ticks.
-    fn can_ticks(self) -> bool {
-        !matches!(self, Self::Quantile | Self::Threshold)
-    }
 }
 
 /// A scale range (output range).
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Range<'s> {
-    /// `[0, width]`, where `width` is the width of the nearest parent mark
-    /// rectangle (or the root data rectangle, if there is no parent).
-    Width,
-    /// `[0, height]`, where `height` is the height of the nearest parent mark
-    /// rectangle (or the root data rectangle, if there is no parent).
-    Height,
     /// Predefined set of [10 colour strings](Self::CATEGORY_10).
     Category10,
     /// Predefined set of [20 colour strings](Self::CATEGORY_20).
@@ -899,8 +893,14 @@ enum Range<'s> {
     Category20b,
     /// Predefined set of [20 colour strings](Self::CATEGORY_20_C).
     Category20c,
+    /// `[0, height]`, where `height` is the height of the nearest parent mark
+    /// rectangle (or the root data rectangle, if there is no parent).
+    Height,
     /// Predefined set of [shape strings](Self::SHAPES).
     Shapes,
+    /// `[0, width]`, where `width` is the width of the nearest parent mark
+    /// rectangle (or the root data rectangle, if there is no parent).
+    Width,
     /// List of fixed values.
     #[serde(borrow, untagged, deserialize_with = "vec_scalar")]
     Fixed(Vec<Value<'s>>),

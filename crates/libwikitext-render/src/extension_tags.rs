@@ -565,13 +565,13 @@ struct RefKey {
 /// Stored citation references.
 #[derive(Debug, Default)]
 pub(crate) struct References {
-    /// Bump allocation of reference text.
-    text: String,
     /// References in a group. Value is a map of ranges into `text`. For
     /// compatibility, the default group is an empty string.
     groups: HashMap<String, Vec<Range<usize>>>,
     /// Named references. Value is an index into `groups[key.group]`.
     named: HashMap<RefKey, usize>,
+    /// Bump allocation of reference text.
+    text: String,
 }
 
 impl References {

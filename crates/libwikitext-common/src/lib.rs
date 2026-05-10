@@ -2,6 +2,12 @@
 //! not correspond to a host language’s standard library functions (i.e. do not
 //! correspond to PHP nor Lua built-ins).
 
+pub mod config;
+pub mod db;
+pub mod lru_limiter;
+pub mod mock;
+pub mod title;
+
 use core::fmt::{self, Write as _};
 use html_escape::NAMED_ENTITIES;
 use http::Uri;
@@ -9,12 +15,6 @@ use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval};
 use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 use title::Title;
-
-pub mod config;
-pub mod db;
-pub mod lru_limiter;
-pub mod mock;
-pub mod title;
 
 /// Encodes section heading text into a format suitable for use as a URL anchor.
 #[must_use]
@@ -146,15 +146,15 @@ pub fn format_date_mediawiki(
 /// # Errors
 ///
 /// * `callback` returns an error
-pub fn format_message<'a, F, I, R, E>(
-    messages: &'a serde_json_borrow::Value<'a>,
+pub fn format_message<'o, 'n: 'o, F, I, R, E>(
+    messages: &'o serde_json_borrow::Value<'n>,
     keys: I,
     callback: F,
-) -> Result<Cow<'a, str>, E>
+) -> Result<Cow<'o, str>, E>
 where
     R: AsRef<str> + Default,
     I: IntoIterator<Item = R>,
-    F: FnMut(&str) -> Result<Option<Cow<'a, str>>, E>,
+    F: FnMut(&str) -> Result<Option<Cow<'o, str>>, E>,
 {
     let mut last = R::default();
     for key in keys {
@@ -219,7 +219,7 @@ pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
 /// # Errors
 ///
 /// * `callback` returns an error
-pub fn format_raw_message<'a, E, F>(message: &str, mut callback: F) -> Result<Cow<'_, str>, E>
+pub fn format_raw_message<'a, E, F>(message: &'a str, mut callback: F) -> Result<Cow<'a, str>, E>
 where
     F: FnMut(&str) -> Result<Option<Cow<'a, str>>, E>,
 {

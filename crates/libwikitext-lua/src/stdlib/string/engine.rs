@@ -20,36 +20,36 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 )]
 #[derive(Debug, Eq, thiserror::Error, PartialEq)]
 pub(crate) enum Error {
-    /// The pattern caused too much recursion.
-    #[error("pattern too complex at {pos}")]
-    TooComplex { pos: usize },
-    /// The pattern contains more captures than can be stored.
-    #[error("too many captures at {pos}")]
-    TooManyCaptures { pos: usize },
-    /// The pattern contains an invalid capture group.
-    #[error("invalid pattern capture at {pos}")]
-    InvalidPatternCapture { pos: usize },
-    /// The pattern contains an incomplete frontier class.
-    #[error("missing '[' after '%f' in pattern at {pos}")]
-    IncompleteFrontier { pos: usize },
-    /// The pattern contains a malformed balance class.
-    #[error("malformed pattern (missing arguments to '%b') at {pos}")]
-    MissingBalanceArgs { pos: usize },
-    /// The pattern tries capturing an index which does not exist.
-    #[error("invalid capture index %{index} at {pos}")]
-    InvalidCaptureIndex { pos: usize, index: usize },
     /// The pattern ends in the middle of a character class.
     #[error("malformed pattern (ends with '%') at {pos}")]
     EndsWithPercent { pos: usize },
     /// The pattern ends in the middle of a character set.
     #[error("malformed pattern (missing ']') at {pos}")]
     EndsWithoutBracket { pos: usize },
-    /// The pattern ends in the middle of a capture group.
-    #[error("unfinished capture at {pos}")]
-    UnfinishedCapture { pos: usize },
+    /// The pattern contains an incomplete frontier class.
+    #[error("missing '[' after '%f' in pattern at {pos}")]
+    IncompleteFrontier { pos: usize },
+    /// The pattern tries capturing an index which does not exist.
+    #[error("invalid capture index %{index} at {pos}")]
+    InvalidCaptureIndex { pos: usize, index: usize },
+    /// The pattern contains an invalid capture group.
+    #[error("invalid pattern capture at {pos}")]
+    InvalidPatternCapture { pos: usize },
     /// A substitution replacement string contains an invalid '%' symbol.
     #[error("invalid use of '%' in replacement string")]
     InvalidReplacement,
+    /// The pattern contains a malformed balance class.
+    #[error("malformed pattern (missing arguments to '%b') at {pos}")]
+    MissingBalanceArgs { pos: usize },
+    /// The pattern caused too much recursion.
+    #[error("pattern too complex at {pos}")]
+    TooComplex { pos: usize },
+    /// The pattern contains more captures than can be stored.
+    #[error("too many captures at {pos}")]
+    TooManyCaptures { pos: usize },
+    /// The pattern ends in the middle of a capture group.
+    #[error("unfinished capture at {pos}")]
+    UnfinishedCapture { pos: usize },
 }
 
 /// The standard [`Result`](core::result::Result) type used by the pattern
@@ -65,10 +65,10 @@ const LUA_MAXCAPTURES: usize = 32;
 /// A capture group.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum CaptureRange {
-    /// A substring capture group.
-    Range(Range<usize>),
     /// A current string position capture group.
     Position(usize),
+    /// A substring capture group.
+    Range(Range<usize>),
 }
 
 impl CaptureRange {
@@ -97,11 +97,11 @@ impl Default for CaptureRange {
 /// The ranged indexes of a matched pattern. These are always 0-indexed.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct MatchRanges {
-    /// The full range of the matched pattern.
-    pub full_match: Range<usize>,
     /// The ranges of each captured group. If a group did not capture anything,
     /// the range will be empty.
     pub captures: Vec<CaptureRange>,
+    /// The full range of the matched pattern.
+    pub full_match: Range<usize>,
 }
 
 /// Tries to find the first match of the pattern in the input string,
@@ -128,13 +128,13 @@ pub(super) fn find_first_match<B: BackingType + ?Sized>(
         if let Some(end) = next_match(&mut state, start, 0)? {
             let full_match = start..end;
             return Ok(Some(MatchRanges {
-                full_match,
                 captures: state
                     .captures
                     .into_iter()
                     .take(state.level)
                     .map(|capture| CaptureRange::try_from((pattern, capture)))
                     .collect::<Result<_, _>>()?,
+                full_match,
             }));
         }
 
@@ -330,10 +330,155 @@ struct State<'a, B: BackingType + ?Sized> {
 }
 
 impl<B: BackingType + ?Sized> State<'_, B> {
+    /// Returns the index of the highest pending capture group still needing
+    /// finalising.
+    fn capture_to_close(&self, p: usize) -> Result<usize> {
+        for level in (0..self.level).rev() {
+            if matches!(self.captures[level], CaptureState::Pending { .. }) {
+                return Ok(level);
+            }
+        }
+        Err(Error::InvalidPatternCapture {
+            pos: self.char_pos(p),
+        })
+    }
+
     /// Returns the 1-indexed character count at the given byte position.
     #[inline]
     fn char_pos(&self, offset: usize) -> usize {
         char_pos(self.pattern, offset)
+    }
+
+    /// Ensures the given capture index belongs to a finished capture group and
+    /// returns its range if so.
+    fn check_capture(&self, p: usize, level: B::Primitive) -> Result<&Range<usize>> {
+        #[expect(clippy::cast_possible_truncation, reason = "the known range is 0..=9")]
+        let (level, oops) = (level.to_digit().unwrap() as u8).overflowing_sub(1);
+        let index = usize::from(level);
+        if !oops
+            && index < self.level
+            && let CaptureState::Finished(CaptureRange::Range(range)) = &self.captures[index]
+        {
+            Ok(range)
+        } else {
+            Err(Error::InvalidCaptureIndex {
+                index: usize::from(level.wrapping_add(1)),
+                pos: self.char_pos(p),
+            })
+        }
+    }
+
+    /// Finds the end of a character set. Returns the next position of the
+    /// pattern, or an error if the pattern ends before the set is closed.
+    /// `p` points to `[` for a set, `%` for a class, or a plain character.
+    fn class_end(&self, mut p: usize) -> Result<usize> {
+        let mut i = self.pattern[p..].chars().peekable();
+        let c = i.next().unwrap();
+        p += c.len_utf8();
+        Ok(match c.as_ascii() {
+            b'%' => {
+                let Some(class) = i.next() else {
+                    return Err(Error::EndsWithPercent {
+                        pos: self.char_pos(p),
+                    });
+                };
+                p + class.len_utf8()
+            }
+            b'[' => {
+                if i.next_if_eq(&B::Primitive::from_ascii(b'^')).is_some() {
+                    p += 1;
+                }
+
+                // This loop seems to be written in a convoluted way so it does
+                // not break when the first character in the set is ']'
+                loop {
+                    let Some(c) = i.next() else {
+                        return Err(Error::EndsWithoutBracket {
+                            pos: self.char_pos(p),
+                        });
+                    };
+
+                    p += c.len_utf8();
+
+                    if c == B::Primitive::from_ascii(b'%')
+                        && let Some(c) = i.next()
+                    {
+                        p += c.len_utf8();
+                    }
+
+                    if i.peek() == Some(&B::Primitive::from_ascii(b']')) {
+                        break;
+                    }
+                }
+
+                p + 1
+            }
+            _ => p,
+        })
+    }
+
+    /// Finalises a new capture group. Completes matching the input and returns
+    /// its final position if successful.
+    fn end_capture(&mut self, s: usize, p: usize) -> Result<Option<usize>> {
+        let level = self.capture_to_close(p)?;
+        self.captures[level].finish(self.pattern, s, p)?;
+
+        Ok(next_match(self, s, p)?.or_else(|| {
+            self.captures[level].revert();
+            None
+        }))
+    }
+
+    /// Checks whether the given input character matches the character set
+    /// at the given range. `p` points to `[` and `p_end` points to `]`.
+    fn is_in_set(&self, c: B::Primitive, p: usize, p_end: usize) -> bool {
+        let mut matched = true;
+        let mut i = self.pattern[p + 1..p_end].chars().peekable();
+
+        if i.next_if_eq(&B::Primitive::from_ascii(b'^')).is_some() {
+            matched = false;
+        }
+
+        while let Some(s) = i.next() {
+            if s == B::Primitive::from_ascii(b'%') {
+                // %w
+                if let Some(cl) = i.next()
+                    && match_class(c, cl)
+                {
+                    return matched;
+                }
+            } else if let Some(r) = i.next_if_eq(&B::Primitive::from_ascii(b'-')) {
+                if let Some(e) = i.next() {
+                    // [a-z]
+                    if s <= c && c <= e {
+                        return matched;
+                    }
+                } else if s == c || r == c {
+                    // Literal character with terminating -
+                    return matched;
+                }
+            } else if s == c {
+                // Literal character
+                return matched;
+            }
+        }
+
+        !matched
+    }
+
+    /// Checks whether the next input character matches the pattern item at the
+    /// given range. Returns the length of the matched character.
+    fn is_single_match(&self, s: usize, p_start: usize, p_end: usize) -> Option<usize> {
+        let c = self.input[s..].chars().next()?;
+        let mut i = self.pattern[p_start..].chars();
+        let lit = i.next().unwrap();
+        let is_match = match lit.as_ascii() {
+            b'.' => true,
+            b'%' => match_class(c, i.next().unwrap()),
+            b'[' => self.is_in_set(c, p_start, p_end - 1),
+            _ => lit == c,
+        };
+        is_match.then_some(c.len_utf8())
     }
 
     /// Matches a pattern balance item. If successful, returns the next position
@@ -454,163 +599,18 @@ impl<B: BackingType + ?Sized> State<'_, B> {
             None
         }))
     }
-
-    /// Finalises a new capture group. Completes matching the input and returns
-    /// its final position if successful.
-    fn end_capture(&mut self, s: usize, p: usize) -> Result<Option<usize>> {
-        let level = self.capture_to_close(p)?;
-        self.captures[level].finish(self.pattern, s, p)?;
-
-        Ok(next_match(self, s, p)?.or_else(|| {
-            self.captures[level].revert();
-            None
-        }))
-    }
-
-    /// Returns the index of the highest pending capture group still needing
-    /// finalising.
-    fn capture_to_close(&self, p: usize) -> Result<usize> {
-        for level in (0..self.level).rev() {
-            if matches!(self.captures[level], CaptureState::Pending { .. }) {
-                return Ok(level);
-            }
-        }
-        Err(Error::InvalidPatternCapture {
-            pos: self.char_pos(p),
-        })
-    }
-
-    /// Ensures the given capture index belongs to a finished capture group and
-    /// returns its range if so.
-    fn check_capture(&self, p: usize, level: B::Primitive) -> Result<&Range<usize>> {
-        #[expect(clippy::cast_possible_truncation, reason = "the known range is 0..=9")]
-        let (level, oops) = (level.to_digit().unwrap() as u8).overflowing_sub(1);
-        let index = usize::from(level);
-        if !oops
-            && index < self.level
-            && let CaptureState::Finished(CaptureRange::Range(range)) = &self.captures[index]
-        {
-            Ok(range)
-        } else {
-            Err(Error::InvalidCaptureIndex {
-                index: usize::from(level.wrapping_add(1)),
-                pos: self.char_pos(p),
-            })
-        }
-    }
-
-    /// Finds the end of a character set. Returns the next position of the
-    /// pattern, or an error if the pattern ends before the set is closed.
-    /// `p` points to `[` for a set, `%` for a class, or a plain character.
-    fn class_end(&self, mut p: usize) -> Result<usize> {
-        let mut i = self.pattern[p..].chars().peekable();
-        let c = i.next().unwrap();
-        p += c.len_utf8();
-        Ok(match c.as_ascii() {
-            b'%' => {
-                let Some(class) = i.next() else {
-                    return Err(Error::EndsWithPercent {
-                        pos: self.char_pos(p),
-                    });
-                };
-                p + class.len_utf8()
-            }
-            b'[' => {
-                if i.next_if_eq(&B::Primitive::from_ascii(b'^')).is_some() {
-                    p += 1;
-                }
-
-                // This loop seems to be written in a convoluted way so it does
-                // not break when the first character in the set is ']'
-                loop {
-                    let Some(c) = i.next() else {
-                        return Err(Error::EndsWithoutBracket {
-                            pos: self.char_pos(p),
-                        });
-                    };
-
-                    p += c.len_utf8();
-
-                    if c == B::Primitive::from_ascii(b'%')
-                        && let Some(c) = i.next()
-                    {
-                        p += c.len_utf8();
-                    }
-
-                    if i.peek() == Some(&B::Primitive::from_ascii(b']')) {
-                        break;
-                    }
-                }
-
-                p + 1
-            }
-            _ => p,
-        })
-    }
-
-    /// Checks whether the next input character matches the pattern item at the
-    /// given range. Returns the length of the matched character.
-    fn is_single_match(&self, s: usize, p_start: usize, p_end: usize) -> Option<usize> {
-        let c = self.input[s..].chars().next()?;
-        let mut i = self.pattern[p_start..].chars();
-        let lit = i.next().unwrap();
-        let is_match = match lit.as_ascii() {
-            b'.' => true,
-            b'%' => match_class(c, i.next().unwrap()),
-            b'[' => self.is_in_set(c, p_start, p_end - 1),
-            _ => lit == c,
-        };
-        is_match.then_some(c.len_utf8())
-    }
-
-    /// Checks whether the given input character matches the character set
-    /// at the given range. `p` points to `[` and `p_end` points to `]`.
-    fn is_in_set(&self, c: B::Primitive, p: usize, p_end: usize) -> bool {
-        let mut matched = true;
-        let mut i = self.pattern[p + 1..p_end].chars().peekable();
-
-        if i.next_if_eq(&B::Primitive::from_ascii(b'^')).is_some() {
-            matched = false;
-        }
-
-        while let Some(s) = i.next() {
-            if s == B::Primitive::from_ascii(b'%') {
-                // %w
-                if let Some(cl) = i.next()
-                    && match_class(c, cl)
-                {
-                    return matched;
-                }
-            } else if let Some(r) = i.next_if_eq(&B::Primitive::from_ascii(b'-')) {
-                if let Some(e) = i.next() {
-                    // [a-z]
-                    if s <= c && c <= e {
-                        return matched;
-                    }
-                } else if s == c || r == c {
-                    // Literal character with terminating -
-                    return matched;
-                }
-            } else if s == c {
-                // Literal character
-                return matched;
-            }
-        }
-
-        !matched
-    }
 }
 
 /// Intermediate state representation of a capture group.
 #[derive(Clone)]
 enum CaptureState {
+    /// The capture group is fully created.
+    Finished(CaptureRange),
     /// The capture group is waiting to be closed.
     Pending {
         /// The byte index of the start of the range.
         start: usize,
     },
-    /// The capture group is fully created.
-    Finished(CaptureRange),
 }
 
 impl CaptureState {
@@ -699,14 +699,14 @@ fn char_pos<B: BackingType + ?Sized>(pattern: &B, offset: usize) -> usize {
 
 /// A character primitive type.
 pub trait PrimitiveType: Copy + Eq + Ord {
-    /// The primitive type as an ASCII character.
-    fn as_ascii(self) -> u8;
     /// Creates a new [`PrimitiveType`] from an ASCII byte.
     ///
     /// # Panics
     ///
     /// * `b` is not a valid ASCII byte
     fn from_ascii(b: u8) -> Self;
+    /// The primitive type as an ASCII character.
+    fn as_ascii(self) -> u8;
     /// Whether the primitive is an alphabetic character.
     fn is_alphabetic(self) -> bool;
     /// Whether the primitive is alphanumeric character.
@@ -725,10 +725,10 @@ pub trait PrimitiveType: Copy + Eq + Ord {
     fn is_null(self) -> bool;
     /// Whether the primitive is a punctuation character.
     fn is_punctuation(self) -> bool;
-    /// Whether the primitive is a whitespace character.
-    fn is_whitespace(self) -> bool;
     /// Whether the primitive is an uppercase alphabetical character.
     fn is_uppercase(self) -> bool;
+    /// Whether the primitive is a whitespace character.
+    fn is_whitespace(self) -> bool;
     /// The length of the value encoded as UTF-8.
     fn len_utf8(self) -> usize;
     /// Converts the value from an ASCII digit to a number.
@@ -737,12 +737,12 @@ pub trait PrimitiveType: Copy + Eq + Ord {
 
 impl PrimitiveType for u8 {
     #[inline]
-    fn as_ascii(self) -> u8 {
-        self
-    }
-    #[inline]
     fn from_ascii(b: u8) -> Self {
         b
+    }
+    #[inline]
+    fn as_ascii(self) -> u8 {
+        self
     }
     #[inline]
     fn is_alphabetic(self) -> bool {
@@ -781,12 +781,12 @@ impl PrimitiveType for u8 {
         self.is_ascii_punctuation()
     }
     #[inline]
-    fn is_whitespace(self) -> bool {
-        self.is_ascii_whitespace()
-    }
-    #[inline]
     fn is_uppercase(self) -> bool {
         self.is_ascii_uppercase()
+    }
+    #[inline]
+    fn is_whitespace(self) -> bool {
+        self.is_ascii_whitespace()
     }
     #[inline]
     fn len_utf8(self) -> usize {
@@ -800,14 +800,14 @@ impl PrimitiveType for u8 {
 
 impl PrimitiveType for char {
     #[inline]
+    fn from_ascii(b: u8) -> Self {
+        char::from_u32(b.into()).unwrap()
+    }
+    #[inline]
     fn as_ascii(self) -> u8 {
         let mut b = [0; 4];
         char::encode_utf8(self, &mut b);
         b[0]
-    }
-    #[inline]
-    fn from_ascii(b: u8) -> Self {
-        char::from_u32(b.into()).unwrap()
     }
     #[inline]
     fn is_alphabetic(self) -> bool {
@@ -870,12 +870,12 @@ impl PrimitiveType for char {
         )
     }
     #[inline]
-    fn is_whitespace(self) -> bool {
-        char::is_whitespace(self)
-    }
-    #[inline]
     fn is_uppercase(self) -> bool {
         get_general_category(self) == GeneralCategory::UppercaseLetter
+    }
+    #[inline]
+    fn is_whitespace(self) -> bool {
+        char::is_whitespace(self)
     }
     #[inline]
     fn len_utf8(self) -> usize {
@@ -900,13 +900,13 @@ pub trait BackingType:
     fn from_value<'gc>(ctx: Context<'gc>, value: Value<'gc>) -> Result<&'gc Self, VmError<'gc>>;
     /// Gets the underlying byte view.
     fn as_bytes(&self) -> &[u8];
-    /// Returns an iterator over the primitives of the backing type.
-    fn chars(&self) -> impl DoubleEndedIterator<Item = Self::Primitive>;
     /// Returns the character count at the given byte index.
     fn char_count(&self, index: usize) -> usize;
     /// Returns an iterator over the byte indexes and primitives of the backing
     /// type.
     fn char_indices(&self) -> impl DoubleEndedIterator<Item = (usize, Self::Primitive)>;
+    /// Returns an iterator over the primitives of the backing type.
+    fn chars(&self) -> impl DoubleEndedIterator<Item = Self::Primitive>;
     /// Returns the index of the first occurrence of the given pattern.
     fn find(&self, pattern: &Self) -> Option<usize>;
     /// Returns a slice of the backing type.
@@ -919,11 +919,11 @@ pub trait BackingType:
     fn is_empty(&self) -> bool;
     /// The byte length of the backing type.
     fn len(&self) -> usize;
-    /// Whether the backing type starts with the given primitive.
-    fn starts_with(&self, pattern: Self::Primitive) -> bool;
     /// Returns an iterator over the byte indexes and primitives of the backing
     /// type starting at the given *character* index.
     fn start_scan(&self, index: usize) -> impl Iterator<Item = (usize, Self::Primitive)>;
+    /// Whether the backing type starts with the given primitive.
+    fn starts_with(&self, pattern: Self::Primitive) -> bool;
     /// Converts from the backing type to a piccolo value.
     fn to_value<'gc>(&self, ctx: Context<'gc>) -> Value<'gc>;
 }
@@ -949,16 +949,16 @@ impl BackingType for str {
         self.as_bytes()
     }
     #[inline]
-    fn chars(&self) -> impl DoubleEndedIterator<Item = Self::Primitive> {
-        self.chars()
-    }
-    #[inline]
     fn char_count(&self, index: usize) -> usize {
         self[..index].chars().count()
     }
     #[inline]
     fn char_indices(&self) -> impl DoubleEndedIterator<Item = (usize, Self::Primitive)> {
         self.char_indices()
+    }
+    #[inline]
+    fn chars(&self) -> impl DoubleEndedIterator<Item = Self::Primitive> {
+        self.chars()
     }
     #[inline]
     fn find(&self, pattern: &Self) -> Option<usize> {
@@ -1020,16 +1020,16 @@ impl BackingType for [u8] {
         self
     }
     #[inline]
-    fn chars(&self) -> impl DoubleEndedIterator<Item = Self::Primitive> {
-        self.iter().copied()
-    }
-    #[inline]
     fn char_count(&self, index: usize) -> usize {
         index
     }
     #[inline]
     fn char_indices(&self) -> impl DoubleEndedIterator<Item = (usize, Self::Primitive)> {
         self.iter().copied().enumerate()
+    }
+    #[inline]
+    fn chars(&self) -> impl DoubleEndedIterator<Item = Self::Primitive> {
+        self.iter().copied()
     }
     #[inline]
     fn find(&self, pattern: &Self) -> Option<usize> {

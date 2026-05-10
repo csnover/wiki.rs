@@ -1,5 +1,9 @@
 #![doc = include_str!("../../../README.md")]
 
+mod db;
+mod pages;
+mod renderer;
+
 use axum::{Router, http::Uri, routing::get};
 use core::time::Duration;
 use db::Database;
@@ -9,10 +13,6 @@ use r2d2::Pool;
 use renderer::Manager as RenderManager;
 use std::{ffi::OsStr, sync::Arc};
 use tokio::net::TcpListener;
-
-mod db;
-mod pages;
-mod renderer;
 
 /// Global application state.
 struct WikiState {
@@ -149,6 +149,56 @@ struct Args {
 }
 
 impl Args {
+    /// Tries to create an [`Args`] from the given command line arguments and
+    /// environment variables.
+    fn new() -> Result<Args, ArgsError> {
+        let mut args = pico_args::Arguments::from_env();
+        let bind = args
+            .opt_value_from_str("--bind")?
+            .unwrap_or_else(|| "127.0.0.1:3000".to_owned());
+        let base_uri = args.opt_value_from_str("--base-uri")?;
+        let load_mode = args
+            .opt_value_from_fn("--mode", parse_load_mode)?
+            .unwrap_or_default();
+        let _ = args.contains("--");
+        let index_path = Self::free_arg(&mut args, "WIKI_INDEX_FILE", ArgsError::Index)?;
+        let articles_path = Self::free_arg(&mut args, "WIKI_ARTICLE_DB", ArgsError::Database)?;
+
+        let mut limits = Limits::default();
+
+        if let Some(db_cache) = args.opt_value_from_fn("--db-cache", Self::parse_size)? {
+            limits.db_cache = db_cache;
+        }
+        if let Some(template_cache) =
+            args.opt_value_from_fn("--template-cache", Self::parse_size)?
+        {
+            limits.template_cache = template_cache;
+        }
+        if let Some(vm_time) = args.opt_value_from_fn("--vm-time", Self::parse_duration)? {
+            limits.renderer.vm_time = vm_time;
+        }
+        if let Some(vm_total_mem) = args.opt_value_from_fn("--vm-total-mem", Self::parse_size)? {
+            limits.renderer.vm_total_mem = vm_total_mem;
+        }
+        if let Some(threads) = args.opt_value_from_str("--threads")? {
+            limits.threads = threads;
+        }
+
+        let rest = args.finish();
+        if !rest.is_empty() {
+            return Err(ArgsError::Extra(rest.join(OsStr::new(" "))));
+        }
+
+        Ok(Self {
+            articles_path,
+            base_uri,
+            bind,
+            index_path,
+            limits,
+            load_mode,
+        })
+    }
+
     /// Tries to get an argument either from the arguments list or from
     /// an environment varible.
     fn free_arg(
@@ -212,56 +262,6 @@ impl Args {
             "G" => number * 1024.0 * 1024.0 * 1024.0,
             _ => return Err(ArgsError::ByteSize(unit.to_owned())),
         } as usize)
-    }
-
-    /// Tries to create an [`Args`] from the given command line arguments and
-    /// environment variables.
-    fn new() -> Result<Args, ArgsError> {
-        let mut args = pico_args::Arguments::from_env();
-        let bind = args
-            .opt_value_from_str("--bind")?
-            .unwrap_or_else(|| "127.0.0.1:3000".to_owned());
-        let base_uri = args.opt_value_from_str("--base-uri")?;
-        let load_mode = args
-            .opt_value_from_fn("--mode", parse_load_mode)?
-            .unwrap_or_default();
-        let _ = args.contains("--");
-        let index_path = Self::free_arg(&mut args, "WIKI_INDEX_FILE", ArgsError::Index)?;
-        let articles_path = Self::free_arg(&mut args, "WIKI_ARTICLE_DB", ArgsError::Database)?;
-
-        let mut limits = Limits::default();
-
-        if let Some(db_cache) = args.opt_value_from_fn("--db-cache", Self::parse_size)? {
-            limits.db_cache = db_cache;
-        }
-        if let Some(template_cache) =
-            args.opt_value_from_fn("--template-cache", Self::parse_size)?
-        {
-            limits.template_cache = template_cache;
-        }
-        if let Some(vm_time) = args.opt_value_from_fn("--vm-time", Self::parse_duration)? {
-            limits.renderer.vm_time = vm_time;
-        }
-        if let Some(vm_total_mem) = args.opt_value_from_fn("--vm-total-mem", Self::parse_size)? {
-            limits.renderer.vm_total_mem = vm_total_mem;
-        }
-        if let Some(threads) = args.opt_value_from_str("--threads")? {
-            limits.threads = threads;
-        }
-
-        let rest = args.finish();
-        if !rest.is_empty() {
-            return Err(ArgsError::Extra(rest.join(OsStr::new(" "))));
-        }
-
-        Ok(Self {
-            articles_path,
-            base_uri,
-            bind,
-            index_path,
-            limits,
-            load_mode,
-        })
     }
 }
 

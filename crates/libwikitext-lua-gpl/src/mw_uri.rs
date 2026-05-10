@@ -114,8 +114,8 @@ impl<'config, Db: IDatabase + 'static> UriLibrary<'config, Db> {
 }
 
 impl<'config: 'static, Db: IDatabase + 'static> MwInterface for UriLibrary<'config, Db> {
-    const NAME: &'static str = "mw.uri";
     const CODE: &'static [u8] = include_bytes!("./modules/mw.uri.lua");
+    const NAME: &'static str = "mw.uri";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

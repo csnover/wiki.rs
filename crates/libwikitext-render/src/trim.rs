@@ -30,16 +30,16 @@ pub(super) enum TrimMode {
 /// encountered (in which case they are flushed to the output) or until the
 /// trimmer is finalised (in which case they are discarded).
 pub(super) struct Trim<'a, W: WriteSurrogate + ?Sized> {
+    /// Whether any tokens have been emitted to [`Self::out`] yet.
+    emitted: bool,
     /// The last sequence of tokens containing only whitespace.
     last_ws: Vec<Stored>,
+    /// The operating mode for the string trimmer.
+    mode: TrimMode,
     /// The output target.
     out: &'a mut W,
     /// The stack frame for the tokens in [`Self::last_ws`].
     sp: &'a StackFrame<'a>,
-    /// Whether any tokens have been emitted to [`Self::out`] yet.
-    emitted: bool,
-    /// The operating mode for the string trimmer.
-    mode: TrimMode,
 }
 
 impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
@@ -47,11 +47,11 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
     #[inline]
     pub fn new(out: &'a mut W, sp: &'a StackFrame<'a>, mode: TrimMode) -> Self {
         Self {
+            emitted: <_>::default(),
             last_ws: <_>::default(),
+            mode,
             out,
             sp,
-            emitted: <_>::default(),
-            mode,
         }
     }
 
@@ -485,29 +485,6 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     }
 
     #[inline]
-    fn adopt_text(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        text: &str,
-    ) -> Result {
-        self.trim_text::<false>(state, sp, span, text)
-    }
-
-    #[inline]
-    fn adopt_text_style(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        style: TextStyle,
-    ) -> Result {
-        self.flush(state)?;
-        self.out.adopt_text_style(state, sp, span, style)
-    }
-
-    #[inline]
     fn adopt_table_caption(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -589,15 +566,38 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
     ) -> Result {
         panic!("templates should all be resolved by now");
     }
+
+    #[inline]
+    fn adopt_text(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        text: &str,
+    ) -> Result {
+        self.trim_text::<false>(state, sp, span, text)
+    }
+
+    #[inline]
+    fn adopt_text_style(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        style: TextStyle,
+    ) -> Result {
+        self.flush(state)?;
+        self.out.adopt_text_style(state, sp, span, style)
+    }
 }
 
 /// Stored trailing whitespace.
 enum Stored {
-    /// A token containing only whitespace.
-    Token(Spanned<Token>),
     /// A token containing only whitespace whose contents had to be memoised
     /// because it came from a foreign stack frame.
     Memoised(String, Spanned<Token>),
+    /// A token containing only whitespace.
+    Token(Spanned<Token>),
 }
 
 impl Stored {

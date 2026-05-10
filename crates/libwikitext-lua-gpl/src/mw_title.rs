@@ -46,10 +46,25 @@ impl<Db: IDatabase> Default for TitleLibrary<Db> {
 }
 
 impl<Db: IDatabase> TitleLibrary<Db> {
-    /// Sets the title of the current (root) article.
-    pub fn set_title(&self, ctx: Context<'_>, title: &Title) {
-        let this_title = self.current_title(ctx);
-        update_title(this_title, ctx, title, true);
+    /// Gets the current Lua title object from stashed context.
+    // TODO: This sucks and comes from before the `Title` struct was a thing.
+    // Most of the code to do with changing titles should be uplifted into the
+    // Title object.
+    fn current_title<'gc>(&self, ctx: Context<'gc>) -> Table<'gc> {
+        let stashed_title = self.this_title.take();
+        let this_title = ctx.fetch(stashed_title.as_ref().unwrap());
+        self.this_title.set(stashed_title);
+        this_title
+    }
+
+    /// Returns a clone of the database.
+    ///
+    /// # Panics
+    ///
+    /// * The database is not set
+    #[inline]
+    fn db(&self) -> Ref<'_, Db> {
+        Ref::map(self.db.borrow(), |db| db.as_ref().unwrap())
     }
 
     /// Sets static shared state required for the library to function.
@@ -58,6 +73,14 @@ impl<Db: IDatabase> TitleLibrary<Db> {
         *self.db.borrow_mut() = Some(db);
     }
 
+    /// Sets the title of the current (root) article.
+    pub fn set_title(&self, ctx: Context<'_>, title: &Title) {
+        let this_title = self.current_title(ctx);
+        update_title(this_title, ctx, title, true);
+    }
+}
+
+impl<Db: IDatabase> TitleLibrary<Db> {
     mw_unimplemented! {
         getCategories = get_categories,
         getPageLangCode = get_page_lang_code,
@@ -77,38 +100,6 @@ impl<Db: IDatabase> TitleLibrary<Db> {
             sources = Table::new(&ctx),
             restrictions = Table::new(&ctx),
         })
-    }
-
-    /// Makes a new Lua title object for an article.
-    ///
-    /// `text_or_id` can be the title of an article or an
-    /// [article ID](crate::db::Article::id).
-    fn new_title<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        (text_or_id, default_ns): (Value<'gc>, Option<Value<'gc>>),
-    ) -> Result<Value<'gc>, VmError<'gc>> {
-        if text_or_id.to_numeric().is_some() {
-            return Err("with numeric page id not implemented yet"
-                .into_value(ctx)
-                .into());
-        }
-
-        // log::trace!("newTitle({text_or_id:?}, {default_ns:?})");
-
-        let Some(text) = text_or_id.into_string(ctx) else {
-            return Err("wrong type passed to new_title".into_value(ctx).into());
-        };
-
-        let db = self.db();
-        let config = db.config();
-        let text = text.to_str()?;
-        let default_ns = default_ns
-            .map(|ns| namespace_from_value(config, ctx, ns))
-            .transpose()?;
-        let title = Title::new(config, text, default_ns);
-
-        make_title_table(ctx, self.current_title(ctx), &title)
     }
 
     /// Gets an attribute for an article with the given title text.
@@ -264,6 +255,38 @@ impl<Db: IDatabase> TitleLibrary<Db> {
         make_title_table(ctx, self.current_title(ctx), &title)
     }
 
+    /// Makes a new Lua title object for an article.
+    ///
+    /// `text_or_id` can be the title of an article or an
+    /// [article ID](crate::db::Article::id).
+    fn new_title<'gc>(
+        &self,
+        ctx: Context<'gc>,
+        (text_or_id, default_ns): (Value<'gc>, Option<Value<'gc>>),
+    ) -> Result<Value<'gc>, VmError<'gc>> {
+        if text_or_id.to_numeric().is_some() {
+            return Err("with numeric page id not implemented yet"
+                .into_value(ctx)
+                .into());
+        }
+
+        // log::trace!("newTitle({text_or_id:?}, {default_ns:?})");
+
+        let Some(text) = text_or_id.into_string(ctx) else {
+            return Err("wrong type passed to new_title".into_value(ctx).into());
+        };
+
+        let db = self.db();
+        let config = db.config();
+        let text = text.to_str()?;
+        let default_ns = default_ns
+            .map(|ns| namespace_from_value(config, ctx, ns))
+            .transpose()?;
+        let title = Title::new(config, text, default_ns);
+
+        make_title_table(ctx, self.current_title(ctx), &title)
+    }
+
     /// Returns the protection levels of the article with the given title text?
     fn protection_levels<'gc>(
         &self,
@@ -317,32 +340,11 @@ impl<Db: IDatabase> TitleLibrary<Db> {
             Ok(Value::Nil)
         }
     }
-
-    /// Gets the current Lua title object from stashed context.
-    // TODO: This sucks and comes from before the `Title` struct was a thing.
-    // Most of the code to do with changing titles should be uplifted into the
-    // Title object.
-    fn current_title<'gc>(&self, ctx: Context<'gc>) -> Table<'gc> {
-        let stashed_title = self.this_title.take();
-        let this_title = ctx.fetch(stashed_title.as_ref().unwrap());
-        self.this_title.set(stashed_title);
-        this_title
-    }
-
-    /// Returns a clone of the database.
-    ///
-    /// # Panics
-    ///
-    /// * The database is not set
-    #[inline]
-    fn db(&self) -> Ref<'_, Db> {
-        Ref::map(self.db.borrow(), |db| db.as_ref().unwrap())
-    }
 }
 
 impl<Db: IDatabase + 'static> MwInterface for TitleLibrary<Db> {
-    const NAME: &'static str = "mw.title";
     const CODE: &'static [u8] = include_bytes!("./modules/mw.title.lua");
+    const NAME: &'static str = "mw.title";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

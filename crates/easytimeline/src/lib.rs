@@ -1,13 +1,13 @@
 //! Implementation of the EasyTimeline extension.
 
-use either::Either;
-use std::borrow::Cow;
-
 mod grammar;
 mod parser;
 mod renderer;
 #[cfg(test)]
 mod tests;
+
+use either::Either;
+use std::borrow::Cow;
 
 /// The EasyTimeline result type.
 pub type Result<T = (), E = Error> = core::result::Result<T, E>;
@@ -105,16 +105,6 @@ enum AlignBars {
     /// ```
     #[default]
     Early,
-    /// Draw bars starting away from the origin.
-    ///
-    /// ```text
-    /// │  ▐
-    /// │  ▐  ▐
-    /// │  ▐  ▐  ▐
-    /// └─────────
-    ///    A  B  C
-    /// ```
-    Late,
     /// Evenly distribute space between the bars.
     ///
     /// ```text
@@ -125,6 +115,16 @@ enum AlignBars {
     ///  A   B   C
     /// ```
     Justify,
+    /// Draw bars starting away from the origin.
+    ///
+    /// ```text
+    /// │  ▐
+    /// │  ▐  ▐
+    /// │  ▐  ▐  ▐
+    /// └─────────
+    ///    A  B  C
+    /// ```
+    Late,
 }
 
 /// Item–container alignment.
@@ -299,10 +299,10 @@ struct Legend {
     orientation: Orientation,
     /// The position of the legend relative to the plot area.
     position: LegendPosition,
-    /// The number of columns for the legend.
-    columns: Option<u8>,
     /// The width of columns.
     column_width: Option<Unit>,
+    /// The number of columns for the legend.
+    columns: Option<u8>,
     /// The left edge of the legend relative to the left edge of the image.
     left: Option<Unit>,
     /// The top edge of the legend relative to the bottom edge of the image.
@@ -483,12 +483,12 @@ struct Plot<'input> {
     at: PlotDataPos,
     /// The index of the corresponding series.
     index: usize,
+    /// Text label URL.
+    link: Option<Url<'input>>,
     /// Drawing properties.
     pen: parser::PlotPen<'input>,
     /// Text label.
     text: Option<Vec<TextSpan<'input>>>,
-    /// Text label URL.
-    link: Option<Url<'input>>,
 }
 
 /// The position of a timeline segment.
@@ -543,6 +543,7 @@ struct Rect {
 
 impl Rect {
     /// Creates a new [`Rect`].
+    #[inline]
     fn new(left: f64, top: f64, width: f64, height: f64, orientation: Orientation) -> Self {
         Self {
             left,
@@ -553,88 +554,10 @@ impl Rect {
         }
     }
 
-    /// The top edge in CSS pixels.
-    fn top(&self) -> f64 {
-        self.top
-    }
-
-    /// The left edge in CSS pixels.
-    fn left(&self) -> f64 {
-        self.left
-    }
-
-    /// The right edge in CSS pixels.
-    fn right(&self) -> f64 {
-        self.left + self.width
-    }
-
     /// The bottom edge in CSS pixels.
+    #[inline]
     fn bottom(&self) -> f64 {
         self.top + self.height
-    }
-
-    /// The width in CSS pixels.
-    fn width(&self) -> f64 {
-        self.width
-    }
-
-    /// The height in CSS pixels.
-    fn height(&self) -> f64 {
-        self.height
-    }
-
-    /// The end of the main axis.
-    ///
-    /// ```text
-    ///   │▐            A│━━━━━
-    ///   │▐ ▐          B│━━━
-    ///   │▐ ▐ ▐        C│━
-    ///   └─────         └───── ← end
-    ///   ↑A B C
-    ///  end
-    /// ```
-    fn main_end(&self) -> f64 {
-        match self.orientation {
-            Orientation::Horizontal => self.right(),
-            Orientation::Vertical => self.bottom(),
-        }
-    }
-
-    /// The start of the main axis.
-    ///
-    /// ```text
-    /// start
-    ///   ↓
-    ///   │▐            A│━━━━━
-    ///   │▐ ▐          B│━━━
-    ///   │▐ ▐ ▐        C│━
-    ///   └─────  start →└─────
-    ///    A B C
-    /// ```
-    fn main_start(&self) -> f64 {
-        match self.orientation {
-            Orientation::Horizontal => self.left(),
-            Orientation::Vertical => self.top(),
-        }
-    }
-
-    /// The length of the main axis.
-    ///
-    /// ```text
-    /// start
-    ///   ↓
-    ///   │▐            A│━━━━━
-    ///   │▐ ▐          B│━━━
-    ///   │▐ ▐ ▐        C│━
-    ///   └─────  start →└───── ← end
-    ///   ↑A B C
-    ///  end
-    /// ```
-    fn main_len(&self) -> f64 {
-        match self.orientation {
-            Orientation::Horizontal => self.width(),
-            Orientation::Vertical => self.height(),
-        }
     }
 
     /// The end of the cross axis.
@@ -647,28 +570,11 @@ impl Rect {
     ///   ↑        A B C
     ///  end
     /// ```
+    #[inline]
     fn cross_end(&self) -> f64 {
         match self.orientation {
             Orientation::Horizontal => self.bottom(),
             Orientation::Vertical => self.right(),
-        }
-    }
-
-    /// The start of the cross axis.
-    ///
-    /// ```text
-    /// start
-    ///   ↓
-    ///  A│━━━━━         │▐
-    ///  B│━━━           │▐ ▐
-    ///  C│━             │▐ ▐ ▐
-    ///   └─────  start →└─────
-    ///                   A B C
-    /// ```
-    fn cross_start(&self) -> f64 {
-        match self.orientation {
-            Orientation::Horizontal => self.top(),
-            Orientation::Vertical => self.left(),
         }
     }
 
@@ -684,11 +590,118 @@ impl Rect {
     ///   ↑               A B C
     ///  end
     /// ```
+    #[inline]
     fn cross_len(&self) -> f64 {
         match self.orientation {
             Orientation::Horizontal => self.height(),
             Orientation::Vertical => self.width(),
         }
+    }
+
+    /// The start of the cross axis.
+    ///
+    /// ```text
+    /// start
+    ///   ↓
+    ///  A│━━━━━         │▐
+    ///  B│━━━           │▐ ▐
+    ///  C│━             │▐ ▐ ▐
+    ///   └─────  start →└─────
+    ///                   A B C
+    /// ```
+    #[inline]
+    fn cross_start(&self) -> f64 {
+        match self.orientation {
+            Orientation::Horizontal => self.top(),
+            Orientation::Vertical => self.left(),
+        }
+    }
+
+    /// The height in CSS pixels.
+    #[inline]
+    fn height(&self) -> f64 {
+        self.height
+    }
+
+    /// The left edge in CSS pixels.
+    #[inline]
+    fn left(&self) -> f64 {
+        self.left
+    }
+
+    /// The end of the main axis.
+    ///
+    /// ```text
+    ///   │▐            A│━━━━━
+    ///   │▐ ▐          B│━━━
+    ///   │▐ ▐ ▐        C│━
+    ///   └─────         └───── ← end
+    ///   ↑A B C
+    ///  end
+    /// ```
+    #[inline]
+    fn main_end(&self) -> f64 {
+        match self.orientation {
+            Orientation::Horizontal => self.right(),
+            Orientation::Vertical => self.bottom(),
+        }
+    }
+
+    /// The length of the main axis.
+    ///
+    /// ```text
+    /// start
+    ///   ↓
+    ///   │▐            A│━━━━━
+    ///   │▐ ▐          B│━━━
+    ///   │▐ ▐ ▐        C│━
+    ///   └─────  start →└───── ← end
+    ///   ↑A B C
+    ///  end
+    /// ```
+    #[inline]
+    fn main_len(&self) -> f64 {
+        match self.orientation {
+            Orientation::Horizontal => self.width(),
+            Orientation::Vertical => self.height(),
+        }
+    }
+
+    /// The start of the main axis.
+    ///
+    /// ```text
+    /// start
+    ///   ↓
+    ///   │▐            A│━━━━━
+    ///   │▐ ▐          B│━━━
+    ///   │▐ ▐ ▐        C│━
+    ///   └─────  start →└─────
+    ///    A B C
+    /// ```
+    #[inline]
+    fn main_start(&self) -> f64 {
+        match self.orientation {
+            Orientation::Horizontal => self.left(),
+            Orientation::Vertical => self.top(),
+        }
+    }
+
+    /// The right edge in CSS pixels.
+    #[inline]
+    fn right(&self) -> f64 {
+        self.left + self.width
+    }
+
+    /// The top edge in CSS pixels.
+    #[inline]
+    fn top(&self) -> f64 {
+        self.top
+    }
+
+    /// The width in CSS pixels.
+    #[inline]
+    fn width(&self) -> f64 {
+        self.width
     }
 }
 

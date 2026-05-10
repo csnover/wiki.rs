@@ -58,10 +58,10 @@ where
     plot_area: Rect,
     /// Accumulator.
     svg: Element,
-    /// The top drawing layer.
-    top_layer: Element,
     /// The timeline data.
     timeline: Timeline<'input>,
+    /// The top drawing layer.
+    top_layer: Element,
     /// The callback function for translating text and links.
     translate: &'input TFn,
 }
@@ -132,8 +132,8 @@ where
             mid_layer: Element::bare("g", NS_SVG),
             plot_area,
             svg,
-            top_layer: Element::bare("g", NS_SVG),
             timeline,
+            top_layer: Element::bare("g", NS_SVG),
             translate,
         })
     }
@@ -187,17 +187,6 @@ where
         Ok(self)
     }
 
-    /// Adds foreground lines to the SVG output.
-    fn add_front_lines(&mut self) -> Result<&mut Self> {
-        if self.line_layer_front.is_empty() {
-            return Ok(self);
-        }
-
-        let lines = draw_lines(self, &self.line_layer_front)?;
-        self.mid_layer.append_child(lines);
-        Ok(self)
-    }
-
     /// Adds the time series to the SVG output.
     fn add_front_bars(&mut self) -> Result<&mut Self> {
         if self.bar_layer.is_empty() {
@@ -206,6 +195,17 @@ where
 
         let plots = draw_plots(self)?;
         self.mid_layer.append_child(plots);
+        Ok(self)
+    }
+
+    /// Adds foreground lines to the SVG output.
+    fn add_front_lines(&mut self) -> Result<&mut Self> {
+        if self.line_layer_front.is_empty() {
+            return Ok(self);
+        }
+
+        let lines = draw_lines(self, &self.line_layer_front)?;
+        self.mid_layer.append_child(lines);
         Ok(self)
     }
 
@@ -219,6 +219,16 @@ where
         );
         let style = Element::builder("style", NS_SVG).append(css).build();
         self.svg.append_child(style);
+        Ok(self)
+    }
+
+    /// Adds the legend to the SVG output.
+    fn add_legend(&mut self) -> Result<&mut Self> {
+        if self.legends.is_empty() {
+            return Ok(self);
+        }
+
+        draw_legend(self)?;
         Ok(self)
     }
 
@@ -241,16 +251,6 @@ where
                 y,
             }));
         }
-        Ok(self)
-    }
-
-    /// Adds the legend to the SVG output.
-    fn add_legend(&mut self) -> Result<&mut Self> {
-        if self.legends.is_empty() {
-            return Ok(self);
-        }
-
-        draw_legend(self)?;
         Ok(self)
     }
 

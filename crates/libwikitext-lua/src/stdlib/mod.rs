@@ -4,6 +4,15 @@
 //! of the authored modules *require* Lua 5.1 behaviour to not break
 //! catastrophically.
 
+#[cfg(test)]
+mod load;
+mod math;
+mod os;
+mod string;
+mod table;
+#[cfg(test)]
+mod tests;
+
 use super::prelude::*;
 use core::pin::Pin;
 #[cfg(test)]
@@ -19,15 +28,6 @@ pub use string::{
     load_string,
 };
 pub(crate) use table::load_table;
-
-#[cfg(test)]
-mod load;
-mod math;
-mod os;
-mod string;
-mod table;
-#[cfg(test)]
-mod tests;
 
 /// Loads Lua 5.1-compatible global functions and variables.
 pub(crate) fn load_compat(ctx: Context<'_>) {
@@ -47,16 +47,6 @@ pub(crate) fn load_debug(ctx: Context<'_>) {
     pub(crate) struct PCall;
 
     impl<'gc> Sequence<'gc> for PCall {
-        fn poll(
-            self: Pin<&mut Self>,
-            ctx: Context<'gc>,
-            _exec: Execution<'gc, '_>,
-            mut stack: Stack<'gc, '_>,
-        ) -> Result<SequencePoll<'gc>, VmError<'gc>> {
-            stack.into_front(ctx, true);
-            Ok(SequencePoll::Return)
-        }
-
         fn error(
             self: Pin<&mut Self>,
             ctx: Context<'gc>,
@@ -66,6 +56,16 @@ pub(crate) fn load_debug(ctx: Context<'_>) {
         ) -> Result<SequencePoll<'gc>, VmError<'gc>> {
             log::debug!("pcall suppressed {error:#}");
             stack.replace(ctx, (false, error));
+            Ok(SequencePoll::Return)
+        }
+
+        fn poll(
+            self: Pin<&mut Self>,
+            ctx: Context<'gc>,
+            _exec: Execution<'gc, '_>,
+            mut stack: Stack<'gc, '_>,
+        ) -> Result<SequencePoll<'gc>, VmError<'gc>> {
+            stack.into_front(ctx, true);
             Ok(SequencePoll::Return)
         }
     }

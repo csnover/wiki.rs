@@ -71,60 +71,6 @@ impl Document {
         }
     }
 
-    /// Ends an HTML element with the given tag name.
-    fn end_tag(&mut self, state: &mut State<'_, '_, '_>, name: &str) -> Result {
-        // TODO: Avoid ownership
-        let name = Cow::Owned(name.to_ascii_lowercase());
-
-        if VOID_TAGS.contains(&name) {
-            return Ok(());
-        } else if !PHRASING_TAGS.contains(&name) {
-            self.last_char = ' ';
-        }
-
-        if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(&name)) {
-            for e in self.stack.drain(pair..).rev() {
-                e.close(
-                    &mut self.html,
-                    &mut self.graf_emitter,
-                    &mut self.outline_emitter,
-                    &mut state.globals.outline,
-                )?;
-            }
-        } else {
-            log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
-            write!(self.html, "</{name}>")?;
-        }
-
-        Ok(())
-    }
-
-    /// Finalises the document and returns the resulting output.
-    pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> Result<String> {
-        self.text_style_emitter.finish(&mut self.html)?;
-
-        for rest in self.stack.drain(..).rev() {
-            rest.close(
-                &mut self.html,
-                &mut self.graf_emitter,
-                &mut self.outline_emitter,
-                &mut state.globals.outline,
-            )?;
-        }
-
-        self.graf_emitter.finish(&mut self.html);
-
-        Ok(self.html)
-    }
-
-    /// Finishes formatting a line of Wikitext.
-    pub(crate) fn finish_line(&mut self) -> Result {
-        self.text_style_emitter.finish(&mut self.html)?;
-        self.graf_emitter.end_line(&mut self.html);
-        self.last_char = '\n';
-        Ok(())
-    }
-
     /// Transforms and writes an attribute.
     fn attribute(
         &mut self,
@@ -245,6 +191,60 @@ impl Document {
             .attribute(&name, &self.html[before..], before..self.html.len())?;
         self.html.write_char('"')?;
 
+        Ok(())
+    }
+
+    /// Ends an HTML element with the given tag name.
+    fn end_tag(&mut self, state: &mut State<'_, '_, '_>, name: &str) -> Result {
+        // TODO: Avoid ownership
+        let name = Cow::Owned(name.to_ascii_lowercase());
+
+        if VOID_TAGS.contains(&name) {
+            return Ok(());
+        } else if !PHRASING_TAGS.contains(&name) {
+            self.last_char = ' ';
+        }
+
+        if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(&name)) {
+            for e in self.stack.drain(pair..).rev() {
+                e.close(
+                    &mut self.html,
+                    &mut self.graf_emitter,
+                    &mut self.outline_emitter,
+                    &mut state.globals.outline,
+                )?;
+            }
+        } else {
+            log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
+            write!(self.html, "</{name}>")?;
+        }
+
+        Ok(())
+    }
+
+    /// Finalises the document and returns the resulting output.
+    pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> Result<String> {
+        self.text_style_emitter.finish(&mut self.html)?;
+
+        for rest in self.stack.drain(..).rev() {
+            rest.close(
+                &mut self.html,
+                &mut self.graf_emitter,
+                &mut self.outline_emitter,
+                &mut state.globals.outline,
+            )?;
+        }
+
+        self.graf_emitter.finish(&mut self.html);
+
+        Ok(self.html)
+    }
+
+    /// Finishes formatting a line of Wikitext.
+    pub(crate) fn finish_line(&mut self) -> Result {
+        self.text_style_emitter.finish(&mut self.html)?;
+        self.graf_emitter.end_line(&mut self.html);
+        self.last_char = '\n';
         Ok(())
     }
 
@@ -883,27 +883,6 @@ impl Surrogate<Error> for Document {
         Ok(())
     }
 
-    fn adopt_text(
-        &mut self,
-        _state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
-        text: &str,
-    ) -> Result {
-        self.text_run(text)
-    }
-
-    fn adopt_text_style(
-        &mut self,
-        _state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
-        style: TextStyle,
-    ) -> Result {
-        self.text_style_emitter.emit(&mut self.html, style)?;
-        Ok(())
-    }
-
     fn adopt_table_caption(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -1014,6 +993,27 @@ impl Surrogate<Error> for Document {
         panic!("templates should all be resolved by now");
     }
 
+    fn adopt_text(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        text: &str,
+    ) -> Result {
+        self.text_run(text)
+    }
+
+    fn adopt_text_style(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        style: TextStyle,
+    ) -> Result {
+        self.text_style_emitter.emit(&mut self.html, style)?;
+        Ok(())
+    }
+
     fn adopt_token(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -1038,12 +1038,12 @@ impl Surrogate<Error> for Document {
 /// An HTML tree node.
 #[derive(Debug)]
 enum Node {
-    /// An HTML tag.
-    Tag(Cow<'static, str>),
-    /// A run of Wikitext list items.
-    List(ListEmitter),
     /// An HTML attribute.
     Attribute,
+    /// A run of Wikitext list items.
+    List(ListEmitter),
+    /// An HTML tag.
+    Tag(Cow<'static, str>),
 }
 
 impl Node {

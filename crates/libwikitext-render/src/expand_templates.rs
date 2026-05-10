@@ -52,12 +52,6 @@ impl ExpandTemplates {
         }
     }
 
-    /// Consumes this object, returning the result.
-    #[inline]
-    pub fn finish(self) -> String {
-        self.out
-    }
-
     /// Serialises a token which is structured like
     /// `{prefix}{attributes}{delimiter}{content}{suffix}`.
     #[inline]
@@ -96,6 +90,12 @@ impl ExpandTemplates {
         tags::render_single_attribute(self, state, sp, arguments)?;
         self.out.write_str(&sp.source[suffix])?;
         Ok(())
+    }
+
+    /// Consumes this object, returning the result.
+    #[inline]
+    pub fn finish(self) -> String {
+        self.out
     }
 
     /// Serialises the delimiter between two groups of spanned elements like
@@ -475,54 +475,6 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
-    fn adopt_template(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        target: &[Spanned<Token>],
-        arguments: &[Spanned<Argument>],
-    ) -> Result {
-        let line_start = self.out.is_empty() || self.out.ends_with('\n');
-        let rendered = template::render_template(
-            &mut self.out,
-            state,
-            sp,
-            span,
-            target,
-            arguments,
-            line_start,
-        )?;
-
-        if rendered {
-            Ok(())
-        } else {
-            self.adopt_target_arguments(state, sp, span, target, arguments)
-        }
-    }
-
-    fn adopt_text(
-        &mut self,
-        _state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        _text: &str,
-    ) -> Result {
-        self.out.write_str(&sp.source[span.into_range()])?;
-        Ok(())
-    }
-
-    fn adopt_text_style(
-        &mut self,
-        _state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        _style: TextStyle,
-    ) -> Result {
-        self.out.write_str(&sp.source[span.into_range()])?;
-        Ok(())
-    }
-
     fn adopt_table_caption(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -581,6 +533,54 @@ impl Surrogate<Error> for ExpandTemplates {
         attributes: &[Spanned<Argument>],
     ) -> Result {
         self.adopt_attributes_content(state, sp, span, attributes, &[])
+    }
+
+    fn adopt_template(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        target: &[Spanned<Token>],
+        arguments: &[Spanned<Argument>],
+    ) -> Result {
+        let line_start = self.out.is_empty() || self.out.ends_with('\n');
+        let rendered = template::render_template(
+            &mut self.out,
+            state,
+            sp,
+            span,
+            target,
+            arguments,
+            line_start,
+        )?;
+
+        if rendered {
+            Ok(())
+        } else {
+            self.adopt_target_arguments(state, sp, span, target, arguments)
+        }
+    }
+
+    fn adopt_text(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _text: &str,
+    ) -> Result {
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
+    }
+
+    fn adopt_text_style(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _style: TextStyle,
+    ) -> Result {
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
     }
 
     fn adopt_token(

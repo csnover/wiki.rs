@@ -42,8 +42,8 @@ impl JCLuaLibrary {
 }
 
 impl MwInterface for JCLuaLibrary {
-    const NAME: &str = "JCLuaLibrary";
     const CODE: &[u8] = include_bytes!("./modules/ext/JCLuaLibrary.lua");
+    const NAME: &str = "JCLuaLibrary";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

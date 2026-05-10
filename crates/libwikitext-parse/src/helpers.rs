@@ -46,12 +46,15 @@ where
     fn source(&self) -> &'tt str {
         self.source
     }
+
     fn visit_entity(&mut self, _span: Span, value: char) -> fmt::Result {
         self.content.write_char(value)
     }
+
     fn visit_generated(&mut self, _span: Span, text: &'tt str) -> fmt::Result {
         self.content.write_str(text)
     }
+
     fn visit_link(
         &mut self,
         span: Span,
@@ -71,13 +74,16 @@ where
 
         visit_link(self, span, target, content, trail)
     }
+
     fn visit_new_line(&mut self, _span: Span) -> fmt::Result {
         self.content.write_char(' ')
     }
-    fn visit_text(&mut self, text: &str) -> fmt::Result {
-        self.content.write_str(text)
-    }
+
     fn visit_start_include(&mut self, _span: Span, _mode: InclusionMode) -> fmt::Result {
         todo!("inclusion control in text extractor")
+    }
+
+    fn visit_text(&mut self, text: &str) -> fmt::Result {
+        self.content.write_str(text)
     }
 }

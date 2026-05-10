@@ -20,7 +20,25 @@ pub struct MessageLibrary<'dict> {
     messages: Cell<Option<&'dict serde_json_borrow::Value<'dict>>>,
 }
 
-impl<'dict: 'static> MessageLibrary<'dict> {
+impl<'dict> MessageLibrary<'dict> {
+    /// Returns the message dictionary.
+    ///
+    /// # Panics
+    ///
+    /// * The dictionary is not set
+    #[inline]
+    fn messages(&self) -> &'dict serde_json_borrow::Value<'dict> {
+        self.messages.get().unwrap()
+    }
+
+    /// Sets the message dictionary.
+    #[inline]
+    pub fn set_messages(&self, messages: &'dict serde_json_borrow::Value<'dict>) {
+        self.messages.set(Some(messages));
+    }
+}
+
+impl<'dict> MessageLibrary<'dict> {
     /// Checks whether a messages or sequence of messages exist, are blank, or
     /// are disabled.
     ///
@@ -68,11 +86,10 @@ impl<'dict: 'static> MessageLibrary<'dict> {
     ///
     /// If `data.keys` is a sequence, the first valid and non-empty key is used.
     /// If none of the keys are acceptable, the last one is used.
-    fn plain<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        data: Table<'gc>,
-    ) -> Result<VmString<'gc>, VmError<'gc>> {
+    fn plain<'gc>(&self, ctx: Context<'gc>, data: Table<'gc>) -> Result<VmString<'gc>, VmError<'gc>>
+    where
+        'dict: 'gc,
+    {
         let params = data
             .get::<_, Table<'_>>(ctx, "params")
             .unwrap_or_else(|_| Table::new(&ctx));
@@ -90,22 +107,6 @@ impl<'dict: 'static> MessageLibrary<'dict> {
         };
 
         Ok(ctx.intern(message.as_bytes()))
-    }
-
-    /// Returns the message dictionary.
-    ///
-    /// # Panics
-    ///
-    /// * The dictionary is not set
-    #[inline]
-    fn messages(&self) -> &'dict serde_json_borrow::Value<'dict> {
-        self.messages.get().unwrap()
-    }
-
-    /// Sets the message dictionary.
-    #[inline]
-    pub fn set_messages(&self, messages: &'dict serde_json_borrow::Value<'dict>) {
-        self.messages.set(Some(messages));
     }
 }
 
@@ -126,8 +127,8 @@ fn make_replacer<'gc>(
 }
 
 impl<'dict: 'static> MwInterface for MessageLibrary<'dict> {
-    const NAME: &'static str = "mw.message";
     const CODE: &'static [u8] = include_bytes!("./modules/mw.message.lua");
+    const NAME: &'static str = "mw.message";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

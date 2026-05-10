@@ -212,18 +212,6 @@ pub trait Visitor<'tt, E> {
         Ok(())
     }
 
-    /// Visits a [`Token::Text`].
-    #[inline]
-    fn visit_text(&mut self, _text: &'tt str) -> Result<(), E> {
-        Ok(())
-    }
-
-    /// Visits a [`Token::TextStyle`].
-    #[inline]
-    fn visit_text_style(&mut self, _span: Span, _style: TextStyle) -> Result<(), E> {
-        Ok(())
-    }
-
     /// Visits a [`Token::TableCaption`].
     #[inline]
     fn visit_table_caption(
@@ -288,6 +276,18 @@ pub trait Visitor<'tt, E> {
         _target: &'tt [Spanned<Token>],
         _arguments: &'tt [Spanned<Argument>],
     ) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// Visits a [`Token::Text`].
+    #[inline]
+    fn visit_text(&mut self, _text: &'tt str) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// Visits a [`Token::TextStyle`].
+    #[inline]
+    fn visit_text_style(&mut self, _span: Span, _style: TextStyle) -> Result<(), E> {
         Ok(())
     }
 

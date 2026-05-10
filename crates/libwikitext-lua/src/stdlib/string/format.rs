@@ -138,10 +138,10 @@ mod lua {
     /// format specifier to be replaced by the next positional argument.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) enum FormatElement<'a> {
-        /// Characters which are copied to the output as-is.
-        Verbatim(&'a str),
         /// A format specifier.
         Format(ConversionSpecifier),
+        /// Characters which are copied to the output as-is.
+        Verbatim(&'a str),
     }
 
     /// A `printf`-style conversion specifier.
@@ -153,20 +153,20 @@ mod lua {
     pub(crate) struct ConversionSpecifier {
         /// Flag `#`: use `0x`, etc.
         pub alt_form: bool,
-        /// Flag `0`: left-pad with zeros.
-        pub zero_pad: bool,
-        /// Flag `-`: left-adjust (pad with spaces on the right).
-        pub left_adj: bool,
-        /// Flag `' '` (space): indicate sign with a space.
-        pub space_sign: bool,
-        /// Flag `+`: Always show the sign (for signed numbers).
-        pub force_sign: bool,
-        /// Field width.
-        pub width: Option<u8>,
-        /// Floating point field precision.
-        pub precision: Option<u8>,
         /// The conversion type.
         pub conversion_type: ConversionType,
+        /// Flag `+`: Always show the sign (for signed numbers).
+        pub force_sign: bool,
+        /// Flag `-`: left-adjust (pad with spaces on the right).
+        pub left_adj: bool,
+        /// Floating point field precision.
+        pub precision: Option<u8>,
+        /// Flag `' '` (space): indicate sign with a space.
+        pub space_sign: bool,
+        /// Field width.
+        pub width: Option<u8>,
+        /// Flag `0`: left-pad with zeros.
+        pub zero_pad: bool,
     }
 
     impl ConversionSpecifier {
@@ -180,100 +180,6 @@ mod lua {
                 ConversionType::OctInt => 8,
                 _ => 10,
             }
-        }
-
-        /// Returns true if the specifier should emit uppercase characters.
-        fn is_upper(&self) -> bool {
-            matches!(
-                self.conversion_type,
-                ConversionType::HexFloatUpper
-                    | ConversionType::SciFloatUpper
-                    | ConversionType::DecFloatUpper
-                    | ConversionType::CompactFloatUpper
-                    | ConversionType::HexIntUpper
-            )
-        }
-
-        /// Writes `value` to `f` as a formatted string according to the
-        /// properties of this specifier.
-        pub fn write_f64(&self, f: &mut dyn fmt::Write, value: f64) -> fmt::Result {
-            let mut buf = [0_u8; 256];
-            let mut len = 0;
-
-            let (start, zero_pad) = if value.is_nan() {
-                let value = if self.is_upper() { b"NAN" } else { b"nan" };
-                buf[0..value.len()].copy_from_slice(value);
-                len += value.len();
-                (0, false)
-            } else if value.is_infinite() {
-                let value = if self.is_upper() { b"FNI" } else { b"fni" };
-                buf[0..value.len()].copy_from_slice(value);
-                len += value.len();
-                (0, false)
-            } else {
-                let (use_sci, use_simple) = match self.conversion_type {
-                    ConversionType::Serialize
-                    | ConversionType::HexFloatLower
-                    | ConversionType::HexFloatUpper => {
-                        return self.write_f64_hex(f, value);
-                    }
-                    ConversionType::DecFloatLower | ConversionType::DecFloatUpper => (false, false),
-                    ConversionType::SciFloatLower | ConversionType::SciFloatUpper => (true, false),
-                    ConversionType::CompactFloatLower | ConversionType::CompactFloatUpper => {
-                        (true, true)
-                    }
-                    _ => unreachable!(),
-                };
-
-                let trim = if use_sci {
-                    self.fill_f64_exp(&mut buf, &mut len, value, use_simple)
-                } else {
-                    fill_f64_dec(&mut buf, &mut len, value, self.width, self.precision);
-                    false
-                };
-
-                (
-                    if trim {
-                        let mut start = len;
-                        for (index, c) in buf[..len].iter().enumerate() {
-                            if *c == b'.' {
-                                start = index + 1;
-                                break;
-                            } else if *c != b'0' {
-                                start = index;
-                                break;
-                            }
-                        }
-                        start
-                    } else {
-                        0
-                    },
-                    true,
-                )
-            };
-
-            // The extra adjustment argument is necessary to compensate for
-            // truncation from the simple mode
-            if zero_pad {
-                let has_sign =
-                    usize::from(value.is_sign_negative() || self.force_sign || self.space_sign);
-                self.fill_zeros(&mut buf, &mut len, start.saturating_sub(has_sign));
-            }
-
-            if value.is_sign_negative() {
-                buf[len] = b'-';
-                len += 1;
-            } else if self.force_sign {
-                buf[len] = b'+';
-                len += 1;
-            } else if self.space_sign {
-                buf[len] = b' ';
-                len += 1;
-            }
-
-            self.write_buf(f, &buf[start..len], zero_pad)?;
-
-            Ok(())
         }
 
         /// Fills the backwards buffer with `value` written as an exponential
@@ -364,6 +270,130 @@ mod lua {
             );
 
             exp_width.is_none() && !self.alt_form
+        }
+
+        /// Fills the backwards buffer with zeros according to the properties of
+        /// this specifier.
+        fn fill_zeros(&self, buf: &mut [u8], len: &mut usize, adjust: usize) {
+            if !self.left_adj
+                && self.zero_pad
+                && let Some(width) = self.width.map(usize::from)
+            {
+                while *len < width + adjust {
+                    buf[*len] = b'0';
+                    *len += 1;
+                }
+            }
+        }
+
+        /// Returns true if the specifier should emit uppercase characters.
+        fn is_upper(&self) -> bool {
+            matches!(
+                self.conversion_type,
+                ConversionType::HexFloatUpper
+                    | ConversionType::SciFloatUpper
+                    | ConversionType::DecFloatUpper
+                    | ConversionType::CompactFloatUpper
+                    | ConversionType::HexIntUpper
+            )
+        }
+
+        /// Writes the backwards buffer into `f` with padding according to the
+        /// properties of this specifier.
+        fn write_buf(&self, f: &mut dyn fmt::Write, buf: &[u8], zero_pad: bool) -> fmt::Result {
+            if !self.left_adj {
+                self.write_pad(f, buf.len(), zero_pad)?;
+            }
+            for c in buf.iter().rev() {
+                // Safety: It is all ASCII characters that we just put there.
+                f.write_char(unsafe { char::from_u32_unchecked(u32::from(*c)) })?;
+            }
+            if self.left_adj {
+                self.write_pad(f, buf.len(), zero_pad)?;
+            }
+            Ok(())
+        }
+
+        /// Writes `value` to `f` as a formatted string according to the
+        /// properties of this specifier.
+        pub fn write_f64(&self, f: &mut dyn fmt::Write, value: f64) -> fmt::Result {
+            let mut buf = [0_u8; 256];
+            let mut len = 0;
+
+            let (start, zero_pad) = if value.is_nan() {
+                let value = if self.is_upper() { b"NAN" } else { b"nan" };
+                buf[0..value.len()].copy_from_slice(value);
+                len += value.len();
+                (0, false)
+            } else if value.is_infinite() {
+                let value = if self.is_upper() { b"FNI" } else { b"fni" };
+                buf[0..value.len()].copy_from_slice(value);
+                len += value.len();
+                (0, false)
+            } else {
+                let (use_sci, use_simple) = match self.conversion_type {
+                    ConversionType::Serialize
+                    | ConversionType::HexFloatLower
+                    | ConversionType::HexFloatUpper => {
+                        return self.write_f64_hex(f, value);
+                    }
+                    ConversionType::DecFloatLower | ConversionType::DecFloatUpper => (false, false),
+                    ConversionType::SciFloatLower | ConversionType::SciFloatUpper => (true, false),
+                    ConversionType::CompactFloatLower | ConversionType::CompactFloatUpper => {
+                        (true, true)
+                    }
+                    _ => unreachable!(),
+                };
+
+                let trim = if use_sci {
+                    self.fill_f64_exp(&mut buf, &mut len, value, use_simple)
+                } else {
+                    fill_f64_dec(&mut buf, &mut len, value, self.width, self.precision);
+                    false
+                };
+
+                (
+                    if trim {
+                        let mut start = len;
+                        for (index, c) in buf[..len].iter().enumerate() {
+                            if *c == b'.' {
+                                start = index + 1;
+                                break;
+                            } else if *c != b'0' {
+                                start = index;
+                                break;
+                            }
+                        }
+                        start
+                    } else {
+                        0
+                    },
+                    true,
+                )
+            };
+
+            // The extra adjustment argument is necessary to compensate for
+            // truncation from the simple mode
+            if zero_pad {
+                let has_sign =
+                    usize::from(value.is_sign_negative() || self.force_sign || self.space_sign);
+                self.fill_zeros(&mut buf, &mut len, start.saturating_sub(has_sign));
+            }
+
+            if value.is_sign_negative() {
+                buf[len] = b'-';
+                len += 1;
+            } else if self.force_sign {
+                buf[len] = b'+';
+                len += 1;
+            } else if self.space_sign {
+                buf[len] = b' ';
+                len += 1;
+            }
+
+            self.write_buf(f, &buf[start..len], zero_pad)?;
+
+            Ok(())
         }
 
         /// Writes `value` to `f` as a formatted hexadecimal string according to
@@ -472,18 +502,23 @@ mod lua {
             Ok(())
         }
 
-        /// Writes the backwards buffer into `f` with padding according to the
-        /// properties of this specifier.
-        fn write_buf(&self, f: &mut dyn fmt::Write, buf: &[u8], zero_pad: bool) -> fmt::Result {
-            if !self.left_adj {
-                self.write_pad(f, buf.len(), zero_pad)?;
-            }
-            for c in buf.iter().rev() {
-                // Safety: It is all ASCII characters that we just put there.
-                f.write_char(unsafe { char::from_u32_unchecked(u32::from(*c)) })?;
-            }
-            if self.left_adj {
-                self.write_pad(f, buf.len(), zero_pad)?;
+        /// Writes padding of length `len` into `f`.
+        fn write_pad(&self, f: &mut dyn fmt::Write, len: usize, zero_pad: bool) -> fmt::Result {
+            if let Some(width) = self.width
+                && let width = usize::from(width)
+                && len < width
+            {
+                let pad = if zero_pad {
+                    "0000000000000000"
+                } else {
+                    "                "
+                };
+                let mut amount = width - len;
+                while amount > pad.len() {
+                    write!(f, "{pad}")?;
+                    amount -= pad.len();
+                }
+                write!(f, "{}", &pad[..amount])?;
             }
             Ok(())
         }
@@ -506,41 +541,6 @@ mod lua {
             }
 
             Ok(())
-        }
-
-        /// Writes padding of length `len` into `f`.
-        fn write_pad(&self, f: &mut dyn fmt::Write, len: usize, zero_pad: bool) -> fmt::Result {
-            if let Some(width) = self.width
-                && let width = usize::from(width)
-                && len < width
-            {
-                let pad = if zero_pad {
-                    "0000000000000000"
-                } else {
-                    "                "
-                };
-                let mut amount = width - len;
-                while amount > pad.len() {
-                    write!(f, "{pad}")?;
-                    amount -= pad.len();
-                }
-                write!(f, "{}", &pad[..amount])?;
-            }
-            Ok(())
-        }
-
-        /// Fills the backwards buffer with zeros according to the properties of
-        /// this specifier.
-        fn fill_zeros(&self, buf: &mut [u8], len: &mut usize, adjust: usize) {
-            if !self.left_adj
-                && self.zero_pad
-                && let Some(width) = self.width.map(usize::from)
-            {
-                while *len < width + adjust {
-                    buf[*len] = b'0';
-                    *len += 1;
-                }
-            }
         }
     }
 
@@ -733,13 +733,13 @@ mod lua {
     fn take_conversion_specifier(s: &str) -> Result<(ConversionSpecifier, &str)> {
         let mut spec = ConversionSpecifier {
             alt_form: false,
-            zero_pad: false,
-            left_adj: false,
-            space_sign: false,
-            force_sign: false,
-            width: None,
-            precision: None,
             conversion_type: ConversionType::DecInt,
+            force_sign: false,
+            left_adj: false,
+            precision: None,
+            space_sign: false,
+            width: None,
+            zero_pad: false,
         };
 
         let mut s = s;

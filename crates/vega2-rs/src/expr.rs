@@ -628,27 +628,27 @@ const CONSTANTS: phf::Map<&'static str, f64> = phf::phf_map! {
     reason = "self-documenting variants"
 )]
 enum BinaryOp {
+    Add,
     BitAnd,
     BitOr,
     BitXor,
+    Div,
     Eq,
-    Ne,
-    StrictEq,
-    StrictNe,
     Gt,
     Gte,
+    In,
+    InstanceOf,
     Lt,
     Lte,
-    InstanceOf,
-    In,
+    Mod,
+    Mul,
+    Ne,
     Shl,
     Sshr,
-    Ushr,
-    Add,
+    StrictEq,
+    StrictNe,
     Sub,
-    Mul,
-    Div,
-    Mod,
+    Ushr,
 }
 
 impl BinaryOp {
@@ -712,8 +712,8 @@ enum Ident<'code> {
     reason = "self-documenting variants"
 )]
 enum LogicalOp {
-    Or,
     And,
+    Or,
 }
 
 /// A member expression property.

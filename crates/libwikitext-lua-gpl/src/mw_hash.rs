@@ -23,8 +23,8 @@ impl HashLibrary {
 }
 
 impl MwInterface for HashLibrary {
-    const NAME: &str = "mw.hash";
     const CODE: &[u8] = include_bytes!("./modules/mw.hash.lua");
+    const NAME: &str = "mw.hash";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

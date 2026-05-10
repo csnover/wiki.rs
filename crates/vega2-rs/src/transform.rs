@@ -114,29 +114,29 @@ impl<'s> Transform<'s> {
     #[must_use]
     pub fn transform(&self, node: &Node<'s, '_>, data: Cow<'_, [Value<'s>]>) -> Vec<Value<'s>> {
         match self {
-            Transform::Aggregate(aggregate) => aggregate.transform(&data, None),
-            Transform::Bin(bin) => bin.transform(data.into_owned()),
-            Transform::CountPattern(count_pattern) => count_pattern.transform(&data),
-            Transform::Cross(cross) => cross.transform(node, &data),
-            Transform::Facet(facet) => facet.transform(node, &data),
-            Transform::Filter(filter) => filter.transform(node, data.into_owned()),
-            Transform::Fold(_) => todo!(),
-            Transform::Force(force) => force.transform(node, data.into_owned()),
-            Transform::Formula(formula) => formula.transform(node, data.into_owned()),
-            Transform::Geo(geo) => geo.transform(data.into_owned()),
-            Transform::Geopath(geopath) => geopath.transform(data.into_owned()),
-            Transform::Hierarchy(_) => todo!(),
-            Transform::Impute(_) => todo!(),
-            Transform::LinkPath(link_path) => link_path.transform(data.into_owned()),
-            Transform::Lookup(lookup) => lookup.transform(node, data.into_owned()),
-            Transform::Pie(pie) => pie.transform(data.into_owned()),
-            Transform::Rank(_) => todo!(),
-            Transform::Sort(_) => todo!(),
-            Transform::Stack(stack) => stack.transform(data.into_owned()),
-            Transform::Treeify(_) => todo!(),
-            Transform::Treemap(treemap) => treemap.transform(node, data.into_owned()),
-            Transform::Voronoi(_) => todo!(),
-            Transform::Wordcloud(wordcloud) => wordcloud.transform(node, data.into_owned()),
+            Self::Aggregate(aggregate) => aggregate.transform(&data, None),
+            Self::Bin(bin) => bin.transform(data.into_owned()),
+            Self::CountPattern(count_pattern) => count_pattern.transform(&data),
+            Self::Cross(cross) => cross.transform(node, &data),
+            Self::Facet(facet) => facet.transform(node, &data),
+            Self::Filter(filter) => filter.transform(node, data.into_owned()),
+            Self::Fold(_) => todo!(),
+            Self::Force(force) => force.transform(node, data.into_owned()),
+            Self::Formula(formula) => formula.transform(node, data.into_owned()),
+            Self::Geo(geo) => geo.transform(data.into_owned()),
+            Self::Geopath(geopath) => geopath.transform(data.into_owned()),
+            Self::Hierarchy(_) => todo!(),
+            Self::Impute(_) => todo!(),
+            Self::LinkPath(link_path) => link_path.transform(data.into_owned()),
+            Self::Lookup(lookup) => lookup.transform(node, data.into_owned()),
+            Self::Pie(pie) => pie.transform(data.into_owned()),
+            Self::Rank(_) => todo!(),
+            Self::Sort(_) => todo!(),
+            Self::Stack(stack) => stack.transform(data.into_owned()),
+            Self::Treeify(_) => todo!(),
+            Self::Treemap(treemap) => treemap.transform(node, data.into_owned()),
+            Self::Voronoi(_) => todo!(),
+            Self::Wordcloud(wordcloud) => wordcloud.transform(node, data.into_owned()),
         }
     }
 }
@@ -392,6 +392,17 @@ impl AggregateOp {
         acc.finished_ops |= 1 << self as u8;
     }
 
+    /// Gets the output field name for the given input `field` name.
+    #[must_use]
+    #[inline]
+    fn field_name(self, field: &str) -> String {
+        if field == "*" {
+            self.to_string()
+        } else {
+            format!("{self}_{field}")
+        }
+    }
+
     /// Finishes the processing of the operator, converting it to a final value.
     pub(super) fn finish<'s>(self, acc: &Accumulator<'s, '_>) -> Value<'s> {
         #[expect(
@@ -454,17 +465,6 @@ impl AggregateOp {
                 }
                 .into(),
             ),
-        }
-    }
-
-    /// Gets the output field name for the given input `field` name.
-    #[must_use]
-    #[inline]
-    fn field_name(self, field: &str) -> String {
-        if field == "*" {
-            self.to_string()
-        } else {
-            format!("{self}_{field}")
         }
     }
 }
@@ -591,10 +591,6 @@ pub(super) struct Bin<'s> {
     /// The name of the field to bin values from.
     #[serde(borrow)]
     field: Cow<'s, str>,
-    /// The minimum bin value to consider. If unspecified, the minimum value of
-    /// the specified field is used.
-    #[serde(default)]
-    min: Option<f64>,
     /// The maximum bin value to consider. If unspecified, the maximum value of
     /// the specified field is used.
     #[serde(default)]
@@ -602,6 +598,10 @@ pub(super) struct Bin<'s> {
     /// The maximum number of allowable bins.
     #[serde(default = "Bin::default_max_bins", rename = "maxbins")]
     max_bins: f64,
+    /// The minimum bin value to consider. If unspecified, the minimum value of
+    /// the specified field is used.
+    #[serde(default)]
+    min: Option<f64>,
     /// The minimum allowable step size.
     #[serde(default, rename = "minstep")]
     min_step: Option<f64>,
@@ -857,10 +857,10 @@ pub enum CountPatternCase {
     /// Convert to lowercase.
     #[default]
     Lower,
-    /// Convert to uppercase.
-    Upper,
     /// Do not convert.
     None,
+    /// Convert to uppercase.
+    Upper,
 }
 
 /// Count pattern output field names.
@@ -1592,23 +1592,23 @@ impl Default for LinkPathOutput<'_> {
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum LinkPathShape {
-    /// Straight line.
-    #[default]
-    Line,
-    /// Cubic Bézier curve.
-    Curve,
+    /// Rounded corner.
+    CornerR,
     /// Right angle, vertical then horizontal.
     CornerX,
     /// Right angle, horizontal then vertical.
     CornerY,
-    /// Rounded corner.
-    CornerR,
+    /// Cubic Bézier curve.
+    Curve,
+    /// Diagonal curve, rounded.
+    DiagonalR,
     /// Diagonal curve, vertical then horizontal.
     DiagonalX,
     /// Diagonal curve, horizontal then vertical.
     DiagonalY,
-    /// Diagonal curve, rounded.
-    DiagonalR,
+    /// Straight line.
+    #[default]
+    Line,
 }
 
 impl LinkPathShape {
@@ -1908,14 +1908,14 @@ struct PartitionGroup<'s, 'b> {
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum StackOffset {
-    /// Start at zero.
-    #[default]
-    Zero,
     /// Center the stacks.
     Center,
     /// Compute percentage values for each stack point; the output values will
     /// be in the range 0..=1.
     Normalize,
+    /// Start at zero.
+    #[default]
+    Zero,
 }
 
 /// Unimplemented transform.
@@ -2246,8 +2246,8 @@ impl<'s> Wordcloud<'s> {
                 };
 
                 word_cloud::Word {
-                    index,
                     font,
+                    index,
                     padding: self.padding.get(item),
                     rotate: self.rotate.get(item),
                     size: font_size,
@@ -3308,10 +3308,10 @@ mod word_cloud {
 
     /// A word cloud word.
     pub(super) struct Word<'s> {
-        /// The original index of the associated item.
-        pub index: usize,
         /// The font family.
         pub font: Cow<'s, str>,
+        /// The original index of the associated item.
+        pub index: usize,
         /// The padding around the word.
         pub padding: f64,
         /// The rotation angle, in degrees.

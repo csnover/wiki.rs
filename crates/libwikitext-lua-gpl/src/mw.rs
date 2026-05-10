@@ -90,42 +90,35 @@ impl<Db: IDatabase, Sp: HostFrame> Default for LuaEngine<Db, Sp> {
     }
 }
 
-impl<Db: IDatabase + 'static, Sp: HostFrame + 'static> MwInterface for LuaEngine<Db, Sp> {
-    const NAME: &'static str = "mw";
-    const CODE: &'static [u8] = include_bytes!("./modules/mw.lua");
-
-    fn register(ctx: Context<'_>) -> Table<'_> {
-        interface! {
-            using Self, ctx;
-
-            loadPackage = load_package,
-            loadPHPLibrary = load_php_library,
-            frameExists = frame_exists,
-            newChildFrame = new_child_frame,
-            ~ getExpandedArgument = get_expanded_argument,
-            ~ getAllExpandedArguments = get_all_expanded_arguments,
-            ~ expandTemplate = expand_template,
-            ~ callParserFunction = call_parser_function,
-            ~ preprocess = preprocess,
-            incrementExpensiveFunctionCount = increment_expensive_function_count,
-            isSubsting = is_substing,
-            getFrameTitle = get_frame_title,
-            ~ setTTL = set_ttl,
-            addWarning = add_warning,
-            loadJsonData = load_json_data,
-        }
+impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
+    /// Returns a reference to the database.
+    ///
+    /// # Panics
+    ///
+    /// * The database is not set
+    #[inline]
+    fn db(&self) -> Ref<'_, Db> {
+        Ref::map(self.db.borrow(), |db| db.as_ref().unwrap())
     }
 
-    fn setup<'gc, SetupDb: IDatabase>(
-        &self,
-        _: &SetupDb,
-        ctx: Context<'gc>,
-    ) -> Result<Table<'gc>, RuntimeError> {
-        Ok(table! {
-            using ctx;
+    /// Sets the article database.
+    pub fn set_db(&self, db: Db) {
+        *self.db.borrow_mut() = Some(db);
+    }
 
-            allowEnvFuncs = false
-        })
+    /// Sets the stack frame for the current VM call.
+    pub fn set_sp(&self, sp: Option<Sp>) -> Option<Sp> {
+        core::mem::replace(&mut self.sp.borrow_mut(), sp)
+    }
+
+    /// Returns a reference to the host stack frame.
+    ///
+    /// # Panics
+    ///
+    /// * The stack frame is not set
+    #[inline]
+    fn sp(&self) -> Ref<'_, Sp> {
+        Ref::map(self.sp.borrow(), |sp| sp.as_ref().unwrap())
     }
 }
 
@@ -144,7 +137,7 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
         Ok(Value::Nil)
     }
 
-    /// A trampoline for the [`call_parser_function`] host call.
+    /// A trampoline for [`HostCall::CallParserFunction`].
     pub(crate) fn call_parser_function<'gc>(
         &self,
         ctx: Context<'gc>,
@@ -169,7 +162,7 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
         })
     }
 
-    /// A trampoline for the [`expand_template`] host call.
+    /// A trampoline for [`HostCall::ExpandTemplate`].
     pub(crate) fn expand_template<'gc>(
         &self,
         ctx: Context<'gc>,
@@ -219,7 +212,7 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
         })
     }
 
-    /// A trampoline for the [`get_all_expanded_arguments`] host call.
+    /// A trampoline for [`HostCall::GetAllExpandedArguments`].
     pub(crate) fn get_all_expanded_arguments<'gc>(
         &self,
         ctx: Context<'gc>,
@@ -250,7 +243,7 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
         })
     }
 
-    /// A trampoline for the [`get_expanded_argument`] host call.
+    /// A trampoline for [`HostCall::GetExpandedArgument`].
     pub(crate) fn get_expanded_argument<'gc>(
         &self,
         ctx: Context<'gc>,
@@ -299,6 +292,32 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
     /// wiki.rs is never in page save mode.
     pub(crate) fn is_substing<'gc>(&self, _: Context<'gc>, (): ()) -> Result<bool, VmError<'gc>> {
         Ok(false)
+    }
+
+    /// Loads JSON data from the given article.
+    fn load_json_data<'gc>(
+        &self,
+        ctx: Context<'gc>,
+        title: VmString<'gc>,
+    ) -> Result<Value<'gc>, VmError<'gc>> {
+        let db = self.db();
+        let title = title.to_str()?;
+        let title_obj = Title::new(db.config(), title, None);
+        let Ok(article) = db.get(&title_obj) else {
+            return Err(anyhow::anyhow!(
+                "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
+            ))?;
+        };
+
+        if article.model != "json" {
+            return Err(anyhow::anyhow!(
+                "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
+            ))?;
+        }
+
+        let ser = piccolo_util::serde::ser::Serializer::new(ctx, <_>::default());
+        let mut deser = serde_json::Deserializer::from_slice(article.body.as_bytes());
+        Ok(serde_transcode::transcode(&mut deser, ser)?)
     }
 
     /// Loads a possibly built-in package, sandboxing it into the given
@@ -350,56 +369,6 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
         Ok(Value::Nil)
     }
 
-    /// A trampoline for the [`preprocess`] host call.
-    pub(crate) fn preprocess<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        mut stack: Stack<'gc, '_>,
-    ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
-        let (frame_id, text) = stack.consume::<(VmString<'_>, VmString<'_>)>(ctx)?;
-        // log::trace!("mw.preprocess({frame_id:?}, {text:?})");
-        stack.replace(
-            ctx,
-            UserData::new_static(
-                &ctx,
-                HostCall::Preprocess {
-                    frame_id: ctx.stash(frame_id),
-                    text: ctx.stash(text),
-                },
-            ),
-        );
-        Ok(CallbackReturn::Yield {
-            to_thread: None,
-            then: None,
-        })
-    }
-
-    /// Loads JSON data from the given article.
-    fn load_json_data<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        title: VmString<'gc>,
-    ) -> Result<Value<'gc>, VmError<'gc>> {
-        let db = self.db();
-        let title = title.to_str()?;
-        let title_obj = Title::new(db.config(), title, None);
-        let Ok(article) = db.get(&title_obj) else {
-            return Err(anyhow::anyhow!(
-                "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
-            ))?;
-        };
-
-        if article.model != "json" {
-            return Err(anyhow::anyhow!(
-                "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
-            ))?;
-        }
-
-        let ser = piccolo_util::serde::ser::Serializer::new(ctx, <_>::default());
-        let mut deser = serde_json::Deserializer::from_slice(article.body.as_bytes());
-        Ok(serde_transcode::transcode(&mut deser, ser)?)
-    }
-
     /// Creates a fake “child” frame with the given fake `title` and fake
     /// `args`.
     ///
@@ -428,6 +397,30 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
         sp.insert(ctx, frame_id, title, args)
     }
 
+    /// A trampoline for [`HostCall::Preprocess`].
+    pub(crate) fn preprocess<'gc>(
+        &self,
+        ctx: Context<'gc>,
+        mut stack: Stack<'gc, '_>,
+    ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
+        let (frame_id, text) = stack.consume::<(VmString<'_>, VmString<'_>)>(ctx)?;
+        // log::trace!("mw.preprocess({frame_id:?}, {text:?})");
+        stack.replace(
+            ctx,
+            UserData::new_static(
+                &ctx,
+                HostCall::Preprocess {
+                    frame_id: ctx.stash(frame_id),
+                    text: ctx.stash(text),
+                },
+            ),
+        );
+        Ok(CallbackReturn::Yield {
+            to_thread: None,
+            then: None,
+        })
+    }
+
     /// In MW, this would set the cache expiry for the value returned by the
     /// current VM call. In wiki.rs, this is deliberately a no-op.
     pub(crate) fn set_ttl<'gc>(
@@ -438,35 +431,44 @@ impl<Db: IDatabase, Sp: HostFrame> LuaEngine<Db, Sp> {
         stack.clear();
         Ok(CallbackReturn::Return)
     }
+}
 
-    /// Sets the article database.
-    pub fn set_db(&self, db: Db) {
-        *self.db.borrow_mut() = Some(db);
+impl<Db: IDatabase + 'static, Sp: HostFrame + 'static> MwInterface for LuaEngine<Db, Sp> {
+    const CODE: &'static [u8] = include_bytes!("./modules/mw.lua");
+    const NAME: &'static str = "mw";
+
+    fn register(ctx: Context<'_>) -> Table<'_> {
+        interface! {
+            using Self, ctx;
+
+            loadPackage = load_package,
+            loadPHPLibrary = load_php_library,
+            frameExists = frame_exists,
+            newChildFrame = new_child_frame,
+            ~ getExpandedArgument = get_expanded_argument,
+            ~ getAllExpandedArguments = get_all_expanded_arguments,
+            ~ expandTemplate = expand_template,
+            ~ callParserFunction = call_parser_function,
+            ~ preprocess = preprocess,
+            incrementExpensiveFunctionCount = increment_expensive_function_count,
+            isSubsting = is_substing,
+            getFrameTitle = get_frame_title,
+            ~ setTTL = set_ttl,
+            addWarning = add_warning,
+            loadJsonData = load_json_data,
+        }
     }
 
-    /// Sets the stack frame for the current VM call.
-    pub fn set_sp(&self, sp: Option<Sp>) -> Option<Sp> {
-        core::mem::replace(&mut self.sp.borrow_mut(), sp)
-    }
+    fn setup<'gc, SetupDb: IDatabase>(
+        &self,
+        _: &SetupDb,
+        ctx: Context<'gc>,
+    ) -> Result<Table<'gc>, RuntimeError> {
+        Ok(table! {
+            using ctx;
 
-    /// Returns a reference to the database.
-    ///
-    /// # Panics
-    ///
-    /// * The database is not set
-    #[inline]
-    fn db(&self) -> Ref<'_, Db> {
-        Ref::map(self.db.borrow(), |db| db.as_ref().unwrap())
-    }
-
-    /// Returns a reference to the host stack frame.
-    ///
-    /// # Panics
-    ///
-    /// * The stack frame is not set
-    #[inline]
-    fn sp(&self) -> Ref<'_, Sp> {
-        Ref::map(self.sp.borrow(), |sp| sp.as_ref().unwrap())
+            allowEnvFuncs = false
+        })
     }
 }
 

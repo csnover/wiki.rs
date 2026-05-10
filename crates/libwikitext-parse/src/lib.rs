@@ -1,12 +1,5 @@
 //! Wikitext parser.
 
-pub use codemap::{FileMap, Span, Spanned};
-pub use inspectors::inspect;
-use libphp_rs::strtr;
-pub use libwikitext_common::config::{Configuration, ConfigurationSource, MagicLinks};
-pub use peg::str::LineCol;
-use std::{borrow::Cow, collections::HashSet};
-
 pub mod builder;
 mod codemap;
 pub mod helpers;
@@ -14,6 +7,13 @@ mod inspectors;
 pub mod lru_limiter;
 pub mod strip;
 pub mod visit;
+
+pub use codemap::{FileMap, Span, Spanned};
+pub use inspectors::inspect;
+use libphp_rs::strtr;
+pub use libwikitext_common::config::{Configuration, ConfigurationSource, MagicLinks};
+pub use peg::str::LineCol;
+use std::{borrow::Cow, collections::HashSet};
 
 /// A parser error.
 pub type Error = peg::error::ParseError<LineCol>;
@@ -109,10 +109,10 @@ pub enum LangFlags {
 }
 
 impl LangFlags {
-    /// Special "$S" flag.
-    pub const DOLLAR_S: char = '\x01';
     /// Special "$+" flag.
     pub const DOLLAR_PLUS: char = '\x02';
+    /// Special "$S" flag.
+    pub const DOLLAR_S: char = '\x01';
 }
 
 /// A language conversion variant.
@@ -129,11 +129,8 @@ impl LangFlags {
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LangVariant {
-    /// Disabled language conversion.
-    Text {
-        /// The source text.
-        text: Vec<Spanned<Token>>,
-    },
+    /// Disabled word conversion.
+    Empty,
     /// A one-way conversion.
     OneWay {
         /// The source language.
@@ -143,6 +140,11 @@ pub enum LangVariant {
         /// The target language.
         to: Vec<Spanned<Token>>,
     },
+    /// Disabled language conversion.
+    Text {
+        /// The source text.
+        text: Vec<Spanned<Token>>,
+    },
     /// A bidirectional conversion.
     TwoWay {
         /// The target language.
@@ -150,8 +152,6 @@ pub enum LangVariant {
         /// The text in the target language.
         text: Vec<Spanned<Token>>,
     },
-    /// Disabled word conversion.
-    Empty,
 }
 
 /// The parser output.
@@ -170,10 +170,10 @@ pub struct Output {
 pub enum Token {
     /// Plain text which can be turned into a link.
     Autolink {
-        /// The link target.
-        target: Vec<Spanned<Token>>,
         /// The link content.
         content: Vec<Spanned<Token>>,
+        /// The link target.
+        target: Vec<Spanned<Token>>,
     },
     /// A behavior switch.
     BehaviorSwitch {
@@ -206,28 +206,28 @@ pub enum Token {
     },
     /// An extension tag.
     Extension {
-        /// The tag name.
-        name: Span,
         /// The tag attributes.
         attributes: Vec<Spanned<Argument>>,
         /// The tag content, if it was not self-closing.
         content: Option<Span>,
+        /// The tag name.
+        name: Span,
     },
     /// An external link.
     ExternalLink {
-        /// The link target.
-        target: Vec<Spanned<Token>>,
         /// The link content. If the `Vec` is empty, an ordinal should be used.
         content: Vec<Spanned<Token>>,
+        /// The link target.
+        target: Vec<Spanned<Token>>,
     },
     /// Generated content, not part of the original input.
     Generated(String),
     /// A heading.
     Heading {
-        /// The heading outline level.
-        level: HeadingLevel,
         /// The heading content.
         content: Vec<Spanned<Token>>,
+        /// The heading outline level.
+        level: HeadingLevel,
     },
     /// A horizontal rule.
     HorizontalRule {
@@ -239,18 +239,18 @@ pub enum Token {
     LangVariant {
         /// Metadata for the conversion.
         flags: Option<LangFlags>,
-        /// Variants for the conversion.
-        variants: Vec<Spanned<LangVariant>>,
         /// Whether the content should be emitted as plain text.
         raw: bool,
+        /// Variants for the conversion.
+        variants: Vec<Spanned<LangVariant>>,
     },
     /// An internal link.
     Link {
-        /// The target of the link.
-        target: Vec<Spanned<Token>>,
         /// The text content of the link. If this `Vec` is empty, a processed
         /// version of the target title should be used.
         content: Vec<Spanned<Argument>>,
+        /// The target of the link.
+        target: Vec<Spanned<Token>>,
         /// The link trail to be appended to content.
         trail: Option<Span>,
     },
@@ -265,10 +265,10 @@ pub enum Token {
     NewLine,
     /// A template parameter.
     Parameter {
-        /// The parameter name.
-        name: Vec<Spanned<Token>>,
         /// The default value.
         default: Option<Vec<Spanned<Token>>>,
+        /// The parameter name.
+        name: Vec<Spanned<Token>>,
     },
     /// A redirect block.
     Redirect {
@@ -277,29 +277,25 @@ pub enum Token {
     },
     /// An annotation start tag.
     StartAnnotation {
-        /// The tag name.
-        name: Span,
         /// The tag attributes.
         attributes: Vec<Spanned<AnnoAttribute>>,
+        /// The tag name.
+        name: Span,
     },
     /// An inclusion control start tag.
     StartInclude(InclusionMode),
     /// An HTML start tag.
     StartTag {
-        /// The tag name.
-        name: Span,
         /// The tag attributes.
         attributes: Vec<Spanned<Argument>>,
+        /// The tag name.
+        name: Span,
         /// Whether the tag is self-closing (void).
         self_closing: bool,
     },
     /// A strip marker. This will only ever appear in text that passed through
     /// an Evaluator.
     StripMarker(Span),
-    /// A run of plain text.
-    Text,
-    /// A bold or italic style.
-    TextStyle(TextStyle),
     /// A table caption.
     TableCaption {
         /// The caption attributes.
@@ -329,11 +325,15 @@ pub enum Token {
     },
     /// A template.
     Template {
-        /// The template target.
-        target: Vec<Spanned<Token>>,
         /// The template arguments.
         arguments: Vec<Spanned<Argument>>,
+        /// The template target.
+        target: Vec<Spanned<Token>>,
     },
+    /// A run of plain text.
+    Text,
+    /// A bold or italic style.
+    TextStyle(TextStyle),
 }
 
 /// A conversion error for out-of-range heading levels.

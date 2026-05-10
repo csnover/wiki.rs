@@ -307,6 +307,20 @@
 //!          entities `"&רלמ;"` and `"&رلم;"` which decode to RLM (U+200F).
 //! </div>
 
+mod document;
+mod emitters;
+mod expand_templates;
+mod extension_tags;
+mod globals;
+mod image;
+mod lua;
+mod parser_fns;
+mod stack;
+mod surrogate;
+mod tags;
+mod template;
+mod trim;
+
 use crate::{
     document::Document,
     template::DbPrefetch,
@@ -335,20 +349,6 @@ use std::{
 };
 use surrogate::Surrogate;
 use tags::{LinkKind, LinkKindOptions};
-
-mod document;
-mod emitters;
-mod expand_templates;
-mod extension_tags;
-mod globals;
-mod image;
-mod lua;
-mod parser_fns;
-mod stack;
-mod surrogate;
-mod tags;
-mod template;
-mod trim;
 
 /// Preprocessor display options for evaluating text strings.
 #[derive(Clone, Copy, Default, Eq, PartialEq, serde::Deserialize)]
@@ -774,11 +774,6 @@ pub struct Statics<'config> {
 pub(crate) struct StripMarkers(Vec<StripMarker>);
 
 impl StripMarkers {
-    /// Gets the strip marker with the given key.
-    fn get(&self, key: &str) -> Option<&StripMarker> {
-        self.0.get(strip::key_index(key))
-    }
-
     /// Invokes callback `f` for each strip marker in the given text.
     ///
     /// The callback should return `Some(string)` if it wants to replace the
@@ -789,6 +784,11 @@ impl StripMarkers {
         for<'m> F: FnMut(&'m StripMarker) -> Option<Cow<'m, str>>,
     {
         strip::for_each_marker_key(body, |key| f(&self.0[strip::key_index(key)]))
+    }
+
+    /// Gets the strip marker with the given key.
+    fn get(&self, key: &str) -> Option<&StripMarker> {
+        self.0.get(strip::key_index(key))
     }
 
     /// Pushes a new strip marker to the list, emitting the marker to the given
@@ -819,11 +819,11 @@ pub(crate) enum StripMarker {
     Inline(String),
     /// A strip marker containing only phrasing content from a `<nowiki>` tag.
     NoWiki(String),
+    /// A strip marker containing a wiki.rs-specific template source end marker.
+    WikiRsSourceEnd(String),
     /// A strip marker containing a wiki.rs-specific template source start
     /// marker.
     WikiRsSourceStart(String),
-    /// A strip marker containing a wiki.rs-specific template source end marker.
-    WikiRsSourceEnd(String),
 }
 
 impl fmt::Display for StripMarker {

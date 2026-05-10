@@ -72,12 +72,27 @@ impl<K: HeapUsageCalculator, V: HeapUsageCalculator> schnellru::Limiter<K, V> fo
     }
 
     #[inline]
+    fn on_cleared(&mut self) {
+        self.heap_size = 0;
+    }
+
+    #[inline]
+    fn on_grow(&mut self, new_memory_usage: usize) -> bool {
+        new_memory_usage + self.heap_size <= self.max_bytes
+    }
+
+    #[inline]
     fn on_insert(&mut self, _: usize, key: Self::KeyToInsert<'_>, value: V) -> Option<(K, V)> {
         let new_size = Self::size_of(&key, &value);
         (new_size <= self.max_bytes).then(|| {
             self.heap_size += new_size;
             (key, value)
         })
+    }
+
+    #[inline]
+    fn on_removed(&mut self, key: &mut K, value: &mut V) {
+        self.heap_size -= Self::size_of(key, value);
     }
 
     #[inline]
@@ -96,21 +111,6 @@ impl<K: HeapUsageCalculator, V: HeapUsageCalculator> schnellru::Limiter<K, V> fo
         } else {
             false
         }
-    }
-
-    #[inline]
-    fn on_removed(&mut self, key: &mut K, value: &mut V) {
-        self.heap_size -= Self::size_of(key, value);
-    }
-
-    #[inline]
-    fn on_cleared(&mut self) {
-        self.heap_size = 0;
-    }
-
-    #[inline]
-    fn on_grow(&mut self, new_memory_usage: usize) -> bool {
-        new_memory_usage + self.heap_size <= self.max_bytes
     }
 }
 

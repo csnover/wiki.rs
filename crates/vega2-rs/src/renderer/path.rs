@@ -52,20 +52,20 @@ pub(super) enum Command {
 
 /// An SVG path writer.
 pub(super) struct SvgPath {
+    /// The accumulator.
+    data: String,
     /// The x-position of the pen.
     x: f64,
     /// The y-position of the pen.
     y: f64,
-    /// The accumulator.
-    data: String,
 }
 
 impl Default for SvgPath {
     fn default() -> Self {
         Self {
+            data: <_>::default(),
             x: f64::INFINITY,
             y: f64::INFINITY,
-            data: <_>::default(),
         }
     }
 }

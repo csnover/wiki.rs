@@ -93,16 +93,20 @@ pub(super) fn parse<'a>(
 
 /// A timeline series identifier.
 pub(super) type BarId<'input> = &'input str;
+
 /// A collection of timeline series.
 ///
 /// This is a `BTreeMap` simply because `HashMap` has randomness which causes
 /// iteration order to be inconsistent, which causes outputs to be different,
 /// which breaks tests.
 type Bars<'input> = BTreeMap<String, Bar<'input>>;
+
 /// A map from timeline series set ID to index range.
 type BarSets = HashMap<String, Range<usize>>;
+
 /// A collection of colours.
 type Colors<'input> = HashMap<String, ColorValue>;
+
 /// A collection of legend entries.
 type Legends<'input> = Vec<(ColorValue, Vec<TextSpan<'input>>)>;
 
@@ -151,12 +155,12 @@ pub(super) struct Timeline<'input> {
     pub line_layer_front: Vec<Line<'input>>,
     /// Line drawing pen.
     pub line_pen: LinePen<'input>,
+    /// Time range.
+    pub period: Period,
     /// Plot area.
     pub plot_area: PlotArea,
     /// Timeline segment pen.
     pub plot_pen: PlotPen<'input>,
-    /// Time range.
-    pub period: Period,
     /// Major scale properties.
     pub scale_major: Scale<'input>,
     /// Minor scale properties.
@@ -188,12 +192,12 @@ impl Timeline<'_> {
             line_layer_back: vec![],
             line_layer_front: vec![],
             line_pen: <_>::default(),
-            plot_area: <_>::default(),
-            plot_pen: <_>::default(),
             period: Period {
                 from: Time::Decimal(0.0),
                 till: Time::Decimal(0.0),
             },
+            plot_area: <_>::default(),
+            plot_pen: <_>::default(),
             scale_major: <_>::default(),
             scale_minor: <_>::default(),
             text_layer: vec![],
@@ -204,6 +208,40 @@ impl Timeline<'_> {
 }
 
 impl<'input> Timeline<'input> {
+    /// Reindexes all plots, bars, and bar sets at or after the given index.
+    ///
+    /// Bar set is a nightmare feature. When it is used, plot data
+    /// lines create new *implicit* bars which need to push down the
+    /// indices of all the other bars as the set grows.
+    fn reindex(&mut self, bar_set: &mut Option<Range<usize>>, index: usize) {
+        if let Some(bar_set) = bar_set
+            && index >= bar_set.end
+        {
+            for bar in self.bars.values_mut() {
+                if bar.index >= index {
+                    bar.index += 1;
+                }
+            }
+
+            for set in self.bar_sets.values_mut() {
+                if set.start == bar_set.start {
+                    set.end += 1;
+                } else if set.start >= index {
+                    set.start += 1;
+                    set.end += 1;
+                }
+            }
+
+            for plot in &mut self.bar_layer {
+                if plot.index >= index {
+                    plot.index += 1;
+                }
+            }
+
+            bar_set.end += 1;
+        }
+    }
+
     /// Adds new time series…es.
     fn update_bar_data(&mut self, bars: Vec<BarData<'input>>) {
         let mut index = 0;
@@ -326,9 +364,9 @@ impl<'input> Timeline<'input> {
                 self.bar_layer.push(Plot {
                     at,
                     index,
+                    link: plot.link,
                     pen: plot_pen,
                     text: plot.text,
-                    link: plot.link,
                 });
 
                 self.bar_count = self.bar_count.max(index + 1);
@@ -341,40 +379,6 @@ impl<'input> Timeline<'input> {
         }
 
         Ok(())
-    }
-
-    /// Reindexes all plots, bars, and bar sets at or after the given index.
-    ///
-    /// Bar set is a nightmare feature. When it is used, plot data
-    /// lines create new *implicit* bars which need to push down the
-    /// indices of all the other bars as the set grows.
-    fn reindex(&mut self, bar_set: &mut Option<Range<usize>>, index: usize) {
-        if let Some(bar_set) = bar_set
-            && index >= bar_set.end
-        {
-            for bar in self.bars.values_mut() {
-                if bar.index >= index {
-                    bar.index += 1;
-                }
-            }
-
-            for set in self.bar_sets.values_mut() {
-                if set.start == bar_set.start {
-                    set.end += 1;
-                } else if set.start >= index {
-                    set.start += 1;
-                    set.end += 1;
-                }
-            }
-
-            for plot in &mut self.bar_layer {
-                if plot.index >= index {
-                    plot.index += 1;
-                }
-            }
-
-            bar_set.end += 1;
-        }
     }
 
     /// Updates the parser with preset settings.
@@ -579,12 +583,12 @@ pub(super) enum Command<'input> {
     Colors(Vec<Color<'input>>),
     /// `DateFormat`.
     DateFormat(DateFormat),
+    /// `ImageSize`.
+    ImageSize(ImageSize),
     /// `Legend`.
     Legend(Legend),
     /// `LineData`.
     LineData(Vec<LineData<'input>>),
-    /// `ImageSize`.
-    ImageSize(ImageSize),
     /// `Period`.
     Period(Period),
     /// `PlotArea`.
@@ -679,10 +683,10 @@ pub(super) struct PlotData<'input> {
     pub mark: Option<&'input str>,
     /// Text label position offset.
     pub shift: Option<Point>,
-    /// Text label colour.
-    pub text_color: Option<&'input str>,
     /// Label text.
     pub text: Option<Vec<TextSpan<'input>>>,
+    /// Text label colour.
+    pub text_color: Option<&'input str>,
     /// Cross-axis size.
     pub width: Option<Unit>,
 }

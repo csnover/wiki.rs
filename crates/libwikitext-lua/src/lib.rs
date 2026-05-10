@@ -1,11 +1,11 @@
 //! Lua interpreter support.
 
+pub mod prelude;
+pub mod stdlib;
+
 use core::cell::Cell;
 use libphp_rs::DateTime;
 use piccolo::{ExternError, Lua};
-
-pub mod prelude;
-pub mod stdlib;
 
 /// Creates a new standalone Lua VM.
 ///

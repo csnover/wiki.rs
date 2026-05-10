@@ -598,10 +598,10 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
 /// the renderer is busy doing its own thing.
 #[derive(Default)]
 pub(crate) struct DbPrefetch {
-    /// Template targets to prefetch.
-    templates: IndexSet<Title>,
     /// Link targets to prefetch.
     links: IndexSet<Title>,
+    /// Template targets to prefetch.
+    templates: IndexSet<Title>,
 }
 
 impl DbPrefetch {

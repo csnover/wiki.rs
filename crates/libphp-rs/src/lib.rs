@@ -12,12 +12,12 @@ use timelib_rs::Timezone;
 /// Any time error.
 #[derive(Debug, thiserror::Error)]
 pub enum DateTimeError {
-    /// An error occurred when parsing.
-    #[error(transparent)]
-    Parse(#[from] DateTimeParseError),
     /// An error occurred when formatting.
     #[error(transparent)]
     Format(#[from] DateTimeFormatError),
+    /// An error occurred when parsing.
+    #[error(transparent)]
+    Parse(#[from] DateTimeParseError),
 }
 
 /// Time formatting error.
@@ -37,12 +37,12 @@ pub enum DateTimeFormatError {
 /// A time zone.
 #[derive(Clone, Copy, Debug)]
 pub enum DateTimeZone {
-    /// Offset from UTC.
-    Offset(UtcOffset),
     /// Local time zone.
     Alias(tz::LocalTimeType),
     /// IANA time zone.
     Named(&'static str, tz::TimeZoneRef<'static>),
+    /// Offset from UTC.
+    Offset(UtcOffset),
 }
 
 impl<'a> From<&'a DateTimeZone> for Timezone<'a> {
@@ -325,23 +325,6 @@ impl DateTime {
         Ok(self)
     }
 
-    /// Converts a timezone to an offset for this time.
-    fn tz_to_offset(self, tz: DateTimeZone) -> Result<UtcOffset, DateTimeError> {
-        Ok(match tz {
-            DateTimeZone::Offset(offset) => offset,
-            DateTimeZone::Alias(alias) => UtcOffset::from_whole_seconds(alias.ut_offset())
-                .map_err(DateTimeParseError::from)?,
-            DateTimeZone::Named(_, tz) => {
-                let unix_time = self.inner.unix_timestamp();
-                let local = tz
-                    .find_local_time_type(unix_time)
-                    .map_err(|err| DateTimeParseError::Timezone(err.into()))?;
-                UtcOffset::from_whole_seconds(local.ut_offset())
-                    .map_err(DateTimeParseError::from)?
-            }
-        })
-    }
-
     /// Returns true if the currently represented time is in daylight saving
     /// time.
     ///
@@ -471,6 +454,23 @@ impl DateTime {
         }
     }
 
+    /// Converts a timezone to an offset for this time.
+    fn tz_to_offset(self, tz: DateTimeZone) -> Result<UtcOffset, DateTimeError> {
+        Ok(match tz {
+            DateTimeZone::Offset(offset) => offset,
+            DateTimeZone::Alias(alias) => UtcOffset::from_whole_seconds(alias.ut_offset())
+                .map_err(DateTimeParseError::from)?,
+            DateTimeZone::Named(_, tz) => {
+                let unix_time = self.inner.unix_timestamp();
+                let local = tz
+                    .find_local_time_type(unix_time)
+                    .map_err(|err| DateTimeParseError::Timezone(err.into()))?;
+                UtcOffset::from_whole_seconds(local.ut_offset())
+                    .map_err(DateTimeParseError::from)?
+            }
+        })
+    }
+
     #[allow(
         clippy::allow_attributes,
         reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
@@ -490,10 +490,9 @@ impl DateTime {
         dead_code,
         clippy::missing_docs_in_private_items,
         clippy::unused_self,
-        clippy::wrong_self_convention,
         reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
     )]
-    fn to_offset(&self) {}
+    fn replace_offset(&self) {}
     #[allow(
         clippy::allow_attributes,
         reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
@@ -502,9 +501,10 @@ impl DateTime {
         dead_code,
         clippy::missing_docs_in_private_items,
         clippy::unused_self,
+        clippy::wrong_self_convention,
         reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
     )]
-    fn replace_offset(&self) {}
+    fn to_offset(&self) {}
 }
 
 impl From<time::UtcDateTime> for DateTime {

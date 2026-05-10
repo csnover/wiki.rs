@@ -16,20 +16,20 @@ use piccolo::{Function, MetaMethod, SequenceReturn, async_sequence};
 /// Allows interruptible iterative replacement of strings by separating the
 /// matching and replacing parts.
 pub(crate) struct GSub<B: BackingType + ?Sized> {
-    /// The search pattern.
-    pattern: B::Owned,
-    /// The number of possible replacements that may occur.
-    replacements: usize,
+    /// The currently matched range awaiting a replacement.
+    current: Range<usize>,
     /// The number of replacements which have occurred.
     found: usize,
-    /// The accumulator.
-    result: B::Owned,
     /// The end position of the last matching candidate.
     last_pos: usize,
     /// The end position of the last replacement.
     last_replace: usize,
-    /// The currently matched range awaiting a replacement.
-    current: Range<usize>,
+    /// The search pattern.
+    pattern: B::Owned,
+    /// The number of possible replacements that may occur.
+    replacements: usize,
+    /// The accumulator.
+    result: B::Owned,
 }
 
 impl<B> GSub<B>
@@ -42,18 +42,34 @@ where
     /// Creates a new substitution engine.
     pub fn new(pattern: &B, n: Option<usize>) -> Self {
         Self {
+            current: 0..0,
+            found: 0,
+            last_pos: 0,
+            last_replace: usize::MAX,
             pattern: pattern.to_owned(),
             replacements: if pattern.starts_with(B::Primitive::from_ascii(b'^')) {
                 1
             } else {
                 n.unwrap_or(usize::MAX)
             },
-            found: 0,
             result: B::Owned::default(),
-            last_pos: 0,
-            last_replace: usize::MAX,
-            current: 0..0,
         }
+    }
+
+    /// Returns the capture groups for the current match.
+    fn captures<'gc>(
+        &self,
+        ctx: Context<'gc>,
+        input: &B,
+        captures: &[CaptureRange],
+    ) -> (Capture<'gc>, Vec<Capture<'gc>>) {
+        (
+            ctx.intern(&input.as_bytes()[self.current.clone()]).into(),
+            captures
+                .iter()
+                .map(|range| range.clone().into_value(ctx, input))
+                .collect::<Vec<_>>(),
+        )
     }
 
     /// Returns the final string and the number of replacements, consuming the
@@ -123,22 +139,6 @@ where
                 self.replacements = 0;
             }
         }
-    }
-
-    /// Returns the capture groups for the current match.
-    fn captures<'gc>(
-        &self,
-        ctx: Context<'gc>,
-        input: &B,
-        captures: &[CaptureRange],
-    ) -> (Capture<'gc>, Vec<Capture<'gc>>) {
-        (
-            ctx.intern(&input.as_bytes()[self.current.clone()]).into(),
-            captures
-                .iter()
-                .map(|range| range.clone().into_value(ctx, input))
-                .collect::<Vec<_>>(),
-        )
     }
 }
 
@@ -363,10 +363,10 @@ where
 ///
 /// As in PUC-Lua, only capture groups 0–9 can be specified.
 enum ReplToken<C: PrimitiveType> {
-    /// A literal `%`.
-    Literal(C),
     /// Use the string captured in group `n` as the replacement.
     CaptureRef(u8),
+    /// A literal `%`.
+    Literal(C),
 }
 
 /// Converts the replacement string `repl` into a sequence of [`ReplToken`].

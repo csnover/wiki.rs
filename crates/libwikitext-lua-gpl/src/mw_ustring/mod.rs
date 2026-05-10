@@ -7,6 +7,9 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#[cfg(test)]
+mod tests;
+
 use super::prelude::*;
 use core::cell::Cell;
 use libwikitext_common::db::IDatabase;
@@ -15,9 +18,6 @@ use libwikitext_lua::stdlib::{
 };
 use piccolo::{Stack, UserData};
 use unicode_normalization::UnicodeNormalization as _;
-
-#[cfg(test)]
-mod tests;
 
 /// The maximum length, in bytes, allowed for pattern strings.
 const PATTERN_LENGTH_LIMIT: usize = 10000;
@@ -319,8 +319,8 @@ impl UstringLibrary {
 }
 
 impl MwInterface for UstringLibrary {
-    const NAME: &str = "mw.ustring";
     const CODE: &[u8] = include_bytes!("../modules/mw.ustring.lua");
+    const NAME: &str = "mw.ustring";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

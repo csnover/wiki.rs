@@ -22,6 +22,9 @@ pub(super) struct Axis<'s> {
     /// If true, draw grid lines.
     #[serde(default)]
     pub grid: bool,
+    /// The cartesian axis.
+    #[serde(rename = "type")]
+    pub kind: Kind,
     /// The axis z-index.
     #[serde(default)]
     pub layer: Layer,
@@ -67,9 +70,6 @@ pub(super) struct Axis<'s> {
     /// The offset of the title origin away from the axis line, in pixels.
     #[serde(default)]
     pub title_offset: Option<f64>,
-    /// The cartesian axis.
-    #[serde(rename = "type")]
-    pub kind: Kind,
     /// Explicit set of visible axis tick values. If unset, the placement of
     /// ticks will be determined automatically.
     #[serde(borrow, default, deserialize_with = "vec_scalar")]
@@ -77,14 +77,14 @@ pub(super) struct Axis<'s> {
 }
 
 impl Axis<'_> {
-    /// The default for [`Self::ticks`].
-    pub const DEFAULT_TICKS: f64 = 10.0;
-    /// The default for [`Self::tick_padding`].
-    pub const DEFAULT_PADDING: f64 = 3.0;
     /// The default for [`Self::properties`]`::`[`axis`](Properties::axis)`::`[`stroke`](Propset::stroke).
     pub const AXIS_COLOR: &'static str = "#000";
     /// The default for [`Self::properties`]`::`[`axis`](Properties::axis)`::`[`stroke_width`](Propset::stroke_width).
     pub const AXIS_WIDTH: f64 = 1.0;
+    /// The default for [`Self::tick_padding`].
+    pub const DEFAULT_PADDING: f64 = 3.0;
+    /// The default for [`Self::ticks`].
+    pub const DEFAULT_TICKS: f64 = 10.0;
     /// The default for [`Self::properties`]`::`[`grid`](Properties::grid)`::`[`stroke`](Propset::stroke).
     pub const GRID_COLOR: &'static str = "#000";
     /// The default for [`Self::properties`]`::`[`grid`](Properties::grid)`::`[`stroke_opacity`](Propset::stroke_opacity).
@@ -93,35 +93,35 @@ impl Axis<'_> {
     pub const TICK_COLOR: &'static str = "#000";
     /// The default for [`Self::properties`]`::`[`labels`](Properties::labels)`::`[`fill`](Propset::fill).
     pub const TICK_LABEL_COLOR: &'static str = "#000";
-    /// The default for [`Self::properties`]`::`[`ticks`](Properties::ticks)`::`[`stroke_width`](Propset::stroke_width).
-    pub const TICK_WIDTH: f64 = 1.0;
-    /// The default for [`Self::properties`]`::`[`ticks`](Properties::ticks)`::`[`size`](Propset::size).
-    pub const TICK_SIZE: f64 = 6.0;
-    /// The default for [`Self::properties`]`::`[`labels`](Properties::labels)`::`[`font_size`](Propset::font_size).
-    pub const TICK_LABEL_FONT_SIZE: f64 = 11.0;
     /// The default for [`Self::properties`]`::`[`labels`](Properties::labels)`::`[`font`](Propset::font).
     pub const TICK_LABEL_FONT: &'static str = "sans-serif";
-    /// The minimum automatic title offset.
-    pub const TITLE_OFFSET_AUTO_MIN: f64 = 30.0;
-    /// The maximum automatic title offset.
-    pub const TITLE_OFFSET_AUTO_MAX: f64 = 10000.0;
+    /// The default for [`Self::properties`]`::`[`labels`](Properties::labels)`::`[`font_size`](Propset::font_size).
+    pub const TICK_LABEL_FONT_SIZE: f64 = 11.0;
+    /// The default for [`Self::properties`]`::`[`ticks`](Properties::ticks)`::`[`size`](Propset::size).
+    pub const TICK_SIZE: f64 = 6.0;
+    /// The default for [`Self::properties`]`::`[`ticks`](Properties::ticks)`::`[`stroke_width`](Propset::stroke_width).
+    pub const TICK_WIDTH: f64 = 1.0;
     /// The amount of padding between the title and axis when auto-calculating
     /// the offset.
     pub const TITLE_OFFSET_AUTO_MARGIN: f64 = 4.0;
+    /// The maximum automatic title offset.
+    pub const TITLE_OFFSET_AUTO_MAX: f64 = 10000.0;
+    /// The minimum automatic title offset.
+    pub const TITLE_OFFSET_AUTO_MIN: f64 = 30.0;
 }
 
 /// A cartesian axis data format.
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum Format {
+    /// A number.
+    Number,
+    /// A string.
+    String,
     /// Local time.
     Time,
     /// UTC time.
     Utc,
-    /// A string.
-    String,
-    /// A number.
-    Number,
 }
 
 /// A cartesian axis kind.
@@ -142,11 +142,11 @@ pub enum Kind {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum Layer {
-    /// Draw axis above marks.
-    Front,
     /// Draw axis below marks.
     #[default]
     Back,
+    /// Draw axis above marks.
+    Front,
 }
 
 /// An axis offset, relative to the edge of the enclosing group or data
@@ -193,14 +193,14 @@ impl<'s> Offset<'s> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum Placement {
-    /// Top edge of the data rectangle.
-    Top,
     /// Bottom edge of the data rectangle.
     Bottom,
     /// Left edge of the data rectangle.
     Left,
     /// Right edge of the data rectangle.
     Right,
+    /// Top edge of the data rectangle.
+    Top,
 }
 
 impl Placement {

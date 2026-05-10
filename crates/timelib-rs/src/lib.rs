@@ -1,13 +1,13 @@
 //! PHP `strtotime` compatible time parsing library.
 
-use time::{Month, OffsetDateTime, Weekday};
-pub use timezone::Timezone;
-
 mod parse_date;
 #[cfg(test)]
 mod tests;
 mod timezone;
 mod to_unixtime;
+
+use time::{Month, OffsetDateTime, Weekday};
+pub use timezone::Timezone;
 
 /// A parsed date and time.
 #[derive(Clone, Debug)]
@@ -19,6 +19,48 @@ pub struct DateTime<'a> {
 }
 
 impl<'a> DateTime<'a> {
+    /// Calculates a Unix timestamp from numeric date parts. If the parts are
+    /// out-of-range, they will overflow into the next date component.
+    ///
+    /// Any `None` parts will be filled in with midnight on the first day of the
+    /// year at UTC.
+    ///
+    /// # Errors
+    ///
+    /// * `offset` cannot be converted to an offset
+    /// * The calculated date is out of range of [`time::Date`]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "adding an args struct would mostly just be busywork"
+    )]
+    pub fn from_parts(
+        year: i64,
+        month: Option<i64>,
+        day: Option<i64>,
+        hour: Option<i64>,
+        minute: Option<i64>,
+        second: Option<i64>,
+        micros: Option<i64>,
+        offset: Option<Timezone<'a>>,
+    ) -> Result<Self, Error> {
+        DateTimeBuilder {
+            date: TimelibDate {
+                year: Some(year),
+                month: month.or(Some(1)),
+                day: day.or(Some(1)),
+            },
+            time: TimelibTime {
+                hour: hour.or(Some(0)),
+                minute: minute.or(Some(0)),
+                second: second.or(Some(0)),
+                micros: micros.or(Some(0)),
+            },
+            offset,
+            ..Default::default()
+        }
+        .build(None)
+    }
+
     /// Parses a date string into a [`DateTime`].
     ///
     /// If no time zone is given in the date string, `default_tz` will be used
@@ -77,63 +119,14 @@ impl<'a> DateTime<'a> {
 
         state.build(Some(other))
     }
-
-    /// Calculates a Unix timestamp from numeric date parts. If the parts are
-    /// out-of-range, they will overflow into the next date component.
-    ///
-    /// Any `None` parts will be filled in with midnight on the first day of the
-    /// year at UTC.
-    ///
-    /// # Errors
-    ///
-    /// * `offset` cannot be converted to an offset
-    /// * The calculated date is out of range of [`time::Date`]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "adding an args struct would mostly just be busywork"
-    )]
-    pub fn from_parts(
-        year: i64,
-        month: Option<i64>,
-        day: Option<i64>,
-        hour: Option<i64>,
-        minute: Option<i64>,
-        second: Option<i64>,
-        micros: Option<i64>,
-        offset: Option<Timezone<'a>>,
-    ) -> Result<Self, Error> {
-        DateTimeBuilder {
-            date: TimelibDate {
-                year: Some(year),
-                month: month.or(Some(1)),
-                day: day.or(Some(1)),
-            },
-            time: TimelibTime {
-                hour: hour.or(Some(0)),
-                minute: minute.or(Some(0)),
-                second: second.or(Some(0)),
-                micros: micros.or(Some(0)),
-            },
-            offset,
-            ..Default::default()
-        }
-        .build(None)
-    }
 }
 
 /// A time builder error.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Invalid input string.
-    #[error("invalid input: {0}")]
-    Parse(#[from] parse_date::PegError),
-
-    /// The computer may be experiencing a space-time paradox, because it is
-    /// claiming to be in a local time zone with an offset that is, as far as
-    /// our best scientists are aware, is impossible to experience on Earth.
+    /// A time component was out of range of a time unit.
     #[error(transparent)]
-    WhenEvenIsHere(#[from] time::error::IndeterminateOffset),
-
+    ComponentRange(#[from] time::error::ComponentRange),
     /// A time component was out of range of a data unit.
     /// (This should be a [`time::error::ComponentRange`] error, but the `time`
     /// crate does not currently allow consumers to build their own, nor to even
@@ -141,24 +134,25 @@ pub enum Error {
     /// type.)
     #[error("integer conversion error: {0}")]
     DataRange(#[from] core::num::TryFromIntError),
-
-    /// A time component was out of range of a time unit.
-    #[error(transparent)]
-    ComponentRange(#[from] time::error::ComponentRange),
-
-    /// There were so many weekdays between then and now that they could not fit
-    /// in a [`time::Duration`].
-    #[error("weekdays out of range")]
-    WeekdaysRange,
-
-    /// An invalid time zone specifier was used.
-    #[error("invalid time zone: {0}")]
-    Timezone(#[from] tz::Error),
-
     /// [`DateTimeBuilder::build`] was called without ensuring all the fields
     /// were filled.
     #[error("incomplete time data")]
     MissingData,
+    /// Invalid input string.
+    #[error("invalid input: {0}")]
+    Parse(#[from] parse_date::PegError),
+    /// An invalid time zone specifier was used.
+    #[error("invalid time zone: {0}")]
+    Timezone(#[from] tz::Error),
+    /// There were so many weekdays between then and now that they could not fit
+    /// in a [`time::Duration`].
+    #[error("weekdays out of range")]
+    WeekdaysRange,
+    /// The computer may be experiencing a space-time paradox, because it is
+    /// claiming to be in a local time zone with an offset that is, as far as
+    /// our best scientists are aware, is impossible to experience on Earth.
+    #[error(transparent)]
+    WhenEvenIsHere(#[from] time::error::IndeterminateOffset),
 }
 
 /// A time builder.
@@ -216,23 +210,23 @@ struct Relatime {
     s: i64,
     /// Difference in microseconds.
     us: i64,
-    /// If specified, relative to the given weekday.
-    weekday: Option<Weekdays>,
-    /// The weekday behaviour, if a weekday is specified.
-    weekday_behavior: WeekdayBehavior,
     /// If specified, relative to the first or last day of another unit of time.
     first_last_day_of: Option<Keyword>,
     /// If specified, relative to a month.
     special: Option<Special>,
+    /// If specified, relative to the given weekday.
+    weekday: Option<Weekdays>,
+    /// The weekday behaviour, if a weekday is specified.
+    weekday_behavior: WeekdayBehavior,
 }
 
 /// Specifier for a date relative to a month.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Special {
-    /// The first day of the week.
-    NthDayOfWeekInMonth,
     /// The last day of the week.
     LastDayOfWeekInMonth,
+    /// The first day of the week.
+    NthDayOfWeekInMonth,
     /// A number of weekdays.
     WeekdayCount(i64),
 }
@@ -278,10 +272,10 @@ enum WeekdayBehavior {
 /// Specifier for a date on a weekday.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Weekdays {
-    /// The next given weekday on or after the absolute time part.
-    Weekday(Weekday),
     /// The last given weekday before the absolute time part.
     Ago(Weekday),
     /// Any weekday on or after the absolute time part.
     All,
+    /// The next given weekday on or after the absolute time part.
+    Weekday(Weekday),
 }

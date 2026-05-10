@@ -38,11 +38,11 @@ impl<'config> MockDatabase<'config> {
         self.articles.insert(
             title.into(),
             Arc::new(Article {
-                id,
-                title: title.into(),
                 body: body.into(),
+                id,
                 model: "wikitext".into(),
                 redirect: None,
+                title: title.into(),
             }),
         );
     }

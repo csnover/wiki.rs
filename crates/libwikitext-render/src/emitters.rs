@@ -324,6 +324,37 @@ impl GrafEmitter {
         self.in_list -= 1;
     }
 
+    /// Marks the end of a p-wrapper.
+    fn end_wrap(&mut self, end: usize) {
+        let start = if self.level == 0 {
+            self.line_start
+        } else if let Some(root) = self.blockquote_roots.last()
+            && root.level == self.level
+        {
+            root.start.max(self.line_start)
+        } else {
+            // Non-phrasing element in some intermediate root which is not the
+            // document root nor the current blockquote root
+            return;
+        };
+
+        if let Some(last) = self.wrap_points.last_mut() {
+            if last.start == end {
+                // Two non-phrasing elements were directly adjacent
+                self.wrap_points.pop();
+            } else {
+                debug_assert!(last.end.is_none());
+                last.end.get_or_insert(end);
+            }
+        } else if start != end {
+            // Non-phrasing element, not at the start of the root
+            self.wrap_points.push(GrafWrapPoint {
+                start,
+                end: Some(end),
+            });
+        }
+    }
+
     /// Finishes processing the document.
     #[inline]
     pub(super) fn finish(mut self, out: &mut String) {
@@ -364,37 +395,6 @@ impl GrafEmitter {
         self.close(out, None);
         self.pending = GrafPendingState::None;
         self.in_list += 1;
-    }
-
-    /// Marks the end of a p-wrapper.
-    fn end_wrap(&mut self, end: usize) {
-        let start = if self.level == 0 {
-            self.line_start
-        } else if let Some(root) = self.blockquote_roots.last()
-            && root.level == self.level
-        {
-            root.start.max(self.line_start)
-        } else {
-            // Non-phrasing element in some intermediate root which is not the
-            // document root nor the current blockquote root
-            return;
-        };
-
-        if let Some(last) = self.wrap_points.last_mut() {
-            if last.start == end {
-                // Two non-phrasing elements were directly adjacent
-                self.wrap_points.pop();
-            } else {
-                debug_assert!(last.end.is_none());
-                last.end.get_or_insert(end);
-            }
-        } else if start != end {
-            // Non-phrasing element, not at the start of the root
-            self.wrap_points.push(GrafWrapPoint {
-                start,
-                end: Some(end),
-            });
-        }
     }
 
     /// Marks the start of a possible p-wrapper.
@@ -546,24 +546,6 @@ impl ListEmitter {
 /// A list kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ListKind {
-    /// Ordered list.
-    ///
-    /// ```wikitext
-    /// # Ordered list
-    /// ```
-    Ordered,
-    /// Unordered list.
-    ///
-    /// ```wikitext
-    /// * Unordered list
-    /// ```
-    Unordered,
-    /// Definition list term.
-    ///
-    /// ```wikitext
-    /// ; Definition term
-    /// ```
-    Term,
     /// Definition list detail.
     ///
     /// ```wikitext
@@ -573,6 +555,24 @@ pub(super) enum ListKind {
     /// ^^^^^^^^^^^^^^^^^^^
     /// ```
     Detail,
+    /// Ordered list.
+    ///
+    /// ```wikitext
+    /// # Ordered list
+    /// ```
+    Ordered,
+    /// Definition list term.
+    ///
+    /// ```wikitext
+    /// ; Definition term
+    /// ```
+    Term,
+    /// Unordered list.
+    ///
+    /// ```wikitext
+    /// * Unordered list
+    /// ```
+    Unordered,
 }
 
 impl ListKind {
@@ -684,10 +684,10 @@ pub(super) struct OutlineEmitter {
 /// An anchor ID.
 #[derive(Debug)]
 enum OutlineAnchor {
-    /// Generate an ID from the given text.
-    Implicit(String),
     /// Use an existing ID.
     Explicit(core::ops::Range<usize>),
+    /// Generate an ID from the given text.
+    Implicit(String),
 }
 
 impl Default for OutlineAnchor {
@@ -741,6 +741,27 @@ impl OutlineEmitter {
         Ok(())
     }
 
+    /// Finalises an entry, emitting it to the outline.
+    fn finish_entry(self, outline: &mut Outline, out: &mut String, level: HeadingLevel) {
+        let (range, id) = match self.id {
+            OutlineAnchor::Implicit(text) => (None, anchor_encode(&text)),
+            OutlineAnchor::Explicit(range) => (Some(range.clone()), out[range].to_string()),
+        };
+        let insert_id = if let Some(id) = outline.push(level, self.html, id.clone()) {
+            if let Some(range) = range {
+                out.replace_range(range, id);
+                None
+            } else {
+                Some(id)
+            }
+        } else {
+            range.is_none().then_some(id.as_str())
+        };
+        if let Some(id) = insert_id {
+            out.insert_str(self.attributes_pos, &format!(r#" id="{id}""#));
+        }
+    }
+
     /// Updates the outline emitter state for the given start tag.
     pub fn start_tag(&mut self, name: &str, attributes_pos: usize) -> fmt::Result {
         if let Ok(level) = name.parse() {
@@ -769,27 +790,6 @@ impl OutlineEmitter {
             *id += text;
         }
         self.html += html;
-    }
-
-    /// Finalises an entry, emitting it to the outline.
-    fn finish_entry(self, outline: &mut Outline, out: &mut String, level: HeadingLevel) {
-        let (range, id) = match self.id {
-            OutlineAnchor::Implicit(text) => (None, anchor_encode(&text)),
-            OutlineAnchor::Explicit(range) => (Some(range.clone()), out[range].to_string()),
-        };
-        let insert_id = if let Some(id) = outline.push(level, self.html, id.clone()) {
-            if let Some(range) = range {
-                out.replace_range(range, id);
-                None
-            } else {
-                Some(id)
-            }
-        } else {
-            range.is_none().then_some(id.as_str())
-        };
-        if let Some(id) = insert_id {
-            out.insert_str(self.attributes_pos, &format!(r#" id="{id}""#));
-        }
     }
 }
 

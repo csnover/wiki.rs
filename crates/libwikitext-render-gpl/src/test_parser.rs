@@ -37,10 +37,6 @@ impl<'a> Testfile<'a> {
 
 /// A test file chunk.
 pub(super) enum Chunk<'input> {
-    /// A comment chunk.
-    Comment,
-    /// An ignored line.
-    Line,
     /// An article chunk.
     Article {
         /// The title of the article.
@@ -48,8 +44,14 @@ pub(super) enum Chunk<'input> {
         /// The body of the article.
         text: &'input str,
     },
+    /// A comment chunk.
+    Comment,
     /// A function hook chunk.
     FunctionHooks,
+    /// A hooks chunk.
+    Hooks,
+    /// An ignored line.
+    Line,
     /// A test chunk.
     Test {
         /// The name of the test.
@@ -57,8 +59,6 @@ pub(super) enum Chunk<'input> {
         /// The subsections of the test.
         sections: Sections<'input>,
     },
-    /// A hooks chunk.
-    Hooks,
 }
 
 /// A semi-structured result metadata chunk for a test.
@@ -91,12 +91,12 @@ pub(super) struct Section<'input> {
 
 /// Test section content.
 pub(super) enum SectionText<'input> {
+    /// A key-value section.
+    Kv(HashMap<Cow<'input, str>, Value<'input>>),
     /// A metadata section.
     Meta(Metadata<'input>),
     /// A plain text section.
     Text(Cow<'input, str>),
-    /// A key-value section.
-    Kv(HashMap<Cow<'input, str>, Value<'input>>),
 }
 
 impl SectionText<'_> {
@@ -127,16 +127,16 @@ impl SectionText<'_> {
 
 /// A table of contents entry.
 pub(super) struct Toc<'input> {
-    /// The expected HTML heading tag.
-    pub tag: &'input str,
+    // pub anchor: &'input str,
     // pub index: &'input str,
     // pub level: u32,
-    // pub number: &'input str,
-    // pub title: Option<&'input str>,
-    // pub offset: Option<u32>,
-    // pub anchor: &'input str,
     /// The expected HTML contents of the entry.
     pub line: &'input str,
+    // pub number: &'input str,
+    // pub offset: Option<u32>,
+    /// The expected HTML heading tag.
+    pub tag: &'input str,
+    // pub title: Option<&'input str>,
 }
 
 peg::parser! {grammar testfile() for str {
@@ -306,7 +306,7 @@ peg::parser! {grammar testfile() for str {
     " off:" _offset:(n:number() { Some(n) } / "NULL" { None })
     " anchor/linkAnchor:" _anchor:$([^' ']*)
     " line:" line:rest_of_line()
-  { Toc { tag, line } }
+  { Toc { line, tag } }
 
   rule metadata_title() -> &'input str
   = !("flags=" / "Sections:" / "!!")

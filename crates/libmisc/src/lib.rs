@@ -1,9 +1,9 @@
 //! Simple things which are useful.
 
+pub mod svg;
+
 use core::borrow::Borrow as _;
 use std::borrow::Cow;
-
-pub mod svg;
 
 // SPDX-SnippetBegin
 // SPDX-License-Identifier: CC-BY-SA-4.0

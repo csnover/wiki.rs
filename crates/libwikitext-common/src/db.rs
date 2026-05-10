@@ -12,21 +12,21 @@ use time::UtcDateTime;
 /// A single MediaWiki article.
 #[derive(Debug, Clone)]
 pub struct Article {
-    /// The article ID. (This is *not* the revision ID.)
-    pub id: u64,
-    /// The title of the article. This may contain a namespace name.
-    pub title: String,
     /// The content of the article.
     ///
     /// This is arbitrary text content which must be interpreted according to
     /// the article’s [data model](Self::model).
     pub body: String,
+    /// The article ID. (This is *not* the revision ID.)
+    pub id: u64,
     /// The data model of the article. This is usually "wikitext", but can be
     /// "json" for JSON data, "Scribunto" for Lua modules, etc.
     pub model: String,
     /// If this article is a redirection to another article, the title of the
     /// destination article.
     pub redirect: Option<String>,
+    /// The title of the article. This may contain a namespace name.
+    pub title: String,
 }
 
 impl HeapUsageCalculator for Article {
@@ -42,13 +42,13 @@ impl HeapUsageCalculator for Article {
 /// A common database error.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Article was not found.
-    #[error("requested article not found")]
-    NotFound,
-
     /// Some other error occurred.
     #[error(transparent)]
     Backend(Box<dyn core::error::Error + Send + Sync + 'static>),
+
+    /// Article was not found.
+    #[error("requested article not found")]
+    NotFound,
 }
 
 /// A trait for implementing database backends.

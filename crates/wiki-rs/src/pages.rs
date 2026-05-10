@@ -30,30 +30,30 @@ pub(crate) enum Error {
     /// An article database error.
     #[error(transparent)]
     Database(#[from] libwikitext_common::db::Error),
+    /// A source code viewer syntax string formatting error.
+    #[error(transparent)]
+    Fmt(#[from] core::fmt::Error),
+    /// An renderer thread pool management error.
+    #[error(transparent)]
+    Pool(#[from] r2d2::Error),
+    /// A renderer thread message receipt error.
+    #[error(transparent)]
+    RenderRx(#[from] mpsc::RecvError),
+    /// A renderer thread message transmission error.
+    #[error(transparent)]
+    RenderTx(#[from] mpsc::SendError<renderer::In>),
     /// A Wikitext article renderer error.
     #[error(transparent)]
     Renderer(#[from] RenderError),
-    /// A templating engine error.
-    #[error(transparent)]
-    Template(#[from] sailfish::RenderError),
     /// A source code viewer syntax highlighter error.
     #[error(transparent)]
     Source(#[from] syntect::Error),
     /// A CSS compiler error.
     #[error(transparent)]
     Style(#[from] barely_css::Error),
-    /// A source code viewer syntax string formatting error.
+    /// A templating engine error.
     #[error(transparent)]
-    Fmt(#[from] core::fmt::Error),
-    /// A renderer thread message transmission error.
-    #[error(transparent)]
-    RenderTx(#[from] mpsc::SendError<renderer::In>),
-    /// A renderer thread message receipt error.
-    #[error(transparent)]
-    RenderRx(#[from] mpsc::RecvError),
-    /// An renderer thread pool management error.
-    #[error(transparent)]
-    Pool(#[from] r2d2::Error),
+    Template(#[from] sailfish::RenderError),
     /// A non-utf-8 header could not be converted to a string.
     #[error(transparent)]
     ToStr(#[from] axum::http::header::ToStrError),
@@ -84,10 +84,10 @@ impl IntoResponse for Error {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ArticleAction {
-    /// View.
-    View,
     /// Render. Treated the same as [`View`](ArticleAction::View).
     Tree,
+    /// View.
+    View,
 }
 
 /// Query options for `/article`.
@@ -234,12 +234,12 @@ pub(crate) async fn external(
     struct ExternalLink<'a> {
         /// The base path for URLs.
         base_path: &'a str,
-        /// The destination URL.
-        target: String,
         /// The URL of the referring page, spelt properly to spite RFC 2616.
         referrer: Option<&'a str>,
         /// The name of the wiki.
         site: &'a str,
+        /// The destination URL.
+        target: String,
     }
 
     if let Some(query) = query {
@@ -254,9 +254,9 @@ pub(crate) async fn external(
 
     ExternalLink {
         base_path: state.base_uri.path(),
-        target,
         referrer,
         site: state.database.name(),
+        target,
     }
     .render_once()
     .map(html_result)
@@ -360,12 +360,12 @@ pub(crate) async fn index_page(State(state): State<AppState>) -> Result<impl Int
 /// Query options for `/search`.
 #[derive(serde::Deserialize)]
 pub(crate) struct SearchQuery {
-    /// The search query. This is treated as a regular expression string.
-    q: String,
     /// The current page of search results to view.
     page: Option<NonZeroUsize>,
     /// The number of results per page.
     per_page: Option<NonZeroUsize>,
+    /// The search query. This is treated as a regular expression string.
+    q: String,
 }
 
 /// The search results route handler.
@@ -382,20 +382,20 @@ pub(crate) async fn search(
     struct SearchResult<'a> {
         /// The base path for URLs.
         base_path: &'a str,
+        /// Current page number.
+        page: usize,
+        /// Total number of result pages.
+        page_count: usize,
+        /// Number of results per page.
+        per_page: usize,
         /// The query string.
         query: &'a str,
         /// The search results.
         results: &'a [&'a str],
-        /// Total number of results.
-        total: usize,
-        /// Current page number.
-        page: usize,
-        /// Number of results per page.
-        per_page: usize,
-        /// Total number of result pages.
-        page_count: usize,
         /// The name of the wiki.
         site: &'a str,
+        /// Total number of results.
+        total: usize,
     }
 
     let (plain, query) = if let Ok(re) = regex::RegexBuilder::new(&query)
@@ -467,13 +467,13 @@ pub(crate) async fn search(
 
     SearchResult {
         base_path: state.base_uri.path(),
+        page,
+        page_count,
+        per_page,
         query: query.as_str(),
         results: &results[range],
-        total: results.len(),
-        page,
-        per_page,
-        page_count,
         site: state.database.name(),
+        total: results.len(),
     }
     .render_once()
     .map(html_result)
@@ -508,10 +508,10 @@ pub(crate) enum SourceMode {
 /// Query options for `/source`.
 #[derive(serde::Deserialize)]
 pub(crate) struct SourceQuery {
-    /// The view mode.
-    mode: Option<SourceMode>,
     /// When in tree view, whether to process the Wikitext in include mode.
     include: Option<String>,
+    /// The view mode.
+    mode: Option<SourceMode>,
 }
 
 /// The source code viewer route handler.

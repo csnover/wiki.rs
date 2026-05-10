@@ -81,6 +81,10 @@ fn test_scripts() {
 
 struct MockFrame;
 impl HostFrame for MockFrame {
+    fn child_frame_exists(&self, _: &str) -> bool {
+        unimplemented!()
+    }
+
     fn expand_all_cached<'gc>(
         &self,
         _: Context<'gc>,
@@ -98,14 +102,6 @@ impl HostFrame for MockFrame {
         unimplemented!()
     }
 
-    fn child_frame_exists(&self, _: &str) -> bool {
-        unimplemented!()
-    }
-
-    fn name<'gc>(&self, _: &str) -> Result<Title, VmError<'gc>> {
-        unimplemented!()
-    }
-
     fn insert<'gc>(
         &self,
         _: Context<'gc>,
@@ -113,6 +109,10 @@ impl HostFrame for MockFrame {
         _: Title,
         _: Table<'gc>,
     ) -> Result<VmString<'gc>, VmError<'gc>> {
+        unimplemented!()
+    }
+
+    fn name<'gc>(&self, _: &str) -> Result<Title, VmError<'gc>> {
         unimplemented!()
     }
 }

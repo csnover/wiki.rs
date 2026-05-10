@@ -15,11 +15,11 @@ use std::borrow::Cow;
 fn test_parse(text: &str) -> TestResult<'_> {
     let result = super::super::parse_date::parse(text);
     let mut result = TestResult {
-        state: TestWrapper {
-            inner: result.builder,
-            dst: false,
-        },
         errors: result.errors,
+        state: TestWrapper {
+            dst: false,
+            inner: result.builder,
+        },
     };
     if let Some(tz) = &result.state.offset {
         result.state.dst = tz.is_dst();
@@ -28,13 +28,13 @@ fn test_parse(text: &str) -> TestResult<'_> {
 }
 
 struct TestResult<'a> {
-    state: TestWrapper<'a>,
     errors: Vec<PegError>,
+    state: TestWrapper<'a>,
 }
 
 struct TestWrapper<'a> {
-    inner: DateTimeBuilder<'a>,
     dst: bool,
+    inner: DateTimeBuilder<'a>,
 }
 
 impl<'a> core::ops::Deref for TestWrapper<'a> {

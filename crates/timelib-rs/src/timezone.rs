@@ -5,13 +5,13 @@ use std::borrow::Cow;
 /// A time zone specifier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Timezone<'a> {
-    /// A raw time zone offset in seconds. Positive values are to the east of
-    /// the meridian.
-    Offset(i32),
     /// A shorthand time zone alias, e.g. CEST, UTC, A.
     Alias(Cow<'a, str>),
     /// A full IANA time zone name.
     Named(&'static str),
+    /// A raw time zone offset in seconds. Positive values are to the east of
+    /// the meridian.
+    Offset(i32),
 }
 
 impl Timezone<'_> {

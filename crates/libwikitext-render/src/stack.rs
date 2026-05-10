@@ -26,21 +26,25 @@ use std::{borrow::Cow, collections::HashMap, rc::Rc};
 // or the parser Output, which would make it clearer what things are associated
 // with what?
 pub(crate) struct StackFrame<'a> {
+    /// The arguments passed in from the parent.
+    pub arguments: KeyCacheKvs<'a, 'a>,
+    /// Named child frames, used by Scribunto modules to commit crimes.
+    pub children: RefCell<HashMap<String, LuaFrame>>,
     /// The title of the article (template or module) rendered by this frame.
     pub name: Title,
+    /// The parent stack frame.
+    pub parent: Option<Pin<&'a StackFrame<'a>>>,
     /// The source code of the frame.
     // TODO: This should not be a FileMap, FileMap is only needed when there is
     // an error.
     pub source: FileMap<'a>,
-    /// The arguments passed in from the parent.
-    pub arguments: KeyCacheKvs<'a, 'a>,
-    /// The parent stack frame.
-    pub parent: Option<Pin<&'a StackFrame<'a>>>,
-    /// Named child frames, used by Scribunto modules to commit crimes.
-    pub children: RefCell<HashMap<String, LuaFrame>>,
 }
 
 impl HostFrame for Pin<&StackFrame<'_>> {
+    fn child_frame_exists(&self, name: &str) -> bool {
+        self.children.borrow().contains_key(name)
+    }
+
     fn expand_all_cached<'gc>(
         &self,
         ctx: Context<'gc>,
@@ -63,14 +67,6 @@ impl HostFrame for Pin<&StackFrame<'_>> {
         })
     }
 
-    fn child_frame_exists(&self, name: &str) -> bool {
-        self.children.borrow().contains_key(name)
-    }
-
-    fn name<'gc>(&self, frame_id: &str) -> Result<Title, VmError<'gc>> {
-        with_sp(frame_id, self, |sp| Ok(sp.name.clone()))
-    }
-
     fn insert<'gc>(
         &self,
         ctx: Context<'gc>,
@@ -87,9 +83,13 @@ impl HostFrame for Pin<&StackFrame<'_>> {
             let new_frame_id = format!("frame{}", children.len() + 2);
             let interned = ctx.intern(new_frame_id.as_bytes());
             let arguments = super::lua::args_from_table(ctx, args)?;
-            children.insert(new_frame_id, LuaFrame { title, arguments });
+            children.insert(new_frame_id, LuaFrame { arguments, title });
             Ok(interned)
         })
+    }
+
+    fn name<'gc>(&self, frame_id: &str) -> Result<Title, VmError<'gc>> {
+        with_sp(frame_id, self, |sp| Ok(sp.name.clone()))
     }
 }
 
@@ -97,11 +97,11 @@ impl<'a> StackFrame<'a> {
     /// Creates a new stack frame for the given title.
     pub(super) fn new(name: Title, source: FileMap<'a>) -> Self {
         Self {
-            name,
-            source,
             arguments: <_>::default(),
-            parent: None,
             children: <_>::default(),
+            name,
+            parent: None,
+            source,
         }
     }
 
@@ -122,11 +122,11 @@ impl<'a> StackFrame<'a> {
         check_recursion(self, &name)?;
 
         Ok(Self {
-            name,
-            source,
             arguments: KeyCacheKvs::new(arguments),
-            parent: Some(pin!(self)),
             children: <_>::default(),
+            name,
+            parent: Some(pin!(self)),
+            source,
         })
     }
 
@@ -135,11 +135,11 @@ impl<'a> StackFrame<'a> {
         let name =
             Title::from_parts(self.name.namespace(), self.name.key(), Some(&source), None).unwrap();
         Self {
-            name,
-            source,
             arguments: self.arguments.clone(),
-            parent: self.parent,
             children: <_>::default(),
+            name,
+            parent: self.parent,
+            source,
         }
     }
 
@@ -225,8 +225,8 @@ impl<'a> StackFrame<'a> {
     pub fn keys(&self) -> KeyIter<'_> {
         KeyIter {
             arguments: &self.arguments,
-            sp: self.parent.as_deref(),
             index: 0,
+            sp: self.parent.as_deref(),
         }
     }
 
@@ -248,24 +248,24 @@ impl<'a> StackFrame<'a> {
 /// state is not needed to actually get the value because nothing needs to be
 /// rendered.
 pub(crate) enum CachedValue<'a> {
+    /// There is a cached value, and here it is!
+    Cached(Ref<'a, str>),
     /// There is no value matching the key.
     Nil,
     /// There may be a value matching the key.
     Unknown,
-    /// There is a cached value, and here it is!
-    Cached(Ref<'a, str>),
 }
 
 /// Iterator over the argument keys in a [`KeyCacheKvs`].
 pub(crate) struct KeyIter<'a> {
     /// The arguments to iterate.
     arguments: &'a KeyCacheKvs<'a, 'a>,
+    /// The next argument index.
+    index: usize,
     /// The parent stack frame.
     ///
     /// This is required to expand any templates in key names.
     sp: Option<&'a StackFrame<'a>>,
-    /// The next argument index.
-    index: usize,
 }
 
 impl KeyIter<'_> {
@@ -469,6 +469,16 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
         Ok(None)
     }
 
+    /// Returns true if there are no arguments.
+    pub fn is_empty(&self) -> bool {
+        self.raw.is_empty()
+    }
+
+    /// Returns an iterator over the raw arguments.
+    pub fn iter(&self) -> impl Iterator<Item = &Kv<'_>> {
+        self.raw.iter()
+    }
+
     /// Returns the trimmed key for the given index.
     pub fn key(
         &self,
@@ -500,16 +510,6 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
             .indices
             .iter()
             .find_map(|(k, i)| (*i == index).then(|| k.clone())))
-    }
-
-    /// Returns true if there are no arguments.
-    pub fn is_empty(&self) -> bool {
-        self.raw.is_empty()
-    }
-
-    /// Returns an iterator over the raw arguments.
-    pub fn iter(&self) -> impl Iterator<Item = &Kv<'_>> {
-        self.raw.iter()
     }
 
     /// Returns the number of arguments.
@@ -581,10 +581,10 @@ where
 /// A child frame created by a Lua script.
 #[derive(Debug)]
 pub struct LuaFrame {
-    /// The title for the frame.
-    pub title: Title,
     /// The arguments for the frame.
     pub arguments: Vec<Kv<'static>>,
+    /// The title for the frame.
+    pub title: Title,
 }
 
 /// A helper for handling calls to function-like items (parser functions and
@@ -639,9 +639,8 @@ impl IndexedArgs<'_, '_, '_> {
 }
 
 impl<'args, 'call> IntoIterator for &IndexedArgs<'args, 'call, '_> {
-    type Item = <&'call [Kv<'args>] as IntoIterator>::Item;
-
     type IntoIter = <&'call [Kv<'args>] as IntoIterator>::IntoIter;
+    type Item = <&'call [Kv<'args>] as IntoIterator>::Item;
 
     fn into_iter(self) -> Self::IntoIter {
         self.arguments.raw.iter()

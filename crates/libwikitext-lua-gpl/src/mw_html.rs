@@ -17,8 +17,8 @@ use libwikitext_parse::{MARKER_PREFIX, MARKER_SUFFIX};
 pub(super) struct HtmlLibrary;
 
 impl MwInterface for HtmlLibrary {
-    const NAME: &str = "mw.html";
     const CODE: &[u8] = include_bytes!("./modules/mw.html.lua");
+    const NAME: &str = "mw.html";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         Table::new(&ctx)

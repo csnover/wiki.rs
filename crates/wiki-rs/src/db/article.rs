@@ -49,7 +49,7 @@ impl ArticleDatabase {
             return Err(Error::Format(path.into()));
         }
 
-        let metadata = Self::database_info(path, &data)?;
+        let metadata = database_info(path, &data)?;
 
         Ok(Self { data, metadata })
     }
@@ -64,15 +64,9 @@ impl ArticleDatabase {
         });
 
         match article {
-            Some(article) => Self::parse_article(article),
+            Some(article) => parse_article(article),
             None => Err(Error::NotFound),
         }
-    }
-
-    /// Returns the metadata for this database.
-    #[inline]
-    pub(super) fn metadata(&self) -> &Metadata {
-        &self.metadata
     }
 
     /// Reconstitutes a compressed multistream XML chunk into at the given
@@ -88,112 +82,118 @@ impl ArticleDatabase {
         Ok(String::from_utf8(decoded)?)
     }
 
-    /// Parses basic information about the database from the `<siteinfo>` in the
-    /// first chunk.
-    fn database_info(path: &Path, data: &[u8]) -> Result<Metadata> {
-        // In case someone tries to load a non-multistream database, the number
-        // of bytes read is limited to some amount well above the expected size
-        // (the true expected data size is only ~2KiB).
-        const OOPS_PROTECTION: usize = 128 * 1024;
+    /// Returns the metadata for this database.
+    #[inline]
+    pub(super) fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+}
 
-        let mut decoded = BufReader::new(DecoderReader::new(data))
-            .bytes()
-            .take(OOPS_PROTECTION)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Error::Decompression)?;
+/// Parses basic information about the database from the `<siteinfo>` in the
+/// first chunk.
+fn database_info(path: &Path, data: &[u8]) -> Result<Metadata> {
+    // In case someone tries to load a non-multistream database, the number
+    // of bytes read is limited to some amount well above the expected size
+    // (the true expected data size is only ~2KiB).
+    const OOPS_PROTECTION: usize = 128 * 1024;
 
-        if decoded.len() == OOPS_PROTECTION {
-            return Err(Error::NotMultistream);
-        }
+    let mut decoded = BufReader::new(DecoderReader::new(data))
+        .bytes()
+        .take(OOPS_PROTECTION)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Error::Decompression)?;
 
-        decoded.extend(b"</mediawiki>");
+    if decoded.len() == OOPS_PROTECTION {
+        return Err(Error::NotMultistream);
+    }
 
-        let root = String::from_utf8(decoded)?
-            .parse::<Element>()
-            .map_err(|_| Error::Siteinfo)?;
-        let root_ns = root.ns();
+    decoded.extend(b"</mediawiki>");
 
-        let siteinfo = try_get_child_ns(&root, "siteinfo", &root_ns)?;
+    let root = String::from_utf8(decoded)?
+        .parse::<Element>()
+        .map_err(|_| Error::Siteinfo)?;
+    let root_ns = root.ns();
 
-        let site_name = try_get_child_ns(siteinfo, "sitename", &root_ns)?.text();
-        let namespaces = try_get_child_ns(siteinfo, "namespaces", &root_ns)?;
-        let namespaces = namespaces
-            .children()
-            .filter(|&ns| ns.name() == "namespace")
-            .map(|ns| {
-                let key = ns
-                    .attr("key")
-                    .ok_or(Error::XmlProperty("key".into()))?
-                    .parse::<i32>()?;
-                let case = ns.attr("case").ok_or(Error::XmlProperty("case".into()))?;
-                let case = match case {
-                    "first-letter" => NamespaceCase::FirstLetter,
-                    "case-sensitive" => NamespaceCase::CaseSensitive,
-                    _ => return Err(Error::NamespaceCase(case.into())),
-                };
-                let name = ns.text();
+    let siteinfo = try_get_child_ns(&root, "siteinfo", &root_ns)?;
 
-                Ok((key, DatabaseNamespace { case, name }))
-            })
-            .collect::<Result<_, _>>()?;
+    let site_name = try_get_child_ns(siteinfo, "sitename", &root_ns)?.text();
+    let namespaces = try_get_child_ns(siteinfo, "namespaces", &root_ns)?;
+    let namespaces = namespaces
+        .children()
+        .filter(|&ns| ns.name() == "namespace")
+        .map(|ns| {
+            let key = ns
+                .attr("key")
+                .ok_or(Error::XmlProperty("key".into()))?
+                .parse::<i32>()?;
+            let case = ns.attr("case").ok_or(Error::XmlProperty("case".into()))?;
+            let case = match case {
+                "first-letter" => NamespaceCase::FirstLetter,
+                "case-sensitive" => NamespaceCase::CaseSensitive,
+                _ => return Err(Error::NamespaceCase(case.into())),
+            };
+            let name = ns.text();
 
-        // As of the time this code was written, the database does not contain
-        // metadata that describes the date when the database was dumped, and as
-        // far as the bz2 format is documented, it does not document storing any
-        // metadata like this, and the bzip2 code appears to just copy the stat
-        // infile to outfile, which does not really persist over the internet.
-        // So the filename and stat data are the only things that are available
-        // without scanning the wholeeee database to find the latest article
-        // date. The date in the file name, if one exists, will be the most
-        // likely accurate thing.
-        let creation_date = path.to_str().and_then(|mut path| {
-            while let Some(start) = path.find(|c: char| c.is_ascii_digit()) {
-                if let Some(maybe_date) = path.get(start..start + 8)
-                    && let Ok(date) = time::Date::parse(maybe_date, &Iso8601::PARSING)
-                {
-                    return Some(UtcDateTime::new(date, time::Time::MIDNIGHT));
-                }
-                path = &path[start + 1..];
+            Ok((key, DatabaseNamespace { case, name }))
+        })
+        .collect::<Result<_, _>>()?;
+
+    // As of the time this code was written, the database does not contain
+    // metadata that describes the date when the database was dumped, and as
+    // far as the bz2 format is documented, it does not document storing any
+    // metadata like this, and the bzip2 code appears to just copy the stat
+    // infile to outfile, which does not really persist over the internet.
+    // So the filename and stat data are the only things that are available
+    // without scanning the wholeeee database to find the latest article
+    // date. The date in the file name, if one exists, will be the most
+    // likely accurate thing.
+    let creation_date = path.to_str().and_then(|mut path| {
+        while let Some(start) = path.find(|c: char| c.is_ascii_digit()) {
+            if let Some(maybe_date) = path.get(start..start + 8)
+                && let Ok(date) = time::Date::parse(maybe_date, &Iso8601::PARSING)
+            {
+                return Some(UtcDateTime::new(date, time::Time::MIDNIGHT));
             }
-            None
-        });
+            path = &path[start + 1..];
+        }
+        None
+    });
 
-        Ok(Metadata {
-            creation_date,
-            namespaces,
-            site_name,
-        })
-    }
+    Ok(Metadata {
+        creation_date,
+        namespaces,
+        site_name,
+    })
+}
 
-    /// Extracts article data from an XML element.
-    fn parse_article(article: &Element) -> Result<Article> {
-        let id = try_get_child(article, "id")?.text().parse::<u64>()?;
-        let title = try_get_child(article, "title")?.text();
-        let revision = try_get_child(article, "revision")?;
-        let body = try_get_child(revision, "text")?.text();
-        // TODO: This may be needed eventually, so remember it exists
-        // let date = UtcDateTime::parse(
-        //     &try_get_child(revision, "timestamp")?.text(),
-        //     &Iso8601::DEFAULT,
-        // )?;
-        let model = try_get_child(revision, "model")?.text();
-        let redirect = try_get_child(article, "redirect")
-            .ok()
-            .and_then(|r| r.attr("title").map(ToString::to_string));
-        // TODO: This may be needed eventually, so remember it exists
-        // let last_changed_by = revision
-        //     .try_get_child("contributor")?
-        //     .try_get_child("username")?
-        //     .text();
+/// Extracts article data from an XML element.
+fn parse_article(article: &Element) -> Result<Article> {
+    let id = try_get_child(article, "id")?.text().parse::<u64>()?;
+    let title = try_get_child(article, "title")?.text();
+    let revision = try_get_child(article, "revision")?;
+    let body = try_get_child(revision, "text")?.text();
+    // TODO: This may be needed eventually, so remember it exists
+    // let date = UtcDateTime::parse(
+    //     &try_get_child(revision, "timestamp")?.text(),
+    //     &Iso8601::DEFAULT,
+    // )?;
+    let model = try_get_child(revision, "model")?.text();
+    let redirect = try_get_child(article, "redirect")
+        .ok()
+        .and_then(|r| r.attr("title").map(ToString::to_string));
+    // TODO: This may be needed eventually, so remember it exists
+    // let last_changed_by = revision
+    //     .try_get_child("contributor")?
+    //     .try_get_child("username")?
+    //     .text();
 
-        Ok(Article {
-            id,
-            title,
-            body,
-            model,
-            redirect,
-        })
-    }
+    Ok(Article {
+        id,
+        title,
+        body,
+        model,
+        redirect,
+    })
 }
 
 /// Tries to get a child element by name and returns an [`Error`] if it does not

@@ -10,11 +10,6 @@ use std::collections::{BTreeSet, HashMap};
 pub(crate) struct Categories(BTreeSet<String>);
 
 impl Categories {
-    /// Adds a category to the set.
-    pub(super) fn insert(&mut self, value: String) {
-        self.0.insert(value);
-    }
-
     /// Emits the categories as an HTML list of links, consuming this object.
     pub fn finish<W: fmt::Write + ?Sized>(
         self,
@@ -34,6 +29,11 @@ impl Categories {
             f.write_str("</ul>")?;
         }
         Ok(())
+    }
+
+    /// Adds a category to the set.
+    pub(super) fn insert(&mut self, value: String) {
+        self.0.insert(value);
     }
 }
 
@@ -75,15 +75,25 @@ pub struct Outline {
 /// An outline entry.
 #[derive(Debug)]
 pub struct OutlineEntry {
-    /// The level of the entry.
-    pub level: HeadingLevel,
     /// The HTML for the entry.
     pub html: String,
     /// The encoded anchor ID for the entry.
     pub id: String,
+    /// The level of the entry.
+    pub level: HeadingLevel,
 }
 
 impl Outline {
+    /// Returns an iterator over the recorded outline.
+    pub fn iter(&self) -> impl Iterator<Item = &OutlineEntry> {
+        self.entries.iter()
+    }
+
+    /// Returns the number of outline entries.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     /// Pushes a new entry to the outline at the given heading level. If the
     /// given ID conflicted with an existing one, a new unique ID is returned.
     pub(super) fn push(&mut self, level: HeadingLevel, html: String, id: String) -> Option<&str> {
@@ -95,19 +105,9 @@ impl Outline {
             (false, id)
         };
 
-        self.entries.push(OutlineEntry { level, html, id });
+        self.entries.push(OutlineEntry { html, id, level });
 
         conflict.then(|| self.entries.last().unwrap().id.as_str())
-    }
-
-    /// Returns an iterator over the recorded outline.
-    pub fn iter(&self) -> impl Iterator<Item = &OutlineEntry> {
-        self.entries.iter()
-    }
-
-    /// Returns the number of outline entries.
-    pub fn len(&self) -> usize {
-        self.entries.len()
     }
 }
 

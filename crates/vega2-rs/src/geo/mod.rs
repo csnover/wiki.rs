@@ -296,10 +296,10 @@ impl ModifiedStereographicCoefficient {
 /// The draw direction of a line segment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Direction {
-    /// Drawing forward.
-    Forward,
     /// Drawing backward.
     Backward,
+    /// Drawing forward.
+    Forward,
 }
 
 impl Direction {
@@ -663,6 +663,11 @@ impl ProjectionSettings {
         1.0
     }
 
+    /// The default [`Self::Lagrange`] spacing.
+    const fn default_lagrange_spacing() -> f64 {
+        0.5
+    }
+
     /// The default [`Self::Loximuthal`] parallel.
     const fn default_loximuthal_parallel() -> f64 {
         40.0
@@ -671,11 +676,6 @@ impl ProjectionSettings {
     /// The default [`Self::PeirceQuincuncial`] quincuncial.
     const fn default_peirce_quincuncial() -> bool {
         true
-    }
-
-    /// The default [`Self::Lagrange`] spacing.
-    const fn default_lagrange_spacing() -> f64 {
-        0.5
     }
 
     /// The default [`Self::Satellite`] distance.
@@ -801,19 +801,19 @@ impl Projector {
         self.projection.apply(point)
     }
 
+    /// Projects a single geographic `point`, in radians latitude and longitude,
+    /// from the cartographic space into cartesian space, with scaling and
+    /// translation.
+    fn project_resample(&self, point: Vec2) -> Vec2 {
+        self.scale(self.project(point))
+    }
+
     /// Projects a single geographic `point`, in degrees latitude and longitude,
     /// from the cartographic space into cartesian space, with rotation,
     /// scaling, and translation.
     #[inline]
     pub fn projection_degrees(&self, point: Vec2) -> Vec2 {
         self.scale(self.project(self.rotate(point.to_radians())))
-    }
-
-    /// Projects a single geographic `point`, in radians latitude and longitude,
-    /// from the cartographic space into cartesian space, with scaling and
-    /// translation.
-    fn project_resample(&self, point: Vec2) -> Vec2 {
-        self.scale(self.project(point))
     }
 
     /// Rotates the given point according to the projection’s [`Self::rotate`]
@@ -1123,20 +1123,20 @@ impl Listener for &mut dyn Listener {
         (**self).point(point);
     }
 
-    fn line_start(&mut self) {
-        (**self).line_start();
-    }
-
     fn line_end(&mut self) {
         (**self).line_end();
     }
 
-    fn polygon_start(&mut self) {
-        (**self).polygon_start();
+    fn line_start(&mut self) {
+        (**self).line_start();
     }
 
     fn polygon_end(&mut self) {
         (**self).polygon_end();
+    }
+
+    fn polygon_start(&mut self) {
+        (**self).polygon_start();
     }
 
     fn sphere(&mut self) {
@@ -1339,10 +1339,10 @@ impl From<Rotate> for Rotator {
 struct SvgPathOutput<'a, 'b> {
     /// The SVG path.
     out: String,
-    /// The current [`Listener::point`] handler.
-    point: fn(&mut Self, Vec2),
     /// The current [`Listener::line_end`] handler.
     line_end: fn(&mut Self),
+    /// The current [`Listener::point`] handler.
+    point: fn(&mut Self, Vec2),
 }
 
 impl SvgPathOutput<'_, '_> {
@@ -1361,8 +1361,8 @@ impl SvgPathOutput<'_, '_> {
     fn new() -> Self {
         Self {
             out: <_>::default(),
-            point: svg_path_output::point,
             line_end: svg_path_output::line_end,
+            point: svg_path_output::point,
         }
     }
 
@@ -1377,21 +1377,21 @@ impl Listener for SvgPathOutput<'_, '_> {
         (self.point)(self, point);
     }
 
-    fn line_start(&mut self) {
-        self.point = svg_path_output::point_line_start;
-    }
-
     fn line_end(&mut self) {
         (self.line_end)(self);
     }
 
-    fn polygon_start(&mut self) {
-        self.line_end = svg_path_output::line_end_polygon;
+    fn line_start(&mut self) {
+        self.point = svg_path_output::point_line_start;
     }
 
     fn polygon_end(&mut self) {
         self.line_end = svg_path_output::line_end;
         self.point = svg_path_output::point;
+    }
+
+    fn polygon_start(&mut self) {
+        self.line_end = svg_path_output::line_end_polygon;
     }
 
     fn sphere(&mut self) {}
@@ -1525,24 +1525,6 @@ pub(super) mod topojson {
             self.arcs.entry(index).or_insert(i);
         }
 
-        /// Collect all arc indexes for the given line.
-        fn line(&mut self, arcs: &[Value<'_>]) {
-            for index in arcs {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "topojson defines these as i32"
-                )]
-                self.arc(index.to_f64() as i32);
-            }
-        }
-
-        /// Collect all arc indexes for the given polygon.
-        fn polygon(&mut self, arcs: &[Value<'_>]) {
-            for line in arcs {
-                self.line(line.as_array().unwrap());
-            }
-        }
-
         /// Collect all arc indexes for the given geometry object.
         fn geometry(&mut self, o: &Value<'_>) {
             match o.get("type").and_then(Value::as_str).unwrap_or_default() {
@@ -1563,6 +1545,24 @@ pub(super) mod topojson {
                     }
                 }
                 _ => {}
+            }
+        }
+
+        /// Collect all arc indexes for the given line.
+        fn line(&mut self, arcs: &[Value<'_>]) {
+            for index in arcs {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "topojson defines these as i32"
+                )]
+                self.arc(index.to_f64() as i32);
+            }
+        }
+
+        /// Collect all arc indexes for the given polygon.
+        fn polygon(&mut self, arcs: &[Value<'_>]) {
+            for line in arcs {
+                self.line(line.as_array().unwrap());
             }
         }
     }
@@ -2009,54 +2009,6 @@ pub(super) mod topojson {
         use serde_json_borrow::Value;
 
         #[test]
-        fn feature() {
-            const TOPO: &str = r#"{
-                "type": "Topology",
-                "transform": {
-                    "scale": [0.045770440458280465, 0.04600460046004601],
-                    "translate": [251.17068292882684, 20]
-                },
-                "objects": {
-                    "clockwise": { "type": "Polygon", "arcs": [[0]] },
-                    "counterclockwise": { "type": "Polygon", "arcs": [[0]] }
-                },
-                "arcs": [
-                    [[0.0, 9999.0], [0.0, -9999.0], [9999.0, 0.0], [0.0, 9999.0], [-9999.0, 0.0]]
-                ]
-            }"#;
-
-            const GEO: &str = r#"{
-                "type": "Feature",
-                "properties": {},
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [
-                        [
-                            [251.17068292882684, 480.00000000000006],
-                            [251.17068292882684, 20.0],
-                            [708.8293170711733, 20.0],
-                            [708.8293170711733, 480.00000000000006],
-                            [251.17068292882684, 480.00000000000006]
-                        ]
-                    ]
-                }
-            }"#;
-
-            let topo = serde_json::from_str::<Value<'_>>(TOPO).unwrap();
-            let expected = serde_json::from_str::<Value<'_>>(GEO).unwrap();
-
-            let poly = topo
-                .get("objects")
-                .and_then(Value::as_object)
-                .unwrap()
-                .get("clockwise")
-                .unwrap();
-            let actual = super::features(&topo, poly);
-
-            assert_eq!(actual, vec![expected]);
-        }
-
-        #[test]
         fn connected_mesh() {
             const TOPO: &str = r#"{
                 "type": "Topology",
@@ -2124,6 +2076,54 @@ pub(super) mod topojson {
             let actual = super::mesh(&topo, poly);
 
             assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn feature() {
+            const TOPO: &str = r#"{
+                "type": "Topology",
+                "transform": {
+                    "scale": [0.045770440458280465, 0.04600460046004601],
+                    "translate": [251.17068292882684, 20]
+                },
+                "objects": {
+                    "clockwise": { "type": "Polygon", "arcs": [[0]] },
+                    "counterclockwise": { "type": "Polygon", "arcs": [[0]] }
+                },
+                "arcs": [
+                    [[0.0, 9999.0], [0.0, -9999.0], [9999.0, 0.0], [0.0, 9999.0], [-9999.0, 0.0]]
+                ]
+            }"#;
+
+            const GEO: &str = r#"{
+                "type": "Feature",
+                "properties": {},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [251.17068292882684, 480.00000000000006],
+                            [251.17068292882684, 20.0],
+                            [708.8293170711733, 20.0],
+                            [708.8293170711733, 480.00000000000006],
+                            [251.17068292882684, 480.00000000000006]
+                        ]
+                    ]
+                }
+            }"#;
+
+            let topo = serde_json::from_str::<Value<'_>>(TOPO).unwrap();
+            let expected = serde_json::from_str::<Value<'_>>(GEO).unwrap();
+
+            let poly = topo
+                .get("objects")
+                .and_then(Value::as_object)
+                .unwrap()
+                .get("clockwise")
+                .unwrap();
+            let actual = super::features(&topo, poly);
+
+            assert_eq!(actual, vec![expected]);
         }
     }
 }

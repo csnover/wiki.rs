@@ -48,6 +48,12 @@ pub(super) struct Spec<'s> {
 }
 
 impl<'s> Spec<'s> {
+    /// The default value for an unspecified data rectangle dimension, in
+    /// pixels.
+    const fn default_dim() -> f64 {
+        500.0
+    }
+
     /// Gets the data set with the given name.
     pub fn data(&self, name: &str) -> Option<&Data<'s>> {
         self.data.iter().find(|data| data.name == name)
@@ -71,12 +77,6 @@ impl<'s> Spec<'s> {
     /// Gets the width of the data rectangle, in pixels.
     pub fn width(&self) -> f64 {
         self.width
-    }
-
-    /// The default value for an unspecified data rectangle dimension, in
-    /// pixels.
-    const fn default_dim() -> f64 {
-        500.0
     }
 }
 

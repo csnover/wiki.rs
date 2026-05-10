@@ -20,39 +20,40 @@ use std::borrow::Cow;
 /// An expression evaluation error.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
-    /// Someone tried to do too much arithmetic at once.
-    #[error("stack exhausted at {0}")]
-    StackExhausted(usize),
-    /// Encountered an unknown token.
-    #[error("unknown token '{1}' at {0}")]
-    UnknownToken(usize, Cow<'static, str>),
-    /// Encountered a number where it shouldn’t’ve been.
-    #[error("unexpected number {1} at {0}")]
-    UnexpectedNumber(usize, f64),
-    /// Encountered an operator where it shouldn’t’ve been.
-    #[error("unexpected operator '{1}' at {0}")]
-    UnexpectedOperator(usize, Cow<'static, str>),
-    /// Encountered a close bracket where it shouldn’t’ve been.
-    #[error("unexpected closing bracket at {0}")]
-    UnexpectedCloseBracket(usize),
+    /// Someone tried to do that thing you’re not supposed to do with numbers.
+    #[error("division by zero in operator '{0}'")]
+    DivisionByZero(Cow<'static, str>),
+    /// Tried to use a number with a trigonometric operation that is not allowed
+    /// by the gods of mathematics.
+    #[error("invalid argument to operator '{0}'")]
+    InvalidArgument(Cow<'static, str>),
     /// Never encountered a close bracket where it should’ve been.
     #[error("unclosed bracket")]
     MissingCloseBracket,
     /// A required operand was missing.
     #[error("missing operand for '{0}'")]
     MissingOperand(Cow<'static, str>),
-    /// Someone tried to do that thing you’re not supposed to do with numbers.
-    #[error("division by zero in operator '{0}'")]
-    DivisionByZero(Cow<'static, str>),
-    /// Encountered a number where it shouldn’t’ve been.
-    #[error("invalid argument to operator '{0}'")]
-    InvalidArgument(Cow<'static, str>),
     /// Someone tried to invent new maths, and it did not work.
     #[error("result of operator '{0}' is not a number")]
     NotANumber(Cow<'static, str>),
     /// A number that should have been a float turned out to not be a float.
     #[error("could not parse number at {0}: {1}")]
     ParseFloat(usize, ParseFloatError),
+    /// Someone tried to do too much arithmetic at once.
+    #[error("stack exhausted at {0}")]
+    StackExhausted(usize),
+    /// Encountered a close bracket where it shouldn’t’ve been.
+    #[error("unexpected closing bracket at {0}")]
+    UnexpectedCloseBracket(usize),
+    /// Encountered a number where it shouldn’t’ve been.
+    #[error("unexpected number {1} at {0}")]
+    UnexpectedNumber(usize, f64),
+    /// Encountered an operator where it shouldn’t’ve been.
+    #[error("unexpected operator '{1}' at {0}")]
+    UnexpectedOperator(usize, Cow<'static, str>),
+    /// Encountered an unknown token.
+    #[error("unknown token '{1}' at {0}")]
+    UnknownToken(usize, Cow<'static, str>),
 }
 
 /// Evaluates a mathematical expression.
@@ -292,41 +293,41 @@ const EXPR_NUMBER_CLASS: &str = "0123456789.";
 )]
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Token {
-    Negative,
-    Positive,
-    Plus,
-    Minus,
-    Times,
-    Divide,
-    Mod,
-    Open,
-    And,
-    Or,
-    Not,
-    Equality,
-    Less,
-    Greater,
-    LessEq,
-    GreaterEq,
-    NotEq,
-    Round,
-    Exponent,
-    Sine,
-    Cosine,
-    Tangent,
-    ArcSine,
-    ArcCos,
-    ArcTan,
-    Exp,
-    Ln,
     Abs,
-    Floor,
-    Trunc,
+    And,
+    ArcCos,
+    ArcSine,
+    ArcTan,
     Ceil,
-    Pow,
-    Pi,
+    Cosine,
+    Divide,
+    Equality,
+    Exp,
+    Exponent,
     FMod,
+    Floor,
+    Greater,
+    GreaterEq,
+    Less,
+    LessEq,
+    Ln,
+    Minus,
+    Mod,
+    Negative,
+    Not,
+    NotEq,
+    Open,
+    Or,
+    Pi,
+    Plus,
+    Positive,
+    Pow,
+    Round,
+    Sine,
     Sqrt,
+    Tangent,
+    Times,
+    Trunc,
 }
 
 /// Maximum allowed number of in-flight operators or operands.

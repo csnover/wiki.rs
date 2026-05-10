@@ -1,13 +1,13 @@
 //! Wikitext parser.
 
+mod grammar;
+#[cfg(test)]
+mod tests;
+
 use core::cell::Cell;
 use libwikitext_common::config::Configuration;
 use libwikitext_parse::{Argument, Error, Output, STOP_CHAR, Spanned};
 use regex::Regex;
-
-mod grammar;
-#[cfg(test)]
-mod tests;
 
 /// A Wikitext parser.
 #[derive(Clone, Debug)]

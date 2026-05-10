@@ -16,24 +16,24 @@ use piccolo::{
 #[derive(Collect, Copy, Clone)]
 #[collect(require_static)]
 enum LoadMode {
-    /// Text.
-    Text,
     /// Binary.
     Binary,
     /// Binary. Or text!
     BinaryOrText,
+    /// Text.
+    Text,
 }
 
 /// Information about the load.
 struct LoadInfo<'gc> {
     /// The code chunk.
     chunk: String<'gc>,
-    /// The name of the chunk.
-    name: Option<String<'gc>>,
-    /// The load mode.
-    mode: Option<LoadMode>,
     /// The sandbox environment.
     env: Option<Table<'gc>>,
+    /// The load mode.
+    mode: Option<LoadMode>,
+    /// The name of the chunk.
+    name: Option<String<'gc>>,
 }
 
 /// Number of code bytes to load per fuel.
@@ -107,9 +107,9 @@ where
             let chunk = stack.consume::<String<'_>>(ctx)?;
             let info = LoadInfo {
                 chunk,
-                name,
-                mode,
                 env,
+                mode,
+                name,
             };
             match load_callback(ctx, info, exec) {
                 Ok(func) => stack.push_back(Value::Function(func)),
@@ -133,10 +133,10 @@ where
                 Ok(CallbackReturn::Sequence(BoxSequence::new(
                     &ctx,
                     BuildLoadString {
-                        step: 0,
-                        total_len: 0,
                         func,
+                        step: 0,
                         then: inner,
+                        total_len: 0,
                     },
                 )))
             }
@@ -153,14 +153,14 @@ where
 #[derive(Collect)]
 #[collect(no_drop)]
 struct BuildLoadString<'gc> {
-    /// The number of iterations.
-    step: usize,
-    /// The size of the accumulated code text.
-    total_len: usize,
     /// The iterator function.
     func: Function<'gc>,
+    /// The number of iterations.
+    step: usize,
     /// The callback.
     then: Function<'gc>,
+    /// The size of the accumulated code text.
+    total_len: usize,
 }
 
 impl BuildLoadString<'_> {
@@ -182,6 +182,20 @@ impl BuildLoadString<'_> {
 }
 
 impl<'gc> Sequence<'gc> for BuildLoadString<'gc> {
+    fn error(
+        self: Pin<&mut Self>,
+        ctx: Context<'gc>,
+        _exec: Execution<'gc, '_>,
+        error: Error<'gc>,
+        mut stack: Stack<'gc, '_>,
+    ) -> Result<SequencePoll<'gc>, Error<'gc>> {
+        // This catches errors thrown by the inner function;
+        // PUC-Rio's tests require it, but it's not documented.
+        let error = error.to_value(ctx);
+        stack.replace(ctx, (Value::Nil, error));
+        Ok(SequencePoll::Return)
+    }
+
     fn poll(
         mut self: Pin<&mut Self>,
         ctx: Context<'gc>,
@@ -231,19 +245,5 @@ impl<'gc> Sequence<'gc> for BuildLoadString<'gc> {
             function: self.func,
             bottom,
         })
-    }
-
-    fn error(
-        self: Pin<&mut Self>,
-        ctx: Context<'gc>,
-        _exec: Execution<'gc, '_>,
-        error: Error<'gc>,
-        mut stack: Stack<'gc, '_>,
-    ) -> Result<SequencePoll<'gc>, Error<'gc>> {
-        // This catches errors thrown by the inner function;
-        // PUC-Rio's tests require it, but it's not documented.
-        let error = error.to_value(ctx);
-        stack.replace(ctx, (Value::Nil, error));
-        Ok(SequencePoll::Return)
     }
 }

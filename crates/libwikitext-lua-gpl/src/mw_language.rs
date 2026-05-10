@@ -29,8 +29,8 @@ impl LanguageLibrary {
         gender = gender,
         getFallbacksFor = get_fallbacks_for,
         isSupportedLanguage = is_supported_language,
-        isValidCode = is_valid_code,
         isValidBuiltInCode = is_valid_built_in_code,
+        isValidCode = is_valid_code,
         toBcp47Code = to_bcp47_code,
     }
 
@@ -316,8 +316,8 @@ impl LanguageLibrary {
 }
 
 impl MwInterface for LanguageLibrary {
-    const NAME: &str = "mw.language";
     const CODE: &[u8] = include_bytes!("./modules/mw.language.lua");
+    const NAME: &str = "mw.language";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

@@ -304,30 +304,6 @@ pub(crate) trait Surrogate<E> {
         Ok(())
     }
 
-    /// Visits a [`Token::Text`].
-    #[inline]
-    fn adopt_text(
-        &mut self,
-        _state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
-        _text: &str,
-    ) -> Result<(), E> {
-        Ok(())
-    }
-
-    /// Visits a [`Token::TextStyle`].
-    #[inline]
-    fn adopt_text_style(
-        &mut self,
-        _state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
-        _style: TextStyle,
-    ) -> Result<(), E> {
-        Ok(())
-    }
-
     /// Visits a [`Token::TableCaption`].
     #[inline]
     fn adopt_table_caption(
@@ -408,6 +384,30 @@ pub(crate) trait Surrogate<E> {
         _span: Span,
         _target: &[Spanned<Token>],
         _arguments: &[Spanned<Argument>],
+    ) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// Visits a [`Token::Text`].
+    #[inline]
+    fn adopt_text(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _text: &str,
+    ) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// Visits a [`Token::TextStyle`].
+    #[inline]
+    fn adopt_text_style(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _style: TextStyle,
     ) -> Result<(), E> {
         Ok(())
     }

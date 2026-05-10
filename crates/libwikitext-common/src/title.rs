@@ -9,19 +9,17 @@ use std::borrow::Cow;
 /// The title casing strategy for a namespace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NamespaceCase {
-    /// The first letter of the namespace name is capitalised.
-    FirstLetter,
     /// The namespace name is case-sensitive.
     CaseSensitive,
+    /// The first letter of the namespace name is capitalised.
+    FirstLetter,
 }
 
 /// An article namespace.
 #[derive(Debug, Eq)]
 pub struct Namespace {
-    /// The namespace ID.
-    pub id: i32,
-    /// The display name of the namespace.
-    pub name: &'static str,
+    /// Named aliases for the namespace.
+    pub aliases: &'static [&'static str],
     /// The canonical name of the namespace.
     ///
     /// For example, the canonical 'Project' namespace, present on all MW
@@ -30,15 +28,17 @@ pub struct Namespace {
     pub canonical: Option<&'static str>,
     /// The case folding strategy for titles in the namespace.
     pub case: NamespaceCase,
-    /// The default content model for titles in the namespace.
-    pub default_content_model: Option<&'static str>,
-    /// Whether the namespace supports subpages.
-    pub subpages: bool,
     /// Whether pages within this namespace should be considered the ‘main’
     /// content of the wiki.
     pub content: bool,
-    /// Named aliases for the namespace.
-    pub aliases: &'static [&'static str],
+    /// The default content model for titles in the namespace.
+    pub default_content_model: Option<&'static str>,
+    /// The namespace ID.
+    pub id: i32,
+    /// The display name of the namespace.
+    pub name: &'static str,
+    /// Whether the namespace supports subpages.
+    pub subpages: bool,
 }
 
 impl core::hash::Hash for Namespace {
@@ -95,6 +95,8 @@ impl Namespace {
     pub const CATEGORY: i32 = 14;
     /// The category talk namespace ID.
     pub const CATEGORY_TALK: i32 = 15;
+    /// The ID of the Scribunto `Module` namespace.
+    pub const MODULE: i32 = 828;
 
     /// Returns the associated ID (talk -> subject, or subject -> talk) of this
     /// namespace.
@@ -147,22 +149,6 @@ impl Namespace {
         Self::find_by_id(config, Self::MAIN).unwrap()
     }
 
-    /// Returns the talk namespace for this namespace. If this namespace
-    /// is a talk namespace, it is the same as this namespace.
-    #[inline]
-    #[must_use]
-    pub fn talk(&self, config: &Configuration) -> Option<&'static Namespace> {
-        Self::find_by_id(config, self.talk_id())
-    }
-
-    /// Returns the talk namespace ID for this namespace. If this namespace
-    /// is a talk namespace, it is the same ID as this namespace ID.
-    #[inline]
-    #[must_use]
-    pub const fn talk_id(&self) -> i32 {
-        if self.is_talk() { self.id } else { self.id + 1 }
-    }
-
     /// Returns the subject namespace for this namespace. If this namespace
     /// is a subject namespace, it is the same as this namespace.
     #[inline]
@@ -178,11 +164,22 @@ impl Namespace {
     pub const fn subject_id(&self) -> i32 {
         if self.is_talk() { self.id - 1 } else { self.id }
     }
-}
 
-impl Namespace {
-    /// The ID of the Scribunto `Module:` namespace.
-    pub const MODULE: i32 = 828;
+    /// Returns the talk namespace for this namespace. If this namespace
+    /// is a talk namespace, it is the same as this namespace.
+    #[inline]
+    #[must_use]
+    pub fn talk(&self, config: &Configuration) -> Option<&'static Namespace> {
+        Self::find_by_id(config, self.talk_id())
+    }
+
+    /// Returns the talk namespace ID for this namespace. If this namespace
+    /// is a talk namespace, it is the same ID as this namespace ID.
+    #[inline]
+    #[must_use]
+    pub const fn talk_id(&self) -> i32 {
+        if self.is_talk() { self.id } else { self.id + 1 }
+    }
 }
 
 /// A normalised article title.
@@ -370,18 +367,6 @@ impl Title {
         text.rsplit_once('/').map_or(text, |(base, _)| base)
     }
 
-    /// The full text of the title.
-    ///
-    /// ```text
-    /// Interwiki:Namespace:Title/Sub/Page#Fragment
-    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    /// ```
-    #[inline]
-    #[must_use]
-    pub fn full_text(&self) -> &str {
-        &self.text
-    }
-
     /// The page fragment.
     ///
     /// ```text
@@ -395,6 +380,18 @@ impl Title {
             .fragment_delimiter
             .map_or(self.text.len(), |d| usize::from(d) + 1);
         &self.text[start_at..]
+    }
+
+    /// The full text of the title.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn full_text(&self) -> &str {
+        &self.text
     }
 
     /// The title interwiki identifier.

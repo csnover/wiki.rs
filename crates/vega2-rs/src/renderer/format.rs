@@ -27,9 +27,6 @@ pub enum Error {
     /// Integer parsing error.
     #[error(transparent)]
     ParseInt(#[from] ParseIntError),
-    /// Integer range error.
-    #[error(transparent)]
-    TryFromInt(#[from] TryFromIntError),
     /// Regex match failed.
     #[error("does not match format spec: {0}")]
     Regex(String),
@@ -39,6 +36,9 @@ pub enum Error {
     /// Bad symbol character.
     #[error("invalid symbol value '{}'", _0.escape_ascii())]
     Symbol(u8),
+    /// Integer range error.
+    #[error(transparent)]
+    TryFromInt(#[from] TryFromIntError),
 }
 
 /// A dynamic text formatter.
@@ -373,19 +373,6 @@ impl Kind {
         }
     }
 
-    /// Returns true if this kind is decimal.
-    fn is_decimal(self) -> bool {
-        matches!(
-            self,
-            Self::Decimal
-                | Self::Exponent
-                | Self::Fixed
-                | Self::General
-                | Self::Round
-                | Self::Default
-        )
-    }
-
     /// Returns true if this kind expects an integer value.
     fn integer(self) -> bool {
         matches!(
@@ -396,6 +383,19 @@ impl Kind {
                 | Self::HexLower
                 | Self::HexUpper
                 | Self::Octal
+        )
+    }
+
+    /// Returns true if this kind is decimal.
+    fn is_decimal(self) -> bool {
+        matches!(
+            self,
+            Self::Decimal
+                | Self::Exponent
+                | Self::Fixed
+                | Self::General
+                | Self::Round
+                | Self::Default
         )
     }
 
@@ -428,12 +428,12 @@ pub(super) struct Locale<'a> {
     currency: Option<(&'a str, &'a str)>,
     /// Decimal separator.
     decimal: Option<&'a str>,
+    /// Number of digits per formatted number group.
+    grouping: Option<&'a [usize]>,
     /// Minus sign.
     minus: &'a str,
     /// Not-a-number string.
     nan: &'a str,
-    /// Number of digits per formatted number group.
-    grouping: Option<&'a [usize]>,
     /// Grouping separator.
     thousands: Option<&'a str>,
 }
@@ -443,9 +443,9 @@ impl Locale<'_> {
     pub const EN_US: Self = Self {
         currency: Some(("$", "")),
         decimal: Some("."),
+        grouping: Some(&[3]),
         minus: "-",
         nan: "NaN",
-        grouping: Some(&[3]),
         thousands: Some(","),
     };
 
@@ -530,28 +530,28 @@ impl TryFrom<u8> for Sign {
 /// A format specifier.
 #[derive(Clone, Copy, Debug)]
 struct Specifier {
-    /// The padding fill character. Defaults to ' '.
-    fill: char,
     /// The output alignment.
     align: Align,
-    /// The sign display.
-    sign: Sign,
-    /// The symbol display.
-    symbol: Option<Symbol>,
-    /// Minimum field width.
-    width: Option<u8>,
     /// Use locale group separators.
     comma: bool,
+    /// The padding fill character. Defaults to ' '.
+    fill: char,
+    /// The output format.
+    kind: Kind,
     /// Depending on the type, the precision either indicates the number of
     /// digits that follow the decimal point (types `f` and `%`), or the number
     /// of significant digits.
     precision: Option<u8>,
     /// The output value scale.
     scale: Option<u8>,
-    /// The output format.
-    kind: Kind,
+    /// The sign display.
+    sign: Sign,
     /// Character suffix.
     suffix: Option<&'static str>,
+    /// The symbol display.
+    symbol: Option<Symbol>,
+    /// Minimum field width.
+    width: Option<u8>,
 }
 
 impl Specifier {
@@ -768,16 +768,16 @@ impl core::str::FromStr for Specifier {
         }
 
         Ok(Self {
-            fill,
             align,
-            sign,
-            symbol,
-            width,
             comma,
+            fill,
+            kind,
             precision,
             scale,
-            kind,
+            sign,
             suffix,
+            symbol,
+            width,
         })
     }
 }

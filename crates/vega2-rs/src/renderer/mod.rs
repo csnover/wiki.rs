@@ -1,5 +1,12 @@
 //! Types and functions for converting a Vega specification to SVG.
 
+mod axis;
+mod format;
+mod interp;
+mod legend;
+mod mark;
+mod path;
+
 use super::{
     Node, Result,
     axis::{Axis, Layer},
@@ -16,13 +23,6 @@ use minidom::Element;
 use rand::{SeedableRng as _, rngs::SmallRng};
 use rustybuzz::{Face, GlyphBuffer, ttf_parser::GlyphId};
 use tiny_skia::{Path, PathBuilder};
-
-mod axis;
-mod format;
-mod interp;
-mod legend;
-mod mark;
-mod path;
 
 /// Common default visual properties.
 mod defaults {
@@ -227,18 +227,8 @@ pub(super) fn buffer_to_path(face: &Face<'_>, buffer: &GlyphBuffer) -> Option<Pa
 
     impl rustybuzz::ttf_parser::OutlineBuilder for GlyphPath {
         #[inline]
-        fn move_to(&mut self, x: f32, y: f32) {
-            self.segment.move_to(x + self.x, -y);
-        }
-
-        #[inline]
-        fn line_to(&mut self, x: f32, y: f32) {
-            self.segment.line_to(x + self.x, -y);
-        }
-
-        #[inline]
-        fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
-            self.segment.quad_to(x1 + self.x, -y1, x + self.x, -y);
+        fn close(&mut self) {
+            self.segment.close();
         }
 
         #[inline]
@@ -248,8 +238,18 @@ pub(super) fn buffer_to_path(face: &Face<'_>, buffer: &GlyphBuffer) -> Option<Pa
         }
 
         #[inline]
-        fn close(&mut self) {
-            self.segment.close();
+        fn line_to(&mut self, x: f32, y: f32) {
+            self.segment.line_to(x + self.x, -y);
+        }
+
+        #[inline]
+        fn move_to(&mut self, x: f32, y: f32) {
+            self.segment.move_to(x + self.x, -y);
+        }
+
+        #[inline]
+        fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+            self.segment.quad_to(x1 + self.x, -y1, x + self.x, -y);
         }
     }
 
@@ -333,13 +333,12 @@ impl Pixels {
         Rect::new(0.0, 0.0, self.width().into(), self.height().into())
     }
 
-    /// Returns the midpoint of the bitmap as a [`Vec2`].
+    /// The height of the bitmap, in pixels.
     #[inline]
-    pub fn midpoint(&self) -> Vec2 {
-        Vec2::new(
-            f64::from(self.width()) / 2.0,
-            f64::from(self.height()) / 2.0,
-        )
+    #[must_use]
+    #[expect(clippy::cast_possible_truncation, reason = "value came from a u16")]
+    pub fn height(&self) -> u16 {
+        (self.data.len() / usize::from(self.stride)) as u16
     }
 
     /// An overengineered iterator over the index and mask of pixels within the
@@ -385,12 +384,13 @@ impl Pixels {
         })
     }
 
-    /// The height of the bitmap, in pixels.
+    /// Returns the midpoint of the bitmap as a [`Vec2`].
     #[inline]
-    #[must_use]
-    #[expect(clippy::cast_possible_truncation, reason = "value came from a u16")]
-    pub fn height(&self) -> u16 {
-        (self.data.len() / usize::from(self.stride)) as u16
+    pub fn midpoint(&self) -> Vec2 {
+        Vec2::new(
+            f64::from(self.width()) / 2.0,
+            f64::from(self.height()) / 2.0,
+        )
     }
 
     /// The width of the bitmap, in pixels.
@@ -416,6 +416,13 @@ pub(super) struct Rect {
 }
 
 impl Rect {
+    /// Creates a new `Rect` from `(x, y)`, width, and height. If width/height
+    /// are negative, the box will be normalised rather than being made empty.
+    #[inline]
+    pub const fn from_xywh(x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self::new(x, y, x + width, y + height)
+    }
+
     /// Creates a new `Rect`.
     #[inline]
     pub const fn new(left: f64, top: f64, right: f64, bottom: f64) -> Self {
@@ -425,13 +432,6 @@ impl Rect {
             right,
             bottom,
         }
-    }
-
-    /// Creates a new `Rect` from `(x, y)`, width, and height. If width/height
-    /// are negative, the box will be normalised rather than being made empty.
-    #[inline]
-    pub const fn from_xywh(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self::new(x, y, x + width, y + height)
     }
 
     /// Gets the area of the rectangle.
@@ -484,14 +484,11 @@ impl Rect {
         }
     }
 
-    /// Returns true if `self` intersects `other`.
+    /// Gets the height of the rectangle.
     #[inline]
     #[must_use]
-    pub const fn intersects(&self, other: &Self) -> bool {
-        self.left < other.right
-            && self.top < other.bottom
-            && self.right > other.left
-            && self.bottom > other.top
+    pub const fn height(&self) -> f64 {
+        (self.bottom - self.top).max(0.0)
     }
 
     /// Creates a new `Rect` which is the intersection of two rects.
@@ -509,11 +506,14 @@ impl Rect {
         }
     }
 
-    /// Gets the height of the rectangle.
+    /// Returns true if `self` intersects `other`.
     #[inline]
     #[must_use]
-    pub const fn height(&self) -> f64 {
-        (self.bottom - self.top).max(0.0)
+    pub const fn intersects(&self, other: &Self) -> bool {
+        self.left < other.right
+            && self.top < other.bottom
+            && self.right > other.left
+            && self.bottom > other.top
     }
 
     /// Returns true if the rectangle has a zero dimension on either side.
@@ -634,12 +634,6 @@ pub(super) struct Vec2 {
 }
 
 impl Vec2 {
-    /// Creates a new `Vec2` from `(x, y)`.
-    #[inline]
-    pub const fn new(x: f64, y: f64) -> Self {
-        Self { x, y }
-    }
-
     /// Creates a new `Vec2` containing a latitude and logitude, in radians,
     /// from a spherical coordinate.
     #[inline]
@@ -659,6 +653,12 @@ impl Vec2 {
         }
     }
 
+    /// Creates a new `Vec2` from `(x, y)`.
+    #[inline]
+    pub const fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+
     /// Creates a new `Vec2` from `(θ, r)`.
     #[inline]
     fn polar(angle: f64, radius: f64) -> Self {
@@ -674,12 +674,6 @@ impl Vec2 {
         Self { x: 0.0, y: 0.0 }
     }
 
-    /// Gets the angle of the vector, in radians.
-    #[inline]
-    pub fn angle(self) -> f64 {
-        self.y.atan2(self.x)
-    }
-
     /// Gets the absolute value of `self`.
     #[inline]
     pub const fn abs(self) -> Self {
@@ -687,6 +681,12 @@ impl Vec2 {
             x: self.x.abs(),
             y: self.y.abs(),
         }
+    }
+
+    /// Gets the angle of the vector, in radians.
+    #[inline]
+    pub fn angle(self) -> f64 {
+        self.y.atan2(self.x)
     }
 
     /// Gets the cross-product of `self` and `other`.
@@ -744,15 +744,6 @@ impl Vec2 {
         self.dot(self)
     }
 
-    /// Gets `self` truncated to whole numbers.
-    #[inline]
-    pub const fn trunc(self) -> Self {
-        Self {
-            x: self.x.trunc(),
-            y: self.y.trunc(),
-        }
-    }
-
     /// Gets `self` converted from radians to degrees.
     #[inline]
     pub const fn to_degrees(self) -> Self {
@@ -768,6 +759,15 @@ impl Vec2 {
         Self {
             x: self.x.to_radians(),
             y: self.y.to_radians(),
+        }
+    }
+
+    /// Gets `self` truncated to whole numbers.
+    #[inline]
+    pub const fn trunc(self) -> Self {
+        Self {
+            x: self.x.trunc(),
+            y: self.y.trunc(),
         }
     }
 
@@ -895,12 +895,6 @@ pub(super) struct Vec3 {
 }
 
 impl Vec3 {
-    /// Creates a new `Vec3` from `(x, y, z)`.
-    #[inline]
-    pub const fn new(x: f64, y: f64, z: f64) -> Self {
-        Self { x, y, z }
-    }
-
     /// Creates a new `Vec3` of spherical coordinates from a `Vec2` of a
     /// latitude and longitude in radians.
     #[inline]
@@ -911,6 +905,12 @@ impl Vec3 {
             y: cos_phi * lambda.sin(),
             z: phi.sin(),
         }
+    }
+
+    /// Creates a new `Vec3` from `(x, y, z)`.
+    #[inline]
+    pub const fn new(x: f64, y: f64, z: f64) -> Self {
+        Self { x, y, z }
     }
 
     /// Creates a new `Vec3` from a `Vec2` plus `z`.

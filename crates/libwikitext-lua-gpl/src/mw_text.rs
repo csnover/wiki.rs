@@ -130,8 +130,8 @@ impl TextLibrary {
 }
 
 impl MwInterface for TextLibrary {
-    const NAME: &str = "mw.text";
     const CODE: &[u8] = include_bytes!("./modules/mw.text.lua");
+    const NAME: &str = "mw.text";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

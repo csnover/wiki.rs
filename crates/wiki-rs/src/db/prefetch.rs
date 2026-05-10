@@ -175,6 +175,62 @@ impl PrefetchableDatabase<'_> {
         )?)))
     }
 
+    /// Returns true if the given title is in a content-prefetchable state.
+    #[inline]
+    fn can_prefetch(&self, title: &Title, key: &str) -> bool {
+        !is_lobotomised(key) && self.db.may_exist(title) && self.db.cache.read().peek(key).is_none()
+    }
+
+    /// Cancels a prefetch for the given title, if one exists.
+    ///
+    /// It would also be possible to return a condvar to have the renderer
+    /// thread wait for the prefetcher, but in testing this was much slower than
+    /// just doing the work twice.
+    fn cancel_prefetch(&self, title: &Title, key: &str, cancel_content: bool) {
+        if !self.can_prefetch(title, key) {
+            return;
+        }
+
+        let mut queue = self.channel.queue.lock();
+        // borrowck cannot see disjoint field borrows through MutexGuard
+        let queue = &mut *queue;
+
+        if let Some(state) = queue.jobs.get_mut(title) {
+            match state {
+                PrefetchState::PendingContent(_)
+                | PrefetchState::PendingExist
+                | PrefetchState::PendingExistContent => {
+                    // Womp womp, loser
+                    log::trace!("Prefetching lost the race for {title}");
+                    match state {
+                        PrefetchState::PendingContent(_) => queue.pending_content -= 1,
+                        PrefetchState::PendingExist => queue.pending_exist -= 1,
+                        PrefetchState::PendingExistContent => queue.pending_exist_content -= 1,
+                        PrefetchState::InFlightContent
+                        | PrefetchState::InFlightExist
+                        | PrefetchState::InFlightExistContent => unreachable!(),
+                    }
+                    // Just park the job in an ignorable state to avoid
+                    // wasting time reordering the jobs list or accidentally
+                    // re-requesting something that the renderer thread will
+                    // fetch
+                    *state = PrefetchState::InFlightContent;
+                }
+                PrefetchState::InFlightContent => {
+                    log::trace!("Prefetching lost the race for content {title}");
+                }
+                PrefetchState::InFlightExist | PrefetchState::InFlightExistContent => {
+                    log::trace!("Prefetching lost the race for existence {title}");
+                    // The renderer thread will be getting the content itself
+                    // so tell the prefetcher not to try, if it was going to try
+                    if cancel_content {
+                        *state = PrefetchState::InFlightExist;
+                    }
+                }
+            }
+        }
+    }
+
     /// Finds articles in the index whose titles match the given query.
     pub fn search(&self, query: &Regex) -> impl ParallelIterator<Item = &str> {
         self.db.search(query)
@@ -317,64 +373,6 @@ impl IDatabase for PrefetchableDatabase<'_> {
                 self.channel.cvar.notify_one();
             }
         }
-    }
-}
-
-impl PrefetchableDatabase<'_> {
-    /// Cancels a prefetch for the given title, if one exists.
-    ///
-    /// It would also be possible to return a condvar to have the renderer
-    /// thread wait for the prefetcher, but in testing this was much slower than
-    /// just doing the work twice.
-    fn cancel_prefetch(&self, title: &Title, key: &str, cancel_content: bool) {
-        if !self.can_prefetch(title, key) {
-            return;
-        }
-
-        let mut queue = self.channel.queue.lock();
-        // borrowck cannot see disjoint field borrows through MutexGuard
-        let queue = &mut *queue;
-
-        if let Some(state) = queue.jobs.get_mut(title) {
-            match state {
-                PrefetchState::PendingContent(_)
-                | PrefetchState::PendingExist
-                | PrefetchState::PendingExistContent => {
-                    // Womp womp, loser
-                    log::trace!("Prefetching lost the race for {title}");
-                    match state {
-                        PrefetchState::PendingContent(_) => queue.pending_content -= 1,
-                        PrefetchState::PendingExist => queue.pending_exist -= 1,
-                        PrefetchState::PendingExistContent => queue.pending_exist_content -= 1,
-                        PrefetchState::InFlightContent
-                        | PrefetchState::InFlightExist
-                        | PrefetchState::InFlightExistContent => unreachable!(),
-                    }
-                    // Just park the job in an ignorable state to avoid
-                    // wasting time reordering the jobs list or accidentally
-                    // re-requesting something that the renderer thread will
-                    // fetch
-                    *state = PrefetchState::InFlightContent;
-                }
-                PrefetchState::InFlightContent => {
-                    log::trace!("Prefetching lost the race for content {title}");
-                }
-                PrefetchState::InFlightExist | PrefetchState::InFlightExistContent => {
-                    log::trace!("Prefetching lost the race for existence {title}");
-                    // The renderer thread will be getting the content itself
-                    // so tell the prefetcher not to try, if it was going to try
-                    if cancel_content {
-                        *state = PrefetchState::InFlightExist;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Returns true if the given title is in a content-prefetchable state.
-    #[inline]
-    fn can_prefetch(&self, title: &Title, key: &str) -> bool {
-        !is_lobotomised(key) && self.db.may_exist(title) && self.db.cache.read().peek(key).is_none()
     }
 }
 

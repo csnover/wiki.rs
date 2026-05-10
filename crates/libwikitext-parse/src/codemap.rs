@@ -8,7 +8,6 @@ use peg::str::LineCol;
 pub struct Span {
     /// The position in the codemap representing the first byte of the span.
     pub start: usize,
-
     /// The position after the last byte of the span.
     pub end: usize,
 }
@@ -19,6 +18,16 @@ impl Span {
     #[must_use]
     pub fn new(start: usize, end: usize) -> Self {
         Span { start, end }
+    }
+
+    #[inline]
+    #[must_use]
+    /// Converts the span into a range that can be used for string indexing.
+    // This is not just using `From<core::ops::Range<usize>>` because type
+    // resolution fails in common use with `.into()` which eliminates any
+    // benefit of using a standard conversion trait
+    pub fn into_range(self) -> core::ops::Range<usize> {
+        self.start..self.end
     }
 
     /// Returns true if this span is empty.
@@ -43,16 +52,6 @@ impl Span {
             start: self.start.min(other.start),
             end: self.end.max(other.end),
         }
-    }
-
-    #[inline]
-    #[must_use]
-    /// Converts the span into a range that can be used for string indexing.
-    // This is not just using `From<core::ops::Range<usize>>` because type
-    // resolution fails in common use with `.into()` which eliminates any
-    // benefit of using a standard conversion trait
-    pub fn into_range(self) -> core::ops::Range<usize> {
-        self.start..self.end
     }
 }
 
@@ -96,11 +95,10 @@ impl<T> core::ops::Deref for Spanned<T> {
 /// A record of a source file’s lines.
 #[derive(Clone)]
 pub struct FileMap<'a> {
-    /// The source file.
-    source: &'a str,
-
     /// Byte positions of line beginnings.
     lines: Vec<u32>,
+    /// The source file.
+    source: &'a str,
 }
 
 impl core::fmt::Debug for FileMap<'_> {
@@ -144,7 +142,24 @@ impl<'a> FileMap<'a> {
             )
             .collect();
 
-        Self { source, lines }
+        Self { lines, source }
+    }
+
+    /// Gets the line number of `pos`.
+    ///
+    /// The lines are 0-indexed (first line is numbered 0).
+    ///
+    /// # Panics
+    ///
+    /// * `pos` is out of range of the source
+    #[must_use]
+    fn find_line(&self, pos: usize) -> usize {
+        assert!(pos <= self.source.len());
+        let pos = u32::try_from(pos).unwrap();
+        match self.lines.binary_search(&pos) {
+            Ok(i) => i,
+            Err(i) => i - 1,
+        }
     }
 
     /// Gets the line and character column of byte `pos`.
@@ -162,23 +177,6 @@ impl<'a> FileMap<'a> {
             line: line + 1,
             column: column + 1,
             offset: pos,
-        }
-    }
-
-    /// Gets the line number of `pos`.
-    ///
-    /// The lines are 0-indexed (first line is numbered 0).
-    ///
-    /// # Panics
-    ///
-    /// * `pos` is out of range of the source
-    #[must_use]
-    fn find_line(&self, pos: usize) -> usize {
-        assert!(pos <= self.source.len());
-        let pos = u32::try_from(pos).unwrap();
-        match self.lines.binary_search(&pos) {
-            Ok(i) => i,
-            Err(i) => i - 1,
         }
     }
 

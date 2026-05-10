@@ -540,11 +540,11 @@ fn monotone_point(path: &mut SvgPath, p0: Vec2, p1: Vec2, t0: f64, t1: f64) {
 
 /// Step function drawing strategy.
 trait StepStrategy {
-    /// The reverse strategy.
-    type Reverse: StepStrategy;
-
     /// Whether a line should be drawn between a set of two points.
     const END_WITH_LINE: bool;
+
+    /// The reverse strategy.
+    type Reverse: StepStrategy;
 
     /// Draws a step.
     fn point(path: &mut SvgPath, p0: Vec2, p1: Vec2);
@@ -553,9 +553,9 @@ trait StepStrategy {
 /// Step strategy to step at the next point.
 struct StepAfter;
 impl StepStrategy for StepAfter {
-    type Reverse = StepBefore;
-
     const END_WITH_LINE: bool = false;
+
+    type Reverse = StepBefore;
 
     #[inline]
     fn point(path: &mut SvgPath, _: Vec2, p1: Vec2) {
@@ -567,9 +567,9 @@ impl StepStrategy for StepAfter {
 /// Step strategy to step at the previous point.
 struct StepBefore;
 impl StepStrategy for StepBefore {
-    type Reverse = StepAfter;
-
     const END_WITH_LINE: bool = false;
+
+    type Reverse = StepAfter;
 
     #[inline]
     fn point(path: &mut SvgPath, _: Vec2, p1: Vec2) {
@@ -581,9 +581,9 @@ impl StepStrategy for StepBefore {
 /// Step strategy to step at the midpoint of two points.
 struct StepMid;
 impl StepStrategy for StepMid {
-    type Reverse = StepMid;
-
     const END_WITH_LINE: bool = true;
+
+    type Reverse = StepMid;
 
     #[inline]
     fn point(path: &mut SvgPath, p0: Vec2, p1: Vec2) {

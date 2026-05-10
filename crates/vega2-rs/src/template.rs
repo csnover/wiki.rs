@@ -60,8 +60,6 @@ impl<'a> Ast<'a> {
 
 /// A template chunk.
 enum Item<'a> {
-    /// Plain text.
-    Text(&'a str),
     /// An interpolation.
     Template {
         /// The data field to interpolate.
@@ -69,6 +67,8 @@ enum Item<'a> {
         /// Filters to apply to the interpolated data.
         filters: Vec<Filter<'a>>,
     },
+    /// Plain text.
+    Text(&'a str),
 }
 
 /// A local or UTC time zone.
@@ -389,10 +389,10 @@ peg::parser! {grammar handlebars() for str {
 /// An iterator over the positions of UTF-16 codepoints in a string slice.
 #[derive(Debug, Clone)]
 pub struct IndicesUtf16<'a> {
-    /// The current byte offset of the forward iterator.
-    forward_offset: usize,
     /// The current byte offset of the reverse iterator.
     back_offset: usize,
+    /// The current byte offset of the forward iterator.
+    forward_offset: usize,
     /// The inner character iterator.
     iter: Chars<'a>,
 }
@@ -401,8 +401,8 @@ impl<'a> IndicesUtf16<'a> {
     /// Creates a new `IndicesUtf16`.
     fn new(s: &'a str) -> Self {
         Self {
-            forward_offset: 0,
             back_offset: s.len(),
+            forward_offset: 0,
             iter: s.chars(),
         }
     }

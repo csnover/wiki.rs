@@ -10,6 +10,9 @@ use std::{borrow::Cow, collections::HashMap};
 
 /// An extension trait for [`Value`].
 pub(super) trait ValueExt<'s> {
+    /// If the [`Value`] is a string, returns the associated str.
+    fn as_cow(&self) -> Option<&Cow<'s, str>>;
+
     /// Performs loose relational comparison according to the ECMAScript 2026
     /// rules.
     fn fuzzy_cmp(&self, other: &Self) -> Option<Ordering>;
@@ -19,9 +22,6 @@ pub(super) trait ValueExt<'s> {
     /// Performs loose relational comparison according to the ECMAScript 2026
     /// rules, with total comparison rules for numbers.
     fn fuzzy_total_cmp(&self, other: &Self) -> Ordering;
-
-    /// If the [`Value`] is a string, returns the associated str.
-    fn as_cow(&self) -> Option<&Cow<'s, str>>;
 
     /// Gets a mutable property of the [`Value`].
     fn get_mut<'a>(&'a mut self, key: &str) -> Option<&'a mut Value<'s>>;
@@ -55,11 +55,6 @@ pub(super) trait ValueExt<'s> {
     fn is_gte(&self, other: &Self) -> bool {
         self.fuzzy_cmp(other).is_some_and(Ordering::is_ge)
     }
-    /// Returns true if `self` is loosely not equal to `other`.
-    #[inline]
-    fn is_ne(&self, other: &Self) -> bool {
-        !self.fuzzy_eq(other)
-    }
     /// Returns true if `self` is loosely less than `other`.
     #[inline]
     fn is_lt(&self, other: &Self) -> bool {
@@ -69,6 +64,11 @@ pub(super) trait ValueExt<'s> {
     #[inline]
     fn is_lte(&self, other: &Self) -> bool {
         self.fuzzy_cmp(other).is_some_and(Ordering::is_le)
+    }
+    /// Returns true if `self` is loosely not equal to `other`.
+    #[inline]
+    fn is_ne(&self, other: &Self) -> bool {
+        !self.fuzzy_eq(other)
     }
 
     /// Converts the value to a bool.
@@ -265,19 +265,19 @@ impl<'de, T> serde::Deserialize<'de> for IgnoredAny<T> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(bound = "'s: 'de", deny_unknown_fields)]
 pub(super) struct Data<'s> {
-    /// The name of the data set.
-    #[serde(borrow)]
-    pub name: Cow<'s, str>,
     /// The format of the data set.
     #[serde(borrow)]
     format: Option<Format<'s>>,
-    /// The actual data.
-    #[serde(borrow, flatten)]
-    source: Source<'s>,
     /// The list of streaming operators to insert, remove, & toggle data values,
     /// post-data-transform.
     #[serde(borrow, default)]
     modify: Vec<Modify<'s>>,
+    /// The name of the data set.
+    #[serde(borrow)]
+    pub name: Cow<'s, str>,
+    /// The actual data.
+    #[serde(borrow, flatten)]
+    source: Source<'s>,
     /// The list of data transformations.
     #[serde(borrow, default)]
     transform: Vec<Transform<'s>>,
@@ -345,6 +345,9 @@ impl<'s> Data<'s> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type")]
 enum Modify<'s> {
+    /// Clear inserted values.
+    #[serde(borrow)]
+    Clear(RulePredicate<'s>),
     /// Insert a value using the given mutation.
     #[serde(borrow)]
     Insert(Mutation<'s>),
@@ -357,9 +360,6 @@ enum Modify<'s> {
     /// Insert or update a value using the given mutation.
     #[serde(borrow)]
     Upsert(Mutation<'s>),
-    /// Clear inserted values.
-    #[serde(borrow)]
-    Clear(RulePredicate<'s>),
 }
 
 /// A data mutation definition.
@@ -379,15 +379,15 @@ struct Mutation<'s> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(bound = "'s: 'de", rename_all = "lowercase")]
 enum Source<'s> {
-    /// Inline JSON data.
-    #[serde(borrow)]
-    Values(Value<'s>),
     /// The name of another data set.
     #[serde(borrow, rename = "source")]
     Named(Cow<'s, str>),
     /// A URL to a data file.
     #[serde(borrow)]
     Url(IgnoredAny<Cow<'s, str>>),
+    /// Inline JSON data.
+    #[serde(borrow)]
+    Values(Value<'s>),
 }
 
 /// A TopoJSON data source specification.
@@ -551,6 +551,12 @@ type FieldTypes<'s> = HashMap<Cow<'s, str>, FieldType<'s>>;
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Format<'s> {
+    /// Comma-separated values.
+    Csv {
+        /// The expected data types for the fields of the data.
+        #[serde(borrow, rename = "parse")]
+        _parse: FormatTypes<'s>,
+    },
     /// JavaScript object notation.
     Json {
         /// The expected data types for the fields of the data.
@@ -560,24 +566,18 @@ enum Format<'s> {
         #[serde(borrow, default)]
         property: Option<Cow<'s, str>>,
     },
-    /// Comma-separated values.
-    Csv {
-        /// The expected data types for the fields of the data.
-        #[serde(borrow, rename = "parse")]
-        _parse: FormatTypes<'s>,
-    },
-    /// Tab-separated values.
-    Tsv {
-        /// The expected data types for the fields of the data.
-        #[serde(borrow, rename = "parse")]
-        _parse: FormatTypes<'s>,
-    },
     /// Topographical JSON.
     #[serde(borrow)]
     TopoJson(TopoJson<'s>),
     /// Hierarchical JSON.
     #[serde(borrow)]
     TreeJson(TreeJson<'s>),
+    /// Tab-separated values.
+    Tsv {
+        /// The expected data types for the fields of the data.
+        #[serde(borrow, rename = "parse")]
+        _parse: FormatTypes<'s>,
+    },
 }
 
 impl<'s> Format<'s> {
@@ -682,21 +682,33 @@ mod ser {
         }
     }
     impl serde::Serializer for StringSerializer {
-        type Ok = &'static str;
         type Error = Error;
+        type Ok = &'static str;
+        type SerializeMap = serde::ser::Impossible<Self::Ok, Self::Error>;
         type SerializeSeq = serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeStruct = serde::ser::Impossible<Self::Ok, Self::Error>;
+        type SerializeStructVariant = serde::ser::Impossible<Self::Ok, Self::Error>;
         type SerializeTuple = serde::ser::Impossible<Self::Ok, Self::Error>;
         type SerializeTupleStruct = serde::ser::Impossible<Self::Ok, Self::Error>;
         type SerializeTupleVariant = serde::ser::Impossible<Self::Ok, Self::Error>;
-        type SerializeMap = serde::ser::Impossible<Self::Ok, Self::Error>;
-        type SerializeStruct = serde::ser::Impossible<Self::Ok, Self::Error>;
-        type SerializeStructVariant = serde::ser::Impossible<Self::Ok, Self::Error>;
 
         fn serialize_bool(self, _: bool) -> Result<Self::Ok, Self::Error> {
             Err(Error)
         }
 
-        fn serialize_i8(self, _: i8) -> Result<Self::Ok, Self::Error> {
+        fn serialize_bytes(self, _: &[u8]) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_char(self, _: char) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_f32(self, _: f32) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_f64(self, _: f64) -> Result<Self::Ok, Self::Error> {
             Err(Error)
         }
 
@@ -712,68 +724,12 @@ mod ser {
             Err(Error)
         }
 
-        fn serialize_u8(self, _: u8) -> Result<Self::Ok, Self::Error> {
+        fn serialize_i8(self, _: i8) -> Result<Self::Ok, Self::Error> {
             Err(Error)
         }
 
-        fn serialize_u16(self, _: u16) -> Result<Self::Ok, Self::Error> {
+        fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
             Err(Error)
-        }
-
-        fn serialize_u32(self, _: u32) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_u64(self, _: u64) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_f32(self, _: f32) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_f64(self, _: f64) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_char(self, _: char) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_str(self, _: &str) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_bytes(self, _: &[u8]) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_some<T>(self, _: &T) -> Result<Self::Ok, Self::Error>
-        where
-            T: ?Sized + serde::Serialize,
-        {
-            Err(Error)
-        }
-
-        fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_unit_struct(self, _: &'static str) -> Result<Self::Ok, Self::Error> {
-            Err(Error)
-        }
-
-        fn serialize_unit_variant(
-            self,
-            _: &'static str,
-            _: u32,
-            variant: &'static str,
-        ) -> Result<Self::Ok, Self::Error> {
-            Ok(variant)
         }
 
         fn serialize_newtype_struct<T>(
@@ -800,7 +756,40 @@ mod ser {
             Err(Error)
         }
 
+        fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
         fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_some<T>(self, _: &T) -> Result<Self::Ok, Self::Error>
+        where
+            T: ?Sized + serde::Serialize,
+        {
+            Err(Error)
+        }
+
+        fn serialize_str(self, _: &str) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_struct(
+            self,
+            _: &'static str,
+            _: usize,
+        ) -> Result<Self::SerializeStruct, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_struct_variant(
+            self,
+            _: &'static str,
+            _: u32,
+            _: &'static str,
+            _: usize,
+        ) -> Result<Self::SerializeStructVariant, Self::Error> {
             Err(Error)
         }
 
@@ -826,26 +815,37 @@ mod ser {
             Err(Error)
         }
 
-        fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
+        fn serialize_u16(self, _: u16) -> Result<Self::Ok, Self::Error> {
             Err(Error)
         }
 
-        fn serialize_struct(
-            self,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self::SerializeStruct, Self::Error> {
+        fn serialize_u32(self, _: u32) -> Result<Self::Ok, Self::Error> {
             Err(Error)
         }
 
-        fn serialize_struct_variant(
+        fn serialize_u64(self, _: u64) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_u8(self, _: u8) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_unit_struct(self, _: &'static str) -> Result<Self::Ok, Self::Error> {
+            Err(Error)
+        }
+
+        fn serialize_unit_variant(
             self,
             _: &'static str,
             _: u32,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self::SerializeStructVariant, Self::Error> {
-            Err(Error)
+            variant: &'static str,
+        ) -> Result<Self::Ok, Self::Error> {
+            Ok(variant)
         }
     }
 }
@@ -954,12 +954,12 @@ where
 #[derive(Debug, serde::Deserialize)]
 #[serde(untagged)]
 enum StringList<'s> {
-    /// A single string.
-    #[serde(borrow)]
-    Single(Cow<'s, str>),
     /// A list of strings.
     #[serde(borrow)]
     Multiple(Vec<Cow<'s, str>>),
+    /// A single string.
+    #[serde(borrow)]
+    Single(Cow<'s, str>),
 }
 
 /// A serde helper function for [`Vec<Cow<'s, str>>`] field representations.

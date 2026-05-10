@@ -62,6 +62,11 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
         ""
     }
 
+    fn visit_output(&mut self, output: &'tt Output) -> Result<(), Infallible> {
+        self.size += vec_size(&output.root);
+        self.visit_tokens(&output.root)
+    }
+
     fn visit_token(&mut self, token: &'tt Spanned<Token>) -> Result<(), Infallible> {
         match &token.node {
             Token::Autolink { target, content } | Token::ExternalLink { target, content } => {
@@ -144,11 +149,6 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             | Token::TableEnd => {}
         }
         Ok(())
-    }
-
-    fn visit_output(&mut self, output: &'tt Output) -> Result<(), Infallible> {
-        self.size += vec_size(&output.root);
-        self.visit_tokens(&output.root)
     }
 }
 

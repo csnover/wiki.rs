@@ -31,6 +31,8 @@ version = "1.0.0"
 alloc_instead_of_core = "warn"
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
+# The hobgoblin of little minds rests here
+# arbitrary_source_item_ordering = "warn"
 clone_on_ref_ptr = "warn"
 dbg_macro = "warn"
 empty_enum_variants_with_brackets = "warn"

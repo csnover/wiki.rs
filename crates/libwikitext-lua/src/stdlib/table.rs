@@ -315,12 +315,12 @@ mod extras {
     /// The result of an array operation.
     #[derive(PartialEq, Debug)]
     pub(super) enum RawArrayOpResult<T> {
-        /// The operation succeeded; the result value is given.
-        Success(T),
-        /// The operation is possible, but is deferred.
-        Possible,
         /// The operation is impossible.
         Failed,
+        /// The operation is possible, but is deferred.
+        Possible,
+        /// The operation succeeded; the result value is given.
+        Success(T),
     }
 
     /// Try to efficiently remove a key from the array part of the table.

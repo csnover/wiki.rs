@@ -1,16 +1,16 @@
 //! Lua 5.1-compatible string standard library.
 
-use crate::prelude::*;
-use core::cell::Cell;
-use find::match_lua;
-use gmatch::gmatch_next;
-use piccolo::TypeError;
-
 pub(crate) mod engine;
 pub(crate) mod find;
 mod format;
 pub(crate) mod gmatch;
 pub(crate) mod gsub;
+
+use crate::prelude::*;
+use core::cell::Cell;
+use find::match_lua;
+use gmatch::gmatch_next;
+use piccolo::TypeError;
 
 /// Loads the string library.
 ///

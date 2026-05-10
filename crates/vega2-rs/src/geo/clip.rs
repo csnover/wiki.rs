@@ -25,8 +25,14 @@ where
     /// Extra arguments to pass to [`Self::interpolate`].
     type IArgs;
 
+    /// Returns the clipping state for the line segment being processed.
+    fn clean(&self) -> Clean;
+
     /// Creates a new `Self` with the given output listener and arguments.
     fn clip_line(listener: L, args: Self::CArgs) -> Self;
+
+    /// Returns the starting coordinate for a clipping operation.
+    fn clip_start(&self) -> Vec2;
 
     /// Draws an interpolated spherical `line` in a `direction` using the given
     /// `args`, emitting the result to `listener`. If `line` is `None`, draws a
@@ -38,20 +44,14 @@ where
         args: &Self::IArgs,
     );
 
-    /// Returns the clipping state for the line segment being processed.
-    fn clean(&self) -> Clean;
-
-    /// Returns the starting coordinate for a clipping operation.
-    fn clip_start(&self) -> Vec2;
-
     /// Returns the extra data required to pass to [`Self::interpolate`].
     fn interpolate_args(&self) -> Self::IArgs;
 
-    /// Returns true if the given point is considered visible.
-    fn point_visible(&self, point: Vec2) -> bool;
-
     /// Returns a mutable reference to the output listener.
     fn listener(&mut self) -> &mut L;
+
+    /// Returns true if the given point is considered visible.
+    fn point_visible(&self, point: Vec2) -> bool;
 }
 
 /// A listener that buffers line segments internally instead of emitting them to
@@ -186,22 +186,12 @@ where
         (self.point)(self, point);
     }
 
-    fn line_start(&mut self) {
-        (self.line_start)(self);
-    }
-
     fn line_end(&mut self) {
         (self.line_end)(self);
     }
 
-    fn polygon_start(&mut self) {
-        self.point = clip::point_ring;
-        self.line_start = clip::ring_start;
-        self.line_end = clip::ring_end;
-        assert!(
-            self.clipped_polygon.is_empty() && self.raw_polygon.is_empty(),
-            "polygon_start calls cannot be nested"
-        );
+    fn line_start(&mut self) {
+        (self.line_start)(self);
     }
 
     fn polygon_end(&mut self) {
@@ -239,6 +229,16 @@ where
             self.in_polygon = false;
         }
         self.raw_polygon.clear();
+    }
+
+    fn polygon_start(&mut self) {
+        self.point = clip::point_ring;
+        self.line_start = clip::ring_start;
+        self.line_end = clip::ring_end;
+        assert!(
+            self.clipped_polygon.is_empty() && self.raw_polygon.is_empty(),
+            "polygon_start calls cannot be nested"
+        );
     }
 
     fn sphere(&mut self) {
@@ -522,8 +522,16 @@ where
     type CArgs = ();
     type IArgs = ();
 
+    fn clean(&self) -> Clean {
+        Clean::NEEDS_REJOIN - self.clean
+    }
+
     fn clip_line(listener: L, (): ()) -> Self {
         Self::new(listener)
+    }
+
+    fn clip_start(&self) -> Vec2 {
+        Vec2::new(-PI, -FRAC_PI_2)
     }
 
     fn interpolate(line: Option<(Vec2, Vec2)>, direction: Direction, listener: &mut L, &(): &()) {
@@ -549,14 +557,6 @@ where
             listener.point(Vec2::new(-PI, 0.0));
             listener.point(Vec2::new(-PI, lon));
         }
-    }
-
-    fn clean(&self) -> Clean {
-        Clean::NEEDS_REJOIN - self.clean
-    }
-
-    fn clip_start(&self) -> Vec2 {
-        Vec2::new(-PI, -FRAC_PI_2)
     }
 
     fn interpolate_args(&self) -> Self::IArgs {}
@@ -659,6 +659,40 @@ where
         clipped
     }
 
+    /// Computes the first intersection of the given line segment `(a, b)` with
+    /// this clipping circle, returning either the single intersection, or the
+    /// first intersection plus intermediates for computing the second
+    /// intersection.
+    fn first_intersect(
+        &self,
+        (a, b): (Vec2, Vec2),
+        only_one: bool,
+    ) -> Option<Either<Vec2, (CircleIntercept, Vec2)>> {
+        let pa = Vec3::from_cartesian(a);
+        let pb = Vec3::from_cartesian(b);
+        let n1 = Vec3::new(1.0, 0.0, 0.0);
+        let n2 = pa.cross(pb);
+        let n1n2 = n2.x;
+        let n2n2 = n2.square_len();
+        let determinant = n2n2 - n1n2 * n1n2;
+        if determinant == 0.0 {
+            return only_one.then_some(Either::Left(a));
+        }
+        let c1 = self.rcos * n2n2 / determinant;
+        let c2 = -self.rcos * n1n2 / determinant;
+        let big_a = (n1 * c1) + (n2 * c2);
+        let u = n1.cross(n2);
+        let big_a_u = big_a.dot(u);
+        let uu = u.square_len();
+        let t2 = big_a_u * big_a_u - uu * (big_a.square_len() - 1.0);
+        if t2 < 0.0 {
+            return None;
+        }
+        let t2_sqrt = t2.sqrt();
+        let point = Vec2::from_spherical(u * (-big_a_u - t2_sqrt) / uu + big_a);
+        Some(Either::Right(((big_a, u, big_a_u, uu, t2_sqrt), point)))
+    }
+
     /// Finds the single intersection between the given line segment `(a, b)`
     /// and the circle.
     fn intersect(&self, (a, b): (Vec2, Vec2)) -> Option<Vec2> {
@@ -707,40 +741,6 @@ where
             let q1 = u * ((-big_a_u + t) / uu) + big_a;
             (point, Vec2::from_spherical(q1))
         })
-    }
-
-    /// Computes the first intersection of the given line segment `(a, b)` with
-    /// this clipping circle, returning either the single intersection, or the
-    /// first intersection plus intermediates for computing the second
-    /// intersection.
-    fn first_intersect(
-        &self,
-        (a, b): (Vec2, Vec2),
-        only_one: bool,
-    ) -> Option<Either<Vec2, (CircleIntercept, Vec2)>> {
-        let pa = Vec3::from_cartesian(a);
-        let pb = Vec3::from_cartesian(b);
-        let n1 = Vec3::new(1.0, 0.0, 0.0);
-        let n2 = pa.cross(pb);
-        let n1n2 = n2.x;
-        let n2n2 = n2.square_len();
-        let determinant = n2n2 - n1n2 * n1n2;
-        if determinant == 0.0 {
-            return only_one.then_some(Either::Left(a));
-        }
-        let c1 = self.rcos * n2n2 / determinant;
-        let c2 = -self.rcos * n1n2 / determinant;
-        let big_a = (n1 * c1) + (n2 * c2);
-        let u = n1.cross(n2);
-        let big_a_u = big_a.dot(u);
-        let uu = u.square_len();
-        let t2 = big_a_u * big_a_u - uu * (big_a.square_len() - 1.0);
-        if t2 < 0.0 {
-            return None;
-        }
-        let t2_sqrt = t2.sqrt();
-        let point = Vec2::from_spherical(u * (-big_a_u - t2_sqrt) / uu + big_a);
-        Some(Either::Right(((big_a, u, big_a_u, uu, t2_sqrt), point)))
     }
 }
 
@@ -879,6 +879,14 @@ where
             }
     }
 
+    fn clip_line(listener: L, angle: Self::CArgs) -> Self {
+        Self::new(listener, angle)
+    }
+
+    fn clip_start(&self) -> Vec2 {
+        self.clip_start
+    }
+
     /// Draws an interpolated spherical `line` in a `direction` using the given
     /// `args`, emitting the result to `listener`. If `line` is `None`, draws a
     /// line along the entire clipping edge?
@@ -927,24 +935,16 @@ where
         }
     }
 
-    fn clip_line(listener: L, angle: Self::CArgs) -> Self {
-        Self::new(listener, angle)
-    }
-
-    fn clip_start(&self) -> Vec2 {
-        self.clip_start
-    }
-
     fn interpolate_args(&self) -> Self::IArgs {
         (self.radius, self.rcos, self.rsin)
     }
 
-    fn point_visible(&self, point: Vec2) -> bool {
-        point.x.cos() * point.y.cos() > self.rcos
-    }
-
     fn listener(&mut self) -> &mut L {
         &mut self.listener
+    }
+
+    fn point_visible(&self, point: Vec2) -> bool {
+        point.x.cos() * point.y.cos() > self.rcos
     }
 }
 
@@ -1465,20 +1465,20 @@ mod clip_polygon {
     /// A vertex used for clipping polygons which corresponds to the start or end of
     /// a line segment.
     pub(super) struct Vertex {
-        /// The coordinate of the vertex.
-        pub point: Vec2,
-        /// The index of the line segment corresponding to this vertex in the
-        /// list of line segments (`segments`).
-        pub points: Option<usize>,
-        /// The vertex index of the vertex with the same coordinate in the opposite
-        /// list of vertices (`subject` or `clip`).
-        pub other: usize,
         /// If true, this vertex is the start of a `subject` or end of a `clip`.
         pub is_entry: bool,
         /// Set once the vertex has been processed.
         pub is_visited: bool,
         /// The index of the next vertex in the array of `vertices`.
         pub next: usize,
+        /// The vertex index of the vertex with the same coordinate in the opposite
+        /// list of vertices (`subject` or `clip`).
+        pub other: usize,
+        /// The coordinate of the vertex.
+        pub point: Vec2,
+        /// The index of the line segment corresponding to this vertex in the
+        /// list of line segments (`segments`).
+        pub points: Option<usize>,
         /// The index of the previous vertex in the array of `vertices`.
         pub prev: usize,
     }
@@ -1488,12 +1488,12 @@ mod clip_polygon {
         /// in `points`, with its mirror at the index `other`.
         pub fn new(point: Vec2, points: Option<usize>, other: usize, is_entry: bool) -> Self {
             Self {
-                point,
-                points,
-                other,
                 is_entry,
                 is_visited: false,
                 next: usize::MAX,
+                other,
+                point,
+                points,
                 prev: usize::MAX,
             }
         }

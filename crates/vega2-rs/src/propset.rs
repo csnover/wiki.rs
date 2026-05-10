@@ -233,28 +233,6 @@ bag_o_crap! {
 }
 
 impl<'s> Propset<'s> {
-    /// Gets the output x-coordinate and width of a shape which may be defined
-    /// by a combination of `x`, `x2`, `xc`, and `width`.
-    pub fn x(&self, node: &Node<'s, '_>) -> (f64, f64) {
-        Self::dim(
-            self.x.get(node),
-            self.x2.get(node),
-            self.xc.get(node),
-            self.width.get(node),
-        )
-    }
-
-    /// Gets the output y-coordinate and height of a shape which may be defined
-    /// by a combination of `y`, `y2`, `yc`, and `height`.
-    pub fn y(&self, node: &Node<'s, '_>) -> (f64, f64) {
-        Self::dim(
-            self.y.get(node),
-            self.y2.get(node),
-            self.yc.get(node),
-            self.height.get(node),
-        )
-    }
-
     /// Calculates a point and length from the given inputs.
     fn dim(min: Option<f64>, max: Option<f64>, mid: Option<f64>, len: Option<f64>) -> (f64, f64) {
         // This algorithm is unhinged because in Vega it is a code generator
@@ -278,6 +256,28 @@ impl<'s> Propset<'s> {
                 (mid - len / 2.0, len)
             }
         }
+    }
+
+    /// Gets the output x-coordinate and width of a shape which may be defined
+    /// by a combination of `x`, `x2`, `xc`, and `width`.
+    pub fn x(&self, node: &Node<'s, '_>) -> (f64, f64) {
+        Self::dim(
+            self.x.get(node),
+            self.x2.get(node),
+            self.xc.get(node),
+            self.width.get(node),
+        )
+    }
+
+    /// Gets the output y-coordinate and height of a shape which may be defined
+    /// by a combination of `y`, `y2`, `yc`, and `height`.
+    pub fn y(&self, node: &Node<'s, '_>) -> (f64, f64) {
+        Self::dim(
+            self.y.get(node),
+            self.y2.get(node),
+            self.yc.get(node),
+            self.height.get(node),
+        )
     }
 }
 
@@ -424,11 +424,11 @@ pub(super) enum Baseline {
     Top,
     /// Place the middle of the x-height on the anchor point.
     Middle,
-    /// Place the bottom of the text on the anchor point.
-    Bottom,
     /// Place the alphabetic baseline on the anchor point.
     #[default]
     Alphabetic,
+    /// Place the bottom of the text on the anchor point.
+    Bottom,
 }
 
 impl Baseline {
@@ -452,8 +452,8 @@ impl Baseline {
         match self {
             Baseline::Top => Self::ASCENT,
             Baseline::Middle => Self::ASCENT - 0.49,
-            Baseline::Bottom => Self::ASCENT - 1.0,
             Baseline::Alphabetic => 0.0,
+            Baseline::Bottom => Self::ASCENT - 1.0,
         }
     }
 }
@@ -488,12 +488,6 @@ from_value_impl!(Baseline);
 pub(super) struct Color(csscolorparser::Color);
 
 impl Color {
-    /// Creates a colour from rgba values.
-    #[inline]
-    fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self(csscolorparser::Color::new(r, g, b, a))
-    }
-
     /// Creates a colour from hsla values.
     #[inline]
     fn from_hsla(h: f32, s: f32, l: f32, a: f32) -> Self {
@@ -517,6 +511,12 @@ impl Color {
     fn from_lcha(l: f32, c: f32, h: f32, alpha: f32) -> Self {
         Self(csscolorparser::Color::from_lcha(l, c, h, alpha))
     }
+
+    /// Creates a colour from rgba values.
+    #[inline]
+    fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self(csscolorparser::Color::new(r, g, b, a))
+    }
 }
 
 impl From<Color> for Value<'_> {
@@ -538,18 +538,6 @@ pub(super) enum ColorProperty<'s> {
     /// A string value or data reference.
     #[serde(borrow)]
     Named(StringProperty<'s>),
-    /// An RGB value.
-    Rgb {
-        /// Red channel, `0..=255`.
-        #[serde(borrow)]
-        r: NumberProperty<'s>,
-        /// Green channel, `0..=255`.
-        #[serde(borrow)]
-        g: NumberProperty<'s>,
-        /// Blue channel, `0..=255`.
-        #[serde(borrow)]
-        b: NumberProperty<'s>,
-    },
     /// An HSL value.
     Hsl {
         /// Hue, `0..=360`.
@@ -585,6 +573,18 @@ pub(super) enum ColorProperty<'s> {
         /// Hue, `0..=360`.
         #[serde(borrow)]
         h: NumberProperty<'s>,
+    },
+    /// An RGB value.
+    Rgb {
+        /// Red channel, `0..=255`.
+        #[serde(borrow)]
+        r: NumberProperty<'s>,
+        /// Green channel, `0..=255`.
+        #[serde(borrow)]
+        g: NumberProperty<'s>,
+        /// Blue channel, `0..=255`.
+        #[serde(borrow)]
+        b: NumberProperty<'s>,
     },
 }
 
@@ -1059,8 +1059,13 @@ impl core::fmt::Display for StrokeDashArray {
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum ValueRefData<'s, T> {
-    /// Literal value.
-    Value(ValueRefLiteral<T>),
+    /// If true, and `scale` is specified, uses the range band of the scale as
+    /// the retrieved value. This option is useful for determining widths with a
+    /// band scale (an ordinal scale where `points` is `false`).
+    // TODO: Since the JSON schema says this is exclusive with value and field,
+    // it is unclear what is supposed to happen if it is `false` or if `scale`
+    // is unspecified.
+    Band(bool),
     /// Indirect data reference.
     #[serde(borrow)]
     Field(FieldRef<'s>),
@@ -1075,13 +1080,8 @@ pub(super) enum ValueRefData<'s, T> {
     /// Dynamic data reference.
     #[serde(borrow)]
     Signal(Cow<'s, str>),
-    /// If true, and `scale` is specified, uses the range band of the scale as
-    /// the retrieved value. This option is useful for determining widths with a
-    /// band scale (an ordinal scale where `points` is `false`).
-    // TODO: Since the JSON schema says this is exclusive with value and field,
-    // it is unclear what is supposed to happen if it is `false` or if `scale`
-    // is unspecified.
-    Band(bool),
+    /// Literal value.
+    Value(ValueRefLiteral<T>),
 }
 
 impl<'s, T> ValueRefData<'s, T> {
@@ -1161,10 +1161,10 @@ where
 /// hex colour string for `strokeWidth`).
 #[derive(Clone, Debug)]
 pub(super) enum ValueRefLiteral<T> {
-    /// Literal value.
-    Value(T),
     /// Bogus value.
     Invalid,
+    /// Literal value.
+    Value(T),
 }
 
 impl<'de, T> serde::Deserialize<'de> for ValueRefLiteral<T>

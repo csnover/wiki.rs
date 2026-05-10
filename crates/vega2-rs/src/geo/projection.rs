@@ -72,10 +72,6 @@ pub(super) enum Projection {
     Gilbert,
     /// Gingery
     Gingery(GingeryParams),
-    /// Quincuncial where quincuncial = true
-    QuincuncialTrue((f64, fn(Vec2) -> Vec2)),
-    /// Quincuncial where quincuncial = false
-    QuincuncialFalse((f64, fn(Vec2) -> Vec2)),
     /// Hammer, Eckert–Greifendorff, Briesemeister
     Hammer(f64),
     /// Hammer retroazimuthal
@@ -90,6 +86,10 @@ pub(super) enum Projection {
     Loximuthal((f64, f64, f64)),
     /// Modified stereographic
     ModifiedStereographic(&'static [[f64; 2]]),
+    /// Quincuncial where quincuncial = false
+    QuincuncialFalse((f64, fn(Vec2) -> Vec2)),
+    /// Quincuncial where quincuncial = true
+    QuincuncialTrue((f64, fn(Vec2) -> Vec2)),
     /// Rectangular polyconic
     RectangularPolyconic((f64, f64)),
     /// Satellite (tilted perpsective)
@@ -319,6 +319,18 @@ impl Projection {
         }
     }
 
+    /// Returns a calculated centre for the projector.
+    pub fn center(&self, [x, y]: [f64; 2], scale: f64, translate: [f64; 2]) -> Vec2 {
+        let translate = Vec2::new(translate[0], translate[1]);
+        let (x, y) = if matches!(self, Self::TransverseMercator) {
+            (-y, x)
+        } else {
+            (x, y)
+        };
+        let center = self.apply(Vec2::new(x, y).to_radians()) * scale;
+        Vec2::new(translate.x - center.x, translate.y + center.y)
+    }
+
     /// Returns a listener proxy for projections that meddle with streams, or
     /// `None` if this projection is standard enough that it does not need to
     /// do that.
@@ -337,18 +349,6 @@ impl Projection {
             }),
             _ => None,
         }
-    }
-
-    /// Returns a calculated centre for the projector.
-    pub fn center(&self, [x, y]: [f64; 2], scale: f64, translate: [f64; 2]) -> Vec2 {
-        let translate = Vec2::new(translate[0], translate[1]);
-        let (x, y) = if matches!(self, Self::TransverseMercator) {
-            (-y, x)
-        } else {
-            (x, y)
-        };
-        let center = self.apply(Vec2::new(x, y).to_radians()) * scale;
-        Vec2::new(translate.x - center.x, translate.y + center.y)
     }
 
     /// Returns a calculated rotation value for the projector.
@@ -563,59 +563,59 @@ fn albers_usa_params(s: &ProjectorSettings) -> (Projector, Projector, Projector)
 /// Precomputed values for an Armadillo projection.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ArmadilloParams {
-    /// The parallel, in radians.
-    phi0: f64,
-    /// The sine of [`Self::phi0`].
-    sin_phi0: f64,
-    /// The cosine of [`Self::phi0`].
-    cos_phi0: f64,
-    /// The signum of [`Self::phi0`].
-    s_phi0: f64,
-    /// The tangent of [`Self::phi0`].
-    tan_phi0: f64,
     /// Some modifier for phi.
     k: f64,
+    /// The parallel, in radians.
+    phi0: f64,
+    /// The cosine of [`Self::phi0`].
+    phi0_cos: f64,
+    /// The signum of [`Self::phi0`].
+    phi0_s: f64,
+    /// The sine of [`Self::phi0`].
+    phi0_sin: f64,
+    /// The tangent of [`Self::phi0`].
+    phi0_tan: f64,
 }
 
 /// Armadillo projection.
 fn armadillo(
     point: Vec2,
     ArmadilloParams {
-        sin_phi0,
-        cos_phi0,
-        s_phi0,
-        tan_phi0,
+        phi0_cos,
+        phi0_s,
+        phi0_sin,
+        phi0_tan,
         k,
         ..
     }: ArmadilloParams,
 ) -> Vec2 {
     let (sin_l, cos_l) = (point.x / 2.0).sin_cos();
     let (sin_p, cos_p) = point.y.sin_cos();
-    let d = if s_phi0 * point.y > -cos_l.atan2(tan_phi0) - 1e-3 {
+    let d = if phi0_s * point.y > -cos_l.atan2(phi0_tan) - 1e-3 {
         0.0
     } else {
-        -s_phi0 * 10.0
+        -phi0_s * 10.0
     };
     Vec2::new(
         (1.0 + cos_p) * sin_l,
-        d + k + sin_p * cos_phi0 - (1.0 + cos_p) * sin_phi0 * cos_l,
+        d + k + sin_p * phi0_cos - (1.0 + cos_p) * phi0_sin * cos_l,
     )
 }
 
 /// Armadillo projection parameter calculator.
 fn armadillo_params(parallel: f64) -> ArmadilloParams {
     let phi0 = parallel.to_radians();
-    let (sin_phi0, cos_phi0) = phi0.sin_cos();
-    let s_phi0 = nsignum(phi0);
-    let tan_phi0 = (s_phi0 * phi0).tan();
-    let k = (1.0 + sin_phi0 - cos_phi0) / 2.0;
+    let (phi0_sin, phi0_cos) = phi0.sin_cos();
+    let phi0_s = nsignum(phi0);
+    let phi0_tan = (phi0_s * phi0).tan();
+    let k = (1.0 + phi0_sin - phi0_cos) / 2.0;
     ArmadilloParams {
-        phi0,
-        sin_phi0,
-        cos_phi0,
-        s_phi0,
-        tan_phi0,
         k,
+        phi0,
+        phi0_cos,
+        phi0_s,
+        phi0_sin,
+        phi0_tan,
     }
 }
 
@@ -623,8 +623,8 @@ fn armadillo_params(parallel: f64) -> ArmadilloParams {
 fn armadillo_sphere<L>(
     ArmadilloParams {
         phi0,
-        s_phi0,
-        tan_phi0,
+        phi0_s: s_phi0,
+        phi0_tan: tan_phi0,
         ..
     }: ArmadilloParams,
     listener: &mut L,
@@ -709,14 +709,14 @@ fn baker(point: Vec2) -> Vec2 {
 /// Precomputed values for a Berghaus projection.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BerghausParams {
-    /// The negative cosine of [`BERGHAUS_GINGERY_EPSILON`].
-    cr: f64,
     /// ???
     k: f64,
     /// The number of lobes.
     n: f64,
+    /// The negative cosine of [`BERGHAUS_GINGERY_EPSILON`].
+    r_cos: f64,
     /// The sine of [`BERGHAUS_GINGERY_EPSILON`].
-    sr: f64,
+    r_sin: f64,
 }
 
 /// Berghaus projection.
@@ -742,14 +742,23 @@ fn berghaus(point: Vec2, BerghausParams { k, .. }: BerghausParams) -> Vec2 {
 
 /// Berghaus projection parameter calculator.
 fn berghaus_params(n: f64) -> BerghausParams {
-    let (cr, sr) = BERGHAUS_GINGERY_EPSILON.to_radians().sin_cos();
+    let (r_cos, r_sin) = BERGHAUS_GINGERY_EPSILON.to_radians().sin_cos();
     let k = 2.0 * PI / n;
-    BerghausParams { cr: -cr, k, n, sr }
+    BerghausParams {
+        k,
+        n,
+        r_cos: -r_cos,
+        r_sin,
+    }
 }
 
 /// Berghaus projection sphere point generator.
-fn berghaus_sphere<L>(BerghausParams { n, cr, sr, .. }: BerghausParams, listener: &mut L)
-where
+fn berghaus_sphere<L>(
+    BerghausParams {
+        n, r_cos, r_sin, ..
+    }: BerghausParams,
+    listener: &mut L,
+) where
     L: Listener + ?Sized,
 {
     let delta = 360.0 / n;
@@ -762,8 +771,8 @@ where
     )]
     for _ in 0..(n as i32) {
         listener.point(Vec2::new(
-            (sr * phi0.cos()).atan2(cr).to_degrees(),
-            clamp_asin(sr * phi0.sin()).to_degrees(),
+            (r_sin * phi0.cos()).atan2(r_cos).to_degrees(),
+            clamp_asin(r_sin * phi0.sin()).to_degrees(),
         ));
         if phi < -90.0 {
             listener.point(Vec2::new(-90.0, -180.0 - phi - BERGHAUS_GINGERY_EPSILON));
@@ -826,14 +835,14 @@ fn bromley(point: Vec2) -> Vec2 {
 /// Precomputed values for a Chamberlin projection.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ChamberlinParams {
-    /// The precomputed points, in radians.
-    points: [ChamberlinPoint; 3],
     /// Angle 1.
     beta1: f64,
     /// Angle 2.
     beta2: f64,
     /// The mean of points. (Sorry, I have no idea what these values represent.)
     mean: Vec2,
+    /// The precomputed points, in radians.
+    points: [ChamberlinPoint; 3],
 }
 
 /// A point structure used by the Chamberlin projection.
@@ -841,22 +850,22 @@ pub(super) struct ChamberlinParams {
 pub(super) struct ChamberlinPoint {
     /// Original control point.
     p0: Vec2,
-    /// Sine and cosine of the control point.
-    sc_phi: (f64, f64),
-    /// The distance azimuth.
-    v: Vec2,
     /// A calculated point.
     p1: Vec2,
+    /// Sine and cosine of the control point.
+    phi_sincos: (f64, f64),
+    /// The distance azimuth.
+    v: Vec2,
 }
 
 /// Chamberlin projection.
 fn chamberlin(
     point: Vec2,
     ChamberlinParams {
-        points,
         beta1,
         beta2,
         mean,
+        points,
     }: ChamberlinParams,
 ) -> Vec2 {
     fn norm_longitude(lambda: f64) -> f64 {
@@ -869,8 +878,8 @@ fn chamberlin(
     for (control, new) in points.iter().zip(v.iter_mut()) {
         *new = chamberlin_distance_azimuth(
             point.y - control.p0.y,
-            control.sc_phi.1,
-            control.sc_phi.0,
+            control.phi_sincos.1,
+            control.phi_sincos.0,
             cos_p,
             sin_p,
             point.x - control.p0.x,
@@ -947,9 +956,9 @@ fn chamberlin_params(points: [[f64; 2]; 3]) -> (ChamberlinParams, Rotate) {
         let point = rotator.rotate(Vec2::new(x, y).to_radians());
         ChamberlinPoint {
             p0: point,
-            sc_phi: point.y.sin_cos(),
-            v: Vec2::zero(),
             p1: Vec2::zero(),
+            phi_sincos: point.y.sin_cos(),
+            v: Vec2::zero(),
         }
     });
 
@@ -960,10 +969,10 @@ fn chamberlin_params(points: [[f64; 2]; 3]) -> (ChamberlinParams, Rotate) {
             .unwrap();
         a.v = chamberlin_distance_azimuth(
             b.p0.y - a.p0.y,
-            a.sc_phi.1,
-            a.sc_phi.0,
-            b.sc_phi.1,
-            b.sc_phi.0,
+            a.phi_sincos.1,
+            a.phi_sincos.0,
+            b.phi_sincos.1,
+            b.phi_sincos.0,
             b.p0.x - a.p0.x,
         );
     }
@@ -985,10 +994,10 @@ fn chamberlin_params(points: [[f64; 2]; 3]) -> (ChamberlinParams, Rotate) {
 
     (
         ChamberlinParams {
-            points,
             beta1,
             beta2,
             mean,
+            points,
         },
         rotate,
     )
@@ -1275,22 +1284,22 @@ fn foucaut(point: Vec2) -> Vec2 {
 /// Precomputed values for a Gingery projection.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct GingeryParams {
-    /// The number of lobes.
-    n: f64,
-    /// The sine of [`BERGHAUS_GINGERY_EPSILON`].
-    sr: f64,
-    /// The cosine of [`BERGHAUS_GINGERY_EPSILON`].
-    cr: f64,
-    /// The sine of [`Self::rho`].
-    sin_rho: f64,
-    /// The cosine of [`Self::rho`].
-    cos_rho: f64,
-    /// The radius, in radians.
-    rho: f64,
-    /// The square of [`Self::rho`].
-    sq_rho: f64,
     /// ???
     k: f64,
+    /// The number of lobes.
+    n: f64,
+    /// The cosine of [`BERGHAUS_GINGERY_EPSILON`].
+    r_cos: f64,
+    /// The sine of [`BERGHAUS_GINGERY_EPSILON`].
+    r_sin: f64,
+    /// The radius, in radians.
+    rho: f64,
+    /// The cosine of [`Self::rho`].
+    rho_cos: f64,
+    /// The sine of [`Self::rho`].
+    rho_sin: f64,
+    /// The square of [`Self::rho`].
+    rho_sq: f64,
 }
 
 /// Gingery projection.
@@ -1298,7 +1307,7 @@ pub(super) struct GingeryParams {
     clippy::many_single_char_names,
     reason = "blame mathematicians. or maths. or numbers"
 )]
-fn gingery(point: Vec2, GingeryParams { rho, k, sq_rho, .. }: GingeryParams) -> Vec2 {
+fn gingery(point: Vec2, GingeryParams { rho, k, rho_sq, .. }: GingeryParams) -> Vec2 {
     fn arc_length(alpha: f64, k: f64, x: f64) -> f64 {
         let mut y = alpha * x.cos();
         if x < FRAC_PI_2 {
@@ -1323,7 +1332,7 @@ fn gingery(point: Vec2, GingeryParams { rho, k, sq_rho, .. }: GingeryParams) -> 
     let point = azimuthal_equidistant(point);
     let r2 = point.square_len();
 
-    if r2 > sq_rho {
+    if r2 > rho_sq {
         let r = r2.sqrt();
         let theta = point.angle();
         let theta0 = k * (theta / k).round();
@@ -1357,17 +1366,17 @@ fn gingery(point: Vec2, GingeryParams { rho, k, sq_rho, .. }: GingeryParams) -> 
 /// Gingery projection parameter calculator.
 fn gingery_params(n: f64, rho: f64) -> GingeryParams {
     let rho = rho.to_radians();
-    let (sin_rho, cos_rho) = rho.sin_cos();
-    let (cr, sr) = BERGHAUS_GINGERY_EPSILON.sin_cos();
+    let (rho_sin, rho_cos) = rho.sin_cos();
+    let (r_cos, r_sin) = BERGHAUS_GINGERY_EPSILON.sin_cos();
     GingeryParams {
-        n,
-        sr,
-        cr,
-        sin_rho,
-        cos_rho,
-        rho,
-        sq_rho: rho * rho,
         k: TAU / n,
+        n,
+        r_cos,
+        r_sin,
+        rho,
+        rho_cos,
+        rho_sin,
+        rho_sq: rho * rho,
     }
 }
 
@@ -1375,10 +1384,10 @@ fn gingery_params(n: f64, rho: f64) -> GingeryParams {
 fn gingery_sphere<L>(
     GingeryParams {
         n,
-        sr,
-        cr,
-        sin_rho,
-        cos_rho,
+        r_sin,
+        r_cos,
+        rho_sin,
+        rho_cos,
         ..
     }: GingeryParams,
     listener: &mut L,
@@ -1392,11 +1401,13 @@ fn gingery_sphere<L>(
         reason = "n should be a small integer, it is just easier to hold as a float because that is how it is used mostly"
     )]
     for _ in 0..(n as i32) {
-        listener.point(Vec2::new((sr * phi.cos()).atan2(cr), (sr * phi.sin()).asin()).to_degrees());
+        listener.point(
+            Vec2::new((r_sin * phi.cos()).atan2(r_cos), (r_sin * phi.sin()).asin()).to_degrees(),
+        );
         listener.point(
             Vec2::new(
-                (sin_rho * (phi - delta / 2.0).cos()).atan2(cos_rho),
-                (sin_rho * (phi - delta / 2.0).sin()).asin(),
+                (rho_sin * (phi - delta / 2.0).cos()).atan2(rho_cos),
+                (rho_sin * (phi - delta / 2.0).sin()).asin(),
             )
             .to_degrees(),
         );
@@ -1734,8 +1745,6 @@ fn hatano(point: Vec2) -> Vec2 {
 /// Precomputed values for a Healpix projection.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct HealpixParams {
-    /// The cosine of 0.0.
-    cos_zero: f64,
     /// ???
     dx1: f64,
     /// ???
@@ -1748,13 +1757,15 @@ pub(super) struct HealpixParams {
     y0: f64,
     /// ???
     y1: f64,
+    /// The cosine of 0.0.
+    zero_cos: f64,
 }
 
 /// Hierarchical Equal Area isoLatitude Pixelisation of a 2-sphere projection.
 fn healpix(
     point: Vec2,
     HealpixParams {
-        cos_zero,
+        zero_cos,
         n,
         dx1,
         y0,
@@ -1775,7 +1786,7 @@ fn healpix(
             (y0 + (point.y - y1) * 4.0 * dy1 / dx0) * signum_phi,
         )
     } else {
-        cylindrical_equal_area(point, cos_zero)
+        cylindrical_equal_area(point, zero_cos)
     };
     Vec2::new(point.x / 2.0, point.y)
 }
@@ -1791,13 +1802,13 @@ fn healpix_params(n: f64) -> HealpixParams {
     let dy1 = collignon(Vec2::new(0.0, FRAC_PI_2)).y - y1;
     let k = TAU / n;
     HealpixParams {
-        cos_zero: 0.0_f64.cos(),
         dx1,
         dy1,
         k,
         n,
         y0,
         y1,
+        zero_cos: 0.0_f64.cos(),
     }
 }
 
@@ -1848,14 +1859,14 @@ pub(super) struct HillParams {
     big_b: f64,
     /// The ratio.
     big_k: f64,
+    /// The square of [`Self::big_k`].
+    big_k_sq: f64,
     /// [`Self::big_k`] plus one.
     big_l: f64,
+    /// The square of [`Self::big_l`].
+    big_l_sq: f64,
     /// ???
     rho0: f64,
-    /// The square of [`Self::big_k`].
-    sq_big_k: f64,
-    /// The square of [`Self::big_l`].
-    sq_big_l: f64,
 }
 
 /// Hill projection.
@@ -1868,8 +1879,8 @@ fn hill(
         big_l,
         beta,
         rho0,
-        sq_big_k,
-        sq_big_l,
+        big_k_sq,
+        big_l_sq,
     }: HillParams,
 ) -> Vec2 {
     let t = 1.0 - point.y.sin();
@@ -1880,8 +1891,8 @@ fn hill(
         for _ in 0..25 {
             let (sin_t, cos_t) = theta.sin_cos();
             beta_beta1 = beta + sin_t.atan2(big_l - cos_t);
-            big_c = 1.0 + sq_big_l - 2.0 * big_l * cos_t;
-            let delta = (theta - sq_big_k * beta - big_l * sin_t + big_c * beta_beta1
+            big_c = 1.0 + big_l_sq - 2.0 * big_l * cos_t;
+            let delta = (theta - big_k_sq * beta - big_l * sin_t + big_c * beta_beta1
                 - 0.5 * t * big_b)
                 / (2.0 * big_l * sin_t * beta_beta1);
             theta -= delta;
@@ -1906,17 +1917,15 @@ fn hill_params(big_k: f64) -> HillParams {
     let big_b = PI + 4.0 * beta * big_l;
     let big_a = 2.0 * (PI / big_b).sqrt();
     let rho0 = 0.5 * big_a * (big_l + (big_k * (2.0 + big_k)).sqrt());
-    let sq_big_k = big_k * big_k;
-    let sq_big_l = big_l * big_l;
     HillParams {
         beta,
         big_a,
         big_b,
         big_k,
+        big_k_sq: big_k * big_k,
         big_l,
+        big_l_sq: big_l * big_l,
         rho0,
-        sq_big_k,
-        sq_big_l,
     }
 }
 
@@ -2320,9 +2329,9 @@ pub(super) struct SatelliteParams {
     /// The distance.
     big_p: f64,
     /// The cosine of the tilt.
-    cos_o: f64,
+    o_cos: f64,
     /// The sine of the tilt.
-    sin_o: f64,
+    o_sin: f64,
 }
 
 /// Satellite projection.
@@ -2330,24 +2339,24 @@ fn satellite(
     point: Vec2,
     SatelliteParams {
         big_p,
-        sin_o,
-        cos_o,
+        o_sin,
+        o_cos,
     }: SatelliteParams,
 ) -> Vec2 {
     let point = satellite_vertical(point, big_p);
     let y = point.y;
-    let big_a = y * sin_o / (big_p - 1.0) + cos_o;
-    Vec2::new(point.x * cos_o, y) / big_a
+    let big_a = y * o_sin / (big_p - 1.0) + o_cos;
+    Vec2::new(point.x * o_cos, y) / big_a
 }
 
 /// Satellite projection parameter calculator.
 fn satellite_params(big_p: f64, tilt: f64) -> Option<SatelliteParams> {
     (tilt != 0.0).then(|| {
-        let (sin_o, cos_o) = tilt.sin_cos();
+        let (o_sin, o_cos) = tilt.sin_cos();
         SatelliteParams {
             big_p,
-            cos_o,
-            sin_o,
+            o_cos,
+            o_sin,
         }
     })
 }
@@ -2405,10 +2414,10 @@ pub(super) struct TwoPointEquidistantParams {
     lambda_a: f64,
     /// Half the positive half-distance.
     lambda_b: f64,
-    /// The square of [`Self::z0`].
-    sq_z0: f64,
     /// The half-distance of the two points.
     z0: f64,
+    /// The square of [`Self::z0`].
+    z0_sq: f64,
 }
 
 /// Two-point equidistant projection.
@@ -2418,7 +2427,7 @@ fn two_point_equidistant(
         z0,
         lambda_a,
         lambda_b,
-        sq_z0,
+        z0_sq,
     }: TwoPointEquidistantParams,
 ) -> Vec2 {
     debug_assert_ne!(z0, 0.0, "should have picked azimuthal_equidistant");
@@ -2431,7 +2440,7 @@ fn two_point_equidistant(
     let zb = zb * zb;
     Vec2::new(
         (za - zb) / (2.0 * z0),
-        ys * clamp_sqrt(4.0 * sq_z0 * zb - (sq_z0 - za + zb) * (sq_z0 - za + zb)) / (2.0 * z0),
+        ys * clamp_sqrt(4.0 * z0_sq * zb - (z0_sq - za + zb) * (z0_sq - za + zb)) / (2.0 * z0),
     )
 }
 
@@ -2439,12 +2448,11 @@ fn two_point_equidistant(
 fn two_point_equidistant_params(z0: f64) -> TwoPointEquidistantParams {
     let lambda_b = z0 / 2.0;
     let lambda_a = -lambda_b;
-    let sq_z0 = z0 * z0;
     TwoPointEquidistantParams {
         lambda_a,
         lambda_b,
-        sq_z0,
         z0,
+        z0_sq: z0 * z0,
     }
 }
 

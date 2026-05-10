@@ -1,6 +1,10 @@
 //! Types and functions for interacting with a MediaWiki compressed multistream
 //! database dump.
 
+mod article;
+mod index;
+mod prefetch;
+
 use article::ArticleDatabase;
 use index::Index;
 use libphp_rs::strtr;
@@ -15,10 +19,6 @@ use rayon::iter::ParallelIterator;
 use schnellru::LruMap;
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 use time::UtcDateTime;
-
-mod article;
-mod index;
-mod prefetch;
 
 /// The result type for database operations.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -97,12 +97,12 @@ type ArticleCache = LruMap<String, CacheableArticle, ByMemoryUsage>;
 
 /// A MediaWiki multistream database reader.
 pub(crate) struct RawDatabase<'a> {
-    /// The uncompressed text index part of the database.
-    index: Index<'a>,
     /// The compressed XML part of the database.
     articles: ArticleDatabase,
     /// A decompressed article LRU cache.
     cache: RwLock<ArticleCache>,
+    /// The uncompressed text index part of the database.
+    index: Index<'a>,
 }
 
 impl RawDatabase<'_> {
@@ -122,9 +122,9 @@ impl RawDatabase<'_> {
         log::info!("Loaded {} articles from index", index.len());
 
         Ok(Self {
-            index,
             articles,
             cache: RwLock::new(LruMap::new(ByMemoryUsage::new(cache_size_limit))),
+            index,
         })
     }
 
@@ -154,6 +154,33 @@ impl RawDatabase<'_> {
     #[inline]
     pub fn creation_date(&self) -> Option<UtcDateTime> {
         self.articles.metadata().creation_date
+    }
+
+    /// Extracts an article from the compressed database using the given title
+    /// and index entry.
+    fn extract_article(&self, title: &str, entry: index::IndexEntry) -> Result<Article> {
+        let time = Instant::now();
+        let mut article = self.articles.get_article(&entry);
+        log::trace!("Extracted article in {:.2?}", time.elapsed());
+
+        if let (Ok(article), Some(Hack::HorsePills(hacks))) = (article.as_mut(), HACKS.get(title)) {
+            log::info!("Modifying {title} using hacks");
+            article.body = strtr(&article.body, hacks).into_owned();
+        }
+
+        article
+    }
+
+    /// Gets an article directly from the database.
+    fn fetch_article(&self, title: &str) -> Result<Article> {
+        let time = Instant::now();
+        self.index
+            .find_article(title)
+            .ok_or(Error::NotFound)
+            .and_then(|entry| {
+                log::trace!("Located article in {:.2?}", time.elapsed());
+                self.extract_article(title, entry)
+            })
     }
 
     /// Gets an article with the given title from the database. The article will
@@ -202,55 +229,10 @@ impl RawDatabase<'_> {
         article.ok_or(Error::NotFound)
     }
 
-    /// The site name from the database.
-    #[inline]
-    pub fn name(&self) -> &str {
-        &self.articles.metadata().site_name
-    }
-
-    /// The registered namespaces in the database.
-    #[inline]
-    pub fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace> {
-        &self.articles.metadata().namespaces
-    }
-
     /// The total number of articles in the database.
     #[inline]
     pub fn len(&self) -> usize {
         self.index.len()
-    }
-
-    /// Finds articles in the index whose titles match the given query.
-    #[inline]
-    pub fn search(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str> {
-        self.index.find_articles(query)
-    }
-
-    /// Extracts an article from the compressed database using the given title
-    /// and index entry.
-    fn extract_article(&self, title: &str, entry: index::IndexEntry) -> Result<Article> {
-        let time = Instant::now();
-        let mut article = self.articles.get_article(&entry);
-        log::trace!("Extracted article in {:.2?}", time.elapsed());
-
-        if let (Ok(article), Some(Hack::HorsePills(hacks))) = (article.as_mut(), HACKS.get(title)) {
-            log::info!("Modifying {title} using hacks");
-            article.body = strtr(&article.body, hacks).into_owned();
-        }
-
-        article
-    }
-
-    /// Gets an article directly from the database.
-    fn fetch_article(&self, title: &str) -> Result<Article> {
-        let time = Instant::now();
-        self.index
-            .find_article(title)
-            .ok_or(Error::NotFound)
-            .and_then(|entry| {
-                log::trace!("Located article in {:.2?}", time.elapsed());
-                self.extract_article(title, entry)
-            })
     }
 
     /// Returns true if this article database might contain data for the given
@@ -264,6 +246,24 @@ impl RawDatabase<'_> {
                 Namespace::SPECIAL | Namespace::FILE | Namespace::MEDIA
             )
             && self.namespaces().contains_key(&ns_id)
+    }
+
+    /// The site name from the database.
+    #[inline]
+    pub fn name(&self) -> &str {
+        &self.articles.metadata().site_name
+    }
+
+    /// The registered namespaces in the database.
+    #[inline]
+    pub fn namespaces(&self) -> &HashMap<i32, DatabaseNamespace> {
+        &self.articles.metadata().namespaces
+    }
+
+    /// Finds articles in the index whose titles match the given query.
+    #[inline]
+    pub fn search(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str> {
+        self.index.find_articles(query)
     }
 }
 

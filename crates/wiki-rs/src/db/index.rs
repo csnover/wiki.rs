@@ -179,15 +179,6 @@ impl Index<'_> {
         })
     }
 
-    /// Finds entries in the index with titles matching the given regular
-    /// expression.
-    pub(super) fn find_articles(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str> {
-        self.entries.par_iter().filter_map(|title| {
-            let title = title.into_str();
-            query.is_match(title).then_some(title)
-        })
-    }
-
     /// Finds a single entry in the index with the given article title.
     pub(super) fn find_article(&self, title: &str) -> Option<IndexEntry> {
         // `get_or_insert` cannot be used because holding the write lock during
@@ -204,6 +195,15 @@ impl Index<'_> {
             self.cache.write().insert(title.to_owned(), entry);
             entry
         }
+    }
+
+    /// Finds entries in the index with titles matching the given regular
+    /// expression.
+    pub(super) fn find_articles(&self, query: &regex::Regex) -> impl ParallelIterator<Item = &str> {
+        self.entries.par_iter().filter_map(|title| {
+            let title = title.into_str();
+            query.is_match(title).then_some(title)
+        })
     }
 
     /// Finds a single entry in the index cache with the given article title.
@@ -290,11 +290,10 @@ impl Index<'_> {
 struct PackedOffset<'a>(u64, PhantomData<&'a ()>);
 
 impl<'a> PackedOffset<'a> {
-    /// Offset size, in bits.
-    const DATA_SIZE: u32 = 52;
-
     /// Offset mask.
     const DATA_MASK: u64 = (1 << Self::DATA_SIZE) - 1;
+    /// Offset size, in bits.
+    const DATA_SIZE: u32 = 52;
 
     /// Creates a new [`PackedOffset`].
     #[inline]

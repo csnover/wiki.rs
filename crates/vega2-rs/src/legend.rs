@@ -84,6 +84,11 @@ impl<'s> Legend<'s> {
         &self.scale
     }
 
+    /// Gets the corresponding scale for the legend.
+    pub fn scale<'b>(&self, node: &'b Node<'s, '_>) -> Option<ScaleNode<'s, 'b>> {
+        node.scale(self.scale_name())
+    }
+
     /// Gets the name of the corresponding scale for the legend.
     pub fn scale_name(&self) -> &str {
         match &self.scale {
@@ -93,11 +98,6 @@ impl<'s> Legend<'s> {
             | Kind::Size(name)
             | Kind::Stroke(name) => name,
         }
-    }
-
-    /// Gets the corresponding scale for the legend.
-    pub fn scale<'b>(&self, node: &'b Node<'s, '_>) -> Option<ScaleNode<'s, 'b>> {
-        node.scale(self.scale_name())
     }
 }
 

@@ -42,10 +42,10 @@ pub type UriLibrary = libwikitext_lua_gpl::UriLibrary<'static, Arc<dyn IDatabase
 /// A cached Lua module.
 #[derive(Clone)]
 pub struct VmCacheEntry {
-    /// The module.
-    module: StashedClosure,
     /// The module’s sandbox environment.
     env: StashedTable,
+    /// The module.
+    module: StashedClosure,
 }
 
 /// Creates a new Lua VM.
@@ -292,7 +292,7 @@ fn fetch_module(
             Ok((ctx.stash(module), ctx.stash(env)))
         })?;
 
-        let entry = VmCacheEntry { module, env };
+        let entry = VmCacheEntry { env, module };
         state.statics.vm_cache.insert(code.id, entry.clone());
 
         if memory_exceeded(state) {
@@ -415,8 +415,8 @@ fn expand_template(
     .map_err(Into::into)
 }
 
-/// Expands an argument passed to the given `frame_id` and returns the resulting
-/// Wikitexts as a table of k-vs.
+/// Expands all arguments passed to the given `frame_id` and returns the
+/// expanded Wikitext as a table of k-vs.
 fn get_all_expanded_arguments(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,

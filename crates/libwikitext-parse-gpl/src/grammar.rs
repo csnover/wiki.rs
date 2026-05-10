@@ -3842,23 +3842,23 @@ impl core::hash::Hash for Context {
 /// A container production state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ProdKind {
+    /// In a language conversion production.
+    Lang,
     /// In a wikilink production.
     Link,
     /// In a template production.
     Template,
-    /// In a language conversion production.
-    Lang,
 }
 
 /// An XML-like tag production state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum TagKind {
-    /// In an HTML tag.
-    Html,
     /// In an annotation tag.
     Annotation,
     /// In an extension tag.
     Extension,
+    /// In an HTML tag.
+    Html,
     /// In an inclusion control tag.
     Inclusion,
 }

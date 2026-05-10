@@ -6,17 +6,6 @@
     reason = "implementing an interface invisible to clippy"
 )]
 
-use gc_arena::{Collect, Rootable};
-use libwikitext_common::db::IDatabase;
-pub use mw::{HostFrame, LuaEngine};
-pub use mw_language::LanguageLibrary;
-pub use mw_message::MessageLibrary;
-pub use mw_site::SiteLibrary;
-pub use mw_title::TitleLibrary;
-pub use mw_uri::UriLibrary;
-use piccolo::{Executor, Function, Lua, Stack, StashedString, StashedTable};
-use prelude::*;
-
 mod ext_mw_data;
 mod ext_mw_parserfunctions;
 mod ext_stubs;
@@ -33,12 +22,23 @@ mod mw_uri;
 mod mw_ustring;
 mod prelude;
 
+use gc_arena::{Collect, Rootable};
+use libwikitext_common::db::IDatabase;
+pub use mw::{HostFrame, LuaEngine};
+pub use mw_language::LanguageLibrary;
+pub use mw_message::MessageLibrary;
+pub use mw_site::SiteLibrary;
+pub use mw_title::TitleLibrary;
+pub use mw_uri::UriLibrary;
+use piccolo::{Executor, Function, Lua, Stack, StashedString, StashedTable};
+use prelude::*;
+
 /// The host interface for MediaWiki Scribunto Lua extensions.
 trait MwInterface: Collect + Default + Sized {
-    /// The name of the module. This will be the name seen in Lua tracebacks.
-    const NAME: &str;
     /// The Lua code for the module.
     const CODE: &[u8];
+    /// The name of the module. This will be the name seen in Lua tracebacks.
+    const NAME: &str;
 
     /// Returns the function table for the Lua side of the interface.
     ///
@@ -48,7 +48,7 @@ trait MwInterface: Collect + Default + Sized {
     /// later when `setup` is called.
     fn register(ctx: Context<'_>) -> Table<'_>;
 
-    /// Returns the options for the correpsonding Lua `setupInterface` function.
+    /// Returns the options for the corresponding Lua `setupInterface` function.
     fn setup<'gc, Db: IDatabase>(
         &self,
         _: &Db,
@@ -57,57 +57,67 @@ trait MwInterface: Collect + Default + Sized {
 }
 
 /// A call from a Lua module back into the renderer.
-#[allow(
-    clippy::allow_attributes,
-    reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
-)]
-#[allow(missing_docs, reason = "the fields are self-documenting")]
 #[derive(Clone)]
 pub enum HostCall {
-    /// A call to a [parser function](libwikitext_render::parser_fns).
+    /// Call a [parser function](libwikitext_render::parser_fns).
     CallParserFunction {
+        /// The ID of the context frame to be used for the call.
         frame_id: StashedString,
+        /// The name of the parser function.
         name: StashedString,
+        /// The arguments to the parser function.
         args: StashedTable,
     },
-    /// A call to [`expand_template`](LuaEngine::expand_template).
+    /// Expand a template from the database.
     ExpandTemplate {
+        /// The ID of the context frame to be used for the call.
         frame_id: StashedString,
+        /// The title of the template to expand.
         title: StashedString,
+        /// The arguments to the template.
         args: StashedTable,
     },
-    /// A call to [`get_all_expanded_arguments`](LuaEngine::get_all_expanded_arguments).
-    GetAllExpandedArguments { frame_id: StashedString },
-    /// A call to [`get_expanded_argument`](LuaEngine::get_expanded_argument).
-    GetExpandedArgument {
+    /// Get all arguments passed to a template as expanded Wikitext.
+    GetAllExpandedArguments {
+        /// The ID of the frame to be used when getting arguments.
         frame_id: StashedString,
+    },
+    /// Get one argument passed to a template as expanded Wikitext.
+    GetExpandedArgument {
+        /// The ID of the frame to be used when getting the argument.
+        frame_id: StashedString,
+        /// The argument key.
         key: StashedString,
     },
-    /// A call to [`preprocess`](LuaEngine::preprocess).
+    /// Expand raw Wikitext.
     Preprocess {
+        /// The ID of the context frame to be used for the call.
         frame_id: StashedString,
+        /// The Wikitext to parse.
         text: StashedString,
     },
-    /// A call to [`unstrip`](mw_text::TextLibrary::unstrip) or
-    /// [`unstrip_no_wiki`](mw_text::TextLibrary::unstrip_no_wiki).
+    /// Restore content from `<nowiki>` strip markers and optionally remove
+    /// other strip markers.
     Unstrip {
+        /// Text which may contain strip markers.
         text: StashedString,
+        /// The mode to use when restoring the content.
         mode: UnstripMode,
     },
 }
 
-/// The mode to use when restoring strip markers.
+/// A mode for restoring content from strip markers.
 #[derive(Clone, Copy)]
 pub enum UnstripMode {
-    /// Restore the original text of `<nowiki>` markers and retain other strip
-    /// markers.
-    OrigText,
-    /// Restore the escaped text of `<nowiki>` markers and retain other strip
-    /// markers.
-    UnstripNoWiki,
-    /// Restore the original text of `<nowiki>` markers and remove all other
+    /// Replace `<nowiki>` markers with their inner content and retain other
     /// strip markers.
+    OrigText,
+    /// Replace `<nowiki>` markers with their inner content and remove all
+    /// other strip markers.
     Unstrip,
+    /// Replace `<nowiki>` markers with escaped Wikitext of their inner content
+    /// and retain other strip markers.
+    UnstripNoWiki,
 }
 
 /// Initialises all the interfaces required for Wikipedia modules to work.

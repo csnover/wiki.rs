@@ -593,7 +593,7 @@ peg::parser! {pub(super) grammar easy_timeline() for str {
 
     Ok(PlotData {
         align, anchor, at, bar, color, font_size, link,
-        mark, shift, text_color, text, width
+        mark, shift, text, text_color, width
     })
   }
 
@@ -1023,18 +1023,18 @@ pub(super) enum Chunk<'input> {
 enum ColorPart<'input> {
     /// ID.
     Id(ColorId<'input>),
-    /// Value.
-    Value(ColorValue),
     /// Legend text.
     Legend(Vec<TextSpan<'input>>),
+    /// Value.
+    Value(ColorValue),
 }
 
 /// Image dimension.
 enum Dim {
-    /// Fixed size.
-    Size(f64),
     /// Auto size.
     Auto,
+    /// Fixed size.
+    Size(f64),
 }
 
 /// `ImageSize` attribute.
@@ -1049,10 +1049,10 @@ enum ImageSizePart {
 
 /// `Legend` attribute.
 enum LegendPart {
-    /// Column count.
-    Columns(u8),
     /// Column width.
     ColumnWidth(Unit),
+    /// Column count.
+    Columns(u8),
     /// Left position, relative to the bottom-left corner of the image.
     Left(Unit),
     /// Orientation.

@@ -25,7 +25,14 @@ pub struct SiteLibrary<'db> {
     config: Cell<Option<&'db Configuration>>,
 }
 
-impl<'db: 'static> SiteLibrary<'db> {
+impl<'db> SiteLibrary<'db> {
+    /// Sets the article database configuration.
+    pub fn set_config(&self, config: &'db Configuration) {
+        self.config.set(Some(config));
+    }
+}
+
+impl SiteLibrary<'_> {
     /// Returns the ID of the namespace with the given name, if one exists.
     fn get_ns_index<'gc>(
         &self,
@@ -119,16 +126,11 @@ impl<'db: 'static> SiteLibrary<'db> {
         // log::warn!("stub: usersInGroup({group:?})");
         Ok(0)
     }
-
-    /// Sets the article database configuration.
-    pub fn set_config(&self, config: &'db Configuration) {
-        self.config.set(Some(config));
-    }
 }
 
 impl<'db: 'static> MwInterface for SiteLibrary<'db> {
-    const NAME: &'static str = "mw.site";
     const CODE: &'static [u8] = include_bytes!("./modules/mw.site.lua");
+    const NAME: &'static str = "mw.site";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {

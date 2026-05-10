@@ -153,15 +153,15 @@ impl<'s> Definition<'s> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(bound = "'s: 'de")]
 enum Operand<'s> {
-    /// A fixed value.
-    #[serde(borrow)]
-    Value(Value<'s>),
     /// A named argument.
     #[serde(borrow)]
     Arg(Cow<'s, str>),
     /// The result of another predicate call.
     #[serde(borrow)]
     Predicate(Call<'s>),
+    /// A fixed value.
+    #[serde(borrow)]
+    Value(Value<'s>),
 }
 
 impl<'s> Operand<'s> {
@@ -182,27 +182,15 @@ enum Operator<'s> {
     /// Return true if all operands are true.
     #[serde(alias = "&&")]
     And,
-    /// Return true if any operand is true.
-    #[serde(alias = "||")]
-    Or,
     /// Return true if `lhs == rhs`.
     #[serde(rename = "==")]
     Eq,
-    /// Return true if `lhs != rhs`.
-    #[serde(rename = "!=")]
-    Ne,
     /// Return true if `lhs > rhs`.
     #[serde(rename = ">")]
     Gt,
     /// Return true if `lhs >= rhs`.
     #[serde(rename = ">=")]
     Gte,
-    /// Return true if `lhs < rhs`.
-    #[serde(rename = "<")]
-    Lt,
-    /// Return true if `lhs <= rhs`.
-    #[serde(rename = "<=")]
-    Lte,
     /// Return true if the given item is in the given set.
     #[serde(rename = "in")]
     In {
@@ -213,6 +201,18 @@ enum Operator<'s> {
         #[serde(borrow, flatten)]
         set: SourceSet<'s>,
     },
+    /// Return true if `lhs < rhs`.
+    #[serde(rename = "<")]
+    Lt,
+    /// Return true if `lhs <= rhs`.
+    #[serde(rename = "<=")]
+    Lte,
+    /// Return true if `lhs != rhs`.
+    #[serde(rename = "!=")]
+    Ne,
+    /// Return true if any operand is true.
+    #[serde(alias = "||")]
+    Or,
 }
 
 /// A reference to a scale.
@@ -220,10 +220,10 @@ enum Operator<'s> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
 enum ScopedScaleRef<'s> {
-    /// The name of the scale.
+    /// A scale name.
     #[serde(borrow)]
     Short(Cow<'s, str>),
-    /// Use a
+    /// A scale name with options.
     Long {
         /// If true, use an inverse mapping from the scale output to input.
         #[serde(default)]

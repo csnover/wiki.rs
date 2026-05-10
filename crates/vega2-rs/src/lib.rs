@@ -39,14 +39,6 @@
 //! ₂. Signals are not supported or implemented since this is a static image
 //!    generator, and signals are entirely about event-driven data updates.
 
-use core::cell::RefCell;
-use either::Either;
-use libphp_rs::{DateTime, DateTimeZone};
-use rand::rngs::SmallRng;
-use serde_json_borrow::Value;
-use std::borrow::Cow;
-use time::Duration;
-
 mod axis;
 mod data;
 mod expr;
@@ -63,6 +55,14 @@ mod template;
 mod tests;
 mod tick;
 mod transform;
+
+use core::cell::RefCell;
+use either::Either;
+use libphp_rs::{DateTime, DateTimeZone};
+use rand::rngs::SmallRng;
+use serde_json_borrow::Value;
+use std::borrow::Cow;
+use time::Duration;
 
 /// A Graph error.
 #[derive(thiserror::Error, Debug)]
@@ -123,10 +123,10 @@ impl<T> DoubleSizeIterator for T where T: DoubleEndedIterator + ExactSizeIterato
 /// A data processing node.
 #[derive(Clone, Debug)]
 struct Node<'s, 'b> {
-    /// The currently processing data object.
-    pub item: &'b Value<'s>,
     /// The data set for this node.
     pub data: Cow<'b, [Value<'s>]>,
+    /// The currently processing data object.
+    pub item: &'b Value<'s>,
     /// The mark for this node.
     pub mark: Option<&'b mark::Mark<'s>>,
     /// The “current” time.
@@ -143,8 +143,8 @@ impl<'s, 'b> Node<'s, 'b> {
     /// Creates a new node.
     fn new(spec: &'b spec::Spec<'s>, rng: &'b RefCell<SmallRng>, now: DateTime) -> Self {
         Self {
-            item: &Value::Null,
             data: Cow::Borrowed(core::slice::from_ref(&Value::Null)),
+            item: &Value::Null,
             mark: None,
             now,
             parent: None,
@@ -207,8 +207,8 @@ impl<'s, 'b> Node<'s, 'b> {
                 mark.invalidate_caches();
             }
             Self {
-                item,
                 data: Cow::Borrowed(&self.data),
+                item,
                 mark: self.mark,
                 now: self.now,
                 parent: self.parent,
@@ -249,6 +249,17 @@ impl<'s, 'b> Node<'s, 'b> {
         })
     }
 
+    /// Gets a visual property of the current node.
+    fn visual(&self, key: &str) -> Option<Value<'s>> {
+        match key {
+            "width" => Some(self.width().into()),
+            "height" => Some(self.height().into()),
+            key => self
+                .mark
+                .and_then(|mark| mark.propset(propset::Kind::Enter)?.get(key, self)),
+        }
+    }
+
     /// Gets the width of the nearest container.
     fn width(&self) -> f64 {
         self.find(|node, candidate| match candidate {
@@ -256,6 +267,19 @@ impl<'s, 'b> Node<'s, 'b> {
             Either::Right(spec) => Some(spec.width()),
         })
         .unwrap()
+    }
+
+    /// Creates a new node for an expression evaluator.
+    fn with_child_data(&'b self, item: &'b Value<'s>) -> Node<'s, 'b> {
+        Self {
+            data: Cow::Borrowed(core::slice::from_ref(item)),
+            item,
+            mark: self.mark,
+            now: self.now,
+            parent: self.parent,
+            rng: self.rng,
+            spec: self.spec,
+        }
     }
 
     /// Creates a new node for a child mark of a group.
@@ -267,37 +291,13 @@ impl<'s, 'b> Node<'s, 'b> {
         };
 
         Self {
-            item: self.item,
             data,
+            item: self.item,
             mark: Some(mark),
             now: self.now,
             parent: Some(self),
             rng: self.rng,
             spec: self.spec,
-        }
-    }
-
-    /// Creates a new node for an expression evaluator.
-    fn with_child_data(&'b self, item: &'b Value<'s>) -> Node<'s, 'b> {
-        Self {
-            item,
-            data: Cow::Borrowed(core::slice::from_ref(item)),
-            mark: self.mark,
-            now: self.now,
-            parent: self.parent,
-            rng: self.rng,
-            spec: self.spec,
-        }
-    }
-
-    /// Gets a visual property of the current node.
-    fn visual(&self, key: &str) -> Option<Value<'s>> {
-        match key {
-            "width" => Some(self.width().into()),
-            "height" => Some(self.height().into()),
-            key => self
-                .mark
-                .and_then(|mark| mark.propset(propset::Kind::Enter)?.get(key, self)),
         }
     }
 }
@@ -351,12 +351,6 @@ impl<'s> ScaleNode<'s, '_> {
         self.scale.is_time()
     }
 
-    /// Gets an iterator of approximately `count` representative values from the
-    /// domain, or the domain itself if this is not a quantitative scale.
-    fn ticks(&self, count: f64) -> Vec<Value<'s>> {
-        self.scale.ticks(self.node, count)
-    }
-
     /// Gets the calculated width of the bands in the range.
     fn range_band(&self) -> f64 {
         self.scale.range_band(self.node)
@@ -366,6 +360,12 @@ impl<'s> ScaleNode<'s, '_> {
     /// guaranteed to be sorted.
     fn range_extent(&self) -> (f64, f64) {
         self.scale.range_extent(self.node)
+    }
+
+    /// Gets an iterator of approximately `count` representative values from the
+    /// domain, or the domain itself if this is not a quantitative scale.
+    fn ticks(&self, count: f64) -> Vec<Value<'s>> {
+        self.scale.ticks(self.node, count)
     }
 }
 

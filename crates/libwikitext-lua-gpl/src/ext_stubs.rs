@@ -13,7 +13,6 @@ use libwikitext_common::db::IDatabase;
 pub(super) struct WikiRsStubs;
 
 impl MwInterface for WikiRsStubs {
-    const NAME: &str = "WikiRsStubs";
     const CODE: &[u8] = br#"
         local wiki_rs_stubs = {}
 
@@ -154,6 +153,7 @@ impl MwInterface for WikiRsStubs {
 
         return wiki_rs_stubs
     "#;
+    const NAME: &str = "WikiRsStubs";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         Table::new(&ctx)

@@ -313,6 +313,11 @@ fn compile_part_inner(
 /// A parsed CSS chunk.
 #[derive(Debug, Eq, PartialEq)]
 enum Chunk<'a> {
+    /// An `@apply` rule.
+    Apply {
+        /// The name of the mixin to apply.
+        name: &'a str,
+    },
     /// An `@import` rule.
     Import {
         /// The URL to import.
@@ -326,11 +331,6 @@ enum Chunk<'a> {
         name: &'a str,
         /// The content of the mixin.
         content: &'a str,
-    },
-    /// An `@apply` rule.
-    Apply {
-        /// The name of the mixin to apply.
-        name: &'a str,
     },
     /// Opaque CSS content.
     Opaque(&'a str),

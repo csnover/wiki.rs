@@ -24,8 +24,8 @@ impl LuaLibrary {
 }
 
 impl MwInterface for LuaLibrary {
-    const NAME: &str = "mw.ext.ParserFunctions";
     const CODE: &[u8] = include_bytes!("./modules/ext/mw.ext.ParserFunctions.lua");
+    const NAME: &str = "mw.ext.ParserFunctions";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {
