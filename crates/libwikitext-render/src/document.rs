@@ -358,16 +358,14 @@ impl Document {
 
         self.html.write_char('>')?;
         self.graf_emitter.after_start_tag(&self.html, &name);
-        self.outline_emitter.after_start_tag(&name);
         if VOID_TAGS.contains(&name) {
             self.graf_emitter.before_end_tag(&self.html, &name);
             self.graf_emitter.after_end_tag(&self.html, &name);
-            self.outline_emitter
-                .end_tag(&mut state.globals.outline, &mut self.html, &name)?;
             if name == "br" || name == "hr" {
                 self.last_char = '\n';
             }
         } else {
+            self.outline_emitter.after_start_tag(&name);
             self.stack.push(Node::Tag(name));
         }
         Ok(())
@@ -561,6 +559,7 @@ impl Surrogate<Error> for Document {
         _span: Span,
         value: char,
     ) -> Result {
+        let start = self.html.len();
         match value {
             '<' => self.html += "&lt;",
             '>' => self.html += "&gt;",
@@ -571,6 +570,7 @@ impl Surrogate<Error> for Document {
         if !matches!(self.stack.last(), Some(Node::Attribute)) {
             self.last_char = value;
         }
+        self.outline_emitter.text_entity(value, &self.html[start..]);
         Ok(())
     }
 
@@ -756,7 +756,7 @@ impl Surrogate<Error> for Document {
                 list.finish(&mut self.html)?;
                 self.stack.pop();
                 self.finish_line(state)?;
-                self.graf_emitter.end_list();
+                self.graf_emitter.end_list(&mut self.html);
             }
             None | Some(Node::Tag(_)) => {
                 self.finish_line(state)?;
@@ -1104,14 +1104,17 @@ impl Node {
             Node::Attribute => {}
             Node::Tag(name) => {
                 debug_assert!(!VOID_TAGS.contains(&name));
+                let (at, delta) = outline_emitter.end_tag(outline, out, &name)?;
+                if delta != 0 {
+                    graf_emitter.advance(at, delta);
+                }
                 graf_emitter.before_end_tag(out, &name);
                 write!(out, "</{name}>")?;
-                outline_emitter.end_tag(outline, out, &name)?;
                 graf_emitter.after_end_tag(out, &name);
             }
             Node::List(mut list) => {
                 list.finish(out)?;
-                graf_emitter.end_list();
+                graf_emitter.end_list(out);
             }
         }
         Ok(())

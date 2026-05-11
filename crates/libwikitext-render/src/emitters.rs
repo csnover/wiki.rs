@@ -83,6 +83,28 @@ pub(super) struct GrafEmitter {
 }
 
 impl GrafEmitter {
+    /// Advance line start positions after `at` by `delta`.
+    pub(super) fn advance(&mut self, at: usize, delta: usize) {
+        if self.line_start > at {
+            self.line_start += delta;
+        }
+        for root in &mut self.blockquote_roots {
+            if root.start > at {
+                root.start += delta;
+            }
+        }
+        for point in &mut self.wrap_points {
+            if point.start > at {
+                point.start += delta;
+            }
+            if let Some(end) = &mut point.end
+                && *end > at
+            {
+                *end += delta;
+            }
+        }
+    }
+
     /// Updates the graf emitter state for the given end tag.
     #[inline]
     pub(super) fn after_end_tag(&mut self, out: &str, name_lower: &str) {
@@ -316,9 +338,13 @@ impl GrafEmitter {
 
     /// Restores normal processing of lines.
     #[inline]
-    pub(super) fn end_list(&mut self) {
+    pub(super) fn end_list(&mut self, out: &mut String) {
         self.pending = GrafPendingState::None;
         self.in_list -= 1;
+        if self.in_list == 0 {
+            out.push('\n');
+            self.line_start = out.len();
+        }
     }
 
     /// Marks the end of a p-wrapper.
@@ -726,36 +752,58 @@ impl OutlineEmitter {
         Ok(())
     }
 
-    /// Updates the outline emitter state for the given end tag.
-    pub fn end_tag(&mut self, outline: &mut Outline, out: &mut String, name: &str) -> fmt::Result {
-        if self.stack.pop_if(|tag| *tag == name).is_some() {
+    /// Updates the outline emitter state for the given end tag. Returns the
+    /// number of bytes added to `out` and the position where they were added.
+    pub fn end_tag(
+        &mut self,
+        outline: &mut Outline,
+        out: &mut String,
+        name: &str,
+    ) -> Result<(usize, usize), fmt::Error> {
+        Ok(if self.stack.pop_if(|tag| *tag == name).is_some() {
             write!(self.html, "</{name}>")?;
+            (0, 0)
         } else if let Ok(level) = name.parse() {
             debug_assert_eq!(Some(level), self.tag);
             debug_assert!(self.stack.is_empty());
-            core::mem::take(self).finish_entry(outline, out, level);
-        }
-        Ok(())
+            core::mem::take(self).finish_entry(outline, out, level)
+        } else {
+            (0, 0)
+        })
     }
 
-    /// Finalises an entry, emitting it to the outline.
-    fn finish_entry(self, outline: &mut Outline, out: &mut String, level: HeadingLevel) {
+    /// Finalises an entry, emitting it to the outline. Returns the number of
+    /// bytes added to `out`.
+    fn finish_entry(
+        self,
+        outline: &mut Outline,
+        out: &mut String,
+        level: HeadingLevel,
+    ) -> (usize, usize) {
         let (range, id) = match self.id {
             OutlineAnchor::Implicit(text) => (None, anchor_encode(&text)),
             OutlineAnchor::Explicit(range) => (Some(range.clone()), out[range].to_string()),
         };
+
         let insert_id = if let Some(id) = outline.push(level, self.html, id.clone()) {
             if let Some(range) = range {
+                let delta = id.len() - range.len();
+                let at = range.end;
                 out.replace_range(range, id);
-                None
-            } else {
-                Some(id)
+                return (at, delta);
             }
+
+            Some(id)
         } else {
             range.is_none().then_some(id.as_str())
         };
+
         if let Some(id) = insert_id {
-            out.insert_str(self.attributes_pos, &format!(r#" id="{id}""#));
+            let id = format!(r#" id="{id}""#);
+            out.insert_str(self.attributes_pos, &id);
+            (self.attributes_pos, id.len())
+        } else {
+            (0, 0)
         }
     }
 
@@ -776,6 +824,17 @@ impl OutlineEmitter {
         }
         self.in_attrs = true;
         Ok(())
+    }
+
+    /// Updates the outline emitter state for the given HTML entity.
+    pub fn text_entity(&mut self, value: char, html: &str) {
+        if self.tag.is_none() || self.in_attrs {
+            return;
+        }
+        if let OutlineAnchor::Implicit(id) = &mut self.id {
+            id.push(value);
+        }
+        self.html += html;
     }
 
     /// Updates the outline emitter state for the given run of text.
