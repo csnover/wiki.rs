@@ -12,6 +12,10 @@ use libwikitext_parse::{
 // for a mutable reference because smarter people than me suggest that there is
 // no way to express reborrowing in the type system (and I did try the
 // `reborrow` crate).
+// TODO: This is a broken API. The ability to call to functions directly means
+// that anything that overrides `adopt_token`, `adopt_tokens`, `adopt_output`,
+// etc. is not guaranteed to see those calls if some filter is sitting in the
+// middle selectively invoking the direct functions.
 pub(crate) trait Surrogate<E> {
     /// Visits a [`Token::Autolink`].
     #[inline]
