@@ -68,7 +68,7 @@ pub struct Outline {
     /// The contents of the outline.
     entries: Vec<OutlineEntry>,
     /// A map from a base anchor ID to the next free suffix for that base ID.
-    /// Used to ensure globally unique heading IDs.
+    /// Used to ensure globally unique case-insensitive heading IDs.
     ids: HashMap<String, u32>,
 }
 
@@ -97,11 +97,12 @@ impl Outline {
     /// Pushes a new entry to the outline at the given heading level. If the
     /// given ID conflicted with an existing one, a new unique ID is returned.
     pub(super) fn push(&mut self, level: HeadingLevel, html: String, id: String) -> Option<&str> {
-        let (conflict, id) = if let Some(suffix) = self.ids.get_mut(&id) {
+        let lower = id.to_ascii_lowercase();
+        let (conflict, id) = if let Some(suffix) = self.ids.get_mut(&lower) {
             *suffix += 1;
             (true, format!("{id}_{suffix}"))
         } else {
-            self.ids.insert(id.clone(), 1);
+            self.ids.insert(lower, 1);
             (false, id)
         };
 
