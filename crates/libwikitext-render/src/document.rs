@@ -13,6 +13,7 @@ use super::{
 };
 use core::fmt::{self, Write as _};
 use either::Either;
+use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{anchor_encode, decode_html};
 use libwikitext_parse::{
@@ -122,7 +123,8 @@ impl Document {
         value: &[Spanned<Token>],
     ) -> Result {
         let name = name.to_ascii_lowercase();
-        // TODO: This probably should all be unstripping?
+        // TODO: Probably *all* the values should be going through
+        // StripMarkers::unstrip?
         let value = match name.as_str() {
             "class" => {
                 // TODO: Look for the mw-collapse classes and dump appropriate
@@ -130,15 +132,12 @@ impl Document {
                 // elements without scripts
                 Either::Right(value)
             }
-            "id" => Either::Left(anchor_encode(&decode_html(&sp.eval(state, value)?))),
+            "id" => Either::Left(anchor_encode(&sp.eval_unstrip(state, value)?)),
             "style" => {
                 // MediaWiki does sanitising, wiki.rs does not. What wiki.rs
                 // *does* do is get all these inline styles out of the way so
                 // that `!important` is not required to style pages
-                let value = sp.eval(state, value)?;
-                // TODO: This probably should only be unstripping nowiki?
-                let value = state.strip_markers.unstrip(&value);
-                let value = decode_html(&value);
+                let value = sp.eval_unstrip(state, value)?.map(decode_html);
                 let mut out = String::new();
                 let mut input = &*value;
                 while !input.is_empty() {
@@ -163,8 +162,7 @@ impl Document {
                 Either::Left(out)
             }
             "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
-                let value = sp.eval(state, value)?;
-                let value = decode_html(&value);
+                let value = sp.eval_unstrip(state, value)?.map(decode_html);
                 // https://github.com/rust-lang/rust/issues/79524
                 let mut out = String::new();
                 let mut started = false;
