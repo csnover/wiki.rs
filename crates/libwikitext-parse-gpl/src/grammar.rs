@@ -304,7 +304,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
 
         let extra_right = (e.len() > level).then(|| {
             let delta = e.len() - level;
-            Spanned::new(Token::Text, s.span.start, s.span.start + delta)
+            Spanned::new(Token::Text, e.span.start, e.span.start + delta)
         });
 
         let content = extra_left.into_iter()
