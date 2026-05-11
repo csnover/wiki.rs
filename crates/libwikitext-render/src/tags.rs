@@ -5,7 +5,10 @@ use http::Uri;
 use libwikitext_common::{
     anchor_encode, db::DatabaseProvider as _, decode_html, make_url, title::Title, title_decode,
 };
-use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
+use libwikitext_parse::{
+    Argument, FileMap, Span, Spanned, Token,
+    builder::{tok_arg, token},
+};
 use std::borrow::Cow;
 
 /// Renders an external web site link.
@@ -110,14 +113,16 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     sp: &StackFrame<'_>,
     link: &LinkKind<'_>,
 ) -> Result {
-    let query = if let LinkKind::Internal(title) = link
-        && title.interwiki().is_none()
-        && !state.statics.db.contains(title)
-    {
-        Some("mode=edit&redlink=1")
+    let (query, title) = if let LinkKind::Internal(title) = link {
+        if title.interwiki().is_none() && !state.statics.db.contains(title) {
+            (Some("mode=edit&redlink=1"), None)
+        } else {
+            (None, Some(title.prefixed_text()))
+        }
     } else {
-        None
+        (None, None)
     };
+
     let options = LinkKindOptions {
         base_uri: &state.statics.base_uri,
         interwiki_map: &state.statics.db.config().interwiki_map,
@@ -129,7 +134,13 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
             source,
             Token::StartTag {
                 name: token!(source, Span { "a" }),
-                attributes: token![source, [ "href" => &href ]].into(),
+                attributes: {
+                    let mut attrs = vec![tok_arg(source, "href", &href)];
+                    if let Some(title) = title {
+                        attrs.push(tok_arg(source, "title", title));
+                    }
+                    attrs
+                },
                 self_closing: false
             }
         )
