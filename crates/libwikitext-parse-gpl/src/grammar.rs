@@ -2394,7 +2394,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// ```
     rule wikilink_target_simple(ctx: &Context) -> Spanned<Token>
     = spanned(<
-      [^'<'|'['|'{'|'\n'|'\r'|'\t'|'|'|'!'|']'|'}'|' '|'&'|'-']+
+      [^'<'|'['|'{'|'\n'|'\r'|'\t'|'|'|'!'|']'|'}'|' '|'&'|'-'|'\x7f']+
       { Token::Text }
     >)
 
@@ -2408,7 +2408,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     = !inline_breaks(ctx)
       !pipe()
       t:(
-        directive(ctx)
+        target_directive(ctx)
         // TODO: This is going to create a lot of intermediate tokens; is
         // there a reason to not collect into a single Token::Text here?
         / (!"]]" t:spanned(<(text_char() / ['!'|'<'|'-'|'}'|']'|'\n'|'\r']) { Token::Text }>) { vec![t] })
@@ -2626,7 +2626,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     rule extlink_nonipv6url_complex(ctx: &Context) -> Vec<Spanned<Token>>
     = !inline_breaks(&ctx)
       t:(
-          directive(&ctx)
+          target_directive(&ctx)
         / t:spanned(<['&'|'|'|'{'|'}'|'-'|'!'|'='] { Token::Text }>) { vec![t] }
       )
     { t }
@@ -2960,16 +2960,20 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     // Text //
     //////////
 
-    /// Any item which can exist within a plain text context.
-    rule directive(ctx: &Context) -> Vec<Spanned<Token>>
-    = t:strip_marker() { vec![t] }
-    / t:comment() { vec![t] }
+    /// Any item which can exist within a link target context.
+    rule target_directive(ctx: &Context) -> Vec<Spanned<Token>>
+    = t:comment() { vec![t] }
     / t:annotation_tag(ctx) { vec![t] }
-    / t:wellformed_extension_tag(ctx) { vec![t] }
     / t:template_param_or_template(ctx) { t }
     / &"-{" t:lang_variant_or_tpl(ctx) { t }
     / &"&" t:htmlentity() { vec![t] }
     / include_limits(ctx)
+
+    /// Any item which can exist within a plain text context.
+    rule directive(ctx: &Context) -> Vec<Spanned<Token>>
+    = target_directive(ctx)
+    / t:strip_marker() { vec![t] }
+    / t:wellformed_extension_tag(ctx) { vec![t] }
 
     /// A behavior switch.
     ///
