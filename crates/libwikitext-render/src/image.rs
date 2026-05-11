@@ -118,9 +118,7 @@ pub(super) fn media_options<'s>(
     options.link = Some(LinkKind::Internal(title));
 
     for argument in arguments {
-        let value = sp
-            .eval(state, argument.value())?
-            .map_ref(|v| v.trim_ascii());
+        let value = sp.eval(state, argument.value())?.map_ref(str::trim_ascii);
         if let Some(name_node) = &argument.name() {
             let name = sp.eval(state, name_node)?;
             if name == "link" {

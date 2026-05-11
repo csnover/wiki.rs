@@ -2,6 +2,7 @@
 
 use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
 use http::Uri;
+use libmisc::CowExt as _;
 use libwikitext_common::{
     anchor_encode, db::DatabaseProvider as _, decode_html, make_url, title::Title, title_decode,
 };
@@ -44,9 +45,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     content: &[Spanned<Argument>],
     trail: Option<&str>,
 ) -> Result<(), Error> {
-    let target = sp.eval(state, target)?;
-    let target = title_decode(&target);
-
+    let target = sp.eval(state, target)?.map(title_decode);
     let title = Title::new(state.statics.db.config(), &target, None);
     let force_link = target.starts_with(':');
     if !force_link && title.is_local_category() {
