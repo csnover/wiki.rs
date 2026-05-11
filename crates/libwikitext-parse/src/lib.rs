@@ -9,7 +9,7 @@ pub mod strip;
 pub mod visit;
 
 pub use codemap::{FileMap, Span, Spanned};
-pub use inspectors::inspect;
+pub use inspectors::{inspect, inspect_one};
 use libphp_rs::strtr;
 pub use libwikitext_common::config::{Configuration, ConfigurationSource, MagicLinks};
 pub use peg::str::LineCol;

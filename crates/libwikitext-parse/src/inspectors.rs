@@ -15,6 +15,15 @@ where
     VInspector::<'a, T::Inspector<'a>>(input, tree)
 }
 
+/// Returns a debug inspector for a token list using the given source code.
+pub fn inspect_one<'a, T>(input: &'a FileMap<'a>, node: &'a T) -> T::Inspector<'a>
+where
+    T: Inspectable,
+    T::Inspector<'a>: TInspector<'a, Inspectee = T>,
+{
+    T::Inspector::inspect(input, node)
+}
+
 /// An inspectable type.
 pub trait Inspectable {
     /// The default inspector for the type.
