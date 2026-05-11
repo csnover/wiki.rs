@@ -1,8 +1,10 @@
 use super::test_parser::{Chunk, SectionText, Sections, Testfile};
+use http::Uri;
+use libphp_rs::DateTime;
 use libwikitext_common::db::{DatabaseProvider, MockDatabase};
 use libwikitext_data::{CONFIG, MESSAGES};
-use libwikitext_parse::FileMap;
-use libwikitext_render::{RenderOutput, render_test};
+use libwikitext_parse::{FileMap, inspect};
+use libwikitext_render::{RenderOutput, Statics, render_test};
 use std::{collections::HashMap, fs::File, io::Read as _, path::Path, sync::Arc};
 
 const BASE_DIR: &str = "./src/tests";
@@ -47,10 +49,14 @@ test_from_file! {
 }
 
 #[track_caller]
-fn run_tests_from_file(path: impl AsRef<Path>) {
+fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
     let empty_options = SectionText::Kv(HashMap::new());
 
-    let _ = env_logger::try_init();
+    let _ = env_logger::builder()
+        .parse_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .format_timestamp(None)
+        .try_init();
 
     let code = {
         let mut file = File::open(&path).unwrap();
@@ -84,7 +90,13 @@ fn run_tests_from_file(path: impl AsRef<Path>) {
         }
     }
 
-    let db = Arc::new(db) as Arc<dyn DatabaseProvider>;
+    let db = Arc::new(db);
+    let mut statics = Statics::builder()
+        .base_time(DateTime::UNIX_EPOCH)
+        .base_uri(Uri::from_static("http://example.com"))
+        .db(Arc::clone(&db) as Arc<dyn DatabaseProvider>)
+        .parser(db.config())
+        .build();
 
     for chunk in tests.chunks {
         if let Chunk::Test {
@@ -93,30 +105,35 @@ fn run_tests_from_file(path: impl AsRef<Path>) {
             sections,
         } = chunk
         {
+            let line = file_map.find_line_col(pos).line;
+            let target = &format!("{suite}.txt:{line}");
+
             let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
-                log::warn!("Could not find wikitext for {name}!");
+                log::warn!(target: target, "Could not find wikitext for {name}!");
                 continue;
             };
 
-            let line = file_map.find_line_col(pos).line;
-            log::info!("[{line}] Running {name} ...");
+            log::info!(target: target, "Running {name:?}");
             total += 1;
 
             let options = sections.get("options").unwrap_or(&empty_options);
             let page_name = options.get("title").unwrap_or("Parser test");
-            let result = match render_test(&db, &MESSAGES, page_name, wikitext) {
+            let result = match render_test(&mut statics, &MESSAGES, page_name, wikitext) {
                 Ok(result) => result,
                 Err(err) => {
-                    log::error!("Render failed: {err}");
+                    log::error!(target: target, "Render failed: {err}");
+                    if let Ok(ast) = statics.parser.parse(wikitext, false) {
+                        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(wikitext), &ast.root));
+                    }
                     fails += 1;
                     continue;
                 }
             };
 
-            let fail = run_test_from_file(&sections, options, &result);
+            let fail = run_test_from_file(target, &sections, options, &result);
             fails += i32::from(fail);
             if !fail {
-                log::info!("pass!");
+                log::info!(target: target, "pass");
             }
         }
     }
@@ -126,6 +143,7 @@ fn run_tests_from_file(path: impl AsRef<Path>) {
 
 #[track_caller]
 fn run_test_from_file(
+    target: &str,
     sections: &Sections<'_>,
     options: &SectionText<'_>,
     result: &RenderOutput,
@@ -147,6 +165,7 @@ fn run_test_from_file(
         && result.content != expected_html
     {
         log::error!(
+            target: target,
             "{}",
             similar_asserts::SimpleDiff::from_str(
                 expected_html,
@@ -160,22 +179,23 @@ fn run_test_from_file(
 
     if let Some(meta) = expected_meta {
         if meta.flags.is_some() {
-            log::warn!("TODO: Compare flags");
+            log::warn!(target: target, "TODO: Compare flags");
         } else if options.contains("showflags") {
-            log::error!("Expected flags");
+            log::error!(target: target, "Expected flags");
             fail = true;
         }
 
         if meta.title.is_some() {
-            log::warn!("TODO: Compare title");
+            log::warn!(target: target, "TODO: Compare title");
         } else if options.contains("showtitle") {
-            log::error!("Expected title");
+            log::error!(target: target, "Expected title");
             fail = true;
         }
 
         if let Some(expected_toc) = &meta.toc {
             if expected_toc.len() != result.outline.len() {
                 log::error!(
+                    target: target,
                     "Outline length mismatch: expected {}, got {}",
                     expected_toc.len(),
                     result.outline.len()
@@ -190,6 +210,7 @@ fn run_test_from_file(
             {
                 if expected.tag != actual.level.tag_name() {
                     log::error!(
+                        target: target,
                         "Outline {index} tag mismatch: expected {}, got {}",
                         actual.level.tag_name(),
                         expected.tag
@@ -198,6 +219,7 @@ fn run_test_from_file(
                 }
                 if expected.line != actual.html {
                     log::error!(
+                        target: target,
                         "Outline {index} title mismatch: expected {:?}, got {:?}",
                         expected.line,
                         actual.html
@@ -206,7 +228,7 @@ fn run_test_from_file(
                 }
             }
         } else if options.contains("showtocdata") {
-            log::error!("Missing expected TOC");
+            log::error!(target: target, "Missing expected TOC");
             fail = true;
         }
     }
@@ -218,7 +240,7 @@ macro_rules! test_from_file {
     ($($ident:ident => $path:literal),* $(,)?) => {
         $(#[test]
         fn $ident() {
-            run_tests_from_file(format!("{BASE_DIR}/{}.txt", $path));
+            run_tests_from_file($path, format!("{BASE_DIR}/{}.txt", $path));
         })*
     }
 }

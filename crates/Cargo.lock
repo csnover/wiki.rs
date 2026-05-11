@@ -1037,6 +1037,8 @@ name = "libwikitext-render-gpl"
 version = "1.0.0"
 dependencies = [
  "env_logger",
+ "http",
+ "libphp-rs",
  "libwikitext-common",
  "libwikitext-data",
  "libwikitext-parse",

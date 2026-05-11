@@ -500,23 +500,16 @@ pub fn render_string(
 /// * Rendering fails
 // TODO: This function should not exist here.
 pub fn render_test(
-    db: &Arc<dyn DatabaseProvider>,
+    statics: &mut Statics<'_>,
     messages: &serde_json_borrow::Value<'_>,
     page_name: &str,
     source: &str,
 ) -> Result<RenderOutput> {
-    let mut statics = Statics::builder()
-        .base_time(DateTime::UNIX_EPOCH)
-        .base_uri(Uri::from_static("http://example.com"))
-        .db(Arc::clone(db))
-        .parser(db.config())
-        .build();
-
     let sp = StackFrame::new(
-        Title::new(db.config(), page_name, None),
+        Title::new(statics.db.config(), page_name, None),
         FileMap::new(source),
     );
-    render(&mut statics, messages, &sp, LoadMode::Module)
+    render(statics, messages, &sp, LoadMode::Module)
 }
 
 /// Main renderer entrypoint.
