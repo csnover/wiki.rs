@@ -545,6 +545,7 @@ impl ListEmitter {
             let old = &mut self.stack[common_end - 1];
             let new = ListKind::from(bullets[common_end - 1]);
             old.end(out, false)?;
+            out.write_char('\n')?;
             new.start(out, false)?;
             *old = new;
         }
