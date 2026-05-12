@@ -468,19 +468,14 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        span: Span,
+        _span: Span,
         target: &[Spanned<Token>],
         content: &[Spanned<Token>],
     ) -> Result {
-        self.adopt_external_link(
-            state,
-            sp,
-            span,
-            target,
-            // autourl have empty content, other magic links have generated
-            // content
-            if content.is_empty() { target } else { content },
-        )
+        // autourl have empty content, other magic links have generated
+        // content
+        let content = if content.is_empty() { target } else { content };
+        tags::render_external_link(self, state, sp, target, content, true)
     }
 
     fn adopt_behavior_switch(
@@ -615,7 +610,7 @@ impl Surrogate<Error> for Document {
         target: &[Spanned<Token>],
         content: &[Spanned<Token>],
     ) -> Result {
-        tags::render_external_link(self, state, sp, target, content)
+        tags::render_external_link(self, state, sp, target, content, false)
     }
 
     fn adopt_generated(

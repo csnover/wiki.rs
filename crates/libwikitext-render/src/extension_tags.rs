@@ -984,7 +984,7 @@ fn timeline(
             use easytimeline::{TextSpan, TranslateResponse};
             let (text, link) = match request.span {
                 TextSpan::ExternalLink { target, text } => {
-                    (text, Some(LinkKind::External((*target).into())))
+                    (text, Some(LinkKind::External((*target).into(), false)))
                 }
                 TextSpan::Link { target, text } => (
                     text,
@@ -996,7 +996,9 @@ fn timeline(
                 ),
                 TextSpan::Text(text) => (
                     text,
-                    request.url.map(|target| LinkKind::External(target.into())),
+                    request
+                        .url
+                        .map(|target| LinkKind::External(target.into(), false)),
                 ),
             };
             TranslateResponse {

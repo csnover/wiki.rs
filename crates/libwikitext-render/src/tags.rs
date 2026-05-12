@@ -6,10 +6,7 @@ use libmisc::CowExt as _;
 use libwikitext_common::{
     anchor_encode, db::DatabaseProvider as _, decode_html, make_url, title::Title, title_decode,
 };
-use libwikitext_parse::{
-    Argument, FileMap, Span, Spanned, Token,
-    builder::{tok_arg, token},
-};
+use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
 use std::borrow::Cow;
 
 /// Renders an external web site link.
@@ -19,12 +16,13 @@ pub(super) fn render_external_link<W: WriteSurrogate>(
     sp: &StackFrame<'_>,
     target: &[Spanned<Token>],
     content: &[Spanned<Token>],
+    auto_link: bool,
 ) -> Result {
     // TODO: Handle “external” links that just come back to the wiki. Right now
     // it is annoying to try to do this because `http::Uri` does not conform to
     // RFC 3986 so it mixes up authority and path when the scheme is missing,
     // but adding a whole new dependency just for this one case is too much.
-    let link = LinkKind::External(sp.eval(state, target)?);
+    let link = LinkKind::External(sp.eval(state, target)?, auto_link);
     render_start_link(out, state, sp, &link)?;
     if content.is_empty() {
         let ordinal = &mut state.globals.external_link_ordinal;
@@ -112,16 +110,7 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     sp: &StackFrame<'_>,
     link: &LinkKind<'_>,
 ) -> Result {
-    let (query, title) = if let LinkKind::Internal(title) = link {
-        if title.interwiki().is_none() && !state.statics.db.contains(title) {
-            (Some("mode=edit&redlink=1"), None)
-        } else {
-            (None, Some(title.prefixed_text()))
-        }
-    } else {
-        (None, None)
-    };
-
+    let query = matches!(link, LinkKind::Internal(title) if title.interwiki().is_none() && !state.statics.db.contains(title)).then_some("mode=edit&redlink=1");
     let options = LinkKindOptions {
         base_uri: &state.statics.base_uri,
         interwiki_map: &state.statics.db.config().interwiki_map,
@@ -134,11 +123,29 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
             Token::StartTag {
                 name: token!(source, Span { "a" }),
                 attributes: {
-                    let mut attrs = vec![tok_arg(source, "href", &href)];
-                    if let Some(title) = title {
-                        attrs.push(tok_arg(source, "title", title));
+                    match link {
+                        LinkKind::External(_, auto_link) => token![source, [
+                            "rel" => "nofollow",
+                            "class" => if *auto_link {
+                                "external free"
+                            } else {
+                                "external text"
+                            },
+                            "href" => &href
+                        ]]
+                        .into(),
+                        LinkKind::Internal(title) => {
+                            if query.is_none() {
+                                token![source, [
+                                    "href" => &href,
+                                    "title" => title.prefixed_text()
+                                ]]
+                                .into()
+                            } else {
+                                token![source, ["href" => &href]].into()
+                            }
+                        }
                     }
-                    attrs
                 },
                 self_closing: false
             }
@@ -170,11 +177,14 @@ pub(crate) struct LinkKindOptions<'a> {
     pub interwiki_map: &'a phf::Map<&'static str, &'static str>,
 }
 
+/// An explicit external link (false) or an auto-link (true).
+type AutoLink = bool;
+
 /// A kind of link to render.
 #[derive(Clone, Debug)]
 pub(super) enum LinkKind<'a> {
     /// An external link.
-    External(Cow<'a, str>),
+    External(Cow<'a, str>, AutoLink),
     /// An internal link.
     Internal(Title),
 }
@@ -184,7 +194,7 @@ impl LinkKind<'_> {
     /// `href` attribute.
     pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
         match self {
-            LinkKind::External(url) => {
+            LinkKind::External(url, _) => {
                 // TODO: Hack together some URL parsing good enough that there
                 // is an actual way to check that the origin is the same
                 if url.starts_with('/') && !url.starts_with("//") {

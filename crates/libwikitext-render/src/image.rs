@@ -134,7 +134,7 @@ pub(super) fn media_options<'s>(
                         .get(..proto.len())
                         .is_some_and(|v| v.eq_ignore_ascii_case(proto))
                 }) {
-                    Some(LinkKind::External(value))
+                    Some(LinkKind::External(value, false))
                 } else {
                     Some(LinkKind::Internal(Title::new(
                         state.statics.db.config(),

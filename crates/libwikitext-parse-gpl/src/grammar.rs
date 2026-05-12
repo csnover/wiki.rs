@@ -2545,6 +2545,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       t:spanned(<
           "["
           target:extlink_target(&ctx)
+          &no_punctuation_char_extlink_content()
           (space() / unispace())*
           content:(t:inlineline(&ctx)? { t.unwrap_or(vec![]) })
           "]"
@@ -2945,16 +2946,31 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// Any character which is not syntatically relevant to a plain text URL in
     /// Wikitext.
     rule no_punctuation_char()
-    = [^'<'|'>'|'&'|'"'|'\''|'['|']'|'{'|' '|'\r'|'\n'
-      |'\x00'..='\x20'|'\x7f'|'\u{00A0}'|'\u{1680}'|'\u{180E}'
-      |'\u{2000}'..='\u{200A}'|'\u{202F}'|'\u{205F}'|'\u{3000}']
+    = [^'<'|'&'|'"'|'\''|'['|']'|'{'|' '|'\r'|'\n'
+      |'\0'..='\x20'|'\x7f'|'\u{00A0}'|'\u{1680}'|'\u{180E}'
+      |'\u{2000}'..='\u{200A}'|'\u{202F}'|'\u{205F}'|'\u{3000}'
+      |'>']
 
     /// Any character which is not syntatically relevant to a URL inside an
     /// `extlink`.
     rule no_punctuation_char_extlink()
-    = [^'<'|'&'|'"'|'\''|'['|']'|'{'|'}'|' '|'\t'|'\r'|'\n'
-      |'|'|'!'|'-'|'='|'\u{00A0}'|'\u{1680}'|'\u{180E}'
-      |'\u{2000}'..='\u{200A}'|'\u{202F}'|'\u{205F}'|'\u{3000}']
+    = [^'<'|'&'|'"'|'\''|'['|']'|'{'|' '|'\r'|'\n'
+      |'\0'..='\x20'|'\x7f'|'\u{00A0}'|'\u{1680}'|'\u{180E}'
+      |'\u{2000}'..='\u{200A}'|'\u{202F}'|'\u{205F}'|'\u{3000}'
+      |'|'|'!'|'-'|'='|'}'|'\t']
+
+    /// Any character which is allowed in the content part of an `extlink`.
+    ///
+    /// Because the character classes that are allowed in the target-part of an
+    /// external link are more restrictive than the ones allowed in the
+    /// content-part, and because there does not need to be an explicit
+    /// whitespace delimiter between the two, it is necessary to check whether
+    /// the target-part is terminated by a character which is allowed by in
+    /// the content-part (in which case, continue to parse as an extlink), or
+    /// if it is also invalid in the content-part (in which case, fail extlink
+    /// and fall back to a text node).
+    rule no_punctuation_char_extlink_content()
+    = [^'\0'..='\x08'|'\x0a'..='\x1f'|'\u{FFFD}']
 
     //////////
     // Text //
