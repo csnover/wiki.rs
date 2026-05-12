@@ -21,14 +21,18 @@ where
         F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, B>>,
         Self: Sized;
 
-    /// Maps the value in a `Cow`, extending the borrow if `self` is borrowed.
+    /// Makes a new `Cow` using a `Cow`-returning callback. If `self` is
+    /// `Cow::Borrowed` and `f` returns `Cow::Borrowed`, the borrow is extended.
+    /// Otherwise, the result is moved (if owned) or converted to `Cow::Owned`
+    /// (if borrowed).
     #[must_use]
     fn map<F>(self, f: F) -> Self
     where
         F: for<'b> FnOnce(&'b B) -> Cow<'b, B>;
 
-    /// If `self` is borrowed, reborrows the value. Otherwise, converts the
-    /// result of `f` into an owned value.
+    /// Makes a new `Cow` using a reference-returning callback. If `self` is
+    /// `Cow::Borrowed`, the borrow is extended. Otherwise, the result is
+    /// converted to `Cow::Owned`.
     #[must_use]
     fn map_ref<F>(self, f: F) -> Self
     where
@@ -38,8 +42,8 @@ where
     #[must_use]
     fn owned(self) -> Option<Cow<'static, B>>;
 
-    /// If `self` is borrowed, returns `other`. Otherwise, takes the result of
-    /// `f` as an owned value.
+    /// If `self` is borrowed, returns `other`. Otherwise, returns the result of
+    /// calling `f` with the inner owned value.
     #[must_use]
     fn owned_or<F, T>(self, other: T, f: F) -> T
     where
