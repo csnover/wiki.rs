@@ -950,6 +950,8 @@ pub fn intval(n: &str, radix: Option<u32>) -> Result<(i64, &str), core::num::Par
 /// Finds and replaces substrings in the input like [`strtr`](https://php.net/strtr).
 /// To avoid extra temporary allocation, `replacements` should be ordered from
 /// longest to shortest match.
+// TODO: Use a trie or some other structure for the replacements list which is
+// more efficient and does not require manual care to be sorted.
 #[must_use]
 pub fn strtr<'a>(input: &'a str, replacements: &[(&str, &str)]) -> Cow<'a, str> {
     let replacements = if replacements.is_sorted_by(|(a, _), (b, _)| a.len() >= b.len()) {

@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 either.workspace = true
 html-escape.workspace = true
+libmisc.workspace = true
+libphp-rs.workspace = true
 libwikitext-common.workspace = true
 libwikitext-parse.workspace = true
 peg.workspace = true

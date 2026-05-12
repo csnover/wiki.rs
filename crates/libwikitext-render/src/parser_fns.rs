@@ -19,9 +19,10 @@ use core::{
 };
 use either::Either;
 use libmisc::CowExt as _;
-use libphp_rs::{floatval, fuzzy_cmp};
+use libphp_rs::{floatval, fuzzy_cmp, strtr};
 use libwikitext_common::{
     anchor_encode,
+    config::Configuration,
     db::DatabaseProvider as _,
     decode_html, format_date_mediawiki, format_message, format_number, make_url,
     parse_formatted_number,
@@ -305,30 +306,61 @@ mod page {
     /// `{{BASEPAGENAME}}`
     pub fn base_page_name(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        write!(out, "{}", sp.root().name.base_text())?;
-        Ok(())
+        page_name_impl(out, state, arguments, Title::base_text, Title::base_uri)
     }
 
     /// `{{FULLPAGENAME}}`
     pub fn full_page_name(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        write!(out, "{}", sp.root().name.key())?;
-        Ok(())
+        page_name_impl(
+            out,
+            state,
+            arguments,
+            Title::prefixed_text,
+            Title::prefixed_url,
+        )
     }
 
     /// `{{PAGENAME}}`
     pub fn page_name(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        write!(out, "{}", sp.root().name.text())?;
+        page_name_impl(out, state, arguments, Title::text, Title::text_url)
+    }
+
+    /// Common implementation for all `{{XXXPAGENAME}}` functions.
+    #[inline]
+    fn page_name_impl<FnT, FnU>(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        IndexedArgs { sp, callee, .. }: &IndexedArgs<'_, '_, '_>,
+        text: FnT,
+        uri: FnU,
+    ) -> Result
+    where
+        FnT: FnOnce(&Title) -> &str,
+        FnU: FnOnce(&Title) -> Cow<'_, str>,
+    {
+        let title = &sp.root().name;
+        let as_uri = callee.ends_with("ee");
+        let part = if as_uri {
+            uri(title)
+        } else {
+            text(title).into()
+        };
+        write!(
+            out,
+            "{}",
+            libwikitext_parse_gpl::escape_all(state.statics.db.config(), &part)
+        )?;
         Ok(())
     }
 
@@ -370,6 +402,30 @@ mod page {
         Ok(())
     }
 
+    /// `{{ARTICLEPAGENAME}}` or `{{SUBJECTPAGENAME}}` or `{{TALKPAGENAME}}`
+    fn related_page_name<F>(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        IndexedArgs { sp, callee, .. }: &IndexedArgs<'_, '_, '_>,
+        related: F,
+    ) -> Result
+    where
+        F: for<'a> FnOnce(&'a Title, &Configuration) -> Option<Cow<'a, Title>>,
+    {
+        let config = state.statics.db.config();
+        let title = related(&sp.root().name, config);
+        if let Some(title) = title {
+            let as_uri = callee.ends_with("ee");
+            let part = if as_uri {
+                title.partial_url()
+            } else {
+                title.key().into()
+            };
+            write!(out, "{}", libwikitext_parse_gpl::escape_all(config, &part))?;
+        }
+        Ok(())
+    }
+
     /// `{{REVISIONID}}`
     pub fn revision_id(
         out: &mut String,
@@ -386,11 +442,10 @@ mod page {
     /// `{{ROOTPAGENAME}}`
     pub fn root_page_name(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        write!(out, "{}", sp.root().name.root_text())?;
-        Ok(())
+        page_name_impl(out, state, arguments, Title::root_text, Title::root_url)
     }
 
     /// `{{[settable variable name]: value [| option ...]}}`
@@ -412,49 +467,34 @@ mod page {
     /// `{{SUBPAGENAME}}`
     pub fn sub_page_name(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        write!(out, "{}", sp.root().name.subpage_text())?;
-        Ok(())
+        page_name_impl(
+            out,
+            state,
+            arguments,
+            Title::subpage_text,
+            Title::subpage_url,
+        )
     }
 
     /// `{{ARTICLEPAGENAME}}` or `{{SUBJECTPAGENAME}}`
     pub fn subject_page_name(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let title = &sp.root().name;
-        if let Some(subject) = title.namespace().subject(state.statics.db.config()) {
-            write!(
-                out,
-                "{}{}{}",
-                subject.name,
-                if subject.name.is_empty() { "" } else { ":" },
-                title.text()
-            )?;
-        }
-        Ok(())
+        related_page_name(out, state, arguments, Title::subject)
     }
 
     /// `{{TALKPAGENAME}}`
     pub fn talk_page_name(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, .. }: &IndexedArgs<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let title = &sp.root().name;
-        if let Some(talk) = title.namespace().talk(state.statics.db.config()) {
-            write!(
-                out,
-                "{}{}{}",
-                talk.name,
-                if talk.name.is_empty() { "" } else { ":" },
-                title.text()
-            )?;
-        }
-        Ok(())
+        related_page_name(out, state, arguments, Title::talk)
     }
 }
 
@@ -504,6 +544,18 @@ mod site {
     ) -> Result {
         if let Some(authority) = state.statics.base_uri.authority() {
             write!(out, "//{authority}")?;
+        }
+        Ok(())
+    }
+
+    /// `{{SERVERNAME}}`
+    pub fn server_name(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(authority) = state.statics.base_uri.authority() {
+            write!(out, "{authority}")?;
         }
         Ok(())
     }
@@ -1087,40 +1139,13 @@ mod title {
         Ok(())
     }
 
-    /// `{{NAMESPACE[:title] }}` or `{{NAMESPACENUMBER[:title] }}` or
-    /// `{{SUBJECTSPACE[:title] }}` or `{{ARTICLESPACE[:title] }}` or
-    /// `{{TALKSPACE[:title] }}`
+    /// `{{NAMESPACE[:title] }}`
     pub fn namespace(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let ns = if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            Namespace::find_by_name(
-                state.statics.db.config(),
-                value.split_once(':').map_or("", |(ns, _)| ns),
-            )
-        } else {
-            Some(arguments.sp.root().name.namespace())
-        };
-
-        if let Some(ns) = ns {
-            if arguments.callee == "namespace" {
-                write!(out, "{}", ns.name)?;
-            } else if arguments.callee == "articlespace" || arguments.callee == "subjectspace" {
-                if let Some(ns) = ns.subject(state.statics.db.config()) {
-                    write!(out, "{}", ns.name)?;
-                }
-            } else if arguments.callee == "talkspace" {
-                if let Some(ns) = ns.talk(state.statics.db.config()) {
-                    write!(out, "{}", ns.name)?;
-                }
-            } else {
-                write!(out, "{}", ns.id)?;
-            }
-        }
-
-        Ok(())
+        namespace_impl(out, state, arguments, |ns, _| Some(ns))
     }
 
     /// `{{ns: namespace name or id }}`
@@ -1136,11 +1161,67 @@ mod title {
                 Namespace::find_by_name(state.statics.db.config(), &value)
             }
         });
+
         if let Some(ns) = ns {
-            write!(out, "{}", ns.name)?;
+            if arguments.callee.ends_with('e') {
+                write!(out, "{}", url_encode(&strtr(ns.name, &[(" ", "_")])))?;
+            } else {
+                write!(out, "{}", ns.name)?;
+            }
         }
 
         Ok(())
+    }
+
+    /// `{{NAMESPACE[:title] }}` or `{{NAMESPACENUMBER[:title] }}` or
+    /// `{{SUBJECTSPACE[:title] }}` or `{{ARTICLESPACE[:title] }}` or
+    /// `{{TALKSPACE[:title] }}`
+    #[inline]
+    fn namespace_impl<'a, F>(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments @ IndexedArgs { sp, callee, .. }: &IndexedArgs<'_, '_, '_>,
+        f: F,
+    ) -> Result
+    where
+        F: FnOnce(&'a Namespace, &Configuration) -> Option<&'a Namespace>,
+    {
+        let ns = if let Some(value) = arguments.eval(state, 0)?.map(trim) {
+            Title::new(state.statics.db.config(), &value, None).namespace()
+        } else {
+            sp.root().name.namespace()
+        };
+
+        if *callee == "namespacenumber" {
+            write!(out, "{}", ns.id)?;
+        } else if let Some(ns) = f(ns, state.statics.db.config()) {
+            let as_uri = callee.ends_with("ee");
+            if as_uri {
+                write!(out, "{}", url_encode(&strtr(ns.name, &[(" ", "_")])))?;
+            } else {
+                write!(out, "{}", strtr(ns.name, &[("_", " ")]))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// `{{SUBJECTSPACE[:title] }}` or `{{ARTICLESPACE[:title] }}`
+    pub fn subject_space(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        namespace_impl(out, state, arguments, Namespace::subject)
+    }
+
+    /// `{{TALKSPACE[:title] }}`
+    pub fn talk_space(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        namespace_impl(out, state, arguments, Namespace::talk)
     }
 
     /// `{{#lst:title | section [| replacement text] }}`
@@ -1203,24 +1284,31 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "property" => ext::wikibase_property,
     "tag" => ext::extension_tag,
 
-    "articlepagename" => page::subject_page_name,
     "basepagename" => page::base_page_name,
+    "basepagenamee" => page::base_page_name,
     "defaultsort" => page::set_page_var,
     "displaytitle" => page::set_page_var,
     "fullpagename" => page::full_page_name,
+    "fullpagenamee" => page::full_page_name,
     "getshortdesc" => page::page_var,
     "pagename" => page::page_name,
+    "pagenamee" => page::page_name,
     "protectionexpiry" => page::protection_expiry,
     "revisionid" => page::revision_id,
     "rootpagename" => page::root_page_name,
+    "rootpagenamee" => page::root_page_name,
     "shortdesc" => page::set_page_var,
     "subjectpagename" => page::subject_page_name,
+    "subjectpagenamee" => page::subject_page_name,
     "subpagename" => page::sub_page_name,
+    "subpagenamee" => page::sub_page_name,
     "talkpagename" => page::talk_page_name,
+    "talkpagenamee" => page::talk_page_name,
 
     "numberofpages" => site::number_of_pages,
     "pagesincategory" => site::pages_in_category,
     "server" => site::server,
+    "servername" => site::server_name,
 
     "anchorencode" => string::anchor_encode,
     "formatnum" => string::format_number,
@@ -1244,6 +1332,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "currentmonth2" => time::month_lz,
     "currentmonthabbrev" => time::month_abbr,
     "currentmonthname" => time::month_name,
+    "currentmonthnamegen" => time::month_name,
     "currenttime" => time::clock_time,
     "currenttimestamp" => time::timestamp,
     "currentweek" => time::week,
@@ -1258,25 +1347,30 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "localmonth2" => time::month_lz,
     "localmonthabbrev" => time::month_abbr,
     "localmonthname" => time::month_name,
+    "localmonthnamegen" => time::month_name,
     "localtime" => time::clock_time,
     "localtimestamp" => time::timestamp,
     "localweek" => time::week,
     "localyear" => time::year,
     "time" => time::time,
 
-    "articlespace" => title::namespace,
     "filepath" => title::file_path,
     "fullurl" => title::full_url,
+    "fullurle" => title::full_url,
     "ifexist" => title::if_exist,
     "localurl" => title::local_url,
     "lst" => title::transclude_section,
     "lsth" => title::transclude_heading,
     "lstx" => title::transclude_except,
     "namespace" => title::namespace,
+    "namespacee" => title::namespace,
     "namespacenumber" => title::namespace,
     "ns" => title::namespace_by_name_or_id,
-    "subjectspace" => title::namespace,
-    "talkspace" => title::namespace,
+    "nse" => title::namespace_by_name_or_id,
+    "subjectspace" => title::subject_space,
+    "subjectspacee" => title::subject_space,
+    "talkspace" => title::talk_space,
+    "talkspacee" => title::talk_space,
 };
 
 /// Renders a parser function.

@@ -571,6 +571,9 @@ parsoid={ "modes": ["wt2html","wt2wt"] }
 !! html/php
 <p><i>&#39;foo &#38; bar &#61; baz&#39;</i>
 </p>
+!! html/wiki.rs
+<p><i>'foo &amp; bar = baz'</i>
+</p>
 !! html/parsoid+integrated
 <p><i><span about="#mwt1" typeof="mw:Transclusion mw:Entity" data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAME","function":"pagename"},"params":{},"i":0}}]}'>'</span><span>foo </span><span typeof="mw:Entity">&amp;</span><span> bar </span><span typeof="mw:Entity">=</span><span> baz</span><span typeof="mw:Entity">'</span></i></p>
 !! end
@@ -584,6 +587,9 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 {{PAGENAME}}
 !! html/php
 <p>&#42;RFC&#32;1234 http&#58;//example.com/
+</p>
+!! html/wiki.rs
+<p>*RFC 1234 http://example.com/
 </p>
 !! html/parsoid+integrated
 <p><span about="#mwt1" typeof="mw:Transclusion mw:Entity" data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAME","function":"pagename"},"params":{},"i":0}}]}'>*</span><span>RFC</span><span typeof="mw:Entity"> </span><span>1234 http</span><span typeof="mw:Entity">:</span><span>//example.com/</span></p>
@@ -612,6 +618,9 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 {{PAGENAMEE}}
 !! html/php
 <p>&#42;RFC_1234_http&#58;//example.com/
+</p>
+!! html/wiki.rs
+<p>*RFC_1234_http://example.com/
 </p>
 !! html/parsoid+integrated
 <p><span typeof="mw:Transclusion mw:Entity" about="#mwt1" data-parsoid='{"srcContent":"*","pi":[[]]}' data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAMEE","function":"pagenamee"},"params":{},"i":0}}]}'>*</span><span about="#mwt1">RFC_1234_http</span><span typeof="mw:Entity" about="#mwt1">:</span><span about="#mwt1">//example.com/</span></p>
@@ -999,6 +1008,9 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 !! html/*
 <p><a rel="nofollow" class="external free" href="http://example.org">http://example.org</a>
 </p>
+!! html/wiki.rs
+<p>//example.org
+</p>
 !! end
 
 !! test
@@ -1108,6 +1120,12 @@ Case-insensitive magic words should still work with weird casing.
 aOEU
 Aoeu
 <a rel="nofollow" class="external free" href="http://example.org">http://example.org</a>
+</p>
+!! html/wiki.rs
+<p>example.org
+aOEU
+Aoeu
+//example.org
 </p>
 !! end
 

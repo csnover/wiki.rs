@@ -331,13 +331,12 @@ use expand_templates::{ExpandMode, ExpandTemplates};
 use http::Uri;
 use libphp_rs::DateTime;
 use libwikitext_common::{
+    config::Configuration,
     db::{Article, DatabaseProvider},
     lru_limiter::ByMemoryUsage,
     title::Title,
 };
-use libwikitext_parse::{
-    Configuration, FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, inspect, strip,
-};
+use libwikitext_parse::{FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, inspect, strip};
 use libwikitext_parse_gpl::Parser;
 use piccolo::Lua;
 use schnellru::LruMap;

@@ -204,7 +204,7 @@ impl LinkKind<'_> {
                     .interwiki()
                     .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
                 {
-                    let url = iw.replace("$1", &title.partial_url().to_string());
+                    let url = iw.replace("$1", &title.partial_url());
                     make_url(
                         options.base_uri,
                         None,

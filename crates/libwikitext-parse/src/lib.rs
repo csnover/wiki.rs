@@ -11,7 +11,7 @@ pub mod visit;
 pub use codemap::{FileMap, Span, Spanned};
 pub use inspectors::{inspect, inspect_one};
 use libphp_rs::strtr;
-pub use libwikitext_common::config::{Configuration, ConfigurationSource, MagicLinks};
+use libwikitext_common::config::Configuration;
 pub use peg::str::LineCol;
 use std::{borrow::Cow, collections::HashSet};
 
@@ -449,7 +449,7 @@ pub const VOID_TAGS: phf::Set<&str> = phf::phf_set! {
     "track", "wbr",
 };
 
-/// Escapes all Wikitext and HTML control characters.
+/// Escapes all Wikitext and HTML control sequences.
 #[must_use]
 pub fn escape_no_wiki(text: &str) -> Cow<'_, str> {
     strtr(
@@ -458,6 +458,7 @@ pub fn escape_no_wiki(text: &str) -> Cow<'_, str> {
             ("ISBN", "&#73;SBN"),
             ("PMID", "&#80;MID"),
             ("RFC", "&#82;FC"),
+            ("＿", "&#xFF3F;"), // 3 bytes in UTF-8
             ("\'\'", "&#39;&#39;"),
             ("__", "&#95;_"),
             ("!", "&#33;"),
@@ -476,7 +477,7 @@ pub fn escape_no_wiki(text: &str) -> Cow<'_, str> {
     )
 }
 
-/// Escapes all non-HTML Wikitext control characters.
+/// Escapes all non-HTML Wikitext control sequences.
 #[must_use]
 pub fn escape(text: &str) -> Cow<'_, str> {
     strtr(
@@ -485,6 +486,7 @@ pub fn escape(text: &str) -> Cow<'_, str> {
             ("ISBN", "&#73;SBN"),
             ("PMID", "&#80;MID"),
             ("RFC", "&#82;FC"),
+            ("＿", "&#xFF3F;"), // 3 bytes in UTF-8
             ("__", "&#95;_"),
             ("\'\'", "&#39;&#39;"),
             ("!", "&#33;"),

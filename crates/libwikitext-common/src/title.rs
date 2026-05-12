@@ -3,7 +3,7 @@
 use super::{config::Configuration, decode_html, url_encode};
 use core::fmt::Write as _;
 use libmisc::CowExt as _;
-use percent_encoding::PercentEncode;
+use libphp_rs::strtr;
 use std::borrow::Cow;
 
 /// The title casing strategy for a namespace.
@@ -306,14 +306,13 @@ impl Title {
     #[must_use]
     pub fn new(config: &Configuration, text: &str, default_ns: Option<&'static Namespace>) -> Self {
         let text = normalize(text);
-        let text = &*text;
 
         // Namespaced & interwiki titles that start with ':' are given special
         // rendering behaviour, but it could also be an explicit main namespace.
         // It is not possible to know at this point.
         let (empty_start, mut text) = text
             .strip_prefix(':')
-            .map_or((false, text), |text| (true, text));
+            .map_or((false, &*text), |text| (true, text));
 
         // Namespaces and interwiki prefixes may have the same name, and
         // namespaces are given priority. (It does not make much sense that
@@ -367,6 +366,18 @@ impl Title {
         text.rsplit_once('/').map_or(text, |(base, _)| base)
     }
 
+    /// The parent path of the page.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                     ^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn base_uri(&self) -> Cow<'_, str> {
+        to_uri(self.base_text())
+    }
+
     /// The page fragment.
     ///
     /// ```text
@@ -392,6 +403,18 @@ impl Title {
     #[must_use]
     pub fn full_text(&self) -> &str {
         &self.text
+    }
+
+    /// The full text of the title in a URI component encoded form.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn full_url(&self) -> Cow<'_, str> {
+        to_uri(self.full_text())
     }
 
     /// The title interwiki identifier.
@@ -518,8 +541,8 @@ impl Title {
     /// ```
     #[inline]
     #[must_use]
-    pub fn partial_url(&self) -> PercentEncode<'_> {
-        url_encode(self.key())
+    pub fn partial_url(&self) -> Cow<'_, str> {
+        to_uri(self.key())
     }
 
     /// The prefixed text of the title.
@@ -535,6 +558,18 @@ impl Title {
         &self.text[..end_at]
     }
 
+    /// The local part of the title, in a URI component encoded form.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    /// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn prefixed_url(&self) -> Cow<'_, str> {
+        to_uri(self.prefixed_text())
+    }
+
     /// The root path of the page.
     ///
     /// ```text
@@ -548,6 +583,31 @@ impl Title {
         text.split_once('/').map_or(text, |(root, _)| root)
     }
 
+    /// The root path of the page.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                     ^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn root_url(&self) -> Cow<'_, str> {
+        to_uri(self.root_text())
+    }
+
+    /// Gets the subject title for this page, or `None` if this page’s namespace
+    /// does not support subjects.
+    pub fn subject<'a>(&'a self, config: &Configuration) -> Option<Cow<'a, Self>> {
+        if self.namespace.is_talk() {
+            self.namespace
+                .subject(config)
+                .and_then(|ns| Self::from_parts(ns, self.text(), None, None).ok())
+                .map(Cow::Owned)
+        } else {
+            Some(Cow::Borrowed(self))
+        }
+    }
+
     /// The subpage path of the page.
     ///
     /// ```text
@@ -559,6 +619,31 @@ impl Title {
     pub fn subpage_text(&self) -> &str {
         let text = self.text();
         text.rsplit_once('/').map_or(text, |(_, sub)| sub)
+    }
+
+    /// The subpage path of the page, in a URI component encoded form.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                               ^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn subpage_url(&self) -> Cow<'_, str> {
+        to_uri(self.subpage_text())
+    }
+
+    /// Gets the talk title for this page, or `None` if this page’s namespace
+    /// does not support talk pages.
+    pub fn talk<'a>(&'a self, config: &Configuration) -> Option<Cow<'a, Self>> {
+        if self.namespace.is_talk() {
+            Some(Cow::Borrowed(self))
+        } else {
+            self.namespace
+                .talk(config)
+                .and_then(|ns| Self::from_parts(ns, self.text(), None, None).ok())
+                .map(Cow::Owned)
+        }
     }
 
     /// The path of the page.
@@ -576,6 +661,18 @@ impl Title {
             .map_or(0, |d| usize::from(d) + 1);
         let end_at = self.fragment_delimiter.map_or(self.text.len(), usize::from);
         &self.text[start_at..end_at]
+    }
+
+    /// The path of the page.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                     ^^^^^^^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn text_url(&self) -> Cow<'_, str> {
+        to_uri(self.text())
     }
 }
 
@@ -635,6 +732,12 @@ pub fn normalize(text: &str) -> Cow<'_, str> {
 #[inline]
 fn spacelike(c: char) -> bool {
     c == '_' || c.is_whitespace()
+}
+
+/// Encodes text as a URI component.
+#[inline]
+fn to_uri(text: &str) -> Cow<'_, str> {
+    strtr(text, &[(" ", "_")]).map(|text| url_encode(text).into())
 }
 
 /// Returns true if the character `c` is trimmable in title text.

@@ -12,12 +12,13 @@ use super::{
 use core::fmt::{self, Write as _};
 use indexmap::IndexSet;
 use libwikitext_common::{
+    config::Configuration,
     db::DatabaseProvider as _,
     make_url,
     title::{Namespace, Title},
     title_decode,
 };
-use libwikitext_parse::{Argument, Configuration, FileMap, Span, Spanned, Token};
+use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
 use std::{borrow::Cow, pin::pin, sync::Arc, time::Instant};
 
 /// Templates that need to be spruced up a bit, but don’t have any hooks of

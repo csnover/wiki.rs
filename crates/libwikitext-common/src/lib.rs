@@ -302,6 +302,24 @@ pub fn parse_formatted_number(s: &str) -> Cow<'_, str> {
     }
 }
 
+/// Converts an iterator of strings into a regular expression alternates
+/// subexpression.
+#[must_use]
+pub fn regex_switch<I>(items: I) -> String
+where
+    I: Iterator,
+    I::Item: AsRef<str>,
+{
+    let mut out = String::new();
+    for item in items {
+        if !out.is_empty() {
+            out.push('|');
+        }
+        out += &regex::escape(item.as_ref());
+    }
+    out
+}
+
 /// Decodes a possibly URL-encoded title from a Wikitext link target.
 #[must_use]
 pub fn title_decode(target: &str) -> Cow<'_, str> {
@@ -339,17 +357,24 @@ pub fn url_encode_bytes(input: &[u8]) -> percent_encoding::PercentEncode<'_> {
 }
 
 /// The alphabet of characters to percent-encode when encoding URLs.
-const ALPHABET: percent_encoding::AsciiSet = percent_encoding::CONTROLS
-    .add(b'%')
-    .add(b'#')
-    .add(b'\'')
-    .add(b'"')
-    .add(b'&')
-    .add(b'<')
-    .add(b'>')
-    .add(b'[')
-    .add(b']')
-    .add(b' ');
+///
+/// This is a combination of “all non-alphanumeric characters except `-_.`” from
+/// PHP’s `urlencode`, and then MediaWiki also excludes `!$()*,/:;@~`.
+const ALPHABET: percent_encoding::AsciiSet = percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'$')
+    .remove(b'(')
+    .remove(b')')
+    .remove(b'*')
+    .remove(b',')
+    .remove(b'/')
+    .remove(b':')
+    .remove(b';')
+    .remove(b'@')
+    .remove(b'~');
 
 #[cfg(test)]
 mod tests {

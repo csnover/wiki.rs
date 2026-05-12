@@ -24,3 +24,4 @@ libwikitext-render.workspace = true
 log.workspace = true
 phf.workspace = true
 similar-asserts.workspace = true
+time.workspace = true

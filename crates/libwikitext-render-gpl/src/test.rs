@@ -1,8 +1,11 @@
-use super::test_parser::{Chunk, SectionText, Sections, Testfile};
+use super::{
+    config::CONFIG,
+    test_parser::{Chunk, SectionText, Sections, Testfile},
+};
 use http::Uri;
 use libphp_rs::DateTime;
 use libwikitext_common::db::{DatabaseProvider, MockDatabase};
-use libwikitext_data::{CONFIG, MESSAGES};
+use libwikitext_data::MESSAGES;
 use libwikitext_parse::{FileMap, inspect};
 use libwikitext_render::{RenderOutput, Statics, render_test};
 use std::{collections::HashMap, fs::File, io::Read as _, path::Path, sync::Arc};
@@ -90,10 +93,16 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
         }
     }
 
+    let base_time = DateTime::UNIX_EPOCH
+        .replace_minute(2)
+        .unwrap()
+        .replace_second(3)
+        .unwrap();
+
     let db = Arc::new(db);
     let mut statics = Statics::builder()
-        .base_time(DateTime::UNIX_EPOCH)
-        .base_uri(Uri::from_static("http://example.com"))
+        .base_time(base_time)
+        .base_uri(Uri::from_static("http://example.org"))
         .db(Arc::clone(&db) as Arc<dyn DatabaseProvider>)
         .parser(db.config())
         .build();

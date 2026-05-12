@@ -983,6 +983,8 @@ dependencies = [
  "either",
  "goldenfile",
  "html-escape",
+ "libmisc",
+ "libphp-rs",
  "libwikitext-common",
  "libwikitext-data",
  "libwikitext-parse",
@@ -1049,6 +1051,7 @@ dependencies = [
  "serde_json",
  "serde_json_borrow",
  "similar-asserts",
+ "time",
 ]
 
 [[package]]

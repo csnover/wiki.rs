@@ -5,9 +5,11 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyright: Copyright 2019 Fredrik Portström and other contributors
 
-use super::title::Namespace;
-use fancy_regex::{Regex, RegexBuilder};
+use super::{regex_switch, title::Namespace};
+use core::fmt::Write as _;
+use fancy_regex::{Regex as FancyRegex, RegexBuilder as FancyRegexBuilder};
 use phf::{Map, Set};
+use regex::Regex;
 
 /// Enabled magic links.
 ///
@@ -75,8 +77,11 @@ pub struct ConfigurationSource {
 /// Processed configuration data for the parser.
 #[derive(Debug)]
 pub struct Configuration {
+    /// A set of compiled regular expressions that match for protocols and magic
+    /// links for escaping literal strings containing these patterns.
+    pub escape_pattern: Option<Regex>,
     /// A compiled regular expression that matches link trails.
-    pub link_trail_pattern: Regex,
+    pub link_trail_pattern: FancyRegex,
     /// A copy of magic links, for stupid testing purposes, since the rest of
     /// `ConfigurationSource` cannot be constructed at runtime, and I am lazy.
     #[cfg(test)]
@@ -103,6 +108,7 @@ impl Configuration {
         let valid_title_bytes = char_class_to_bitmap(source.valid_title_bytes.bytes());
 
         Self {
+            escape_pattern: build_escape_pattern(&source.protocols, source.magic_links),
             link_trail_pattern: link_trail_regex(source.link_trail),
             #[cfg(test)]
             magic_links: source.magic_links,
@@ -198,10 +204,44 @@ fn char_class_to_bitmap(bytes: impl Iterator<Item = u8>) -> BitMap {
     BitMap(bits)
 }
 
+/// Builds a regular expression from the given `protocols` and `magic_links`
+/// that can be used to match these things in a string so that they can be
+/// escaped in the blessed way by the cursed MediaWiki.
+///
+/// # Panics
+///
+/// * Building the regular expression fails
+#[must_use]
+pub fn build_escape_pattern(protocols: &phf::Set<&str>, magic_links: MagicLinks) -> Option<Regex> {
+    let mut escape_pattern = String::new();
+    let switch = regex_switch(protocols.iter().filter_map(|proto| proto.strip_suffix(':')));
+
+    if !switch.is_empty() {
+        write!(escape_pattern, "(?:(?i){switch})(:)").unwrap();
+    }
+
+    let switch = regex_switch(
+        magic_links
+            .isbn
+            .then_some("ISBN")
+            .into_iter()
+            .chain(magic_links.pmid.then_some("PMID"))
+            .chain(magic_links.rfc.then_some("RFC")),
+    );
+    if !switch.is_empty() {
+        if !escape_pattern.is_empty() {
+            escape_pattern.push('|');
+        }
+        write!(escape_pattern, r"(?:{switch})(\s)").unwrap();
+    }
+
+    (!escape_pattern.is_empty()).then(|| Regex::new(&escape_pattern).unwrap())
+}
+
 /// Creates a link trail regular expression from the given string.
 // This single use of `fancy_regex` is required because the ca.wiktionary.org
 // linktrail contains a lookahead: `/^((?:[a-zàèéíòóúç·ïü]|'(?!'))+)(.*)$/sDu`
-fn link_trail_regex(link_trail: &str) -> Regex {
+fn link_trail_regex(link_trail: &str) -> FancyRegex {
     let Some((pattern, flags)) = link_trail
         .chars()
         .next()
@@ -214,7 +254,7 @@ fn link_trail_regex(link_trail: &str) -> Regex {
     // but it is unused, so get rid of it for performance reasons
     let pattern = pattern.strip_suffix("(.*)$").unwrap_or(pattern);
 
-    RegexBuilder::new(pattern)
+    FancyRegexBuilder::new(pattern)
         .dot_matches_new_line(flags.contains('s'))
         .case_insensitive(flags.contains('i'))
         .multi_line(flags.contains('m'))

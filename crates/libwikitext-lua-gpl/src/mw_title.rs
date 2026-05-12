@@ -503,7 +503,7 @@ fn update_title<'gc>(table: Table<'gc>, ctx: Context<'gc>, title: &Title, is_cur
     table.set_field(
         ctx,
         "thePartialUrl",
-        ctx.intern(title.partial_url().to_string().as_bytes()),
+        ctx.intern(title.partial_url().as_bytes()),
     );
 
     if title.namespace().id == Namespace::SPECIAL {
