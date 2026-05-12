@@ -2,12 +2,14 @@
 
 use core::fmt::Write as _;
 use std::{borrow::Cow, io::Write as _};
+pub use time::{Date, Duration, Month, Time, UtcOffset, Weekday};
 use time::{
-    Date, Duration, Month, OffsetDateTime, UtcOffset,
+    OffsetDateTime,
     format_description::well_known::{Iso8601, Rfc2822},
 };
 pub use timelib_rs::Error as DateTimeParseError;
 use timelib_rs::Timezone;
+pub use tz::{LocalTimeType, TimeZoneRef};
 
 /// Any time error.
 #[derive(Debug, thiserror::Error)]
@@ -38,9 +40,9 @@ pub enum DateTimeFormatError {
 #[derive(Clone, Copy, Debug)]
 pub enum DateTimeZone {
     /// Local time zone.
-    Alias(tz::LocalTimeType),
+    Alias(LocalTimeType),
     /// IANA time zone.
-    Named(&'static str, tz::TimeZoneRef<'static>),
+    Named(&'static str, TimeZoneRef<'static>),
     /// Offset from UTC.
     Offset(UtcOffset),
 }
@@ -66,7 +68,7 @@ impl TryFrom<Timezone<'_>> for DateTimeZone {
             }
             tz @ Timezone::Alias(alias) => {
                 let offset = tz.offset() + if tz.is_dst() { 3600 } else { 0 };
-                let local = tz::LocalTimeType::new(offset, tz.is_dst(), Some(alias.as_bytes()))
+                let local = LocalTimeType::new(offset, tz.is_dst(), Some(alias.as_bytes()))
                     .map_err(tz::Error::from)?;
                 DateTimeZone::Alias(local)
             }
@@ -215,6 +217,40 @@ impl DateTime {
         Ok(Self { inner, tz })
     }
 
+    /// Computes `self + duration`, saturating value on overflow.
+    #[inline]
+    #[must_use]
+    pub fn saturating_add(self, duration: Duration) -> Self {
+        Self {
+            inner: self.inner.saturating_add(duration),
+            tz: self.tz,
+        }
+    }
+
+    /// Computes `self - duration`, saturating value on overflow.
+    #[inline]
+    #[must_use]
+    pub fn saturating_sub(self, duration: Duration) -> Self {
+        Self {
+            inner: self.inner.saturating_sub(duration),
+            tz: self.tz,
+        }
+    }
+
+    /// Gets the [`Date`].
+    #[inline]
+    #[must_use]
+    pub fn date(self) -> Date {
+        self.inner.date()
+    }
+
+    /// Gets the day (`1..=31`) of the date.
+    #[inline]
+    #[must_use]
+    pub fn day(self) -> u8 {
+        self.inner.day()
+    }
+
     /// Formats a time according to the
     /// [MediaWiki extended time format](https://www.mediawiki.org/wiki/Special:MyLanguage/Help:Extension:ParserFunctions#time).
     ///
@@ -313,6 +349,13 @@ impl DateTime {
         Ok(out)
     }
 
+    /// Gets the hour (`0..=23`) of the date.
+    #[inline]
+    #[must_use]
+    pub fn hour(self) -> u8 {
+        self.inner.hour()
+    }
+
     /// Projects this time into a different time zone. (In other words, the same
     /// time instant as seen from another time zone.)
     ///
@@ -343,8 +386,58 @@ impl DateTime {
         }
     }
 
+    /// Gets the ISO week (`1..=53`) of the date.
+    #[inline]
+    #[must_use]
+    pub fn iso_week(self) -> u8 {
+        self.inner.iso_week()
+    }
+
+    /// Gets the millisecond (`0..=999`) of the date.
+    #[inline]
+    #[must_use]
+    pub fn millisecond(self) -> u16 {
+        self.inner.millisecond()
+    }
+
+    /// Gets the minute (`0..=59`) of the date.
+    #[inline]
+    #[must_use]
+    pub fn minute(self) -> u8 {
+        self.inner.minute()
+    }
+
+    /// Gets the week number (`0..=53`) where week 1 begins on the first Monday.
+    #[inline]
+    #[must_use]
+    pub fn monday_based_week(self) -> u8 {
+        self.inner.monday_based_week()
+    }
+
+    /// Gets the month of the date.
+    #[inline]
+    #[must_use]
+    pub fn month(self) -> Month {
+        self.inner.month()
+    }
+
+    /// Gets the offset of the date from UTC.
+    #[inline]
+    #[must_use]
+    pub fn offset(self) -> UtcOffset {
+        self.inner.offset()
+    }
+
+    /// Gets the day (`1..=366`) of the year.
+    #[inline]
+    #[must_use]
+    pub fn ordinal(self) -> u16 {
+        self.inner.ordinal()
+    }
+
     /// Replace the date, which is assumed to be in the stored offset. The time
     /// and offset components are unchanged.
+    #[inline]
     #[must_use]
     pub fn replace_date(self, date: Date) -> Self {
         Self {
@@ -365,6 +458,42 @@ impl DateTime {
             .map_err(|err| DateTimeError::Parse(err.into()))
     }
 
+    /// Replace the hour of the day.
+    ///
+    /// # Errors
+    ///
+    /// * `hour` is out of range
+    pub fn replace_hour(self, hour: u8) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_hour(hour)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Replace the millisecond of the second.
+    ///
+    /// # Errors
+    ///
+    /// * `millisecond` is out of range
+    pub fn replace_millisecond(self, millisecond: u16) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_millisecond(millisecond)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Replace the minute of the hour.
+    ///
+    /// # Errors
+    ///
+    /// * `minute` is out of range
+    pub fn replace_minute(self, minute: u8) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_minute(minute)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
     /// Replace the month of the year.
     ///
     /// # Errors
@@ -375,6 +504,41 @@ impl DateTime {
             .replace_month(month)
             .map(|inner| Self { inner, tz: self.tz })
             .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Replace the ordinal day of the year.
+    ///
+    /// # Errors
+    ///
+    /// * `ordinal` is out of range (e.g. 367)
+    pub fn replace_ordinal(self, ordinal: u16) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_ordinal(ordinal)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Replace the second of the minute.
+    ///
+    /// # Errors
+    ///
+    /// * `second` is out of range
+    pub fn replace_second(self, second: u8) -> Result<Self, DateTimeError> {
+        self.inner
+            .replace_second(second)
+            .map(|inner| Self { inner, tz: self.tz })
+            .map_err(|err| DateTimeError::Parse(err.into()))
+    }
+
+    /// Replace the time, which is assumed to be in the stored offset. The date
+    /// and offset components are unchanged.
+    #[inline]
+    #[must_use]
+    pub fn replace_time(self, time: Time) -> Self {
+        Self {
+            inner: self.inner.replace_time(time),
+            tz: self.tz,
+        }
     }
 
     /// Replace the month of the year.
@@ -390,7 +554,47 @@ impl DateTime {
             .map_err(|err| DateTimeError::Parse(err.into()))
     }
 
+    /// Computes `self + duration`, saturating value on overflow.
+    #[inline]
+    #[must_use]
+    pub fn checked_add(self, duration: Duration) -> Option<Self> {
+        self.inner
+            .checked_add(duration)
+            .map(|inner| Self { inner, tz: self.tz })
+    }
+
+    /// Computes `self - duration`, saturating value on overflow.
+    #[inline]
+    #[must_use]
+    pub fn checked_sub(self, duration: Duration) -> Option<Self> {
+        self.inner
+            .checked_sub(duration)
+            .map(|inner| Self { inner, tz: self.tz })
+    }
+
+    /// Gets the second (`0..=59`) of the date.
+    #[inline]
+    #[must_use]
+    pub fn second(self) -> u8 {
+        self.inner.second()
+    }
+
+    /// Gets the week number (`0..=53`) where week 1 begins on the first Sunday.
+    #[inline]
+    #[must_use]
+    pub fn sunday_based_week(self) -> u8 {
+        self.inner.sunday_based_week()
+    }
+
+    /// Gets the [`Time`].
+    #[inline]
+    #[must_use]
+    pub fn time(self) -> Time {
+        self.inner.time()
+    }
+
     /// Gets the time zone.
+    #[inline]
     #[must_use]
     pub fn time_zone(&self) -> &DateTimeZone {
         &self.tz
@@ -406,7 +610,29 @@ impl DateTime {
         }
     }
 
+    /// Gets the year, month, and day.
+    #[inline]
+    #[must_use]
+    pub fn to_calendar_date(self) -> (i32, Month, u8) {
+        self.inner.to_calendar_date()
+    }
+
+    /// Gets the Julian day for the date, ignoring the time part.
+    #[inline]
+    #[must_use]
+    pub fn to_julian_day(self) -> i32 {
+        self.inner.to_julian_day()
+    }
+
+    /// Gets the ISO 8601 year, week number (`1..=53`), and weekday.
+    #[inline]
+    #[must_use]
+    pub fn to_iso_week_date(self) -> (i32, u8, Weekday) {
+        self.inner.to_iso_week_date()
+    }
+
     /// Truncate to the start of the day, setting the time to midnight.
+    #[inline]
     #[must_use]
     pub fn truncate_to_day(self) -> Self {
         Self {
@@ -417,6 +643,7 @@ impl DateTime {
 
     /// Truncate to the hour, setting the minute, second, and subsecond
     /// components to zero.
+    #[inline]
     #[must_use]
     pub fn truncate_to_hour(self) -> Self {
         Self {
@@ -427,6 +654,7 @@ impl DateTime {
 
     /// Truncate to the millisecond, setting the microsecond and nanosecond
     /// components to zero.
+    #[inline]
     #[must_use]
     pub fn truncate_to_millisecond(self) -> Self {
         Self {
@@ -437,6 +665,7 @@ impl DateTime {
 
     /// Truncate to the minute, setting the second and subsecond components to
     /// zero.
+    #[inline]
     #[must_use]
     pub fn truncate_to_minute(self) -> Self {
         Self {
@@ -446,6 +675,7 @@ impl DateTime {
     }
 
     /// Truncate to the second, setting the subsecond components to zero.
+    #[inline]
     #[must_use]
     pub fn truncate_to_second(self) -> Self {
         Self {
@@ -471,40 +701,33 @@ impl DateTime {
         })
     }
 
-    #[allow(
-        clippy::allow_attributes,
-        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
-    )]
-    #[allow(
-        dead_code,
-        clippy::missing_docs_in_private_items,
-        clippy::unused_self,
-        reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
-    )]
-    fn checked_to_offset(&self) {}
-    #[allow(
-        clippy::allow_attributes,
-        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
-    )]
-    #[allow(
-        dead_code,
-        clippy::missing_docs_in_private_items,
-        clippy::unused_self,
-        reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
-    )]
-    fn replace_offset(&self) {}
-    #[allow(
-        clippy::allow_attributes,
-        reason = "https://github.com/rust-lang/rust-clippy/issues/13358"
-    )]
-    #[allow(
-        dead_code,
-        clippy::missing_docs_in_private_items,
-        clippy::unused_self,
-        clippy::wrong_self_convention,
-        reason = "this type uses Deref to avoid rote for getters; bad things will happen if these functions are ever called"
-    )]
-    fn to_offset(&self) {}
+    /// Gets the Unix timestamp.
+    #[inline]
+    #[must_use]
+    pub fn unix_timestamp(self) -> i64 {
+        self.inner.unix_timestamp()
+    }
+
+    /// Gets the Unix timestamp in nanoseconds.
+    #[inline]
+    #[must_use]
+    pub fn unix_timestamp_nanos(self) -> i128 {
+        self.inner.unix_timestamp_nanos()
+    }
+
+    /// Gets the weekday of the date.
+    #[inline]
+    #[must_use]
+    pub fn weekday(self) -> Weekday {
+        self.inner.weekday()
+    }
+
+    /// Gets the year of the date.
+    #[inline]
+    #[must_use]
+    pub fn year(self) -> i32 {
+        self.inner.year()
+    }
 }
 
 impl From<time::UtcDateTime> for DateTime {
@@ -535,14 +758,6 @@ impl PartialEq for DateTime {
 impl PartialOrd for DateTime {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-impl core::ops::Deref for DateTime {
-    type Target = OffsetDateTime;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 
