@@ -151,6 +151,7 @@ fn run_test_from_file(
     let expected_html = sections
         .get("html/wiki.rs")
         .or_else(|| sections.get("html/php"))
+        .or_else(|| sections.get("html/*"))
         .or_else(|| sections.get("html"))
         .and_then(SectionText::text);
 
@@ -161,19 +162,22 @@ fn run_test_from_file(
         .and_then(SectionText::meta);
 
     let mut fail = false;
-    if let Some(expected_html) = expected_html
-        && result.content != expected_html
-    {
-        log::error!(
-            target: target,
-            "{}",
-            similar_asserts::SimpleDiff::from_str(
-                expected_html,
-                &result.content,
-                "expected",
-                "actual"
-            )
-        );
+    if let Some(expected_html) = expected_html {
+        if result.content != expected_html {
+            log::error!(
+                target: target,
+                "{}",
+                similar_asserts::SimpleDiff::from_str(
+                    expected_html,
+                    &result.content,
+                    "expected",
+                    "actual"
+                )
+            );
+            fail = true;
+        }
+    } else if !options.contains("nohtml") {
+        log::error!(target: target, "Missing expected HTML");
         fail = true;
     }
 

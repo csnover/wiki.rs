@@ -283,7 +283,7 @@ peg::parser! {grammar testfile() for str {
   // they appear in the output, but this is just barely regular enough that it
   // can be parsed without knowing the order or which options were specified
   pub rule metadata() -> Metadata<'input>
-  = parts:(!"!!" part:metadata_part() { part })+
+  = parts:(!"!!" part:metadata_part() { part })*
   {
       let mut flags = None;
       let mut title = None;
@@ -359,8 +359,7 @@ peg::parser! {grammar testfile() for str {
   { if v.len() == 1 { v.into_iter().next().unwrap() } else { Value::Array(v) } }
 
   rule an_option_value() -> Value<'input>
-  = v:link_target_value()
-  { Value::Str(v) }
+  = v:link_target_value() { Value::Str(v) }
   / v:(quoted_value() / plain_value() / json_value())
   {
     if v.starts_with('"') || v.starts_with('{') {
@@ -372,7 +371,7 @@ peg::parser! {grammar testfile() for str {
 
   rule link_target_value() -> Cow<'input, str>
   = "[[" v:$([^']'|'\n']*) "]]"
-  { serde_json::to_string(v).unwrap().into() }
+  { Cow::Borrowed(v) }
 
   rule valid_json_value() -> Value<'input>
   = v:$(quoted_value() / plain_value() / array_value() / json_value())
