@@ -181,7 +181,7 @@ peg::parser! {grammar testfile() for str {
 
   rule comment_or_blank_line() -> Chunk<'input>
   = comment()
-  / ws()? _nl:eol()
+  / ws()? eol()
   { Chunk::Line }
 
   rule comment() -> Chunk<'input>
@@ -402,11 +402,11 @@ peg::parser! {grammar testfile() for str {
   rule end<T>(r: rule<T>)
   = "!!" ws()? ("end" r()?) ws()? eolf()
 
-  rule eol() -> &'input str
-  = $("\n")
+  rule eol()
+  = "\n"
 
-  rule eolf() -> &'input str
-  = $("\n" / ![_] "")
+  rule eolf()
+  = "\n" / ![_] ""
 
   rule ws()
   = [' '|'\t']+
@@ -421,10 +421,11 @@ peg::parser! {grammar testfile() for str {
   { t }
 
   rule line() -> &'input str
-  = (!"!!")
+  = !"!!"
     t:rest_of_line()
   { t }
 
   rule text() -> &'input str
-  = $(line()*)
+  = t:$((!"!!" [^'\n']*) ** eol()) (eol() / &"!!")
+  { t }
 }}

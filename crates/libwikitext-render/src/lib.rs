@@ -415,11 +415,11 @@ pub fn render_article(
     };
 
     let sp = StackFrame::new(
-        Title::new(statics.db.config(), &article.title, None),
-        FileMap::new(&article.body),
+        Title::new(statics.db.config(), article.title(), None),
+        FileMap::new(article.body()),
     );
 
-    render(statics, messages, &sp, load_mode)
+    render(statics, messages, &article, &sp, load_mode)
 }
 
 /// Main renderer entrypoint for eval.
@@ -445,6 +445,15 @@ pub fn render_string(
     })?;
     let kvs = kvs.iter().map(Kv::Argument).collect::<Vec<_>>();
 
+    let article = Arc::new(
+        Article::builder()
+            .id(0xdead_beef)
+            .title(page_name)
+            .body(source)
+            .revision_id(0xdead_beef)
+            .build(),
+    );
+
     let mut sp = StackFrame::new(
         Title::new(statics.db.config(), page_name, None),
         FileMap::new(source),
@@ -462,9 +471,9 @@ pub fn render_string(
 
     let load_mode = LoadMode::Module;
     match mode {
-        EvalPp::Post => render(statics, messages, &sp, load_mode),
+        EvalPp::Post => render(statics, messages, &article, &sp, load_mode),
         EvalPp::Pre | EvalPp::PreTree | EvalPp::Tree => {
-            let (state, source) = preprocess(statics, messages, &sp, load_mode)?;
+            let (state, source) = preprocess(statics, messages, &article, &sp, load_mode)?;
             let mut content = if mode == EvalPp::Pre {
                 source
             } else if mode == EvalPp::PreTree {
@@ -492,33 +501,15 @@ pub fn render_string(
     }
 }
 
-/// Main renderer entrypoint for Wikitext tests.
-///
-/// # Errors
-///
-/// * Rendering fails
-// TODO: This function should not exist here.
-pub fn render_test(
-    statics: &mut Statics<'_>,
-    messages: &serde_json_borrow::Value<'_>,
-    page_name: &str,
-    source: &str,
-) -> Result<RenderOutput> {
-    let sp = StackFrame::new(
-        Title::new(statics.db.config(), page_name, None),
-        FileMap::new(source),
-    );
-    render(statics, messages, &sp, LoadMode::Module)
-}
-
 /// Main renderer entrypoint.
 fn render(
     statics: &mut Statics<'_>,
     messages: &serde_json_borrow::Value<'_>,
+    article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
 ) -> Result<RenderOutput> {
-    let (mut state, source) = preprocess(statics, messages, sp, load_mode)?;
+    let (mut state, source) = preprocess(statics, messages, article, sp, load_mode)?;
 
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
@@ -542,9 +533,10 @@ fn render(
         reason = "if memory usage is ever ≥2**53, something sure happened"
     )]
     {
-        let tpl_mem = {
-            let cache = &state.statics.template_cache;
+        let tpl_mem = if let Some(cache) = &state.statics.template_cache {
             cache.read()?.limiter().heap_usage() + cache.read()?.memory_usage()
+        } else {
+            0
         };
         let vm_mem = state.statics.vm.total_memory();
 
@@ -575,6 +567,7 @@ fn render(
 fn preprocess<'a, 'b, 'c>(
     statics: &'a mut Statics<'b>,
     messages: &'c serde_json_borrow::Value<'c>,
+    article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
 ) -> Result<(State<'a, 'b, 'c>, String)> {
@@ -583,7 +576,7 @@ fn preprocess<'a, 'b, 'c>(
     lua::reset_vm(&mut statics.vm, messages, &sp.name, statics.base_time)?;
 
     let mut state = State {
-        globals: <_>::default(),
+        globals: ArticleState::new(statics.db.config(), Arc::clone(article)),
         load_mode,
         messages,
         statics,
@@ -749,11 +742,8 @@ pub struct Statics<'config> {
     )]
     pub parser: Parser<'config>,
     /// Template AST cache.
-    #[builder(
-        default = make_template_cache(1024 * 1024),
-        setter(doc = "Sets the global template cache. If unspecified, a 1MiB cache will be created.")
-    )]
-    template_cache: TemplateCache,
+    #[builder(default, setter(doc = "Sets the global template cache.", strip_option))]
+    template_cache: Option<TemplateCache>,
     /// The Lua interpreter.
     #[builder(default = lua::new_vm(base_uri, db, parser).unwrap(), setter(skip))]
     pub vm: Lua,
@@ -857,8 +847,10 @@ trait WriteSurrogate: fmt::Write + Surrogate<Error> {}
 impl<T> WriteSurrogate for T where T: fmt::Write + Surrogate<Error> {}
 
 /// Shared article data.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ArticleState {
+    /// The article data.
+    article: Arc<Article>,
     /// Collected categories to append to the footer of the page.
     categories: globals::Categories,
     /// The last ordinal used by an unlabelled external link.
@@ -873,8 +865,29 @@ struct ArticleState {
     sections: extension_tags::LabelledSections,
     /// Collected CSS for the `<templatestyles>` extension tag.
     styles: extension_tags::Styles,
+    /// The title of the article.
+    title: Title,
     /// Sometimes settable magic variables, e.g. `{{SHORTDESC}}`.
     variables: HashMap<String, String>,
+}
+
+impl ArticleState {
+    /// Creates a new article processing state for the given `article`.
+    fn new(config: &Configuration, article: Arc<Article>) -> Self {
+        let title = Title::new(config, article.title(), None);
+        Self {
+            article,
+            categories: <_>::default(),
+            external_link_ordinal: <_>::default(),
+            indicators: <_>::default(),
+            outline: <_>::default(),
+            references: <_>::default(),
+            sections: <_>::default(),
+            styles: <_>::default(),
+            title,
+            variables: <_>::default(),
+        }
+    }
 }
 
 /// Resolves any redirects for an article, returning the final article.
@@ -891,7 +904,7 @@ pub fn resolve_redirects<Db: DatabaseProvider>(
 ) -> Result<Arc<Article>, Error> {
     // “Loop to fetch the article, with up to 2 redirects”
     for _ in 0..2 {
-        if let Some(target) = &article.redirect {
+        if let Some(target) = article.redirect() {
             // log::trace!("Redirection #{} to {target}", attempt + 1);
             article = db.get(&Title::new(db.config(), target, None))?;
         } else {

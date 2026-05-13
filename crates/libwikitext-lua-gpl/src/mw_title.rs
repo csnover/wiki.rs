@@ -15,7 +15,7 @@ use core::{
 use http::Uri;
 use libwikitext_common::{
     config::Configuration,
-    db::DatabaseProvider,
+    db::{Article, DatabaseProvider},
     make_url,
     title::{Namespace, Title},
     url_encode, url_encode_bytes,
@@ -140,7 +140,7 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         log::trace!("mw.title.getContent({full_text:?})");
         let title = Title::new(self.db().config(), full_text.to_str()?, None);
         Ok(self.db().get(&title).map_or(Value::Nil, |article| {
-            Value::String(ctx.intern(article.body.as_bytes()))
+            Value::String(ctx.intern(article.body().as_bytes()))
         }))
     }
 
@@ -160,11 +160,11 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
             using ctx;
 
             contentModel = ctx.intern(article
-                .map_or("wikitext", |article| &article.model)
+                .map_or("wikitext", |article| article.model())
                 .as_bytes()),
             exists = article.is_some(),
-            id = i64::try_from(article.map(|article| article.id).unwrap_or_default())?,
-            isRedirect = article.is_some_and(|article| article.redirect.is_some()),
+            id = i64::try_from(article.map(Article::id).unwrap_or_default())?,
+            isRedirect = article.is_some_and(|article| article.redirect().is_some()),
         })
     }
 
@@ -343,7 +343,7 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         // a table.
         let db = self.db();
         if let Ok(target) = db.get(&Title::new(db.config(), text.to_str()?, None))
-            && let Some(target) = &target.redirect
+            && let Some(target) = &target.redirect()
         {
             let title = Title::new(db.config(), target, None);
             make_title_table(ctx, self.current_title(ctx), &title)

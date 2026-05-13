@@ -142,7 +142,7 @@ pub(crate) async fn article(
     let article = state.database.get(&title)?;
 
     let redirect = redirect.as_deref() != Some("no");
-    if redirect && article.redirect.is_some() {
+    if redirect && article.redirect().is_some() {
         // Of course, the recorded redirect target is missing any fragment-part
         // so it is necessary to parse the article to actually get that.
         let target = call_renderer(&state, renderer::Command::Redirect { article })?;
@@ -176,7 +176,7 @@ pub(crate) async fn article(
         from: from.as_deref(),
         output: &output,
         site: state.database.name(),
-        title: &article.title,
+        title: article.title(),
     }
     .render_once()
     .map(html_result)
@@ -533,11 +533,11 @@ pub(crate) async fn source(
 
     match mode {
         None | Some(SourceMode::Raw) => {
-            raw_source(state.base_uri.path(), &article.body, &article.model, None)
+            raw_source(state.base_uri.path(), article.body(), article.model(), None)
                 .map(IntoResponse::into_response)
         }
         Some(SourceMode::Tree) => {
-            let source = FileMap::new(&article.body);
+            let source = FileMap::new(article.body());
             let tree = Parser::new(state.database.config())
                 .parse(&source, include.is_some())
                 .map_err(RenderError::from)?;

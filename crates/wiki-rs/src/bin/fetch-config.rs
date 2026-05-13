@@ -47,6 +47,7 @@ fn main() -> Result<(), DisplayError> {
     let function_hooks = aliases_iter(&magic_words, query.function_hooks, &trim_parser_fn);
 
     let api::General {
+        lang,
         lang_conversion,
         legal_title_chars,
         link_trail,
@@ -88,6 +89,7 @@ fn main() -> Result<(), DisplayError> {
             interwiki_map: phf::phf_map! {
                 #(#interwiki_map),*
             },
+            language: #lang,
             language_conversion_enabled: #lang_conversion,
             link_trail: #link_trail,
             magic_links: MagicLinks {
@@ -276,6 +278,7 @@ mod api {
 
     #[derive(serde::Deserialize)]
     pub(super) struct General<'a> {
+        pub lang: Cow<'a, str>,
         #[serde(rename = "langconversion")]
         pub lang_conversion: bool,
         #[serde(borrow, rename = "legaltitlechars")]

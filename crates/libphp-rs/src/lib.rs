@@ -631,6 +631,13 @@ impl DateTime {
         self.inner.to_iso_week_date()
     }
 
+    /// Gets the primitive offset date time.
+    #[inline]
+    #[must_use]
+    pub fn to_offset_time(self) -> OffsetDateTime {
+        self.inner
+    }
+
     /// Truncate to the start of the day, setting the time to midnight.
     #[inline]
     #[must_use]

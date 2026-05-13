@@ -119,6 +119,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "stats" => "https://stats.wikimedia.org/$1",
         "gerrit" => "https://gerrit.wikimedia.org/$1",
     },
+    language: "en",
     language_conversion_enabled: true,
     link_trail: "/^([a-z]+)(.*)$/",
     magic_links: MagicLinks {

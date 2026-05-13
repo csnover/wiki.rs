@@ -2,7 +2,8 @@
 
 use super::{config::Configuration, lru_limiter::HeapUsageCalculator, title::Title};
 use indexmap::IndexSet;
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use time::UtcDateTime;
 
 /// A trait for implementing database backends.
 #[expect(
@@ -84,32 +85,205 @@ impl DatabaseProvider for Arc<dyn DatabaseProvider> {
 }
 
 /// A single MediaWiki article.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Article {
-    /// The content of the article.
+    /// All article string data.
+    data: String,
+    /// The article ID. (This is *not* the revision ID.)
+    id: u64,
+    /// The end position of the data model section in [`Self::data`].
+    model: u16,
+    /// The end position of the redirect section in [`Self::data`].
+    redirect: u16,
+    /// The end position of the restrictions section in [`Self::data`].
+    restrictions: u16,
+    /// The end position of the revision author in [`Self::data`].
+    revision_author: u16,
+    /// The revision ID.
+    revision_id: u64,
+    /// The timestamp of the revision.
+    revision_timestamp: UtcDateTime,
+    /// The end position of the title section, and the start position of the
+    /// body text, in [`Self::data`].
+    title: u16,
+}
+
+impl Article {
+    /// Creates a builder for building an `Article`.
+    #[inline]
+    pub fn builder<'a>() -> ArticleBuilder<'a> {
+        ArticleOptions::builder()
+    }
+
+    /// Gets the content of the article.
     ///
     /// This is arbitrary text content which must be interpreted according to
-    /// the article’s [data model](Self::model).
-    pub body: String,
-    /// The article ID. (This is *not* the revision ID.)
-    pub id: u64,
-    /// The data model of the article. This is usually "wikitext", but can be
-    /// "json" for JSON data, "Scribunto" for Lua modules, etc.
-    pub model: String,
-    /// If this article is a redirection to another article, the title of the
-    /// destination article.
-    pub redirect: Option<String>,
-    /// The title of the article. This may contain a namespace name.
-    pub title: String,
+    /// the article’s [data model](fn@Self::model).
+    #[inline]
+    #[must_use]
+    pub fn body(&self) -> &str {
+        &self.data[usize::from(self.title)..]
+    }
+
+    /// Gets the article ID.
+    #[inline]
+    #[must_use]
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Gets the data model of the article. This is usually "wikitext", but can
+    /// be "json" for JSON data, "Scribunto" for Lua modules, etc.
+    #[inline]
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.data[..usize::from(self.model)]
+    }
+
+    /// Gets the title of the destination article, if this article is a
+    /// redirection to another article.
+    #[must_use]
+    pub fn redirect(&self) -> Option<&str> {
+        let target = &self.data[usize::from(self.model)..usize::from(self.redirect)];
+        (!target.is_empty()).then_some(target)
+    }
+
+    /// Replaces the body text.
+    #[inline]
+    pub fn replace_body<F: FnOnce(&str) -> Cow<'_, str>>(&mut self, repl: F) {
+        let range = usize::from(self.title)..;
+        if let Cow::Owned(body) = repl(&self.data[range.clone()]) {
+            self.data.replace_range(range, &body);
+        }
+    }
+
+    /// Gets any access restriction for the given action.
+    #[must_use]
+    pub fn restriction(&self, action: &str) -> Option<&str> {
+        let restrictions = self.restrictions()?;
+        restrictions.split(':').find_map(|restriction| {
+            let (candidate, restriction) = restriction.split_once('=')?;
+            (action == candidate).then_some(restriction)
+        })
+    }
+
+    /// Gets the raw restrictions list.
+    #[inline]
+    fn restrictions(&self) -> Option<&str> {
+        let restrictions = &self.data[usize::from(self.redirect)..usize::from(self.restrictions)];
+        (!restrictions.is_empty()).then_some(restrictions)
+    }
+
+    /// Gets the revision ID.
+    #[inline]
+    #[must_use]
+    pub fn revision_id(&self) -> u64 {
+        self.revision_id
+    }
+
+    /// Gets the author of this article revision.
+    #[inline]
+    #[must_use]
+    pub fn revision_author(&self) -> &str {
+        &self.data[usize::from(self.restrictions)..usize::from(self.revision_author)]
+    }
+
+    /// Gets the creation date of this article revision.
+    #[inline]
+    #[must_use]
+    pub fn revision_timestamp(&self) -> UtcDateTime {
+        self.revision_timestamp
+    }
+
+    /// Gets the title of the article. This may contain a namespace name.
+    #[inline]
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.data[usize::from(self.revision_author)..usize::from(self.title)]
+    }
+}
+
+impl core::fmt::Debug for Article {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Article")
+            .field("id", &self.id())
+            .field("model", &self.model())
+            .field("redirect", &self.redirect())
+            .field("restrictions", &self.restrictions())
+            .field("revision_author", &self.revision_author())
+            .field("revision_id", &self.revision_id())
+            .field("revision_timestamp", &self.revision_timestamp())
+            .field("title", &self.title())
+            .field("body", &self.body())
+            .finish()
+    }
+}
+
+/// Intermediate builder structure for `Article`.
+// The docs for TypedBuilder are atrocious, so as far as I can tell it is
+// impossible to do this kind of memory optimising transformation directly.
+// Otherwise this would just a builder right on `Article`.
+#[derive(typed_builder::TypedBuilder)]
+#[builder(builder_type(name = ArticleBuilder, vis = "pub"), build_method(into = Article))]
+struct ArticleOptions<'a> {
+    /// The body text.
+    body: &'a str,
+    /// The article ID.
+    id: u64,
+    /// The data model.
+    #[builder(default)]
+    model: &'a str,
+    /// The redirect target.
+    #[builder(default)]
+    redirect: &'a str,
+    /// The access restrictions.
+    #[builder(default)]
+    restrictions: &'a str,
+    /// The revision author.
+    #[builder(default)]
+    revision_author: &'a str,
+    /// The revision ID.
+    revision_id: u64,
+    /// The revision timestamp.
+    #[builder(default = UtcDateTime::UNIX_EPOCH)]
+    revision_timestamp: UtcDateTime,
+    /// The article title.
+    title: &'a str,
+}
+
+impl From<ArticleOptions<'_>> for Article {
+    fn from(value: ArticleOptions<'_>) -> Self {
+        let mut data = String::new();
+
+        let mut append = |value: &str| -> u16 {
+            data += value;
+            u16::try_from(data.len()).unwrap()
+        };
+
+        let model = append(value.model);
+        let redirect = append(value.redirect);
+        let restrictions = append(value.restrictions);
+        let revision_author = append(value.revision_author);
+        let title = append(value.title);
+        data += value.body;
+        Self {
+            data,
+            id: value.id,
+            model,
+            redirect,
+            restrictions,
+            revision_author,
+            revision_id: value.revision_id,
+            revision_timestamp: value.revision_timestamp,
+            title,
+        }
+    }
 }
 
 impl HeapUsageCalculator for Article {
     #[inline]
     fn size_of(&self) -> usize {
-        self.title.capacity()
-            + self.body.capacity()
-            + self.model.capacity()
-            + self.redirect.as_ref().map_or(0, String::capacity)
+        self.data.capacity()
     }
 }
 
@@ -131,8 +305,6 @@ pub struct MockDatabase<'config> {
     articles: HashMap<String, Arc<Article>>,
     /// The mock configuration.
     config: &'config Configuration,
-    /// The article ID for the next inserted article.
-    next_id: u64,
 }
 
 impl<'config> MockDatabase<'config> {
@@ -143,25 +315,21 @@ impl<'config> MockDatabase<'config> {
         Self {
             articles: <_>::default(),
             config,
-            next_id: 1,
         }
     }
 
-    /// Inserts a Wikitext article with the given `title` and `body` text.
-    pub fn insert(&mut self, title: &str, body: &str) {
-        let title = Title::new(self.config, title, None).key().to_owned();
-        let id = self.next_id;
-        self.next_id += 1;
-        self.articles.insert(
-            title.clone(),
-            Arc::new(Article {
-                body: body.into(),
-                id,
-                model: "wikitext".into(),
-                redirect: None,
-                title,
-            }),
-        );
+    /// Inserts an `article` to the database.
+    pub fn insert(&mut self, article: Article) {
+        let title = Title::new(self.config, article.title(), None)
+            .key()
+            .to_owned();
+        self.articles.insert(title.clone(), Arc::new(article));
+    }
+
+    /// Removes an `article` with the given title from the database.
+    pub fn remove(&mut self, title: &str) {
+        let title = Title::new(self.config, title, None);
+        self.articles.remove(title.key());
     }
 }
 

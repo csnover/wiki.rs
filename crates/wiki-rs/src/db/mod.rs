@@ -6,6 +6,7 @@ mod index;
 mod prefetch;
 
 use article::{ArticleDatabase, DatabaseNamespace};
+use core::sync::atomic::{AtomicU8, Ordering};
 use index::Index;
 use libphp_rs::strtr;
 use libwikitext_common::{
@@ -103,6 +104,10 @@ pub(crate) struct RawDatabase<'a> {
     cache: RwLock<ArticleCache>,
     /// The uncompressed text index part of the database.
     index: Index<'a>,
+    /// The ID counter for lobotomised articles.
+    ///
+    /// All articles need to have unique IDs to avoid cache key collisions.
+    next_id: AtomicU8,
 }
 
 impl RawDatabase<'_> {
@@ -125,6 +130,7 @@ impl RawDatabase<'_> {
             articles,
             cache: RwLock::new(LruMap::new(ByMemoryUsage::new(cache_size_limit))),
             index,
+            next_id: <_>::default(),
         })
     }
 
@@ -165,7 +171,7 @@ impl RawDatabase<'_> {
 
         if let (Ok(article), Some(Hack::HorsePills(hacks))) = (article.as_mut(), HACKS.get(title)) {
             log::info!("Modifying {title} using hacks");
-            article.body = strtr(&article.body, hacks).into_owned();
+            article.replace_body(|body| strtr(body, hacks));
         }
 
         article
@@ -194,18 +200,21 @@ impl RawDatabase<'_> {
 
         if let Some(&Hack::Lobotomy(body)) = HACKS.get(key) {
             log::warn!("Replacing {key} from hacks");
-            return Ok(Arc::new(Article {
-                id: 0xdead_beef,
-                title: key.to_owned(),
-                body: (*body).to_owned(),
-                model: if key.starts_with("Module:") {
-                    "Scribunto"
-                } else {
-                    "wikitext"
-                }
-                .into(),
-                redirect: None,
-            }));
+            let fake_id =
+                (i64::MAX as u64) - u64::from(self.next_id.fetch_add(1, Ordering::SeqCst));
+            return Ok(Arc::new(
+                Article::builder()
+                    .id(fake_id)
+                    .title(key)
+                    .body(body)
+                    .model(if key.starts_with("Module:") {
+                        "Scribunto"
+                    } else {
+                        "wikitext"
+                    })
+                    .revision_id(fake_id)
+                    .build(),
+            ));
         }
 
         // Do not use `get_or_insert` and hold the write lock during article

@@ -47,6 +47,9 @@ pub struct ConfigurationSource {
     /// Registered title interwikis.
     pub interwiki_map: Map<&'static str, &'static str>,
 
+    /// The default page language.
+    pub language: &'static str,
+
     /// Whether language conversions are enabled.
     pub language_conversion_enabled: bool,
 

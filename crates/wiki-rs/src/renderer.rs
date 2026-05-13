@@ -127,7 +127,7 @@ impl r2d2::ManageConnection for Manager {
                     ),
                     Command::Redirect { article } => statics
                         .parser
-                        .parse_redirect(&article.body)
+                        .parse_redirect(article.body())
                         .map(|redirect| RenderOutput {
                             content: redirect.to_owned(),
                             indicators: <_>::default(),

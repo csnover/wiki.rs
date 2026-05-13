@@ -152,7 +152,8 @@ fn fetch_module(
     sp: Pin<&StackFrame<'_>>,
     code: &Arc<Article>,
 ) -> Result<(StashedClosure, StashedTable), ExternError> {
-    let VmCacheEntry { module, env } = if let Some(cached) = state.statics.vm_cache.get(&code.id) {
+    let VmCacheEntry { module, env } = if let Some(cached) = state.statics.vm_cache.get(&code.id())
+    {
         cached.clone()
     } else {
         let ex = state.statics.vm.try_enter(|ctx| {
@@ -172,13 +173,13 @@ fn fetch_module(
         let (module, env) = state.statics.vm.try_enter(|ctx| {
             let env = ctx.fetch(&ex).take_result::<Table<'_>>(ctx)??;
             let module =
-                Closure::load_with_env(ctx, Some(sp.name.key()), code.body.as_bytes(), env)?;
+                Closure::load_with_env(ctx, Some(sp.name.key()), code.body().as_bytes(), env)?;
 
             Ok((ctx.stash(module), ctx.stash(env)))
         })?;
 
         let entry = VmCacheEntry { env, module };
-        state.statics.vm_cache.insert(code.id, entry.clone());
+        state.statics.vm_cache.insert(code.id(), entry.clone());
 
         if memory_exceeded(state) {
             return Err(RuntimeError::new(anyhow::anyhow!("memory limit exceeded")).into());

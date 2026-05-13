@@ -7,6 +7,7 @@ use libwikitext_common::{db::Article, title::NamespaceCase};
 use memmap2::Mmap;
 use minidom::Element;
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fs::File,
     io::{self, BufReader, Read as _},
@@ -173,31 +174,53 @@ fn database_info(path: &Path, data: &[u8]) -> Result<Metadata> {
 
 /// Extracts article data from an XML element.
 fn parse_article(article: &Element) -> Result<Article> {
-    let id = try_get_child(article, "id")?.text().parse::<u64>()?;
-    let title = try_get_child(article, "title")?.text();
-    let revision = try_get_child(article, "revision")?;
-    let body = try_get_child(revision, "text")?.text();
-    // TODO: This may be needed eventually, so remember it exists
-    // let date = UtcDateTime::parse(
-    //     &try_get_child(revision, "timestamp")?.text(),
-    //     &Iso8601::DEFAULT,
-    // )?;
-    let model = try_get_child(revision, "model")?.text();
+    let id = try_get_text(article, "id")?.parse::<u64>()?;
+    let title = try_get_text(article, "title")?;
+    let restrictions = try_get_text(article, "restrictions")
+        .ok()
+        .unwrap_or_default();
     let redirect = try_get_child(article, "redirect")
         .ok()
-        .and_then(|r| r.attr("title").map(ToString::to_string));
-    // TODO: This may be needed eventually, so remember it exists
-    // let last_changed_by = revision
-    //     .try_get_child("contributor")?
-    //     .try_get_child("username")?
-    //     .text();
+        .and_then(|r| r.attr("title"))
+        .unwrap_or_default();
 
-    Ok(Article {
-        id,
-        title,
-        body,
-        model,
-        redirect,
+    let revision = try_get_child(article, "revision")?;
+    let body = try_get_text(revision, "text")?;
+    let date = UtcDateTime::parse(&try_get_text(revision, "timestamp")?, &Iso8601::DEFAULT)?;
+    let model = try_get_text(revision, "model")?;
+    let revision_id = try_get_text(revision, "id")?.parse::<u64>()?;
+
+    let contributor = try_get_child(revision, "contributor")?;
+    let revision_author = try_get_text(contributor, "username")
+        .or_else(|_| try_get_text(contributor, "ip"))
+        .unwrap_or_default();
+
+    Ok(Article::builder()
+        .body(&body)
+        .id(id)
+        .model(&model)
+        .redirect(redirect)
+        .restrictions(&restrictions)
+        .revision_author(&revision_author)
+        .revision_id(revision_id)
+        .revision_timestamp(date)
+        .title(&title)
+        .build())
+}
+
+/// Tries to get the text of a child element without cloning. Returns [`Error`]
+/// if the child element does not exist.
+fn try_get_text<'a>(element: &'a Element, name: &str) -> Result<Cow<'a, str>> {
+    try_get_child(element, name).map(|element| {
+        let mut texts = element.texts();
+        let Some(first) = texts.next() else {
+            return <_>::default();
+        };
+        if let Some(second) = texts.next() {
+            Cow::Owned([first, second].into_iter().chain(texts).collect())
+        } else {
+            Cow::Borrowed(first)
+        }
     })
 }
 

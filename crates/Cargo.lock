@@ -899,6 +899,7 @@ dependencies = [
  "serde_json_borrow",
  "thiserror 2.0.18",
  "time",
+ "typed-builder",
 ]
 
 [[package]]
@@ -1029,6 +1030,7 @@ dependencies = [
  "serde_json_borrow",
  "syntect",
  "thiserror 2.0.18",
+ "time",
  "typed-builder",
  "unicode-general-category",
  "vega2-rs",

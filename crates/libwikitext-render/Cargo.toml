@@ -41,6 +41,7 @@ serde_json.workspace = true
 serde_json_borrow.workspace = true
 syntect.workspace = true
 thiserror.workspace = true
+time.workspace = true
 typed-builder.workspace = true
 unicode-general-category.workspace = true
 vega2-rs.workspace = true

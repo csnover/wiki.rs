@@ -12,6 +12,7 @@ use super::{
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     template::call_module,
 };
+use ::time::UtcDateTime;
 use core::{
     fmt::{self, Write as _},
     iter,
@@ -23,7 +24,7 @@ use libphp_rs::{floatval, fuzzy_cmp, strtr};
 use libwikitext_common::{
     anchor_encode,
     config::Configuration,
-    db::DatabaseProvider as _,
+    db::{Article, DatabaseProvider as _, Error as DatabaseError},
     decode_html, format_date_mediawiki, format_message, format_number, make_url,
     parse_formatted_number,
     title::{Namespace, Title},
@@ -32,7 +33,10 @@ use libwikitext_common::{
 use libwikitext_common_gpl::expr;
 use libwikitext_parse::{Span, strip};
 use regex::Regex;
-use std::{borrow::Cow, sync::LazyLock};
+use std::{
+    borrow::Cow,
+    sync::{Arc, LazyLock},
+};
 
 /// The function signature of a parser function.
 type ParserFn = fn(&mut String, &mut State<'_, '_, '_>, &IndexedArgs<'_, '_, '_>) -> Result;
@@ -327,6 +331,18 @@ mod page {
         )
     }
 
+    /// `{{PAGEID[: title] }}`
+    pub fn page_id(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(id) = get_article(state, arguments)?.map(|article| article.id()) {
+            write!(out, "{id}")?;
+        }
+        Ok(())
+    }
+
     /// `{{PAGENAME}}`
     pub fn page_name(
         out: &mut String,
@@ -341,7 +357,7 @@ mod page {
     fn page_name_impl<FnT, FnU>(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, callee, .. }: &IndexedArgs<'_, '_, '_>,
+        IndexedArgs { callee, .. }: &IndexedArgs<'_, '_, '_>,
         text: FnT,
         uri: FnU,
     ) -> Result
@@ -349,7 +365,7 @@ mod page {
         FnT: FnOnce(&Title) -> &str,
         FnU: FnOnce(&Title) -> Cow<'_, str>,
     {
-        let title = &sp.root().name;
+        let title = &state.globals.title;
         let as_uri = callee.ends_with("ee");
         let part = if as_uri {
             uri(title)
@@ -361,6 +377,24 @@ mod page {
             "{}",
             libwikitext_parse_gpl::escape_all(state.statics.db.config(), &part)
         )?;
+        Ok(())
+    }
+
+    /// `{{PAGESIZE}}`
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "≥2**53 is not an addressable amount of memory"
+    )]
+    pub fn page_size(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(page_size) = get_article(state, arguments)?.map(|article| article.body().len())
+        {
+            let no_separators = arguments.eval(state, 1)?.map(trim).as_deref() == Some("R");
+            write!(out, "{}", format_number(page_size as f64, no_separators))?;
+        }
         Ok(())
     }
 
@@ -406,14 +440,14 @@ mod page {
     fn related_page_name<F>(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
-        IndexedArgs { sp, callee, .. }: &IndexedArgs<'_, '_, '_>,
+        IndexedArgs { callee, .. }: &IndexedArgs<'_, '_, '_>,
         related: F,
     ) -> Result
     where
         F: for<'a> FnOnce(&'a Title, &Configuration) -> Option<Cow<'a, Title>>,
     {
         let config = state.statics.db.config();
-        let title = related(&sp.root().name, config);
+        let title = related(&state.globals.title, config);
         if let Some(title) = title {
             let as_uri = callee.ends_with("ee");
             let part = if as_uri {
@@ -426,17 +460,117 @@ mod page {
         Ok(())
     }
 
-    /// `{{REVISIONID}}`
+    /// `{{REVISIONID[: title] }}`
     pub fn revision_id(
         out: &mut String,
-        _: &mut State<'_, '_, '_>,
-        _: &IndexedArgs<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        // TODO: For the purposes of debugging, it might be worthwhile to
-        // make this a toggle which can be empty string instead, since MW
-        // modules will emit more warnings in that case
-        out.write_char('-')?;
+        let revision_id = get_article(state, arguments)?.map(|article| article.revision_id());
+        if let Some(revision_id) = revision_id {
+            write!(out, "{revision_id}")?;
+        }
         Ok(())
+    }
+
+    /// Common implementation for all `{{REVISIONXXX}}` time functions.
+    #[inline]
+    fn revision_time_impl<F>(
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+        write_time: F,
+    ) -> Result
+    where
+        F: FnOnce(UtcDateTime) -> fmt::Result,
+    {
+        if let Some(time) =
+            get_article(state, arguments)?.map(|article| article.revision_timestamp())
+        {
+            write_time(time)?;
+        }
+        Ok(())
+    }
+
+    /// `{{REVISIONDAY[: title] }}`
+    pub fn revision_day(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        revision_time_impl(state, arguments, |time| write!(out, "{}", time.day()))
+    }
+
+    /// `{{REVISIONDAY2[: title] }}`
+    pub fn revision_day_lz(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        revision_time_impl(state, arguments, |time| write!(out, "{:02}", time.day()))
+    }
+
+    /// `{{REVISIONMONTH1[: title] }}`
+    pub fn revision_month(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        revision_time_impl(state, arguments, |time| {
+            write!(out, "{}", u8::from(time.month()))
+        })
+    }
+
+    /// `{{REVISIONMONTH[: title] }}`
+    pub fn revision_month_lz(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        revision_time_impl(state, arguments, |time| {
+            write!(out, "{:02}", u8::from(time.month()))
+        })
+    }
+
+    /// `{{REVISIONTIMESTAMP[: title] }}`
+    pub fn revision_timestamp(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        revision_time_impl(state, arguments, |time| {
+            write!(
+                out,
+                "{}{:02}{:02}{:02}{:02}{:02}",
+                time.year(),
+                u8::from(time.month()),
+                time.day(),
+                time.hour(),
+                time.minute(),
+                time.second()
+            )
+        })
+    }
+
+    /// `{{REVISIONUSER[: title] }}`
+    pub fn revision_user(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        let revision = get_article(state, arguments)?;
+        if let Some(author) = revision.as_ref().map(|article| article.revision_author()) {
+            write!(out, "{author}")?;
+        }
+        Ok(())
+    }
+
+    /// `{{REVISIONYEAR[: title] }}`
+    pub fn revision_year(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        revision_time_impl(state, arguments, |time| write!(out, "{}", time.year()))
     }
 
     /// `{{ROOTPAGENAME}}`
@@ -503,6 +637,27 @@ mod site {
 
     use super::*;
 
+    /// `{{CONTENTLANGUAGE}}` or `{{PAGELANGUAGE}}`
+    pub fn content_language(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        write!(out, "{}", state.statics.db.config().language)?;
+        Ok(())
+    }
+
+    /// `{{NUMBEROFFILES[:flag] }}`
+    pub fn number_of_files(
+        out: &mut String,
+        _: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        // The multistream bz2 database format includes no stats
+        write!(out, "0")?;
+        Ok(())
+    }
+
     /// `{{NUMBEROFPAGES[:flag] }}`
     #[expect(
         clippy::cast_precision_loss,
@@ -557,6 +712,16 @@ mod site {
         if let Some(authority) = state.statics.base_uri.authority() {
             write!(out, "{authority}")?;
         }
+        Ok(())
+    }
+
+    /// `{{SITENAME}}`
+    pub fn site_name(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        _: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        write!(out, "{}", state.statics.db.name())?;
         Ok(())
     }
 }
@@ -966,7 +1131,6 @@ mod time {
 
     /// `{{LOCALMONTH}}` or `{{LOCALMONTH2}}}}` or `{{CURRENTMONTH}}` or
     /// `{{CURRENTMONTH2}}`
-    // "localmonth" | "localmonth2" | "currentmonth" | "currentmonth2" => {
     pub fn month_lz(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
@@ -1180,7 +1344,7 @@ mod title {
     fn namespace_impl<'a, F>(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
-        arguments @ IndexedArgs { sp, callee, .. }: &IndexedArgs<'_, '_, '_>,
+        arguments @ IndexedArgs { callee, .. }: &IndexedArgs<'_, '_, '_>,
         f: F,
     ) -> Result
     where
@@ -1189,7 +1353,7 @@ mod title {
         let ns = if let Some(value) = arguments.eval(state, 0)?.map(trim) {
             Title::new(state.statics.db.config(), &value, None).namespace()
         } else {
-            sp.root().name.namespace()
+            state.globals.title.namespace()
         };
 
         if *callee == "namespacenumber" {
@@ -1291,10 +1455,24 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "fullpagename" => page::full_page_name,
     "fullpagenamee" => page::full_page_name,
     "getshortdesc" => page::page_var,
+    "pageid" => page::page_id,
+    // TODO: This information does not appear to be recorded in the database,
+    // and does not actually seem to be page-specific but rather user-specific
+    // (and then test things can override it)?
+    "pagelanguage" => site::content_language,
     "pagename" => page::page_name,
     "pagenamee" => page::page_name,
+    "pagesize" => page::page_size,
     "protectionexpiry" => page::protection_expiry,
+    "revisionday" => page::revision_day,
+    "revisionday2" => page::revision_day_lz,
     "revisionid" => page::revision_id,
+    "revisionmonth" => page::revision_month_lz,
+    "revisionmonth1" => page::revision_month,
+    "revisionsize" => page::page_size,
+    "revisiontimestamp" => page::revision_timestamp,
+    "revisionuser" => page::revision_user,
+    "revisionyear" => page::revision_year,
     "rootpagename" => page::root_page_name,
     "rootpagenamee" => page::root_page_name,
     "shortdesc" => page::set_page_var,
@@ -1305,10 +1483,14 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "talkpagename" => page::talk_page_name,
     "talkpagenamee" => page::talk_page_name,
 
+    "contentlanguage" => site::content_language,
+    "numberoffiles" => site::number_of_files,
     "numberofpages" => site::number_of_pages,
     "pagesincategory" => site::pages_in_category,
     "server" => site::server,
     "servername" => site::server_name,
+    "sitename" => site::site_name,
+    "userlanguage" => site::content_language,
 
     "anchorencode" => string::anchor_encode,
     "formatnum" => string::format_number,
@@ -1431,6 +1613,28 @@ fn on_error_resume_next<T, E: fmt::Display>(value: Result<T, E>) -> Result<T, St
 /// Decodes HTML entities and trims ASCII whitespace from the value.
 fn decode_trim(value: Cow<'_, str>) -> Cow<'_, str> {
     trim(value.map(decode_html))
+}
+
+/// Helper function for parser functions that operate either on the current page
+/// or on a named page.
+fn get_article(
+    state: &mut State<'_, '_, '_>,
+    arguments: &IndexedArgs<'_, '_, '_>,
+) -> Result<Option<Arc<Article>>> {
+    Ok(if let Some(title) = arguments.eval(state, 0)?.map(trim) {
+        let title = Title::new(state.statics.db.config(), &title, None);
+        match state.statics.db.get(&title) {
+            Ok(article) => Some(article),
+            Err(DatabaseError::NotFound) => None,
+            Err(err) => return Err(err.into()),
+        }
+    } else {
+        state
+            .statics
+            .db
+            .contains(&state.globals.title)
+            .then(|| Arc::clone(&state.globals.article))
+    })
 }
 
 /// Trims ASCII whitespace from the value.

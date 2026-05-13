@@ -1046,9 +1046,9 @@ impl Styles {
         );
         if let Ok(css) = db.get(&title) {
             if let Some(wrapper) = wrapper {
-                writeln!(self.text, "{wrapper} {{ {} }}", &css.body)?;
+                writeln!(self.text, "{wrapper} {{ {} }}", &css.body())?;
             } else {
-                self.text += &css.body;
+                self.text += css.body();
                 self.text.push('\n');
             }
         } else {
@@ -1104,7 +1104,7 @@ static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
 
 /// The output mode of an extension tag.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OutputMode {
+pub enum OutputMode {
     /// The extension tag outputs one or more block-level elements.
     Block,
     /// The extension tag outputs nothing directly.

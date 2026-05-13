@@ -72,7 +72,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     trail: Option<&str>,
     title: Title,
 ) -> Result<(), Error> {
-    if title.fragment().is_none() && sp.root().name == title {
+    if title.fragment().is_none() && state.globals.title == title {
         render_runtime(out, state, sp, |_, source| {
             token!(
                 source,

@@ -711,6 +711,7 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "https://en.wikimedia.org/wiki/$1", "v" => "https://en.wikiversity.org/wiki/$1",
         "voy" => "https://en.wikivoyage.org/wiki/$1"
     },
+    language: "en",
     language_conversion_enabled: true,
     link_trail: "/^([a-z]+)(.*)$/sD",
     magic_links: MagicLinks {

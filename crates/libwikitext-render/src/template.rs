@@ -78,7 +78,7 @@ pub(super) fn call_module(
     arguments: &KeyCacheKvs<'_, '_>,
 ) -> Result {
     if state.load_mode != LoadMode::Module {
-        return render_fallback(out, state, sp);
+        return render_fallback(out, state);
     }
 
     let Some(callee) = arguments.eval(state, sp, 0)? else {
@@ -113,7 +113,7 @@ pub(super) fn call_module(
     // log::trace!("Invoking {}|{}", &code.title, fn_name);
     let start = Instant::now();
     let result = run_vm(state, pin!(&sp), &code, &fn_name).map_err(|err| Error::Module {
-        name: code.title.clone(),
+        name: code.title().to_owned(),
         fn_name: fn_name.to_string(),
         err: Box::new(err.into()),
     });
@@ -160,7 +160,7 @@ pub(super) fn render_parameter(
     default: Option<&[Spanned<Token>]>,
 ) -> Result {
     if state.load_mode == LoadMode::Base {
-        return render_fallback(out, state, sp);
+        return render_fallback(out, state);
     }
 
     let key = sp.eval(state, name)?;
@@ -228,7 +228,7 @@ pub(super) fn render_template<'tt>(
     // eprintln!("render_template {sp:?} {:?}", inspect(&sp.source, target));
 
     if state.load_mode == LoadMode::Base {
-        render_fallback(out, state, sp)?;
+        render_fallback(out, state)?;
         return Ok(true);
     }
 
@@ -480,7 +480,7 @@ pub(crate) fn call_template(
         return Ok(None);
     };
 
-    let resolved_title = Title::new(state.statics.db.config(), &template.title, None);
+    let resolved_title = Title::new(state.statics.db.config(), template.title(), None);
     let resolved_key = resolved_title.key();
     let wrapper_key = TACKY_TEMPLATES.contains(resolved_key).then(|| {
         resolved_key
@@ -503,23 +503,38 @@ pub(crate) fn call_template(
     // The 'Module:Arguments' wrapper argument requires that redirects are
     // using the final name, not a redirect alias
     let sp = sp.chain(
-        Title::new(state.statics.db.config(), &template.title, None),
-        FileMap::new(&template.body),
+        Title::new(state.statics.db.config(), template.title(), None),
+        FileMap::new(template.body()),
         arguments,
     )?;
-    // For now, just assume that the cache will always be big enough and unwrap
-    let root = Arc::clone(
-        state
-            .statics
-            .template_cache
+
+    let cached_root = if let Some(cache) = &state.statics.template_cache {
+        // If a revision ID is duplicated this will break everything, so try not
+        // to do that
+        let cached = cache
             .write()?
-            .get_or_insert_fallible(template.id, || {
+            .get_or_insert_fallible(template.revision_id(), || {
                 state.statics.parser.parse(&sp.source, true).map(Arc::new)
             })?
-            .unwrap(),
-    );
+            .as_deref()
+            .map(Arc::clone);
 
-    expansion.adopt_output(state, &sp, &root)?;
+        if cached.is_none() {
+            log::warn!("Template cache is too small");
+        }
+
+        cached
+    } else {
+        None
+    };
+
+    if let Some(root) = cached_root {
+        expansion.adopt_output(state, &sp, &root)?;
+    } else {
+        let root = state.statics.parser.parse(&sp.source, true)?;
+        expansion.adopt_output(state, &sp, &root)?;
+    }
+
     // TODO: Could just write directly to the out.
     write!(out, "{}", expansion.finish())?;
 
@@ -578,9 +593,8 @@ pub(crate) fn resolve_callee<'a>(
 pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
 ) -> Result {
-    let page_name = &sp.root().name;
+    let page_name = &state.globals.title;
     let href = make_url(
         &state.statics.base_uri,
         None,

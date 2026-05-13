@@ -189,17 +189,6 @@ impl<'a> StackFrame<'a> {
             sp: self.parent.as_deref(),
         }
     }
-
-    /// Gets the root stack frame.
-    // TODO: This should not exist, information from here should come from the
-    // global state, there is only one root.
-    pub fn root(&self) -> &StackFrame<'a> {
-        let mut sp = self;
-        while let Some(parent) = &sp.parent {
-            sp = parent;
-        }
-        sp
-    }
 }
 
 impl HostFrame for Pin<&StackFrame<'_>> {

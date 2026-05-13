@@ -254,14 +254,14 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
             ))?;
         };
 
-        if article.model != "json" {
+        if article.model() != "json" {
             return Err(anyhow::anyhow!(
                 "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
             ))?;
         }
 
         let ser = piccolo_util::serde::ser::Serializer::new(ctx, <_>::default());
-        let mut deser = serde_json::Deserializer::from_slice(article.body.as_bytes());
+        let mut deser = serde_json::Deserializer::from_slice(article.body().as_bytes());
         Ok(serde_transcode::transcode(&mut deser, ser)?)
     }
 
@@ -289,12 +289,12 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
         );
 
         if let Ok(article) = db.get(&title)
-            && article.model == "Scribunto"
+            && article.model() == "Scribunto"
         {
             Closure::load_with_env(
                 ctx,
-                Some(&article.title),
-                article.body.as_bytes(),
+                Some(article.title()),
+                article.body().as_bytes(),
                 env.unwrap_or(ctx.globals()),
             )
             .map_err(Into::into)
