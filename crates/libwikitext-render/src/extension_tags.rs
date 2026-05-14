@@ -249,9 +249,10 @@ fn gallery(
         write!(out, "</div>")?;
     }
 
+    let space = if class.is_empty() { "" } else { " " };
     write!(
         out,
-        r#"<ul class="gallery mw-gallery-{mode} {class}"{attrs}>"#
+        r#"<ul class="gallery mw-gallery-{mode}{space}{class}"{attrs}>"#
     )?;
     for image in arguments.body().lines() {
         let Some((target, rest)) = image.split_once('|') else {
