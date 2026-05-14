@@ -321,12 +321,8 @@ mod tags;
 mod template;
 mod trim;
 
-use crate::{
-    document::Document,
-    template::DbPrefetch,
-    trim::{Trim, TrimMode},
-};
 use core::{fmt, time::Duration};
+use document::Document;
 use expand_templates::{ExpandMode, ExpandTemplates};
 use http::Uri;
 use libphp_rs::DateTime;
@@ -338,6 +334,7 @@ use libwikitext_common::{
 };
 use libwikitext_parse::{FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, inspect, strip};
 use libwikitext_parse_gpl::Parser;
+pub use parser_fns::{PluginFnArgs, PluginParserFn, PluginResult, PluginState};
 use piccolo::Lua;
 use schnellru::LruMap;
 use stack::{Kv, StackFrame};
@@ -348,6 +345,8 @@ use std::{
 };
 use surrogate::Surrogate;
 use tags::{LinkKind, LinkKindOptions};
+use template::DbPrefetch;
+use trim::{Trim, TrimMode};
 
 /// Preprocessor display options for evaluating text strings.
 #[derive(Clone, Copy, Default, Eq, PartialEq, serde::Deserialize)]
@@ -657,6 +656,10 @@ pub enum Error {
     #[error(transparent)]
     Peg(#[from] libwikitext_parse::Error),
 
+    /// An plugin error.
+    #[error(transparent)]
+    Plugin(anyhow::Error),
+
     /// An [`RwLock`] guard was poisoned.
     #[error("poisoned lock")]
     Poison,
@@ -744,6 +747,9 @@ pub struct Statics<'config> {
         transform = |config: &'config Configuration| Parser::new(config))
     )]
     pub parser: Parser<'config>,
+    /// Extra parser functions.
+    #[builder(default)]
+    parser_fns: HashMap<&'static str, &'static dyn PluginParserFn>,
     /// Template AST cache.
     #[builder(default, setter(doc = "Sets the global template cache.", strip_option))]
     template_cache: Option<TemplateCache>,

@@ -16,6 +16,17 @@
 use serde_json_borrow::{Map, Value};
 use std::{borrow::Cow, collections::HashMap};
 
+pub(super) const OPTION_TO_META: phf::Map<&str, &str> = phf::phf_map! {
+    "extlinks" => "extlink",
+    "ill" => "ill",
+    "iwl" => "iwl",
+    "links" => "link",
+    "special" => "special",
+    "templates" => "template",
+    "showflags" => "flags",
+    "showmedia" => "media",
+};
+
 /// The error type for the test parser.
 pub(super) type Error = peg::error::ParseError<peg::str::LineCol>;
 
@@ -66,20 +77,33 @@ pub(super) enum Chunk<'input> {
 /// A semi-structured result metadata chunk for a test.
 #[derive(Debug)]
 pub(super) struct Metadata<'input> {
-    /// The expected flags.
-    pub flags: Option<&'input str>,
-    /// The expected page display title.
-    pub title: Option<&'input str>,
+    /// The expected category metadata.
+    pub cats: Option<Vec<MetadataCategory<'input>>>,
+    /// The expected generic key-value pairs.
+    pub kvs: HashMap<&'input str, Vec<&'input str>>,
+    /// The expected page display title or indicators.
+    pub text: Option<Vec<&'input str>>,
     /// The expected table of contents outline.
     pub toc: Option<Vec<Toc<'input>>>,
 }
 
+/// Category metadata.
+#[derive(Debug)]
+pub(super) struct MetadataCategory<'input> {
+    /// The category part.
+    pub _category: &'input str,
+    /// The sort part.
+    pub _sort: &'input str,
+}
+
 /// A partially processed metadata part.
 enum MetadataPart<'input> {
-    /// A flags part.
-    Flags(&'input str),
-    /// A title part.
-    Title(&'input str),
+    /// A category part.
+    Category(MetadataCategory<'input>),
+    /// A generic key-value pair.
+    Kv(&'input str, &'input str),
+    /// A generic text part.
+    Text(&'input str),
     /// An outline part.
     Toc(Vec<Toc<'input>>),
 }
@@ -185,8 +209,7 @@ peg::parser! {grammar testfile() for str {
   { Chunk::Line }
 
   rule comment() -> Chunk<'input>
-  = "#"
-    _text:rest_of_line()
+  = "#" rest_of_line()
   { Chunk::Comment }
 
   rule article() -> Chunk<'input>
@@ -276,36 +299,65 @@ peg::parser! {grammar testfile() for str {
   { Section { name, text: SectionText::Meta(meta) } }
 
   // Options that affect the generated metadata are:
-  // showflags
-  // showtitle
-  // showtocdata
+  // cat           add category links
+  // extlinks      add external link metadata
+  // ill           add inter-language links
+  // iwl           add inter-wiki links
+  // links         add local wiki links
+  // special       add links to special pages
+  // templates     add template information
+  // showtitle     add the rendered title
+  // showflags     add the set parser output flags
+  // showtocdata   add table of contents data
+  // showindicators add the page status indicators
+  // showmedia     add the titles of the rendered media
+  //
   // Probably the order that they appear in the options also defines the order
   // they appear in the output, but this is just barely regular enough that it
   // can be parsed without knowing the order or which options were specified
   pub rule metadata() -> Metadata<'input>
   = parts:(!"!!" part:metadata_part() { part })*
   {
-      let mut flags = None;
-      let mut title = None;
+      let mut cats = None::<Vec<_>>;
+      let mut kvs = HashMap::<_, Vec<_>>::new();
+      let mut text = None::<Vec<_>>;
       let mut toc = None;
       for part in parts {
           match part {
-              MetadataPart::Flags(f) => flags = Some(f),
-              MetadataPart::Title(t) => title = Some(t),
+              MetadataPart::Category(cat) => cats.get_or_insert_default().push(cat),
+              MetadataPart::Kv(k, v) => kvs.entry(k).or_default().push(v),
+              MetadataPart::Text(t) => text.get_or_insert_default().push(t),
               MetadataPart::Toc(t) => toc = Some(t),
           }
       }
-      Metadata { flags, title, toc }
+      Metadata { cats, kvs, text, toc }
   }
 
-  rule metadata_part() -> MetadataPart<'input>
-  = title:metadata_title() { MetadataPart::Title(title) }
-  / flags:metadata_flags() { MetadataPart::Flags(flags) }
-  / toc:metadata_toc() { MetadataPart::Toc(toc) }
+  rule metadata_cat() -> MetadataCategory<'input>
+  = "cat=" category:$([^' ']*) " "+ "sort=" sort:rest_of_line()
+  { MetadataCategory { _category: category, _sort: sort } }
 
-  rule metadata_flags() -> &'input str
-  = "flags=" flags:rest_of_line()
-  { flags }
+  // `metadata_cat` rule should come first since it is two keys
+  rule metadata_kv() -> MetadataPart<'input>
+  = k:$(metadata_key()) "=" v:rest_of_line()
+  { MetadataPart::Kv(k, v) }
+
+  rule metadata_key()
+  = "cat"
+  / "extlink"
+  / "flags"
+  / "ill"
+  / "images"
+  / "iwl"
+  / "link"
+  / "special"
+  / "template"
+
+  rule metadata_part() -> MetadataPart<'input>
+  = category:metadata_cat() { MetadataPart::Category(category) }
+  / title:metadata_text() { MetadataPart::Text(title) }
+  / kv:metadata_kv() { kv }
+  / toc:metadata_toc() { MetadataPart::Toc(toc) }
 
   rule metadata_toc() -> Vec<Toc<'input>>
   = "Sections:" eol() toc:metadata_toc_line()* !" "
@@ -324,10 +376,10 @@ peg::parser! {grammar testfile() for str {
     " line:" line:rest_of_line()
   { Toc { line, tag } }
 
-  rule metadata_title() -> &'input str
-  = !("flags=" / "Sections:" / "!!")
-    title:rest_of_line()
-  { title }
+  rule metadata_text() -> &'input str
+  = !(metadata_key() "=" / "Sections:" / "!!")
+    text:rest_of_line()
+  { text }
 
   rule a_config_line() -> (Cow<'input, str>, Value<'input>)
   = k:option_name() v:config_value()
@@ -370,12 +422,12 @@ peg::parser! {grammar testfile() for str {
   }
 
   rule link_target_value() -> Cow<'input, str>
-  = "[[" v:$([^']'|'\n']*) "]]"
+  = "[[" v:$((!"]]" [_])*) "]]"
   { Cow::Borrowed(v) }
 
   rule valid_json_value() -> Value<'input>
   = v:$(quoted_value() / plain_value() / array_value() / json_value())
-  {? serde_json::from_str(v).map_err(|_| "invalid json") }
+  {? serde_json::from_str(v).map_err(|_| "valid json") }
 
   rule quoted_value() -> &'input str
   = $("\"" ([^'\\'|'"'|'\n'] / "\\" [^'\n'])* "\"")
@@ -416,13 +468,11 @@ peg::parser! {grammar testfile() for str {
   { n.parse().unwrap() }
 
   rule rest_of_line() -> &'input str
-  = t:$([^'\n']*)
-    eol()
+  = t:$([^'\n']*) eol()
   { t }
 
   rule line() -> &'input str
-  = !"!!"
-    t:rest_of_line()
+  = !"!!" t:rest_of_line()
   { t }
 
   rule text() -> &'input str

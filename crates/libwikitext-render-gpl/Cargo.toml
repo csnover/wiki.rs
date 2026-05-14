@@ -23,5 +23,6 @@ libwikitext-parse.workspace = true
 libwikitext-render.workspace = true
 log.workspace = true
 phf.workspace = true
+regex.workspace = true
 similar-asserts.workspace = true
 time.workspace = true

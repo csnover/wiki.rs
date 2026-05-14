@@ -1050,6 +1050,7 @@ dependencies = [
  "log",
  "peg",
  "phf",
+ "regex",
  "serde_json",
  "serde_json_borrow",
  "similar-asserts",

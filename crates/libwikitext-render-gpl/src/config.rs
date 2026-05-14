@@ -4,6 +4,7 @@ use libwikitext_common::{
 };
 use std::sync::LazyLock;
 
+// From `tests/Common/Parser/ParserTestRunner.php`
 pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     annotation_tags: phf::phf_set! { "dummyanno", "ann2" },
     annotations_enabled: true,
@@ -36,6 +37,8 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "defaultsort" => "defaultsort",
         "dir" => "dir",
         "displaytitle" => "displaytitle",
+        "divtagpf" => "divtagpf",
+        "divtag" => "divtagpf",
         "filepath" => "filepath",
         "formatdate" => "formatdate",
         "formatnum" => "formatnum",
@@ -80,6 +83,8 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "revisionyear" => "revisionyear",
         "rootpagename" => "rootpagename",
         "rootpagenamee" => "rootpagenamee",
+        "spantagpf" => "spantagpf",
+        "spantag" => "spantagpf",
         "special" => "special",
         "speciale" => "speciale",
         "subjectpagename" => "subjectpagename",
@@ -98,26 +103,22 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "urlencode" => "urlencode",
     },
     interwiki_map: phf::phf_map! {
-        "wikinvest" => "https://meta.wikimedia.org/wiki/Interwiki_map/discontinued#Wikinvest",
-        "local" => "http://example.org/wiki/$1",
-        // Local interwiki that matches a namespace name (T228616)
-        "project" => "http://example.org/wiki/$1",
-        "wikipedia" => "http://en.wikipedia.org/wiki/$1",
-        // this has been updated in the live wikis, but the parser tests
-        // expect the old value (as set in parserTest.inc:setupInterwikis())
-        "meatball" => "http://www.usemod.com/cgi-bin/mb.pl?$1",
-        "memoryalpha" => "http://www.memory-alpha.org/en/index.php/$1",
-        "zh" => "http://zh.wikipedia.org/wiki/$1",
+        "en" => "http://en.wikipedia.org/wiki/$1",
         "es" => "http://es.wikipedia.org/wiki/$1",
         "fr" => "http://fr.wikipedia.org/wiki/$1",
-        "ru" => "http://ru.wikipedia.org/wiki/$1",
+        "gerrit" => "https://gerrit.wikimedia.org/$1",
+        "local" => "http://example.org/wiki/$1",
+        "meatball" => "http://www.usemod.com/cgi-bin/mb.pl?$1",
+        "memoryalpha" => "http://www.memory-alpha.org/en/index.php/$1",
         "mi" => "http://example.org/wiki/$1",
         "mul" => "http://wikisource.org/wiki/$1",
-        // added to core's ParserTestRunner::appendInterwikiSetup() to support
-        // Parsoid tests [T254181]
-        "en" => "http://en.wikipedia.org/wiki/$1",
+        // Local interwiki that matches a namespace name (T228616)
+        "project" => "http://example.org/wiki/$1",
         "stats" => "https://stats.wikimedia.org/$1",
-        "gerrit" => "https://gerrit.wikimedia.org/$1",
+        "ru" => "http://ru.wikipedia.org/wiki/$1",
+        "wikinvest" => "https://meta.wikimedia.org/wiki/Interwiki_map/discontinued#Wikinvest",
+        "wikipedia" => "http://en.wikipedia.org/wiki/$1",
+        "zh" => "http://zh.wikipedia.org/wiki/$1",
     },
     language: "en",
     language_conversion_enabled: true,
@@ -272,6 +273,26 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             id: 15,
             name: "Category talk",
             canonical: Some("Category talk"),
+            case: FirstLetter,
+            content: false,
+            default_content_model: None,
+            subpages: true,
+            aliases: &[],
+        },
+        Namespace {
+            id: 100,
+            name: "MemoryAlpha",
+            canonical: Some("MemoryAlpha"),
+            case: FirstLetter,
+            content: false,
+            default_content_model: None,
+            subpages: true,
+            aliases: &[],
+        },
+        Namespace {
+            id: 101,
+            name: "MemoryAlpha_talk",
+            canonical: Some("MemoryAlpha_talk"),
             case: FirstLetter,
             content: false,
             default_content_model: None,

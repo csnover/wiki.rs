@@ -8,8 +8,9 @@
 )]
 
 use super::{
-    Error, Result, State, extension_tags,
+    Document, Error, Result, State, extension_tags,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
+    surrogate::Surrogate as _,
     template::call_module,
 };
 use ::time::UtcDateTime;
@@ -37,6 +38,115 @@ use std::{
     borrow::Cow,
     sync::{Arc, LazyLock},
 };
+
+/// A trait for plugins to add new parser functions.
+pub trait PluginParserFn {
+    /// Invokes the new parser function.
+    ///
+    /// # Errors
+    ///
+    /// * the parser call fails
+    fn call(
+        &self,
+        out: &mut String,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        args: PluginFnArgs<'_, '_, '_>,
+    ) -> PluginResult;
+}
+
+/// An opaque arguments object for plugin calls.
+pub struct PluginFnArgs<'args, 'call, 'sp>(&'call IndexedArgs<'args, 'call, 'sp>);
+
+impl PluginFnArgs<'_, '_, '_> {
+    /// Gets the name of the callee.
+    #[inline]
+    #[must_use]
+    pub fn callee(&self) -> &str {
+        self.0.callee
+    }
+
+    /// Evaluates an entire k-v pair at the given index as a single value.
+    ///
+    /// The returned value will include any leading and trailing whitespace
+    /// present in the original text.
+    ///
+    /// # Errors
+    ///
+    /// * parsing or rendering fails
+    #[inline]
+    pub fn eval(
+        &self,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        index: usize,
+    ) -> PluginResult<Option<Cow<'_, str>>> {
+        self.0.eval(state.0, index).map_err(Into::into)
+    }
+
+    /// Roughly equivalent to `recursiveTagParseFully`.
+    ///
+    /// # Errors
+    ///
+    /// * parsing or rendering fails
+    #[inline]
+    pub fn eval_as_document(
+        &self,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        index: usize,
+    ) -> PluginResult<Option<Cow<'_, str>>> {
+        self.eval_as_impl(state, index, false)
+    }
+
+    /// Roughly equivalent to `recursiveTagParse`.
+    ///
+    /// # Errors
+    ///
+    /// * parsing or rendering fails
+    #[inline]
+    pub fn eval_as_fragment(
+        &self,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        index: usize,
+    ) -> PluginResult<Option<Cow<'_, str>>> {
+        self.eval_as_impl(state, index, true)
+    }
+
+    /// Preprocesses an argument, then renders the preprocessed content as HTML.
+    fn eval_as_impl(
+        &self,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        index: usize,
+        fragment: bool,
+    ) -> PluginResult<Option<Cow<'_, str>>> {
+        let Some(source) = self.0.eval(state.0, index)? else {
+            return Ok(None);
+        };
+        let sp = self.0.sp.clone_with_source(FileMap::new(&source));
+        let root = state.0.statics.parser.parse_no_expansion(&sp.source)?;
+        let mut out = Document::new(fragment);
+        out.adopt_output(state.0, &sp, &root)?;
+        Ok(Some(out.finish(state.0)?.into()))
+    }
+
+    /// Returns true if there are no arguments.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the number of arguments.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// The result of a plugin parser function call.
+pub type PluginResult<T = (), E = anyhow::Error> = core::result::Result<T, E>;
+
+/// An opaque mutable state object for plugin calls.
+pub struct PluginState<'call, 's, 'config, 'dict>(&'call mut State<'s, 'config, 'dict>);
 
 /// The function signature of a parser function.
 type ParserFn = fn(&mut String, &mut State<'_, '_, '_>, &IndexedArgs<'_, '_, '_>) -> Result;
@@ -1599,7 +1709,12 @@ pub fn call_parser_fn(
         sp,
         span: bounds,
     };
-    if let Some(parser_fn) = PARSER_FUNCTIONS.get(callee) {
+    if let Some(parser_fn) = state.statics.parser_fns.get(callee) {
+        parser_fn
+            .call(out, &mut PluginState(state), PluginFnArgs(&args))
+            .map_err(Error::Plugin)?;
+        Ok(())
+    } else if let Some(parser_fn) = PARSER_FUNCTIONS.get(callee) {
         parser_fn(out, state, &args).map_err(|err| {
             if let Some(bounds) = bounds {
                 Error::Node {

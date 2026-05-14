@@ -1,14 +1,30 @@
 use super::{
     config::CONFIG,
-    test_parser::{Chunk, SectionText, Sections, Testfile},
+    test_parser::{Chunk, OPTION_TO_META, SectionText, Sections, Testfile},
 };
+use core::fmt::Write as _;
 use http::Uri;
-use libphp_rs::DateTime;
-use libwikitext_common::db::{Article, DatabaseProvider, MockDatabase};
+use libphp_rs::{DateTime, strtr};
+use libwikitext_common::{
+    db::{Article, DatabaseProvider, MockDatabase},
+    decode_html,
+};
 use libwikitext_data::MESSAGES;
 use libwikitext_parse::{FileMap, inspect};
-use libwikitext_render::{LoadMode, RenderOutput, Statics, render_article};
-use std::{collections::HashMap, fs::File, io::Read as _, path::Path, sync::Arc};
+use libwikitext_render::{
+    LoadMode, Paths, PluginFnArgs, PluginParserFn, PluginResult, PluginState, RenderOutput,
+    Statics, render_article,
+};
+use regex::Regex;
+use similar_asserts::SimpleDiff;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fs::File,
+    io::Read as _,
+    path::Path,
+    sync::{Arc, LazyLock},
+};
 
 const BASE_DIR: &str = "./src/tests";
 
@@ -126,7 +142,7 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
                 continue;
             };
 
-            if let Some(reason) = options.get("wiki-rs-ignore") {
+            if let Some(reason) = options.get("wiki-rs-skip") {
                 log::info!(target: target, "Skipping {name:?}: {reason}");
                 continue;
             }
@@ -169,6 +185,45 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
     assert!(fails == 0, "failed {fails}/{total}");
 }
 
+struct DivTagPf;
+impl PluginParserFn for DivTagPf {
+    fn call(
+        &self,
+        out: &mut String,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        args: PluginFnArgs<'_, '_, '_>,
+    ) -> PluginResult {
+        let tag = if args.callee() == "divtagpf" {
+            "div"
+        } else {
+            "span"
+        };
+
+        let mut raw = false;
+        let mut raw_html = false;
+        let len = args.len();
+        for index in 1..len {
+            match &*args.eval(state, index)?.unwrap() {
+                "raw" => raw = true,
+                "isRawHTML" => raw_html = true,
+                flag => log::warn!("TODO: #divtagpf: flag {flag}"),
+            }
+        }
+
+        let content = if raw {
+            args.eval(state, 0)
+        } else if raw_html {
+            args.eval_as_document(state, 0)
+        } else {
+            args.eval_as_fragment(state, 0)
+        }?
+        .unwrap_or_default();
+
+        write!(out, "<{tag}>{content}</{tag}>")?;
+        Ok(())
+    }
+}
+
 #[track_caller]
 fn render_test(
     target: &str,
@@ -207,6 +262,10 @@ fn render_test(
         .base_uri(Uri::from_static("http://example.org"))
         .db(Arc::clone(&*db) as Arc<dyn DatabaseProvider>)
         .parser(db.config())
+        .parser_fns(HashMap::from_iter([
+            ("divtagpf", &DivTagPf as &dyn PluginParserFn),
+            ("spantagpf", &DivTagPf as &dyn PluginParserFn),
+        ]))
         .paths(Paths {
             article: "wiki",
             external: None,
@@ -245,11 +304,15 @@ fn check_test_results(
     options: &SectionText<'_>,
     result: &RenderOutput,
 ) -> bool {
-    let expected_html = sections
-        .get("html/wiki.rs")
+    let expected_html = sections.get("html/wiki.rs");
+    let try_heuristics = expected_html.is_none();
+    let expected_html = expected_html
         .or_else(|| sections.get("html/php"))
         .or_else(|| sections.get("html/*"))
         .or_else(|| sections.get("html"))
+        // The parsoid output is almost always full of garbage but in a few
+        // cases wiki.rs actually matches its output, so use it as a last resort
+        .or_else(|| sections.get("html/parsoid"))
         .and_then(SectionText::text);
 
     let expected_meta = sections
@@ -267,12 +330,54 @@ fn check_test_results(
         // some insane esoteric edge case
         let actual = result.content.trim_ascii_end();
 
-        if expected_html != actual {
-            let diff =
-                similar_asserts::SimpleDiff::from_str(expected_html, actual, "expected", "actual");
+        fail = expected_html != actual;
 
+        // To avoid having to copy and paste a thousand different outputs that
+        // differ only in nice typography, crush the souls of Eric Gill and
+        // Adrian Frutiger. (XML crushes everyone.) But only do this when there
+        // is no explicit wiki.rs output in the tests, since this may mask bad
+        // output.
+        if fail && try_heuristics {
+            static RE_PHP_URL: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r"/index\.php\?title=([^&]+)(?:&amp;)?").unwrap());
+
+            let mut heuristic = 1;
+            let actual = strtr(
+                actual,
+                &[
+                    ("<wbr>", "<wbr />"),
+                    ("<br>", "<br />"),
+                    ("<hr>", "<hr />"),
+                    ("‘", "'"),
+                    ("’", "'"),
+                    ("“", "\""),
+                    ("”", "\""),
+                    ("…", "..."),
+                ],
+            );
+            fail = expected_html != actual;
+
+            if fail && let Cow::Owned(expected_html) = decode_html(expected_html) {
+                heuristic += 1;
+                fail = expected_html != actual;
+            }
+
+            if fail
+                && let Cow::Owned(expected_html) =
+                    RE_PHP_URL.replace_all(expected_html, "/wiki/$1?")
+            {
+                heuristic += 1;
+                fail = expected_html != actual;
+            }
+
+            if !fail {
+                log::warn!("Passed using heuristic {heuristic}");
+            }
+        }
+
+        if fail {
+            let diff = SimpleDiff::from_str(expected_html, actual, "expected", "actual");
             log::log!(target: target, log_level, "{diff}");
-            fail = true;
         }
     } else if !options.contains("nohtml") && !result.content.is_empty() {
         log::log!(target: target, log_level, "Missing expected HTML");
@@ -280,14 +385,33 @@ fn check_test_results(
     }
 
     if let Some(meta) = expected_meta {
-        if meta.flags.is_some() {
-            log::warn!(target: target, "TODO: Compare flags");
-        } else if options.contains("showflags") {
-            log::log!(target: target, log_level, "Expected flags");
+        for (option, meta_key) in &OPTION_TO_META {
+            if meta.kvs.contains_key(meta_key) {
+                log::warn!(target: target, "TODO: Compare {option}");
+            } else if options.contains(option) {
+                log::log!(target: target, log_level, "Expected {option}");
+                fail = true;
+            }
+        }
+
+        if meta.text.is_some() {
+            log::warn!(target: target, "TODO: Compare title or indicators");
+        } else if options.contains("showindicators") {
+            log::log!(target: target, log_level, "Expected indicators");
+            fail = true;
+        } else if options.contains("showtitle") {
+            log::log!(target: target, log_level, "Expected title");
             fail = true;
         }
 
-        if meta.title.is_some() {
+        if meta.cats.is_some() {
+            log::warn!(target: target, "TODO: Compare categories");
+        } else if options.contains("cat") {
+            log::log!(target: target, log_level, "Expected categories");
+            fail = true;
+        }
+
+        if meta.text.is_some() {
             log::warn!(target: target, "TODO: Compare title");
         } else if options.contains("showtitle") {
             log::log!(target: target, log_level, "Expected title");
