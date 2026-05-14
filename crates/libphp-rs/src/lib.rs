@@ -969,22 +969,20 @@ pub fn strtr<'a>(input: &'a str, replacements: &[(&str, &str)]) -> Cow<'a, str> 
         Cow::Owned(replacements)
     };
 
-    let mut iter = input.char_indices();
     let mut out = String::new();
+    let mut offset = 0;
     let mut flushed = 0;
-    'next: while iter.offset() != input.len() {
+    'next: while offset != input.len() {
         for (find, replace) in replacements.iter() {
-            if iter.as_str().starts_with(find) {
-                out += &input[flushed..iter.offset()];
+            if input[offset..].starts_with(find) {
+                out += &input[flushed..offset];
                 out += *replace;
-                flushed = iter.offset() + find.len();
-                for _ in 0..find.len() {
-                    iter.next();
-                }
+                offset += find.len();
+                flushed = offset;
                 continue 'next;
             }
         }
-        iter.next();
+        offset = input.ceil_char_boundary(offset + 1);
     }
 
     if flushed == 0 {
@@ -1092,6 +1090,12 @@ mod tests {
         assert_eq!(
             strtr(input, &[("foo", "bar")]),
             Cow::Borrowed("hello, world!")
+        );
+
+        // do match unicode without skips
+        assert_eq!(
+            strtr("🤏🤏💦🤏", &[("🤏", "he")]),
+            Cow::<str>::Owned(String::from("hehe💦he"))
         );
     }
 
