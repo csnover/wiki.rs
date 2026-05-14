@@ -1002,8 +1002,8 @@ mod string {
         Ok(())
     }
 
-    /// `{{padleft: string | length [| padding value] }}`
-    pub fn pad_left(
+    /// Common implementation for all `{{#padXXX}}` functions.
+    fn pad_impl<const LEFT: bool>(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
@@ -1012,9 +1012,14 @@ mod string {
             arguments.eval(state, 0)?.map(trim),
             arguments.eval(state, 1)?.map(trim),
         ) {
+            if !LEFT {
+                write!(out, "{value}")?;
+            }
             let len = len.parse::<usize>().unwrap_or(0);
             if value.len() < len {
-                let pad = arguments.eval(state, 2)?.map_or(Cow::Borrowed("0"), trim);
+                let pad = arguments
+                    .eval(state, 2)?
+                    .map_or(Cow::Borrowed("0"), |pad| trim(pad).map(strip::kill));
                 // log::trace!("padleft({value}, {len}, {pad})");
                 if !pad.is_empty() {
                     for c in iter::repeat(&pad)
@@ -1025,9 +1030,29 @@ mod string {
                     }
                 }
             }
-            write!(out, "{value}")?;
+            if LEFT {
+                write!(out, "{value}")?;
+            }
         }
         Ok(())
+    }
+
+    /// `{{padleft: string | length [| padding value] }}`
+    pub fn pad_left(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        pad_impl::<true>(out, state, arguments)
+    }
+
+    /// `{{padright: string | length [| padding value] }}`
+    pub fn pad_right(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        pad_impl::<false>(out, state, arguments)
     }
 
     /// `{{plural: number [| [number = ] variant ...] }}`
@@ -1634,6 +1659,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "lc" => string::lc,
     "lcfirst" => string::lc_first,
     "padleft" => string::pad_left,
+    "padright" => string::pad_right,
     "plural" => string::plural,
     "titleparts" => string::title_parts,
     "uc" => string::uc,
