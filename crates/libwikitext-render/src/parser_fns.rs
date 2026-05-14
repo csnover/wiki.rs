@@ -22,7 +22,7 @@ use either::Either;
 use libmisc::CowExt as _;
 use libphp_rs::{floatval, fuzzy_cmp, strtr};
 use libwikitext_common::{
-    anchor_encode,
+    AnchorEncodeMode, anchor_encode,
     config::Configuration,
     db::{Article, DatabaseProvider as _, Error as DatabaseError},
     decode_html, format_date_mediawiki, format_message, format_number, make_url,
@@ -31,7 +31,7 @@ use libwikitext_common::{
     url_encode,
 };
 use libwikitext_common_gpl::expr;
-use libwikitext_parse::{Span, strip};
+use libwikitext_parse::{FileMap, Span, strip};
 use regex::Regex;
 use std::{
     borrow::Cow,
@@ -739,7 +739,11 @@ mod string {
     ) -> Result {
         if let Some(text) = arguments.eval(state, 0)?.map(trim) {
             let text = strip::kill(&text);
-            write!(out, "{}", super::anchor_encode(&text))?;
+            write!(
+                out,
+                "{}",
+                super::anchor_encode(&text, AnchorEncodeMode::Html5)
+            )?;
         }
 
         Ok(())
@@ -1031,7 +1035,7 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            write!(out, "{}", super::url_encode(&value))?;
+            write!(out, "{}", super::url_encode(&strip::kill(&value)))?;
         }
         Ok(())
     }
@@ -1227,6 +1231,28 @@ mod title {
 
     use super::*;
 
+    /// `{{canonicalurl: title [| query string] }}`
+    pub fn canonical_url(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
+            let query = arguments.eval(state, 1)?.map(trim);
+            let title = Title::new(state.statics.db.config(), &value, None);
+            let url = make_url(
+                &state.statics.base_uri,
+                state.statics.base_uri.scheme_str().or(Some("")),
+                format_args!("{}/{}", state.statics.paths.article, title.partial_url()),
+                query.as_deref(),
+                title.fragment(),
+            );
+            write!(out, "{url}")?;
+        }
+
+        Ok(())
+    }
+
     /// `{{filepath: title [| 'nowiki'/size [| size/'nowiki']] }}`
     pub fn file_path(
         _: &mut String,
@@ -1251,7 +1277,7 @@ mod title {
             let url = make_url(
                 &state.statics.base_uri,
                 Some(""),
-                title.partial_url(),
+                format_args!("{}/{}", state.statics.paths.article, title.partial_url()),
                 query.as_deref(),
                 title.fragment(),
             );
@@ -1293,7 +1319,7 @@ mod title {
             let url = make_url(
                 &state.statics.base_uri,
                 None,
-                title.partial_url(),
+                format_args!("{}/{}", state.statics.paths.article, title.partial_url()),
                 query.as_deref(),
                 title.fragment(),
             );
@@ -1536,11 +1562,14 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "localyear" => time::year,
     "time" => time::time,
 
+    "canonicalurl" => title::canonical_url,
+    "canonicalurle" => title::canonical_url,
     "filepath" => title::file_path,
     "fullurl" => title::full_url,
     "fullurle" => title::full_url,
     "ifexist" => title::if_exist,
     "localurl" => title::local_url,
+    "localurle" => title::local_url,
     "lst" => title::transclude_section,
     "lsth" => title::transclude_heading,
     "lstx" => title::transclude_except,

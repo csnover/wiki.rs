@@ -109,7 +109,7 @@ pub(super) fn media_options<'s>(
         Cow::Owned(make_url(
             &state.statics.base_uri,
             None,
-            format_args!("media/{}", url_encode(title.text())),
+            format_args!("{}/{}", state.statics.paths.media, url_encode(title.text())),
             None,
             None,
         )),
@@ -134,7 +134,7 @@ pub(super) fn media_options<'s>(
                         .get(..proto.len())
                         .is_some_and(|v| v.eq_ignore_ascii_case(proto))
                 }) {
-                    Some(LinkKind::External(value, false))
+                    Some(LinkKind::External(value, tags::ExternalLinkKind::Text))
                 } else {
                     Some(LinkKind::Internal(Title::new(
                         state.statics.db.config(),

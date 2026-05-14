@@ -1,12 +1,12 @@
 //! The renderer manager.
 
-use crate::{Limits, db::Database};
+use super::{Limits, db::Database};
 use axum::http::Uri;
 use libphp_rs::DateTime;
 use libwikitext_common::db::{Article, DatabaseProvider};
 use libwikitext_data::MESSAGES;
 use libwikitext_render::{
-    Error, EvalPp, LoadMode, RenderOutput, Statics, TemplateCache, make_template_cache,
+    Error, EvalPp, LoadMode, Paths, RenderOutput, Statics, TemplateCache, make_template_cache,
     render_article, render_string,
 };
 use std::sync::{Arc, mpsc};
@@ -101,6 +101,11 @@ impl r2d2::ManageConnection for Manager {
                 .limits(limits.renderer)
                 .parser(config)
                 .template_cache(template_cache)
+                .paths(Paths {
+                    article: "article",
+                    external: Some("external"),
+                    media: "media",
+                })
                 .build();
 
             for In { command, tx } in rx {

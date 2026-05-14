@@ -1,6 +1,6 @@
 //! Routes for axum.
 
-use crate::{AppState, renderer};
+use super::{AppState, renderer};
 use axum::{
     Form,
     body::Body,

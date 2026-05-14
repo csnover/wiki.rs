@@ -2,8 +2,9 @@
 
 use super::{globals::Outline, tags};
 use core::fmt::{self, Write as _};
-use libwikitext_common::anchor_encode;
+use libwikitext_common::{AnchorEncodeMode, anchor_encode};
 use libwikitext_parse::{HeadingLevel, TextStyle};
+use std::borrow::Cow;
 
 /// Implicit paragraphs (grafs) emitter. Implicit grafs may be runs of plain
 /// text, which will be wrapped by `<p>`, or runs of plain text prefixed by a
@@ -781,12 +782,14 @@ impl OutlineEmitter {
         out: &mut String,
         level: HeadingLevel,
     ) -> (usize, usize) {
-        let (range, id) = match self.id {
-            OutlineAnchor::Implicit(text) => (None, anchor_encode(&text)),
-            OutlineAnchor::Explicit(range) => (Some(range.clone()), out[range].to_string()),
+        let (range, id) = match &self.id {
+            OutlineAnchor::Implicit(text) => (None, anchor_encode(text, AnchorEncodeMode::Html5)),
+            OutlineAnchor::Explicit(range) => {
+                (Some(range.clone()), Cow::Borrowed(&out[range.clone()]))
+            }
         };
 
-        let insert_id = if let Some(id) = outline.push(level, self.html, id.clone()) {
+        let insert_id = if let Some(id) = outline.push(level, self.html, id.to_string()) {
             if let Some(range) = range {
                 let delta = id.len() - range.len();
                 let at = range.end;
@@ -796,7 +799,7 @@ impl OutlineEmitter {
 
             Some(id)
         } else {
-            range.is_none().then_some(id.as_str())
+            range.is_none().then_some(&*id)
         };
 
         if let Some(id) = insert_id {

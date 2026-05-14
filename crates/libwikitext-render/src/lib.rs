@@ -548,10 +548,11 @@ fn render(
         );
     }
 
-    state
-        .globals
-        .categories
-        .finish(&mut content, state.statics.base_uri.path())?;
+    state.globals.categories.finish(
+        &mut content,
+        &state.statics.base_uri,
+        state.statics.paths.article,
+    )?;
 
     Ok(RenderOutput {
         content,
@@ -735,6 +736,8 @@ pub struct Statics<'config> {
         setter(doc = "Sets the time and memory limits for the renderer.")
     )]
     limits: Limits,
+    /// The URI paths for links and media.
+    paths: Paths,
     /// The parser.
     #[builder(setter(
         doc = "Sets the parser configuration.",
@@ -750,6 +753,18 @@ pub struct Statics<'config> {
     /// VM module cache.
     #[builder(default = LruMap::new(schnellru::UnlimitedCompact), setter(skip))]
     vm_cache: LruMap<ArticleId, lua::VmCacheEntry, schnellru::UnlimitedCompact>,
+}
+
+/// URI resource paths.
+#[derive(Clone, Copy, Debug)]
+pub struct Paths {
+    /// The path segment for articles.
+    pub article: &'static str,
+    /// The path segment for external links. If `None`, external links will be
+    /// emitted as direct links.
+    pub external: Option<&'static str>,
+    /// The path segment for media.
+    pub media: &'static str,
 }
 
 /// A list of stripped extension tags.

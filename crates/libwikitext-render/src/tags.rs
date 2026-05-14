@@ -1,12 +1,17 @@
 //! Plain HTML rendering functions.
 
-use super::{Error, Result, StackFrame, State, WriteSurrogate, image};
+use super::{Error, Paths, Result, StackFrame, State, WriteSurrogate, image};
 use http::Uri;
 use libmisc::CowExt as _;
 use libwikitext_common::{
-    anchor_encode, db::DatabaseProvider as _, decode_html, make_url, title::Title, title_decode,
+    AnchorEncodeMode, anchor_encode,
+    db::DatabaseProvider as _,
+    decode_html, make_url,
+    title::{Namespace, Title},
+    title_decode, url_encode_sanitized,
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
+use serde_json_borrow::Value;
 use std::borrow::Cow;
 
 /// Renders an external web site link.
@@ -22,7 +27,16 @@ pub(super) fn render_external_link<W: WriteSurrogate>(
     // it is annoying to try to do this because `http::Uri` does not conform to
     // RFC 3986 so it mixes up authority and path when the scheme is missing,
     // but adding a whole new dependency just for this one case is too much.
-    let link = LinkKind::External(sp.eval(state, target)?, auto_link);
+    let link = LinkKind::External(
+        sp.eval(state, target)?,
+        if auto_link {
+            ExternalLinkKind::Free
+        } else if content.is_empty() {
+            ExternalLinkKind::Autonumber
+        } else {
+            ExternalLinkKind::Text
+        },
+    );
     render_start_link(out, state, sp, &link)?;
     if content.is_empty() {
         let ordinal = &mut state.globals.external_link_ordinal;
@@ -72,17 +86,33 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
     trail: Option<&str>,
     title: Title,
 ) -> Result<(), Error> {
-    if title.fragment().is_none() && state.globals.title == title {
-        render_runtime(out, state, sp, |_, source| {
-            token!(
-                source,
-                Token::StartTag {
-                    name: token!(source, Span { "a" }),
-                    attributes: token![source, [ "class" => "mw-selflink selflink" ]].into(),
-                    self_closing: false
-                }
-            )
-        })?;
+    if state.globals.title == title {
+        if let Some(fragment) = title.fragment() {
+            render_runtime(out, state, sp, |_, source| {
+                token!(
+                    source,
+                    Token::StartTag {
+                        name: token!(source, Span { "a" }),
+                        attributes: token![source, [
+                            "class" => "mw-selflink-fragment",
+                            "href" => &format!("#{}", anchor_encode(fragment, AnchorEncodeMode::Html5)),
+                        ]].into(),
+                        self_closing: false
+                    }
+                )
+            })?;
+        } else {
+            render_runtime(out, state, sp, |_, source| {
+                token!(
+                    source,
+                    Token::StartTag {
+                        name: token!(source, Span { "a" }),
+                        attributes: token![source, [ "class" => "mw-selflink selflink" ]].into(),
+                        self_closing: false
+                    }
+                )
+            })?;
+        }
     } else {
         render_start_link(out, state, sp, &LinkKind::Internal(title))?;
     }
@@ -110,10 +140,22 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
     sp: &StackFrame<'_>,
     link: &LinkKind<'_>,
 ) -> Result {
-    let query = matches!(link, LinkKind::Internal(title) if title.interwiki().is_none() && !state.statics.db.contains(title)).then_some("mode=edit&redlink=1");
+    let (missing, query) = if let LinkKind::Internal(title) = link
+        && title.interwiki().is_none()
+        && !state.statics.db.contains(title)
+    {
+        (
+            true,
+            (title.namespace().id != Namespace::SPECIAL).then_some("action=edit&redlink=1"),
+        )
+    } else {
+        (false, None)
+    };
+
     let options = LinkKindOptions {
         base_uri: &state.statics.base_uri,
         interwiki_map: &state.statics.db.config().interwiki_map,
+        paths: &state.statics.paths,
     };
     let href = link.to_string(&options, query);
 
@@ -124,26 +166,29 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
                 name: token!(source, Span { "a" }),
                 attributes: {
                     match link {
-                        LinkKind::External(_, auto_link) => token![source, [
+                        LinkKind::External(_, kind) => token![source, [
                             "rel" => "nofollow",
-                            "class" => if *auto_link {
-                                "external free"
-                            } else {
-                                "external text"
-                            },
+                            "class" => kind.css(),
                             "href" => &href
                         ]]
                         .into(),
                         LinkKind::Internal(title) => {
-                            if query.is_none() {
-                                token![source, [
-                                    "href" => &href,
-                                    "title" => title.prefixed_text()
-                                ]]
-                                .into()
+                            let mut args = token![source, ["href" => &href]].to_vec();
+                            if missing {
+                                args.push(token![source, Argument { "class" => "new" }]);
+                                if let Some(message) =
+                                    state.messages.get("red-link-title").and_then(Value::as_str)
+                                {
+                                    args.push(token![source, Argument {
+                                        "title" => message.replace("$1", title.key())
+                                    }]);
+                                }
                             } else {
-                                token![source, ["href" => &href]].into()
+                                args.push(token![source, Argument {
+                                    "title" => title.prefixed_text()
+                                }]);
                             }
+                            args
                         }
                     }
                 },
@@ -175,16 +220,38 @@ pub(crate) struct LinkKindOptions<'a> {
     pub base_uri: &'a Uri,
     /// The map of interwiki prefixes.
     pub interwiki_map: &'a phf::Map<&'static str, &'static str>,
+    /// Link URI paths.
+    pub paths: &'a Paths,
 }
 
-/// An explicit external link (false) or an auto-link (true).
-type AutoLink = bool;
+/// The kind of an external link.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum ExternalLinkKind {
+    /// An explicit external link with no content.
+    Autonumber,
+    /// An autolink.
+    Free,
+    /// An explicit external link with text content.
+    Text,
+}
+
+impl ExternalLinkKind {
+    /// The CSS class for this kind of external link.
+    #[inline]
+    fn css(self) -> &'static str {
+        match self {
+            Self::Autonumber => "external autonumber",
+            Self::Free => "external free",
+            Self::Text => "external text",
+        }
+    }
+}
 
 /// A kind of link to render.
 #[derive(Clone, Debug)]
 pub(super) enum LinkKind<'a> {
     /// An external link.
-    External(Cow<'a, str>, AutoLink),
+    External(Cow<'a, str>, ExternalLinkKind),
     /// An internal link.
     Internal(Title),
 }
@@ -195,18 +262,22 @@ impl LinkKind<'_> {
     pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
         match self {
             LinkKind::External(url, _) => {
+                let url = decode_html(url).map(url_encode_sanitized);
+
                 // TODO: Hack together some URL parsing good enough that there
                 // is an actual way to check that the origin is the same
-                if url.starts_with('/') && !url.starts_with("//") {
-                    url.to_string()
-                } else {
+                if let Some(external) = options.paths.external
+                    && (!url.starts_with('/') || url.starts_with("//"))
+                {
                     make_url(
                         options.base_uri,
                         None,
-                        format_args!("external/{url}"),
+                        format_args!("{external}/{url}"),
                         None,
                         None,
                     )
+                } else {
+                    url.to_string()
                 }
             }
             LinkKind::Internal(title) => {
@@ -215,20 +286,30 @@ impl LinkKind<'_> {
                     .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
                 {
                     let url = iw.replace("$1", &title.partial_url());
-                    make_url(
-                        options.base_uri,
-                        None,
-                        format_args!("external/{url}"),
-                        None,
-                        None,
-                    )
+                    if let Some(external) = options.paths.external {
+                        make_url(
+                            options.base_uri,
+                            None,
+                            format_args!("{external}/{url}"),
+                            None,
+                            None,
+                        )
+                    } else {
+                        url
+                    }
                 } else if title.text().is_empty() {
-                    format!("#{}", anchor_encode(title.fragment().unwrap_or_default()))
+                    format!(
+                        "#{}",
+                        anchor_encode(
+                            title.fragment().unwrap_or_default(),
+                            AnchorEncodeMode::Html5
+                        )
+                    )
                 } else {
                     make_url(
                         options.base_uri,
                         None,
-                        format_args!("article/{}", title.partial_url()),
+                        format_args!("{}/{}", options.paths.article, title.partial_url()),
                         query,
                         title.fragment(),
                     )

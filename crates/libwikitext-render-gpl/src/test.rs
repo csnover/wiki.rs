@@ -207,6 +207,11 @@ fn render_test(
         .base_uri(Uri::from_static("http://example.org"))
         .db(Arc::clone(&*db) as Arc<dyn DatabaseProvider>)
         .parser(db.config())
+        .paths(Paths {
+            article: "wiki",
+            external: None,
+            media: "http://example.com/images/3/3a",
+        })
         .build();
 
     let result = render_article(

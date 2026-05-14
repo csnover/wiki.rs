@@ -13,7 +13,7 @@ use core::{
     marker::PhantomData,
 };
 use gc_arena::Rootable;
-use libwikitext_common::{anchor_encode, db::DatabaseProvider};
+use libwikitext_common::{AnchorEncodeMode, anchor_encode, db::DatabaseProvider};
 use libwikitext_parse::{helpers::TextContent, visit::Visitor as _};
 use libwikitext_parse_gpl::Parser;
 
@@ -55,7 +55,7 @@ impl<'config, Db: DatabaseProvider + 'static> UriLibrary<'config, Db> {
         };
 
         // log::trace!("stub: mw_uri.anchorEncode({s:?}) = {id}");
-        Ok(ctx.intern(anchor_encode(&s).as_bytes()))
+        Ok(ctx.intern(anchor_encode(&s, AnchorEncodeMode::Html5).as_bytes()))
     }
 
     /// Gets the fully qualified canonical URL of an article with the given

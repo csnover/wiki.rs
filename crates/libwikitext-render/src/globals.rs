@@ -2,6 +2,8 @@
 
 use super::Result;
 use core::fmt;
+use http::Uri;
+use libwikitext_common::make_url;
 use libwikitext_parse::HeadingLevel;
 use std::collections::{BTreeSet, HashMap};
 
@@ -14,17 +16,22 @@ impl Categories {
     pub fn finish<W: fmt::Write + ?Sized>(
         self,
         f: &mut W,
-        base_path: &str,
+        base_uri: &Uri,
+        article_path: &str,
     ) -> Result<(), fmt::Error> {
         if !self.0.is_empty() {
             f.write_str(r#"<ul class="wiki-rs-categories">"#)?;
             for category in self.0 {
                 let target = category.trim_start_matches(':');
                 let name = target.trim_start_matches("Category:");
-                write!(
-                    f,
-                    r#"<li><a href="{base_path}/article/{target}">{name}</a></li>"#,
-                )?;
+                let url = make_url(
+                    base_uri,
+                    None,
+                    format_args!("{article_path}/{target}"),
+                    None,
+                    None,
+                );
+                write!(f, r#"<li><a href="{url}">{name}</a></li>"#,)?;
             }
             f.write_str("</ul>")?;
         }

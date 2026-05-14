@@ -135,6 +135,7 @@ use super::{
     image,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
+    tags::ExternalLinkKind,
     text_run,
 };
 use core::{fmt::Write as _, ops::Range};
@@ -142,7 +143,7 @@ use either::Either;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
-    anchor_encode,
+    AnchorEncodeMode, anchor_encode,
     db::DatabaseProvider,
     decode_html,
     title::{Namespace, Title},
@@ -661,8 +662,8 @@ impl References {
     /// Encodes forward and backward reference anchors for an ID.
     fn make_anchors(id: &str) -> (String, String) {
         (
-            anchor_encode(&format!("cite_ref-{id}")),
-            anchor_encode(&format!("ref_{id}")),
+            anchor_encode(&format!("cite_ref-{id}"), AnchorEncodeMode::Html5).into_owned(),
+            anchor_encode(&format!("ref_{id}"), AnchorEncodeMode::Html5).into_owned(),
         )
     }
 
@@ -978,14 +979,16 @@ fn timeline(
         let options = LinkKindOptions {
             base_uri: &state.statics.base_uri,
             interwiki_map: &state.statics.db.config().interwiki_map,
+            paths: &state.statics.paths,
         };
 
         let result = easytimeline::timeline_to_svg(body, |request| {
             use easytimeline::{TextSpan, TranslateResponse};
             let (text, link) = match request.span {
-                TextSpan::ExternalLink { target, text } => {
-                    (text, Some(LinkKind::External((*target).into(), false)))
-                }
+                TextSpan::ExternalLink { target, text } => (
+                    text,
+                    Some(LinkKind::External((*target).into(), ExternalLinkKind::Text)),
+                ),
                 TextSpan::Link { target, text } => (
                     text,
                     Some(LinkKind::Internal(Title::new(
@@ -998,7 +1001,7 @@ fn timeline(
                     text,
                     request
                         .url
-                        .map(|target| LinkKind::External(target.into(), false)),
+                        .map(|target| LinkKind::External(target.into(), ExternalLinkKind::Text)),
                 ),
             };
             TranslateResponse {

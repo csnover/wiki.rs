@@ -15,7 +15,7 @@ use core::fmt::{self, Write as _};
 use either::Either;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
-use libwikitext_common::{anchor_encode, decode_html};
+use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html};
 use libwikitext_parse::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
     MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
@@ -132,7 +132,10 @@ impl Document {
                 // elements without scripts
                 Either::Right(value)
             }
-            "id" => Either::Left(anchor_encode(&sp.eval_unstrip(state, value)?)),
+            "id" => Either::Left(
+                sp.eval_unstrip(state, value)?
+                    .map(|v| anchor_encode(v, AnchorEncodeMode::Html5)),
+            ),
             "style" => {
                 // MediaWiki does sanitising, wiki.rs does not. What wiki.rs
                 // *does* do is get all these inline styles out of the way so
@@ -159,22 +162,22 @@ impl Document {
                         break;
                     }
                 }
-                Either::Left(out)
+                Either::Left(out.into())
             }
             "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
                 let value = sp.eval_unstrip(state, value)?.map(decode_html);
                 // https://github.com/rust-lang/rust/issues/79524
                 let mut out = String::new();
-                let mut started = false;
-                for v in value.split_ascii_whitespace().map(anchor_encode) {
-                    if started {
+                for v in value
+                    .split_ascii_whitespace()
+                    .map(|v| anchor_encode(v, AnchorEncodeMode::Html5))
+                {
+                    if !out.is_empty() {
                         out += " ";
-                    } else {
-                        started = true;
                     }
                     out += &v;
                 }
-                Either::Left(out)
+                Either::Left(out.into())
             }
             _ => Either::Right(value),
         };

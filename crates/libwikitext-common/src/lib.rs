@@ -8,17 +8,40 @@ pub mod title;
 use core::fmt::Write as _;
 use html_escape::NAMED_ENTITIES;
 use http::Uri;
+use libmisc::CowExt as _;
 use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval};
 use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 
+/// An anchor encoding algorithm.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnchorEncodeMode {
+    /// The HTML5 anchor encoding algorithm.
+    Html5,
+    /// The legacy anchor encoding algorithm.
+    Legacy,
+}
+
 /// Encodes section heading text into a format suitable for use as a URL anchor.
 #[must_use]
-pub fn anchor_encode(s: &str) -> String {
-    let s = decode_html(s.trim_ascii());
-    let id = title::normalize(&s);
-    let end = id.floor_char_boundary(1024);
-    url_encode(&strtr(&id[..end], &[(" ", "_")])).to_string()
+pub fn anchor_encode(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
+    decode_html(s.trim_ascii())
+        .map(title::normalize)
+        .map_ref(|id| &id[..id.floor_char_boundary(1024)])
+        .map(|id| match mode {
+            AnchorEncodeMode::Html5 => strtr(
+                id,
+                &[
+                    ("\t", "_"),
+                    ("\n", "_"),
+                    ("\x0c", "_"),
+                    ("\r", "_"),
+                    (" ", "_"),
+                ],
+            ),
+            AnchorEncodeMode::Legacy => Cow::from(url_encode(id))
+                .map(|id| strtr(id, &[("%3A", ":"), ("%20", "_"), ("%", ".")])),
+        })
 }
 
 /// Decodes HTML entities according to the Wikitext rules.
@@ -286,7 +309,7 @@ pub fn make_url<P: core::fmt::Display>(
     if let Some(fragment) = fragment
         && !fragment.is_empty()
     {
-        write!(url, "#{}", anchor_encode(fragment)).unwrap();
+        write!(url, "#{}", anchor_encode(fragment, AnchorEncodeMode::Html5)).unwrap();
     }
     url
 }
@@ -347,6 +370,31 @@ pub fn url_decode(input: &str) -> Cow<'_, str> {
 #[must_use]
 pub fn url_encode(input: &str) -> percent_encoding::PercentEncode<'_> {
     percent_encoding::utf8_percent_encode(input, &ALPHABET)
+}
+
+/// Percent-encodes a URL part following the MediaWiki rules for sanitized URLs,
+/// which only encodes a subset of ASCII characters.
+#[must_use]
+pub fn url_encode_sanitized(input: &str) -> Cow<'_, str> {
+    let mut out = String::new();
+    let mut flushed = 0;
+    for (cursor, b) in input.bytes().enumerate() {
+        if matches!(
+            b,
+            b'\x00'..=b'\x20' | b'"' | b'<' | b'>' | b'[' | b']' | b'|' | b'\x7f'
+        ) {
+            out += &input[flushed..cursor];
+            out += percent_encoding::percent_encode_byte(b);
+            flushed = cursor + 1;
+        }
+    }
+
+    if flushed == 0 {
+        Cow::Borrowed(input)
+    } else {
+        out += &input[flushed..];
+        Cow::Owned(out)
+    }
 }
 
 /// Percent-encodes a URL part.
