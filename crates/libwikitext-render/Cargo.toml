@@ -31,6 +31,7 @@ math-core.workspace = true
 memchr.workspace = true
 numerals.workspace = true
 percent-encoding.workspace = true
+peeknth.workspace = true
 phf.workspace = true
 piccolo.workspace = true
 regex.workspace = true

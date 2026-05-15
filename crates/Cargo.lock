@@ -969,7 +969,6 @@ name = "libwikitext-parse"
 version = "1.0.0"
 dependencies = [
  "either",
- "libphp-rs",
  "libwikitext-common",
  "memchr",
  "peg",
@@ -1019,6 +1018,7 @@ dependencies = [
  "math-core",
  "memchr",
  "numerals",
+ "peeknth",
  "percent-encoding",
  "phf",
  "piccolo",

@@ -2,53 +2,49 @@
 
 use super::{
     Error, Result, State, StripMarker,
-    emitters::{GrafEmitter, ListEmitter, ListKind, OutlineEmitter, TextStyleEmitter},
+    emitters::{
+        Accumulator, AfterHeadingChomper, CategoryTrim, Chain as _, DomTree, EmptyTagger,
+        GrafEmitter, ListEmitter, OutlineEmitter, PrettyText, Sink, TemplateTagger,
+        TextStyleEmitter,
+    },
     extension_tags,
-    globals::Outline,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags::{self, PHRASING_TAGS},
-    text_run,
-    trim::{Trim, TrimMode},
+    trim::Trim,
 };
-use core::fmt::{self, Write as _};
+use core::fmt::Write as _;
 use either::Either;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html};
 use libwikitext_parse::{
-    AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
-    MARKER_PREFIX, Output, Span, Spanned, TextStyle, Token, VOID_TAGS, builder::token,
+    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
+    Spanned, TextStyle, Token, VOID_TAGS,
 };
 use std::borrow::Cow;
 
+/// The chain of render nodes used to render the document.
+type RendererChain = CategoryTrim<
+    DomTree<
+        AfterHeadingChomper<
+            GrafEmitter<OutlineEmitter<PrettyText<TemplateTagger<EmptyTagger<Accumulator>>>>>,
+        >,
+    >,
+>;
+
 /// The root of a Wikitext document.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Document {
     /// If true, this [`Document`] is used to render a document fragment rather
     /// than a complete document.
     fragment: bool,
-    /// The line graf emitter.
-    graf_emitter: GrafEmitter,
-    /// The final rendered output.
-    html: String,
     /// The stack of inclusion control tags.
     in_include: Vec<InclusionMode>,
-    /// The last visible character rendered to the output.
-    last_char: char,
-    /// The heading outline emitter.
-    outline_emitter: OutlineEmitter,
+    /// The output sink.
+    next: RendererChain,
     /// The stack of open HTML elements.
     stack: Vec<Node>,
-    /// The template processing stack used to identify which template was the
-    /// source of a fragment of the assembled Wikitext document.
-    ///
-    /// This is a workaround for templates that do not identify themselves for
-    /// styling but instead only emit inline styles (like
-    /// 'Template:Climate chart'), which need to have their styles overridden
-    /// nevertheless, which we can do by adding extra data attributes to
-    /// identify the template source of an element.
-    tag_blocks: Vec<(usize, String)>,
     /// The [`TextStyle`] emitter.
     text_style_emitter: TextStyleEmitter,
     /// The number of open Wikitext tables.
@@ -60,13 +56,13 @@ impl Document {
     pub(crate) fn new(fragment: bool) -> Self {
         Self {
             fragment,
-            graf_emitter: <_>::default(),
-            html: <_>::default(),
             in_include: <_>::default(),
-            last_char: '\n',
-            outline_emitter: <_>::default(),
+            next: CategoryTrim::new(DomTree::new(AfterHeadingChomper::new(GrafEmitter::new(
+                OutlineEmitter::new(PrettyText::new(TemplateTagger::new(EmptyTagger::new(
+                    Accumulator::new(),
+                )))),
+            )))),
             stack: <_>::default(),
-            tag_blocks: <_>::default(),
             text_style_emitter: <_>::default(),
             wikitext_table_count: <_>::default(),
         }
@@ -85,17 +81,18 @@ impl Document {
         #[rustfmt::skip]
         if let [Spanned { span, node: Token::Text }] = name.unwrap_or(value)
         {
-            let name = sp.source[span.into_range()].trim_ascii();
-            write!(self.html, " {name}")?;
+            // TODO: Use non-allocating to_lowercase
+            let name = sp.source[span.into_range()].trim_ascii().to_ascii_lowercase();
+            self.next.tag_attribute_start(&name);
             if is_kv {
-                self.attribute_value(state, sp, name, value)?;
+                self.attribute_value(state, sp, &name, value)?;
             }
+            self.next.tag_attribute_end(&name);
         } else {
             // Maybe it is a Wikitext table and someone shoved e.g. `<ref>`
             // into the attribute list, smile smile. When this happens, content
             // needs to be ignored, only attributes should be emitted, using the
             // awful Wikitext table attributes whitelisted HTML tag rule
-            self.html.write_char(' ')?;
             self.adopt_tokens(state, sp, name.unwrap_or(value))?;
 
             // At least 'Template:Skip to top and bottom' contains invalid HTML
@@ -105,9 +102,7 @@ impl Document {
             // make sure the value is quoted or most of the page content ends up
             // in the attribute.
             if is_kv {
-                write!(self.html, "=\"")?;
                 self.adopt_tokens(state, sp, value)?;
-                self.html.write_char('"')?;
             }
         };
 
@@ -182,77 +177,29 @@ impl Document {
             _ => Either::Right(value),
         };
 
-        write!(self.html, r#"=""#)?;
-        let before = self.html.len();
         match value {
-            Either::Left(value) => self.text_run(&value)?,
+            Either::Left(value) => self.next.text(&value),
             Either::Right(value) => self.adopt_tokens(state, sp, value)?,
         }
-        self.outline_emitter
-            .attribute(&name, &self.html[before..], before..self.html.len())?;
-        self.html.write_char('"')?;
-
         Ok(())
     }
 
-    /// Ends an HTML element with the given tag name.
-    fn end_tag(&mut self, state: &mut State<'_, '_, '_>, name: &str) -> Result {
-        // TODO: Avoid ownership
-        let name = Cow::Owned(name.to_ascii_lowercase());
-
-        if VOID_TAGS.contains(&name) {
-            return Ok(());
-        } else if !PHRASING_TAGS.contains(&name) {
-            self.last_char = ' ';
-        }
-
-        if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(&name)) {
-            for e in self.stack.drain(pair..).rev() {
-                e.close(
-                    &mut self.html,
-                    &mut self.graf_emitter,
-                    &mut self.outline_emitter,
-                    &mut state.globals.outline,
-                )?;
-            }
-        } else {
-            log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
-            write!(self.html, "</{name}>")?;
-        }
-
-        Ok(())
+    /// A hacky side-channel to dump the category whitespace in response to a
+    /// Wikitext category link.
+    // TODO: Less hacky?
+    pub(crate) fn category(&mut self) {
+        self.next.clear();
     }
 
     /// Finalises the document and returns the resulting output.
-    pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> Result<String> {
-        self.text_style_emitter.finish(|name, close| {
-            debug_assert!(close);
-            self.end_tag(state, name)
-        })?;
+    pub(crate) fn finish(mut self) -> String {
+        self.text_style_emitter.finish(&mut self.next);
 
         for rest in self.stack.drain(..).rev() {
-            rest.close(
-                &mut self.html,
-                &mut self.graf_emitter,
-                &mut self.outline_emitter,
-                &mut state.globals.outline,
-            )?;
+            rest.close(&mut self.next);
         }
 
-        self.graf_emitter.finish(&mut self.html);
-
-        Ok(self.html)
-    }
-
-    /// Finishes formatting a line of Wikitext.
-    pub(crate) fn finish_line(&mut self, state: &mut State<'_, '_, '_>) -> Result {
-        self.text_style_emitter = self.text_style_emitter.finish(|name, close| {
-            debug_assert!(close);
-            self.end_tag(state, name)
-        })?;
-        self.graf_emitter.end_line(&mut self.html);
-        self.last_char = '\n';
-        Ok(())
+        self.next.finish()
     }
 
     /// Returns true if the document is currently processing any table.
@@ -268,151 +215,22 @@ impl Document {
     /// * In both Wikitext table and HTML table: Emit table element
     #[inline]
     fn in_table(&self) -> bool {
-        self.stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Tag(name) if name == "table"))
-    }
-
-    /// Starts a new HTML element with the given tag name and attributes.
-    fn start_tag(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        name: &str,
-        attributes: &[Spanned<Argument>],
-    ) -> Result {
-        // TODO: Avoid ownership
-        let name = Cow::Owned(name.to_ascii_lowercase());
-
-        // Normally, receiving a new start tag should close any tags which cause
-        // it to be in an invalid position in the DOM. This is especially
-        // important for wikitable markup because wikitable children are
-        // implicitly closed by the production of a new wikitable element.
-        // However, there is one case where elements should be allowed to be
-        // placed in an illegal position: when table-row templates get things
-        // like 'Template:Tfd' applied to them, this will try to put non-table
-        // content into the table—but this is actually desirable, because the
-        // browser will automatically foster content in this position out of the
-        // table. So, parenting-close rules are skipped if the last element is a
-        // table or tr.
-        let close_tags = !matches!(
-            self.stack.last(),
-            Some(node @ Node::Tag(last))
-            if (last == "table" || last == "tr") && *last != name && !node.can_parent(&name));
-
-        if close_tags {
-            while let Some(e) = self.stack.pop_if(|e| !e.can_parent(&name)) {
-                // The transition from a wikitable caption directly into a table
-                // cell requires extra recovery gymnastics to avoid walking too
-                // far up the stack. 'Template:Football squad start' does this.
-                let in_caption = matches!(e, Node::Tag(ref name) if name == "caption");
-                e.close(
-                    &mut self.html,
-                    &mut self.graf_emitter,
-                    &mut self.outline_emitter,
-                    &mut state.globals.outline,
-                )?;
-                if in_caption && matches!(&*name, "td" | "th") {
-                    self.start_tag(state, sp, "tr", &[])?;
-                }
-            }
-        }
-
-        self.graf_emitter.before_start_tag(&self.html, &name);
-        write!(self.html, "<{name}")?;
-        self.outline_emitter.start_tag(&name, self.html.len())?;
-        if !attributes.is_empty() {
-            self.stack.push(Node::Attribute);
-            for attribute in attributes {
-                self.attribute(state, sp, attribute)?;
-            }
-            self.stack
-                .pop_if(|e| matches!(e, Node::Attribute))
-                .expect("element stack corruption");
-        }
-
-        if !PHRASING_TAGS.contains(&name) {
-            let mut has_some = false;
-            // It is possible that a template starts in an ambiguous position
-            // where the output of its first tag results in some other elements
-            // being closed. To handle this case, `level` is treated as a
-            // maximum which is reduced so child elements of the template do not
-            // get tagged as it builds its own DOM tree.
-            for (level, class) in self
-                .tag_blocks
-                .iter_mut()
-                .rev()
-                .take_while(|(level, _)| self.stack.len() <= *level)
-            {
-                *level = self.stack.len();
-                if has_some {
-                    write!(self.html, " ")?;
-                } else {
-                    write!(self.html, " data-wiki-rs=\"")?;
-                    has_some = true;
-                }
-                write!(self.html, "{class}")?;
-            }
-            if has_some {
-                write!(self.html, "\"")?;
-            }
-        }
-
-        self.html.write_char('>')?;
-        self.graf_emitter.after_start_tag(&self.html, &name);
-        if VOID_TAGS.contains(&name) {
-            self.graf_emitter.before_end_tag(&self.html, &name);
-            self.graf_emitter.after_end_tag(&self.html, &name);
-            if name == "br" || name == "hr" {
-                self.last_char = '\n';
-            }
-        } else {
-            self.outline_emitter.after_start_tag(&name);
-            self.stack.push(Node::Tag(name));
-        }
-        Ok(())
-    }
-
-    /// Writes a run of text, also converting wretched typewriter quote marks to
-    /// beautiful works of fine typographical art, as we are not savages.
-    fn text_run(&mut self, text: &str) -> Result {
-        fn is_code(tag: &str) -> bool {
-            matches!(tag, "code" | "kbd" | "pre" | "samp" | "var")
-        }
-
-        assert!(
-            self.fragment || !text.contains(MARKER_PREFIX),
-            "strip marker got into text"
-        );
-
-        let in_attr = matches!(self.stack.last(), Some(Node::Attribute));
-        let in_code = in_attr
-            || self
-                .stack
-                .iter()
-                .rev()
-                .any(|e| matches!(e, Node::Tag(tag) if is_code(tag)));
-
-        let before = self.html.len();
-        let prev = text_run(&mut self.html, self.last_char, text, in_code, true)?;
-        self.outline_emitter.text_run(text, &self.html[before..]);
-        if !in_attr {
-            self.last_char = prev;
-        }
-
-        Ok(())
+        self.next.next().in_table()
     }
 
     /// Writes the contents of a strip marker to the output.
-    fn write_strip_marker(&mut self, outline: &mut Outline, tag: &StripMarker) -> Result {
+    fn write_strip_marker(&mut self, tag: &StripMarker) {
         match tag {
             StripMarker::NoWiki(text) => {
-                self.graf_emitter.force_content();
-                self.text_run(&decode_html(text))?;
+                // The mere presence of a strip marker needs to cause the
+                // GrafEmitter to decide that there is content, even if the
+                // marker is actually empty
+                self.next.next_mut().next_mut().next_mut().force_content();
+                self.next.text(&decode_html(text));
             }
             StripMarker::Inline(text) => {
-                self.graf_emitter.force_content();
+                // TODO: This should be a redundant check and garbage-in-attr
+                // is handled correctly elsewhere
                 if matches!(self.stack.last(), Some(Node::Attribute)) {
                     let escaped = strtr(text, &[("<", "&lt;"), (">", "&gt;")]);
                     if matches!(escaped, Cow::Owned(_)) {
@@ -424,45 +242,56 @@ impl Document {
                         // later duplicate attribute
                         log::warn!("Stripped tags inside attributes");
                     }
-                    self.html += &escaped;
+                    self.next.text(&escaped);
                 } else {
-                    self.html += text;
+                    self.next.raw_html_inline(text);
                 }
             }
             StripMarker::Block(text) => {
-                // Using "div" is a hack but one which does not really matter
-                // since anything that cannot parent a `<div>` cannot parent any
-                // other block-level element
-                while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
-                    e.close(
-                        &mut self.html,
-                        &mut self.graf_emitter,
-                        &mut self.outline_emitter,
-                        outline,
-                    )?;
+                if matches!(self.stack.last(), Some(Node::Attribute)) {
+                    let escaped = strtr(text, &[("<", "&lt;"), (">", "&gt;")]);
+                    if matches!(escaped, Cow::Owned(_)) {
+                        // At least malformed Wikitext tables can cause this to
+                        // happen by putting extension tags in attributes.
+                        // TODO: This is supposed to take the attributes from
+                        // the outermost tag, put them into the attributes
+                        // map for the element, and then be overwritten by any
+                        // later duplicate attribute
+                        log::warn!("Stripped tags inside attributes");
+                    }
+                    self.next.text(&escaped);
+                } else {
+                    // Using "div" is a hack but one which does not really matter
+                    // since anything that cannot parent a `<div>` cannot parent any
+                    // other block-level element
+                    while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
+                        e.close(&mut self.next);
+                        self.next.new_line();
+                    }
+                    self.next.raw_html_block(text);
                 }
-                self.graf_emitter.block_start(&self.html);
-                self.html += text;
-                self.graf_emitter.block_end(&self.html);
             }
             StripMarker::WikiRsSourceStart(name) => {
-                self.tag_blocks.push((self.stack.len(), name.clone()));
+                self.next
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .push(name.clone());
             }
             StripMarker::WikiRsSourceEnd(name) => {
-                self.tag_blocks
-                    .pop_if(|(_, other)| name == other)
-                    .expect("tag block stack corruption");
+                self.next
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .pop(name);
             }
         }
-
-        Ok(())
-    }
-}
-
-impl fmt::Write for Document {
-    #[inline]
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.html.write_str(s)
     }
 }
 
@@ -475,6 +304,7 @@ impl Surrogate<Error> for Document {
         target: &[Spanned<Token>],
         content: &[Spanned<Token>],
     ) -> Result {
+        // TODO: Autolink inside another link = plain text
         // autourl have empty content, other magic links have generated
         // content
         let content = if content.is_empty() { target } else { content };
@@ -497,11 +327,13 @@ impl Surrogate<Error> for Document {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _content: &str,
+        content: &str,
         _unclosed: bool,
     ) -> Result {
-        // TODO: Is there actually any reason to do this?
-        // write!(self.html, "<!-- {content} -->")?;
+        // If we are in an attribute, comments are actually text content!
+        self.next.comment_start();
+        self.next.text(content);
+        self.next.comment_end();
         Ok(())
     }
 
@@ -531,44 +363,24 @@ impl Surrogate<Error> for Document {
 
     fn adopt_end_tag(
         &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
         name: &str,
     ) -> Result {
-        if self
-            .stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Attribute))
-        {
-            log::error!("tag inside attribute (probably due to `render_runtime`)");
-            return self.text_run(&sp.source[span.into_range()]);
-        }
-
-        self.end_tag(state, name)?;
+        // TODO: Use non-allocating to_lowercase
+        self.next.tag_end(&name.to_ascii_lowercase());
         Ok(())
     }
 
     fn adopt_entity(
         &mut self,
         _state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
+        sp: &StackFrame<'_>,
+        span: Span,
         value: char,
     ) -> Result {
-        let start = self.html.len();
-        match value {
-            '<' => self.html += "&lt;",
-            '>' => self.html += "&gt;",
-            '&' => self.html += "&amp;",
-            '"' => self.html += "&quot;",
-            c => self.html.write_char(c)?,
-        }
-        if !matches!(self.stack.last(), Some(Node::Attribute)) {
-            self.last_char = value;
-        }
-        self.outline_emitter.text_entity(value, &self.html[start..]);
+        self.next.entity(value, &sp.source[span.into_range()]);
         Ok(())
     }
 
@@ -593,9 +405,11 @@ impl Surrogate<Error> for Document {
         )? {
             Some(Either::Left(marker)) => {
                 if self.fragment {
-                    state.strip_markers.push(&mut self.html, &name, marker);
+                    let strip_text = &mut String::new();
+                    state.strip_markers.push(strip_text, &name, marker);
+                    self.next.raw_html_inline(strip_text);
                 } else {
-                    self.write_strip_marker(&mut state.globals.outline, &marker)?;
+                    self.write_strip_marker(&marker);
                 }
             }
             Some(Either::Right(_)) => todo!("this should never happen?"),
@@ -623,7 +437,7 @@ impl Surrogate<Error> for Document {
         _span: Option<Span>,
         text: &str,
     ) -> Result {
-        self.text_run(text)?;
+        self.next.text(text);
         Ok(())
     }
 
@@ -635,19 +449,22 @@ impl Surrogate<Error> for Document {
         level: HeadingLevel,
         content: &[Spanned<Token>],
     ) -> Result {
-        self.start_tag(state, sp, level.tag_name(), &[])?;
-        Trim::new(self, sp, TrimMode::Normal).adopt_tokens(state, sp, content)?;
-        self.end_tag(state, level.tag_name())
+        self.next.tag_start_full(level.tag_name());
+        // TODO: Trim can be handled later in a separate handler?
+        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
+        self.next.tag_end(level.tag_name());
+        Ok(())
     }
 
     fn adopt_horizontal_rule(
         &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
         _span: Span,
         _line_content: bool,
     ) -> Result {
-        self.start_tag(state, sp, "hr", &[])
+        self.next.tag_start_full("hr");
+        Ok(())
     }
 
     fn adopt_lang_variant(
@@ -662,7 +479,8 @@ impl Surrogate<Error> for Document {
         // TODO: It is extremely unclear what these tokens are supposed to do
         // given that they do not seem to do anything at all on MW and just emit
         // plain text like this.
-        self.text_run(&sp.source[span.into_range()])
+        self.next.text(&sp.source[span.into_range()]);
+        Ok(())
     }
 
     fn adopt_link(
@@ -693,28 +511,15 @@ impl Surrogate<Error> for Document {
         content: &[Spanned<Token>],
     ) -> Result {
         if let Some(Node::List(list)) = self.stack.last_mut() {
-            list.emit(&mut self.html, bullets)?;
+            list.emit(&mut self.next, bullets);
         } else {
-            // Using "ol" is a hack but one which does not really matter since
-            // anything that cannot parent an `<ol>` cannot parent any of the
-            // other list kinds either
-            while let Some(e) = self.stack.pop_if(|e| !e.can_parent("ol")) {
-                e.close(
-                    &mut self.html,
-                    &mut self.graf_emitter,
-                    &mut self.outline_emitter,
-                    &mut state.globals.outline,
-                )?;
-            }
-
-            self.graf_emitter.start_list(&mut self.html);
             let mut list = ListEmitter::default();
-            list.emit(&mut self.html, bullets)?;
+            list.emit(&mut self.next, bullets);
             self.stack.push(Node::List(list));
         }
 
         let list_index = self.stack.len() - 1;
-        Trim::new(self, sp, TrimMode::Normal).adopt_tokens(state, sp, content)?;
+        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
 
         // It is possible that content “inside” a list item actually contains
         // terminator tags for items outside of the list item which implicitly
@@ -724,19 +529,14 @@ impl Surrogate<Error> for Document {
         // elements here will corrupt the tree.
         if self.stack.len() > list_index && matches!(self.stack[list_index], Node::List(_)) {
             for e in self.stack.drain(list_index + 1..).rev() {
-                e.close(
-                    &mut self.html,
-                    &mut self.graf_emitter,
-                    &mut self.outline_emitter,
-                    &mut state.globals.outline,
-                )?;
+                self.next.tag_end(e.tag_name().unwrap());
             }
 
             // The parser removes the newlines between list items in order to
             // make it easier to disambiguate the list-terminating newline.
             // Since the list item must have ended at a newline, finish the line
             // now.
-            self.finish_line(state)?;
+            // self.next.new_line();
         }
 
         Ok(())
@@ -744,22 +544,16 @@ impl Surrogate<Error> for Document {
 
     fn adopt_new_line(
         &mut self,
-        state: &mut State<'_, '_, '_>,
+        _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
     ) -> Result {
-        match self.stack.last_mut() {
-            Some(Node::Attribute) => {}
-            Some(Node::List(list)) => {
-                list.finish(&mut self.html)?;
-                self.stack.pop();
-                self.finish_line(state)?;
-                self.graf_emitter.end_list(&mut self.html);
-            }
-            None | Some(Node::Tag(_)) => {
-                self.finish_line(state)?;
-            }
+        self.text_style_emitter.finish(&mut self.next);
+        if let Some(Node::List(list)) = self.stack.last_mut() {
+            list.finish(&mut self.next);
+            self.stack.pop();
         }
+        self.next.new_line();
         Ok(())
     }
 
@@ -795,7 +589,8 @@ impl Surrogate<Error> for Document {
             "Unresolved parameter {} in output",
             &sp.source[span.into_range()]
         );
-        self.text_run(&sp.source[span.into_range()])
+        self.next.text(&sp.source[span.into_range()]);
+        Ok(())
     }
 
     fn adopt_redirect(
@@ -807,16 +602,13 @@ impl Surrogate<Error> for Document {
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
     ) -> Result {
-        let source = &mut String::new();
-        let attributes = token! { source, [ "class" => "redirectText" ] };
-        self.start_tag(
-            state,
-            &sp.clone_with_source(FileMap::new(source)),
-            "p",
-            &attributes,
-        )?;
+        self.next.tag_start("p");
+        self.next.tag_attribute_start("class");
+        self.next.text("redirectText");
+        self.next.tag_attribute_end("class");
+        self.next.tag_start_end("p");
         tags::render_wikilink(self, state, sp, target, content, trail.map(|v| &**v))?;
-        self.end_tag(state, "p")?;
+        self.next.tag_end("p");
         Ok(())
     }
 
@@ -847,25 +639,18 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        span: Span,
+        _span: Span,
         name: &str,
         attributes: &[Spanned<Argument>],
-        self_closing: bool,
+        _self_closing: bool,
     ) -> Result {
-        if self
-            .stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Attribute))
-        {
-            log::error!("tag inside attribute (probably due to `render_runtime`)");
-            return self.text_run(&sp.source[span.into_range()]);
+        // TODO: Use non-allocating `to_lowercase`
+        let name = name.to_ascii_lowercase();
+        self.next.tag_start(&name);
+        for attr in attributes {
+            self.attribute(state, sp, attr)?;
         }
-
-        self.start_tag(state, sp, name, attributes)?;
-        if self_closing {
-            self.end_tag(state, name)?;
-        }
+        self.next.tag_start_end(&name);
         Ok(())
     }
 
@@ -876,13 +661,12 @@ impl Surrogate<Error> for Document {
         _span: Span,
         marker: &str,
     ) -> Result {
-        let Some(tag) = state.strip_markers.get(marker) else {
-            return Err(Error::StripMarker(marker.to_owned()));
-        };
-
-        self.write_strip_marker(&mut state.globals.outline, tag)?;
-
-        Ok(())
+        if let Some(tag) = state.strip_markers.get(marker) {
+            self.write_strip_marker(tag);
+            Ok(())
+        } else {
+            Err(Error::StripMarker(marker.to_owned()))
+        }
     }
 
     fn adopt_table_caption(
@@ -893,12 +677,11 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
     ) -> Result {
         if self.wikitext_table_count != 0 {
-            self.start_tag(state, sp, "caption", attributes)
-        } else if self.in_table() {
-            Ok(())
-        } else {
-            self.text_run(&sp.source[span.into_range()])
+            self.adopt_start_tag(state, sp, span, "caption", attributes, false)?;
+        } else if !self.in_table() {
+            self.next.text(&sp.source[span.into_range()]);
         }
+        Ok(())
     }
 
     fn adopt_table_data(
@@ -909,33 +692,30 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
     ) -> Result {
         if self.wikitext_table_count == 0 {
-            self.text_run(&sp.source[span.into_range()])
+            self.next.text(&sp.source[span.into_range()]);
         } else if self.in_table() {
-            if matches!(self.stack.last(), Some(Node::Tag(name)) if name == "table") {
-                self.start_tag(state, sp, "tr", &[])?;
-            }
-            self.start_tag(state, sp, "td", attributes)
-        } else {
-            Ok(())
+            // This relies on DOM error correction later in the chain to make
+            // sure there is a <tr>
+            self.adopt_start_tag(state, sp, span, "td", attributes, false)?;
         }
+        Ok(())
     }
 
     fn adopt_table_end(
         &mut self,
-        state: &mut State<'_, '_, '_>,
+        _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
         if self.wikitext_table_count == 0 {
-            self.text_run(&sp.source[span.into_range()])
+            self.next.text(&sp.source[span.into_range()]);
         } else {
             self.wikitext_table_count -= 1;
             if self.in_table() {
-                self.end_tag(state, "table")
-            } else {
-                Ok(())
+                self.next.tag_end("table");
             }
         }
+        Ok(())
     }
 
     fn adopt_table_heading(
@@ -946,15 +726,13 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
     ) -> Result {
         if self.wikitext_table_count == 0 {
-            self.text_run(&sp.source[span.into_range()])
+            self.next.text(&sp.source[span.into_range()]);
         } else if self.in_table() {
-            if matches!(self.stack.last(), Some(Node::Tag(name)) if name == "table") {
-                self.start_tag(state, sp, "tr", &[])?;
-            }
-            self.start_tag(state, sp, "th", attributes)
-        } else {
-            Ok(())
+            // This relies on DOM error correction later in the chain to make
+            // sure there is a <tr>
+            self.adopt_start_tag(state, sp, span, "th", attributes, false)?;
         }
+        Ok(())
     }
 
     fn adopt_table_row(
@@ -965,23 +743,22 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
     ) -> Result {
         if self.wikitext_table_count == 0 {
-            self.text_run(&sp.source[span.into_range()])
+            self.next.text(&sp.source[span.into_range()]);
         } else if self.in_table() {
-            self.start_tag(state, sp, "tr", attributes)
-        } else {
-            Ok(())
+            self.adopt_start_tag(state, sp, span, "tr", attributes, false)?;
         }
+        Ok(())
     }
 
     fn adopt_table_start(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
         self.wikitext_table_count += 1;
-        self.start_tag(state, sp, "table", attributes)
+        self.adopt_start_tag(state, sp, span, "table", attributes, false)
     }
 
     fn adopt_template(
@@ -1002,26 +779,18 @@ impl Surrogate<Error> for Document {
         _span: Span,
         text: &str,
     ) -> Result {
-        self.text_run(text)
+        self.next.text(text);
+        Ok(())
     }
 
     fn adopt_text_style(
         &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
         _span: Span,
         style: TextStyle,
     ) -> Result {
-        self.text_style_emitter = self.text_style_emitter.emit(
-            |name, close| {
-                if close {
-                    self.end_tag(state, name)
-                } else {
-                    self.start_tag(state, sp, name, &[])
-                }
-            },
-            style,
-        )?;
+        self.text_style_emitter.emit(&mut self.next, style);
         Ok(())
     }
 
@@ -1048,7 +817,7 @@ impl Surrogate<Error> for Document {
 
 /// An HTML tree node.
 #[derive(Debug)]
-enum Node {
+pub(super) enum Node {
     /// An HTML attribute.
     Attribute,
     /// A run of Wikitext list items.
@@ -1060,7 +829,7 @@ enum Node {
 impl Node {
     /// Whether this element can parent the element with the given lowercase tag
     /// name.
-    fn can_parent(&self, tag: &str) -> bool {
+    pub(super) fn can_parent(&self, tag: &str) -> bool {
         match self {
             Node::Tag(parent) => {
                 if VOID_TAGS.contains(parent) {
@@ -1084,57 +853,41 @@ impl Node {
             Node::List(list) => {
                 // TODO: Ordered/Unordered have tag_names of ol/ul but they are
                 // actually <li>s
-                list.stack.last().is_some()
+                !list.is_empty()
             }
             Node::Attribute => unreachable!(),
         }
     }
 
     /// Writes the terminator for this element to the given output.
-    fn close(
-        self,
-        out: &mut String,
-        graf_emitter: &mut GrafEmitter,
-        outline_emitter: &mut OutlineEmitter,
-        outline: &mut Outline,
-    ) -> fmt::Result {
+    pub(super) fn close<S: Sink>(self, next: &mut S) {
         match self {
             Node::Attribute => {}
             Node::Tag(name) => {
                 debug_assert!(!VOID_TAGS.contains(&name));
-                let (at, delta) = outline_emitter.end_tag(outline, out, &name)?;
-                if delta != 0 {
-                    graf_emitter.advance(at, delta);
-                }
-                graf_emitter.before_end_tag(out, &name);
-                write!(out, "</{name}>")?;
-                graf_emitter.after_end_tag(out, &name);
+                next.tag_end(&name);
             }
             Node::List(mut list) => {
-                list.finish(out)?;
-                graf_emitter.end_list(out);
+                list.finish(next);
             }
         }
-        Ok(())
     }
 
     /// The tag name for this node.
-    fn tag_name(&self) -> Option<&str> {
+    pub(super) fn tag_name(&self) -> Option<&str> {
         match self {
             Node::Attribute => None,
             Node::Tag(name) => Some(name),
-            Node::List(list) => list.stack.last().map(|kind| match kind {
-                ListKind::Ordered | ListKind::Unordered => "li",
-                ListKind::Term => "dt",
-                ListKind::Detail => "dd",
-            }),
+            Node::List(list) => list.tag_name(),
         }
     }
 }
 
 /// Tags with restricted allowable children.
 static PARENTS: phf::Map<&str, &[&str]> = phf::phf_map! {
-    "table" => &["caption", "tr"],
+    // Tables are ‘allowed’ to hold td/th because the tr will be implicitly
+    // inserted
+    "table" => &["caption", "td", "th", "tr"],
     "tr" => &["td", "th"],
     "dl" => &["dd", "dt"],
     "ol" => &["li"],

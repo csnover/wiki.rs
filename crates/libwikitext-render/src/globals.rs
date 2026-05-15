@@ -1,6 +1,5 @@
 //! Collections for semi-structured article data.
 
-use super::Result;
 use core::fmt;
 use http::Uri;
 use libwikitext_common::make_url;
@@ -9,19 +8,19 @@ use std::collections::{BTreeSet, HashMap};
 
 /// A sorted set of categories which the article belongs to.
 #[derive(Debug, Default)]
-pub(crate) struct Categories(BTreeSet<String>);
+pub struct Categories(BTreeSet<String>);
 
 impl Categories {
-    /// Emits the categories as an HTML list of links, consuming this object.
-    pub fn finish<W: fmt::Write + ?Sized>(
-        self,
+    /// Emits the categories as an HTML list of links.
+    pub fn fmt<W: fmt::Write + ?Sized>(
+        &self,
         f: &mut W,
         base_uri: &Uri,
         article_path: &str,
-    ) -> Result<(), fmt::Error> {
+    ) -> fmt::Result {
         if !self.0.is_empty() {
             f.write_str(r#"<ul class="wiki-rs-categories">"#)?;
-            for category in self.0 {
+            for category in &self.0 {
                 let target = category.trim_start_matches(':');
                 let name = target.trim_start_matches("Category:");
                 let url = make_url(

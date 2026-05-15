@@ -346,7 +346,6 @@ use std::{
 use surrogate::Surrogate;
 use tags::{LinkKind, LinkKindOptions};
 use template::DbPrefetch;
-use trim::{Trim, TrimMode};
 
 /// Preprocessor display options for evaluating text strings.
 #[derive(Clone, Copy, Default, Eq, PartialEq, serde::Deserialize)]
@@ -383,6 +382,8 @@ impl Default for Limits {
 
 /// The result of an article rendering operation.
 pub struct RenderOutput {
+    /// The article category list.
+    pub categories: globals::Categories,
     /// The main HTML content of the page.
     pub content: String,
     /// Indicator badges. [`Display`](core::fmt::Display) formats as HTML.
@@ -491,6 +492,7 @@ pub fn render_string(
             }
 
             Ok(RenderOutput {
+                categories: <_>::default(),
                 content,
                 indicators: <_>::default(),
                 outline: <_>::default(),
@@ -518,8 +520,8 @@ fn render(
     prefetcher.finish(&mut state);
 
     let mut renderer = Document::new(false);
-    Trim::new(&mut renderer, &sp, TrimMode::Category).adopt_output(&mut state, &sp, &root)?;
-    let mut content = renderer.finish(&mut state)?;
+    renderer.adopt_output(&mut state, &sp, &root)?;
+    let content = renderer.finish();
 
     let mut timings = state.timing.into_iter().collect::<Vec<_>>();
     timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
@@ -547,13 +549,8 @@ fn render(
         );
     }
 
-    state.globals.categories.finish(
-        &mut content,
-        &state.statics.base_uri,
-        state.statics.paths.article,
-    )?;
-
     Ok(RenderOutput {
+        categories: state.globals.categories,
         content,
         indicators: state.globals.indicators,
         outline: state.globals.outline,
@@ -672,6 +669,11 @@ pub enum Error {
     /// without a corresponding entry.
     #[error("invalid strip marker {0}")]
     StripMarker(String),
+
+    /// A [`StripMarker`](libwikitext_parse::Token::StripMarker) was encountered
+    /// in what should have been just a run of plain text.
+    #[error("strip marker got into text")]
+    StripMarkerInText,
 
     /// A template called back into itself.
     ///
@@ -863,10 +865,6 @@ pub(crate) struct State<'s, 'config, 'dict> {
     timing: HashMap<String, (usize, Duration)>,
 }
 
-/// A convenience trait alias combining [`fmt::Write`] and [`Surrogate`].
-trait WriteSurrogate: fmt::Write + Surrogate<Error> {}
-impl<T> WriteSurrogate for T where T: fmt::Write + Surrogate<Error> {}
-
 /// Shared article data.
 #[derive(Debug)]
 struct ArticleState {
@@ -948,7 +946,9 @@ fn text_run<W: fmt::Write + ?Sized>(
 ) -> Result<char> {
     fn is_break(prev: char, next: Option<char>) -> bool {
         use unicode_general_category::{
-            GeneralCategory::{DashPunctuation, InitialPunctuation, OpenPunctuation},
+            GeneralCategory::{
+                DashPunctuation, InitialPunctuation, OpenPunctuation, OtherPunctuation,
+            },
             get_general_category,
         };
         prev.is_whitespace()
@@ -956,6 +956,14 @@ fn text_run<W: fmt::Write + ?Sized>(
                 get_general_category(prev),
                 DashPunctuation | OpenPunctuation | InitialPunctuation
             ) && !next.is_some_and(char::is_whitespace))
+            || (matches!(get_general_category(prev), OtherPunctuation)
+                && next.is_some_and(char::is_alphabetic))
+    }
+
+    // TODO: This requires two-character look-behind and look-ahead.
+    #[inline]
+    fn is_french_space(prev: char, next: Option<char>) -> bool {
+        matches!(next, Some('?' | ':' | ';' | '!' | '%' | '»' | '›')) || matches!(prev, '«' | '‹')
     }
 
     let mut chars = text.chars().peekable();
@@ -999,6 +1007,13 @@ fn text_run<W: fmt::Write + ?Sized>(
             '<' if encode => write!(out, "&lt;")?,
             '>' if encode => write!(out, "&gt;")?,
             '&' if encode => write!(out, "&amp;")?,
+            ' ' if !in_code => {
+                out.write_char(if is_french_space(prev, chars.peek().copied()) {
+                    '\u{00a0}'
+                } else {
+                    c
+                })?;
+            }
             c => out.write_char(c)?,
         }
         prev = c;

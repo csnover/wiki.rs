@@ -145,10 +145,10 @@ use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode,
     db::DatabaseProvider,
-    decode_html,
+    decode_html, escape, escape_no_wiki,
     title::{Namespace, Title},
 };
-use libwikitext_parse::{self as wikitext, Argument, FileMap, Output, Span, Spanned, Token};
+use libwikitext_parse::{Argument, FileMap, Output, Span, Spanned, Token};
 use numerals::roman::Roman;
 use regex::{Regex, RegexBuilder};
 use std::{
@@ -277,11 +277,7 @@ fn gallery(
 
         let mut inner = Document::new(true);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
-        write!(
-            out,
-            r#"<li class="gallerybox">{}</li>"#,
-            inner.finish(state)?
-        )?;
+        write!(out, r#"<li class="gallerybox">{}</li>"#, inner.finish())?;
     }
     write!(out, "</ul>")?;
 
@@ -335,7 +331,7 @@ fn indicator(
     if let Some(image) = image {
         let mut out = Document::new(true);
         out.adopt_token(state, &sp, image)?;
-        let indicator = out.finish(state)?;
+        let indicator = out.finish();
         state.globals.indicators.insert(name.to_string(), indicator);
     }
 
@@ -402,13 +398,13 @@ fn math(
         .convert_with_local_counter(latex, mode)
     {
         Ok(maths) => {
-            out.write_str(&wikitext::escape(&maths))?;
+            out.write_str(&escape(&maths))?;
         }
         Err(err) => {
             write!(
                 out,
                 r#"<span class="error texerror">{}</span>"#,
-                wikitext::escape_no_wiki(&err.to_string())
+                escape_no_wiki(&err.to_string())
             )?;
         }
     }
@@ -498,6 +494,7 @@ fn pre(
     // “Backwards-compatibility hack”
     static STRIP_NOWIKI: LazyLock<Regex> = LazyLock::new(|| {
         RegexBuilder::new("<nowiki>(.*?)</nowiki>")
+            .dot_matches_new_line(true)
             .case_insensitive(true)
             .build()
             .unwrap()
@@ -544,10 +541,9 @@ fn pre(
         // contain well-formed HTML ready to be emitted to the final document
         // with no other Wikitext parsing, doing things in this order ‘should’
         // be ‘fine’.
-        let body = STRIP_NOWIKI.replace_all(arguments.body(), "$1");
-        strtr(&body, &[("<", "&lt;"), (">", "&gt;")])
-            .owned()
-            .unwrap_or(body)
+        STRIP_NOWIKI
+            .replace_all(arguments.body(), "$1")
+            .map(|body| strtr(body, &[("<", "&lt;"), (">", "&gt;")]))
     };
 
     let body = state.strip_markers.unstrip(&body);
@@ -1207,7 +1203,7 @@ fn eval_string(state: &mut State<'_, '_, '_>, sp: &StackFrame<'_>, text: &str) -
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
     let mut out = Document::new(true);
     out.adopt_output(state, &sp, &root)?;
-    out.finish(state)
+    Ok(out.finish())
 }
 
 /// Preprocesses the given text in a root document scope.

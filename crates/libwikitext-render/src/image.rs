@@ -1,7 +1,7 @@
 //! Code for handling MediaWiki images.
 
 use super::{
-    Result, StackFrame, State, WriteSurrogate,
+    Error, Result, StackFrame, State, Surrogate,
     tags::{self, LinkKind},
     text_run,
 };
@@ -252,7 +252,7 @@ pub(super) fn media_options<'s>(
 }
 
 /// Renders a media tag.
-pub(super) fn render_media<W: WriteSurrogate + ?Sized>(
+pub(super) fn render_media<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -264,7 +264,7 @@ pub(super) fn render_media<W: WriteSurrogate + ?Sized>(
 }
 
 /// Renders a media tag using the given media options.
-pub(super) fn render_media_with_options<W: WriteSurrogate + ?Sized>(
+pub(super) fn render_media_with_options<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -330,7 +330,7 @@ pub(super) fn render_media_with_options<W: WriteSurrogate + ?Sized>(
 }
 
 /// Renders an image tag.
-fn render_image<W: WriteSurrogate + ?Sized>(
+fn render_image<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -370,7 +370,7 @@ fn render_image<W: WriteSurrogate + ?Sized>(
 /// Renders an audio or video tag.
 // TODO: This is even more bogus than the image tags; this does not even *use*
 // most of the timed media options.
-fn render_timed_media<W: WriteSurrogate + ?Sized>(
+fn render_timed_media<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,

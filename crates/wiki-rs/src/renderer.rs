@@ -134,6 +134,7 @@ impl r2d2::ManageConnection for Manager {
                         .parser
                         .parse_redirect(article.body())
                         .map(|redirect| RenderOutput {
+                            categories: <_>::default(),
                             content: redirect.to_owned(),
                             indicators: <_>::default(),
                             outline: <_>::default(),

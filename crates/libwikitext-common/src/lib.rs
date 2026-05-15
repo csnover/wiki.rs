@@ -23,6 +23,8 @@ pub enum AnchorEncodeMode {
 }
 
 /// Encodes section heading text into a format suitable for use as a URL anchor.
+///
+/// This is equivalent to `escapeIdForAttribute`.
 #[must_use]
 pub fn anchor_encode(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
     decode_html(s.trim_ascii())
@@ -109,6 +111,59 @@ pub fn decode_html(text: &str) -> Cow<'_, str> {
     } else {
         Cow::Borrowed(text)
     }
+}
+
+/// Escapes all non-HTML Wikitext control sequences.
+#[must_use]
+pub fn escape(text: &str) -> Cow<'_, str> {
+    strtr(
+        text,
+        &[
+            ("ISBN", "&#73;SBN"),
+            ("PMID", "&#80;MID"),
+            ("RFC", "&#82;FC"),
+            ("＿", "&#xFF3F;"), // 3 bytes in UTF-8
+            ("__", "&#95;_"),
+            ("\'\'", "&#39;&#39;"),
+            ("!", "&#33;"),
+            (":", "&#58;"),
+            (";", "&#59;"),
+            ("[", "&#91;"),
+            ("]", "&#93;"),
+            ("{", "&#123;"),
+            ("|", "&#124;"),
+            ("}", "&#125;"),
+        ],
+    )
+}
+
+/// Escapes all Wikitext and HTML control sequences.
+#[must_use]
+pub fn escape_no_wiki(text: &str) -> Cow<'_, str> {
+    strtr(
+        text,
+        &[
+            ("ISBN", "&#73;SBN"),
+            ("PMID", "&#80;MID"),
+            ("RFC", "&#82;FC"),
+            ("＿", "&#xFF3F;"), // 3 bytes in UTF-8
+            ("\'\'", "&#39;&#39;"),
+            ("__", "&#95;_"),
+            ("\"", "&quot;"),
+            ("!", "&#33;"),
+            ("&", "&amp;"),
+            (":", "&#58;"),
+            (";", "&#59;"),
+            ("<", "&lt;"),
+            ("=", "&#61;"),
+            (">", "&gt;"),
+            ("[", "&#91;"),
+            ("]", "&#93;"),
+            ("{", "&#123;"),
+            ("|", "&#124;"),
+            ("}", "&#125;"),
+        ],
+    )
 }
 
 /// Formats a date according to the given `format` string.

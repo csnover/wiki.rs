@@ -126,6 +126,7 @@ pub(crate) async fn article(
     #[derive(TemplateSimple)]
     #[template(path = "article.html")]
     struct ArticleTemplate<'a> {
+        categories: &'a str,
         /// The base path for URLs.
         base_path: &'a str,
         /// The redirect source of the article.
@@ -168,10 +169,15 @@ pub(crate) async fn article(
     };
 
     let output = call_renderer(&state, command)?;
+    let categories = &mut String::new();
+    output
+        .categories
+        .fmt(categories, &state.base_uri, "article")?;
 
     log::trace!("Rendered article in {:.2?}", start.elapsed());
 
     ArticleTemplate {
+        categories,
         base_path: state.base_uri.path(),
         from: from.as_deref(),
         output: &output,

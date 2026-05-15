@@ -10,7 +10,6 @@ workspace = true
 
 [dependencies]
 either.workspace = true
-libphp-rs.workspace = true
 libwikitext-common.workspace = true
 memchr.workspace = true
 peg.workspace = true

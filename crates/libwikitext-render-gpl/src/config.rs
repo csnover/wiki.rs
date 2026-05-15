@@ -20,13 +20,14 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "__nonewsectionlink__" => "nonewsectionlink",
         "__notitleconvert__" => "notitleconvert",
         "__notoc__" => "notoc",
-        "__toc__" => "toc"
+        "__toc__" => "toc",
     },
     // TODO: Sometimes <html>, sometimes <style>
     extension_tags: phf::phf_set! {
         "asidetag", "divtag", "embedtag", "gallery", "i18nattr", "i18ntag",
-        "indicator", "inputbox", "langconvert", "nowiki", "pwraptest", "ref",
-        "references", "sealtag", "section", "spantag", "statictag", "tag", "tåg"
+        "indicator", "inputbox", "langconvert", "nowiki", "pre", "pwraptest",
+        "ref", "references", "sealtag", "section", "spantag", "statictag",
+        "tag", "tåg",
     },
     function_hooks: phf::phf_map! {
         "anchorencode" => "anchorencode",
@@ -302,10 +303,10 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     ],
     protocols: phf::phf_set! {
         "//", "ftp://", "gopher://", "http://", "https://", "irc://", "ircs://",
-        "mailto:", "news:"
+        "mailto:", "news:",
     },
     redirect_magic_words: phf::phf_set! {
-        "#redirect"
+        "#redirect",
     },
     valid_title_bytes: " %!\"$&'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+",
     variables: phf::phf_map! {

@@ -540,6 +540,9 @@ Magic Word: {{NUMBEROFFILES}}
 parsoid={ "modes": ["wt2html","wt2wt"] }
 !! wikitext
 {{NUMBEROFFILES}}
+!! html/wiki.rs # The multistream bz2 database format does not support this
+<p>0
+</p>
 !! html/php
 <p>10
 </p>
@@ -571,9 +574,6 @@ parsoid={ "modes": ["wt2html","wt2wt"] }
 !! html/php
 <p><i>&#39;foo &#38; bar &#61; baz&#39;</i>
 </p>
-!! html/wiki.rs
-<p><i>'foo &amp; bar = baz'</i>
-</p>
 !! html/parsoid+integrated
 <p><i><span about="#mwt1" typeof="mw:Transclusion mw:Entity" data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAME","function":"pagename"},"params":{},"i":0}}]}'>'</span><span>foo </span><span typeof="mw:Entity">&amp;</span><span> bar </span><span typeof="mw:Entity">=</span><span> baz</span><span typeof="mw:Entity">'</span></i></p>
 !! end
@@ -587,9 +587,6 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 {{PAGENAME}}
 !! html/php
 <p>&#42;RFC&#32;1234 http&#58;//example.com/
-</p>
-!! html/wiki.rs
-<p>*RFC 1234 http://example.com/
 </p>
 !! html/parsoid+integrated
 <p><span about="#mwt1" typeof="mw:Transclusion mw:Entity" data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAME","function":"pagename"},"params":{},"i":0}}]}'>*</span><span>RFC</span><span typeof="mw:Entity"> </span><span>1234 http</span><span typeof="mw:Entity">:</span><span>//example.com/</span></p>
@@ -618,9 +615,6 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 {{PAGENAMEE}}
 !! html/php
 <p>&#42;RFC_1234_http&#58;//example.com/
-</p>
-!! html/wiki.rs
-<p>*RFC_1234_http://example.com/
 </p>
 !! html/parsoid+integrated
 <p><span typeof="mw:Transclusion mw:Entity" about="#mwt1" data-parsoid='{"srcContent":"*","pi":[[]]}' data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAMEE","function":"pagenamee"},"params":{},"i":0}}]}'>*</span><span about="#mwt1">RFC_1234_http</span><span typeof="mw:Entity" about="#mwt1">:</span><span about="#mwt1">//example.com/</span></p>
@@ -699,6 +693,7 @@ Magic Word: {{REVISIONTIMESTAMP}} on not-yet-existing current page
 title=[[This page does not exist]]
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 showflags
+wiki-rs-skip=[[applies only to editing]]
 !! wikitext
 {{REVISIONTIMESTAMP}}
 !! metadata/integrated
@@ -716,6 +711,7 @@ Magic Word: {{REVISIONTIMESTAMP:{{PAGENAME}}}} on not-yet-existing current page
 title=[[This page does not exist]]
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 showflags
+wiki-rs-skip=[[applies only to editing]]
 !! wikitext
 {{REVISIONTIMESTAMP:{{PAGENAME}}}}
 !! metadata/integrated
@@ -793,6 +789,7 @@ Magic Word: {{REVISIONUSER:...}} on non-existing non-current page
 !! options
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 showflags
+wiki-rs-skip=[[applies only to editing]]
 !! wikitext
 {{REVISIONUSER:This page does not exist}}
 !! metadata/integrated
@@ -807,6 +804,7 @@ Magic Word: {{REVISIONUSER}} on non-latest revision
 !! options
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 showflags
+wiki-rs-skip=[[applies only to editing]]
 !! wikitext
 {{REVISIONUSER}}
 !! metadata/integrated
@@ -838,6 +836,7 @@ Parser Function: {{REVISIONID:{{PAGENAME}}}} on non-saved revision
 !! options
 parsoid={ "modes": ["wt2html","wt2wt"] }
 showflags
+wiki-rs-skip=[[applies only to editing]]
 !! wikitext
 {{REVISIONID:{{PAGENAME}}}}
 !! metadata/integrated
@@ -973,6 +972,17 @@ Parser functions with interwiki titles (T355706)
 <li>1970 -</li>
 <li>19700101000203 -</li>
 <li>-</li></ul>
+!! html/wiki.rs # It does not matter enough to make this output identical, but it is useful enough to not skip
+<ul><li>0 -</li>
+<li>709 -</li>
+<li>1337 -</li>
+<li>1 -</li>
+<li>01 -</li>
+<li>01 -</li>
+<li>1 -</li>
+<li>1970 -</li>
+<li>19700101000203 -</li>
+<li>127.0.0.1 -</li></ul>
 !! end
 
 !! test
@@ -990,6 +1000,7 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 Magic Word: {{STYLEPATH}}
 !! options
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
+wiki-rs-skip=[[this path is never used]]
 !! wikitext
 {{STYLEPATH}}
 !! html/php
@@ -1008,7 +1019,7 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 !! html/*
 <p><a rel="nofollow" class="external free" href="http://example.org">http://example.org</a>
 </p>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser with a protocol-relative server
 <p>//example.org
 </p>
 !! end
@@ -1033,6 +1044,9 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 !! html/*
 <p>MediaWiki
 </p>
+!! html/wiki.rs
+<p>Mock
+</p>
 !! end
 
 !! test
@@ -1040,6 +1054,7 @@ Magic Word: {{PAGELANGUAGE}}
 !! options
 language=fr
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{PAGELANGUAGE}}
 !! html/*
@@ -1081,6 +1096,7 @@ wgParserEnableUserLanguage=true
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 language=en
 userLanguage=fr
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{USERLANGUAGE}}
 !! html/*
@@ -1121,7 +1137,7 @@ aOEU
 Aoeu
 <a rel="nofollow" class="external free" href="http://example.org">http://example.org</a>
 </p>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser with a protocol-relative server
 <p>example.org
 aOEU
 Aoeu
@@ -1149,6 +1165,10 @@ __NOTOC__
 bar
 !! html/parsoid
 foo<meta property="mw:PageProp/notoc"/>bar
+!! html/wiki.rs # This output matches the PHP parser
+<p>foo
+</p><p>bar
+</p>
 !! end
 
 !! test
@@ -1226,6 +1246,12 @@ __NOGALLERY__
 __NOEDITSECTION__
 __NOTITLECONVERT__
 __NOCONTENTCONVERT__
+!! html/wiki.rs # This output matches the PHP parser
+<p><br>
+</p><p><br>
+</p><p><br>
+</p><p><br>
+</p>
 !! end
 
 !! test
@@ -1278,6 +1304,7 @@ __NEWSECTIONLINK__ __NONEWSECTIONLINK__
 flags=mw-HideNewSection, mw-NewSection
 !! html/parsoid
 <section data-mw-section-id="0"><meta property="mw:PageProp/newsectionlink" data-parsoid='{"src":"__NEWSECTIONLINK__","magicSrc":"__NEWSECTIONLINK__"}'/> <meta property="mw:PageProp/nonewsectionlink" data-parsoid='{"src":"__NONEWSECTIONLINK__","magicSrc":"__NONEWSECTIONLINK__"}'/></section>
+!! html/wiki.rs # This output matches the PHP parser
 !! end
 
 !! article

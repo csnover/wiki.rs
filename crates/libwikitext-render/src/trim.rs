@@ -1,27 +1,14 @@
 //! A string trimmer for token trees.
 
 use super::{
-    Error, Result, State, WriteSurrogate,
+    Error, Result, State,
     stack::StackFrame,
     surrogate::{self, Surrogate},
 };
-use core::fmt;
-use libwikitext_common::{db::DatabaseProvider as _, title::Title};
 use libwikitext_parse::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output,
     Span, Spanned, TextStyle, Token,
 };
-
-/// String trimmer operating mode.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) enum TrimMode {
-    /// Trim whitespace normally.
-    #[default]
-    Normal,
-    /// “Strip newlines from the left hand context of Category links.
-    ///  See T2087, T87753, T174639, T359886”
-    Category,
-}
 
 /// A string trimmer for token trees that removes all whitespace from the start
 /// and end of processed tokens.
@@ -29,27 +16,24 @@ pub(super) enum TrimMode {
 /// This trimmer works by buffering whitespace tokens until a non-whitespace is
 /// encountered (in which case they are flushed to the output) or until the
 /// trimmer is finalised (in which case they are discarded).
-pub(super) struct Trim<'a, W: WriteSurrogate + ?Sized> {
+pub(super) struct Trim<'a, W: Surrogate<Error> + ?Sized> {
     /// Whether any tokens have been emitted to [`Self::out`] yet.
     emitted: bool,
     /// The last sequence of tokens containing only whitespace.
     last_ws: Vec<Stored>,
-    /// The operating mode for the string trimmer.
-    mode: TrimMode,
     /// The output target.
     out: &'a mut W,
     /// The stack frame for the tokens in [`Self::last_ws`].
     sp: &'a StackFrame<'a>,
 }
 
-impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
+impl<'a, W: Surrogate<Error> + ?Sized> Trim<'a, W> {
     /// Creates a new [`Trim`].
     #[inline]
-    pub fn new(out: &'a mut W, sp: &'a StackFrame<'a>, mode: TrimMode) -> Self {
+    pub fn new(out: &'a mut W, sp: &'a StackFrame<'a>) -> Self {
         Self {
             emitted: <_>::default(),
             last_ws: <_>::default(),
-            mode,
             out,
             sp,
         }
@@ -139,7 +123,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
         // The whitespace part
         if end != text.len() {
             let span = Span::new(span.start + end, span.end);
-            debug_assert!(text[end..].trim_ascii_end().is_empty());
+            debug_assert!(text[end..].bytes().all(|c| c.is_ascii_whitespace()));
             self.store(
                 sp,
                 Spanned {
@@ -157,14 +141,7 @@ impl<'a, W: WriteSurrogate + ?Sized> Trim<'a, W> {
     }
 }
 
-impl<W: WriteSurrogate + ?Sized> fmt::Write for Trim<'_, W> {
-    #[inline]
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.out.write_str(s)
-    }
-}
-
-impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
+impl<W: Surrogate<Error> + ?Sized> Surrogate<Error> for Trim<'_, W> {
     #[inline]
     fn adopt_autolink(
         &mut self,
@@ -347,20 +324,7 @@ impl<W: WriteSurrogate + ?Sized> Surrogate<Error> for Trim<'_, W> {
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
     ) -> Result {
-        if self.mode == TrimMode::Category
-            && let title = sp.eval(state, target)?
-            && Title::new(state.statics.db.config(), &title, None).is_local_category()
-        {
-            // The original regular expression was `\n\s*` so any whitespace
-            // that appears before the first newline is supposed to be emitted
-            if let Some(index) = self.last_ws.iter().position(Stored::is_new_line) {
-                self.last_ws.drain(index..);
-            }
-            self.flush(state)?;
-            self.emitted = false;
-        } else {
-            self.flush(state)?;
-        }
+        self.flush(state)?;
         self.out.adopt_link(state, sp, span, target, content, trail)
     }
 
@@ -598,14 +562,4 @@ enum Stored {
     Memoised(String, Spanned<Token>),
     /// A token containing only whitespace.
     Token(Spanned<Token>),
-}
-
-impl Stored {
-    /// Returns true if the given token is a newline token.
-    #[inline]
-    fn is_new_line(&self) -> bool {
-        match self {
-            Self::Token(token) | Self::Memoised(_, token) => matches!(token.node, Token::NewLine),
-        }
-    }
 }

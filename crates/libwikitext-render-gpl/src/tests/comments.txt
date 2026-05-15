@@ -201,6 +201,7 @@ Comment semantics: round-trip even text which contains encoded -->
 <!-- hello & goodbye - > --&gt; --&amp;gt; --&xx -->
 !! html/parsoid
 <!-- hello &#x26; goodbye &#x2D; &#x3E; &#x2D;&#x2D;&#x3E; &#x2D;&#x2D;&#x26;gt; &#x2D;&#x2D;&#x26;xx -->
+!! html/wiki.rs
 !! end
 
 !! test
@@ -267,6 +268,7 @@ IE conditional comments
 <!--[if lt IE 9]&#x3E;
 	<script&#x3E;alert('hi');</script&#x3E;
 <![endif]-->
+!! html/wiki.rs
 !! end
 
 ## Regession test for Parsoid

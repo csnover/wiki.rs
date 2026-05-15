@@ -1311,6 +1311,7 @@ Parenthesis in external links, w/ transclusion or comment
 mw:ExtLink linking to a interwiki URL can be round-tripped losslessly (T94723)
 !! options
 parsoid=wt2wt
+wiki-rs-skip=[[this test is not testing anything]]
 !! wikitext
 [http://en.wikipedia.org/wiki/European_Robin European Robin]
 !! html/parsoid
@@ -1321,6 +1322,7 @@ THIS SECTION IS NOT USED (but Parsoid won't run the test without it)
 Parsoid extlink with _blank target
 !! options
 externallinktarget=_blank
+wiki-rs-skip=[[neither possible nor desirable]]
 !! wikitext
 [https://www.example.com]
 !! html/parsoid
@@ -1334,6 +1336,7 @@ externallinktarget=_blank
 Parsoid extlink with _self target
 !! options
 externallinktarget=_self
+wiki-rs-skip=[[neither possible nor desirable]]
 !! wikitext
 [https://www.example.com]
 !! html/parsoid

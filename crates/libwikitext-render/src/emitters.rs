@@ -1,10 +1,828 @@
 //! HTML emitters for Wikitext fragments that require state management.
 
-use super::{globals::Outline, tags};
+use super::{document::Node, globals::Outline, tags::PHRASING_TAGS};
 use core::fmt::{self, Write as _};
-use libwikitext_common::{AnchorEncodeMode, anchor_encode};
-use libwikitext_parse::{HeadingLevel, TextStyle};
-use std::borrow::Cow;
+use libphp_rs::strtr;
+use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html};
+use libwikitext_parse::{HeadingLevel, TextStyle, VOID_TAGS};
+
+/// An intermediate sink.
+pub(super) trait Chain: Sink {
+    /// The type of the next sink in the chain.
+    type Next;
+
+    /// Returns a reference to the next sink in the chain.
+    fn next(&self) -> &Self::Next;
+
+    /// Returns a mutable reference to the next sink in the chain.
+    fn next_mut(&mut self) -> &mut Self::Next;
+}
+
+/// A back-propagating bookmarker of output positions. Used to inject additional
+/// unstructured HTML without buffering.
+pub(super) trait Markable {
+    /// Creates a clone of an existing mark.
+    fn clone_mark(&mut self, mark: &Mark) -> Mark;
+
+    /// Frees the given `mark` for reuse. This is a performance optimisation.
+    fn free_mark(&mut self, mark: Mark);
+
+    /// Mark the current output position for later investigation.
+    fn mark(&mut self) -> Mark;
+
+    /// Runs the callback `f` with the resolved positions for the given `marks`
+    /// and a mutable reference to the corresponding `MarkableString`.
+    fn with_marks<const N: usize, F: FnOnce([Option<usize>; N], &mut MarkableString) -> T, T>(
+        &mut self,
+        marks: [&Mark; N],
+        f: F,
+    ) -> T;
+}
+
+impl<T> Markable for T
+where
+    T: Chain,
+    T::Next: Markable,
+{
+    #[inline]
+    fn clone_mark(&mut self, mark: &Mark) -> Mark {
+        self.next_mut().clone_mark(mark)
+    }
+
+    #[inline]
+    fn free_mark(&mut self, mark: Mark) {
+        self.next_mut().free_mark(mark);
+    }
+
+    #[inline]
+    fn mark(&mut self) -> Mark {
+        self.next_mut().mark()
+    }
+
+    #[inline]
+    fn with_marks<const N: usize, F: FnOnce([Option<usize>; N], &mut MarkableString) -> U, U>(
+        &mut self,
+        marks: [&Mark; N],
+        f: F,
+    ) -> U {
+        self.next_mut().with_marks(marks, f)
+    }
+}
+
+/// A streaming node sink.
+pub(super) trait Sink {
+    /// Ends a comment.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///                                   ^^^^
+    /// ```
+    fn comment_end(&mut self);
+
+    /// Starts a comment.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///                              ^^^^^
+    /// ```
+    fn comment_start(&mut self);
+
+    /// A character entity.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///                       ^^^^^^^
+    /// ```
+    fn entity(&mut self, value: char, raw: &str);
+
+    /// Finish processing input.
+    fn finish(self) -> String;
+
+    /// A source newline.
+    ///
+    /// This is used for source-line-sensitive rules.
+    fn new_line(&mut self);
+
+    /// Writes opaque block HTML content.
+    fn raw_html_block(&mut self, html: &str);
+
+    /// Writes opaque inline HTML content.
+    fn raw_html_inline(&mut self, html: &str);
+
+    /// End a tag attribute with the given `name`.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///                 ^
+    /// ```
+    fn tag_attribute_end(&mut self, name: &str);
+
+    /// Start a tag attribute with the given `name`.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///     ^^^^^^^
+    /// ```
+    fn tag_attribute_start(&mut self, name: &str);
+
+    /// Ends a node with the given `name`.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///                                              ^^^^^^
+    /// ```
+    fn tag_end(&mut self, name: &str);
+
+    /// Start a tag with the given `name`.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    /// ^^^^
+    /// ```
+    fn tag_start(&mut self, name: &str);
+
+    /// Ends a start tag with the given `name`.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///                  ^
+    /// ```
+    fn tag_start_end(&mut self, name: &str);
+
+    /// Starts a tag with the given `name` and no attributes.
+    fn tag_start_full(&mut self, name: &str) {
+        self.tag_start(name);
+        self.tag_start_end(name);
+    }
+
+    /// Text content.
+    ///
+    /// ```html
+    /// <tag name="value">text&#8253;<!-- comment --></tag>
+    ///            ^^^^^  ^^^^            ^^^^^^^
+    /// ```
+    fn text(&mut self, text: &str);
+}
+
+/// Chomps all the whitespace after a heading. Nom nom nom nom nom.
+#[derive(Debug)]
+pub(super) struct AfterHeadingChomper<S: Sink> {
+    /// Chomper hungers? Oog!
+    hungry: HungerLevel,
+    /// The next sink.
+    next: S,
+}
+
+impl<S: Sink> AfterHeadingChomper<S> {
+    /// Creates a new `AfterHeadingChomper`.
+    #[inline]
+    pub fn new(next: S) -> Self {
+        Self {
+            hungry: <_>::default(),
+            next,
+        }
+    }
+}
+
+chainable!(AfterHeadingChomper);
+
+impl<S: Sink> Sink for AfterHeadingChomper<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.hungry = HungerLevel::Low;
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.hungry = HungerLevel::Low;
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.hungry = HungerLevel::Low;
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        if self.hungry != HungerLevel::High {
+            self.next.new_line();
+            if self.hungry == HungerLevel::Medium {
+                self.hungry = HungerLevel::High;
+            }
+        }
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.hungry = HungerLevel::Low;
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.hungry = HungerLevel::Low;
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.next.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        if HeadingLevel::TAGS.contains(&name) {
+            self.hungry = HungerLevel::Medium;
+        } else {
+            self.hungry = HungerLevel::Low;
+        }
+        self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.hungry = HungerLevel::Low;
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.next.tag_start_end(name);
+    }
+
+    fn text(&mut self, text: &str) {
+        if self.hungry == HungerLevel::Low {
+            self.next.text(text);
+        } else {
+            let text = text.trim_ascii_start();
+            if !text.is_empty() {
+                self.next.text(text);
+                self.hungry = HungerLevel::Low;
+            }
+        }
+    }
+}
+
+/// How hungry is the chomper?
+#[derive(Debug, Default, Eq, PartialEq)]
+enum HungerLevel {
+    /// Not very hungry. Allows all the things.
+    #[default]
+    Low,
+    /// Medium hungry. Allows one newline to pass.
+    Medium,
+    /// Hungriest hungry. Consumes all whitespace.
+    High,
+}
+
+/// Final accumulator for HTML.
+///
+/// This sink assumes that previous stages will have done all the necessary
+/// work of ensuring that the DOM is as well-formed as it needs to be. This
+/// sink should receive balanced tags and balanced attributes, and does nothing
+/// other than concatenate calls into a string of HTML.
+#[derive(Debug, Default)]
+pub(super) struct Accumulator {
+    /// The target string buffer.
+    inner: MarkableString,
+    /// If `Some`, the accumulator has received a `tag_attribute_start` and is
+    /// waiting for a `tag_attribute_end`.
+    in_attr: Option<bool>,
+}
+
+impl Accumulator {
+    /// Creates a new `Accumulator`.
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Emits the value separator for an attribute, if needed.
+    fn writing(&mut self) {
+        if let Some(has_value) = &mut self.in_attr
+            && !*has_value
+        {
+            self.inner.push_str(r#"=""#);
+            *has_value = true;
+        }
+    }
+}
+
+impl Markable for Accumulator {
+    #[inline]
+    fn clone_mark(&mut self, mark: &Mark) -> Mark {
+        self.inner.clone_mark(mark)
+    }
+
+    #[inline]
+    fn free_mark(&mut self, mark: Mark) {
+        self.inner.free_mark(mark);
+    }
+
+    #[inline]
+    fn mark(&mut self) -> Mark {
+        self.inner.mark()
+    }
+
+    #[inline]
+    fn with_marks<const N: usize, F: FnOnce([Option<usize>; N], &mut MarkableString) -> T, T>(
+        &mut self,
+        marks: [&Mark; N],
+        f: F,
+    ) -> T {
+        let positions = marks.map(|mark| self.inner.restore_mark(mark));
+        f(positions, &mut self.inner)
+    }
+}
+
+impl Sink for Accumulator {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.writing();
+        self.inner.push_str("-->");
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.writing();
+        self.inner.push_str("<!--");
+    }
+
+    fn entity(&mut self, value: char, raw: &str) {
+        self.writing();
+        if matches!(value, '<' | '>' | '&') || (self.in_attr.is_some() && value == '"') {
+            self.inner.push_str(raw);
+        } else {
+            self.inner.push(value);
+        }
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.inner.into_inner()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.writing();
+        self.inner.push('\n');
+    }
+
+    fn raw_html_block(&mut self, html: &str) {
+        self.writing();
+        if self.in_attr.is_some() {
+            self.inner.push_str(&strtr(html, &[("\"", "&quot;")]));
+        } else {
+            self.inner.push_str(html);
+        }
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.raw_html_block(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, _: &str) {
+        let has_value = self.in_attr.take().expect("balanced attribute");
+        if has_value {
+            self.inner.push('"');
+        }
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.inner.push(' ');
+        self.inner.push_str(name);
+        self.in_attr = Some(false);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.writing();
+        self.inner.push_str("</");
+        self.inner.push_str(name);
+        self.inner.push_str(">");
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.writing();
+        self.inner.push('<');
+        self.inner.push_str(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, _: &str) {
+        self.writing();
+        self.inner.push('>');
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.writing();
+        self.inner.push_str(text);
+    }
+}
+
+/// Implements the leading whitespace trimming rule for category links:
+///
+/// “Strip newlines from the left hand context of Category links.
+///  See T2087, T87753, T174639, T359886”
+
+#[derive(Debug)]
+pub(super) struct CategoryTrim<S: Sink> {
+    /// The trimmed whitespace buffer.
+    buffer: String,
+    /// The output.
+    next: S,
+}
+
+impl<S: Sink> CategoryTrim<S> {
+    /// Creates a new `CategoryTrim` chained to `next`.
+    #[inline]
+    pub fn new(next: S) -> Self {
+        Self {
+            buffer: <_>::default(),
+            next,
+        }
+    }
+
+    /// Clears the whitespace buffer.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+    }
+
+    /// Flushes buffered whitespace to [`Self::next`].
+    fn flush(&mut self) {
+        let mut next_text = 0;
+        for index in memchr::memchr_iter(b'\n', self.buffer.as_bytes()) {
+            if index != next_text {
+                self.next.text(&self.buffer[next_text..index]);
+            }
+            next_text = index + 1;
+            self.next.new_line();
+        }
+        if next_text != self.buffer.len() {
+            self.next.text(&self.buffer[next_text..]);
+        }
+        self.buffer.clear();
+    }
+}
+
+chainable!(CategoryTrim);
+
+impl<S: Sink> Sink for CategoryTrim<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.flush();
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.flush();
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.flush();
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(mut self) -> String {
+        self.flush();
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.buffer.push('\n');
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.flush();
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.flush();
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.flush();
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.flush();
+        self.next.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.flush();
+        self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.flush();
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.flush();
+        self.next.tag_start_end(name);
+    }
+
+    fn text(&mut self, text: &str) {
+        if !self.buffer.is_empty() && text.bytes().all(|c| c.is_ascii_whitespace()) {
+            self.buffer.push_str(text);
+        } else {
+            self.flush();
+            self.next.text(text);
+        }
+    }
+}
+
+/// Balances the DOM tree.
+#[derive(Debug)]
+pub(super) struct DomTree<S: Sink> {
+    /// The output.
+    next: S,
+    /// The stack of currently open nodes.
+    stack: Vec<Node>,
+}
+
+chainable!(DomTree);
+
+impl<S: Sink> DomTree<S> {
+    /// Returns a new `DomTree` which emits to `next`.
+    #[inline]
+    pub fn new(next: S) -> Self {
+        Self {
+            next,
+            stack: <_>::default(),
+        }
+    }
+
+    /// Returns `true` if the emitter is currently inside any table.
+    pub fn in_table(&self) -> bool {
+        self.stack
+            .iter()
+            .rev()
+            .any(|e| matches!(e, Node::Tag(name) if name == "table"))
+    }
+}
+
+impl<S: Sink> Sink for DomTree<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(mut self) -> String {
+        for e in self.stack.drain(..).rev() {
+            e.close(&mut self.next);
+        }
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.next.new_line();
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.next.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(name)) {
+            for e in self.stack.drain(pair..).rev() {
+                e.close(&mut self.next);
+            }
+        } else {
+            log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
+        }
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        // Normally, receiving a new start tag should close any tags which cause
+        // it to be in an invalid position in the DOM. This is especially
+        // important for wikitable markup because wikitable children are
+        // implicitly closed by the production of a new wikitable element.
+        // However, there is one case where elements should be allowed to be
+        // placed in an illegal position: when table-row templates get things
+        // like 'Template:Tfd' applied to them, this will try to put non-table
+        // content into the table—but this is actually desirable, because the
+        // browser will automatically foster content in this position out of the
+        // table. So, parenting-close rules are skipped if the last element is a
+        // table or tr.
+        let close_tags = !matches!(
+            self.stack.last(),
+            Some(node @ Node::Tag(last))
+            if (last == "table" || last == "tr") && *last != name && !node.can_parent(name));
+
+        if close_tags {
+            while let Some(e) = self.stack.pop_if(|e| !e.can_parent(name)) {
+                e.close(&mut self.next);
+                self.next.new_line();
+            }
+        }
+
+        if matches!(name, "td" | "th")
+            && !matches!(self.stack.last(), Some(Node::Tag(last)) if last == "tr")
+        {
+            self.tag_start_full("tr");
+            self.next.new_line();
+        }
+
+        if !VOID_TAGS.contains(name) {
+            self.stack.push(Node::Tag(name.to_owned().into()));
+        }
+        self.stack.push(Node::Attribute);
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.stack
+            .pop_if(|node| matches!(node, Node::Attribute))
+            .expect("attribute node");
+        self.next.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.next.text(text);
+    }
+}
+
+/// Marks elements containing only whitespace.
+#[derive(Debug)]
+pub(super) struct EmptyTagger<S: Sink> {
+    /// The position of the attribute list for a potentially empty element.
+    last: Option<Mark>,
+    /// The output.
+    next: S,
+}
+
+chainable!(EmptyTagger);
+
+impl<S: Sink + Markable> EmptyTagger<S> {
+    /// Creates a new `EmptyTagger` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            last: <_>::default(),
+            next,
+        }
+    }
+
+    /// Clears the empty tag mark.
+    #[inline]
+    fn clear(&mut self) {
+        if let Some(last) = self.last.take() {
+            self.next.free_mark(last);
+        }
+    }
+}
+
+impl<S: Sink + Markable> Sink for EmptyTagger<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.clear();
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.next.new_line();
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.clear();
+        self.next.tag_attribute_start(name);
+    }
+
+    fn tag_end(&mut self, name: &str) {
+        if let Some(last) = self.last.take() {
+            self.next.with_marks([&last], |[last], out| {
+                if let Some(last) = last {
+                    out.insert_str(last, r#" class="mw-empty-elt""#);
+                }
+            });
+            self.next.free_mark(last);
+        }
+        self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.clear();
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        if matches!(name, "p" | "li" | "tr") {
+            debug_assert!(self.last.is_none());
+            self.last = Some(self.next.mark());
+        }
+        self.next.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        if text.bytes().any(|c| !c.is_ascii_whitespace()) {
+            self.clear();
+        }
+        self.next.text(text);
+    }
+}
 
 /// Implicit paragraphs (grafs) emitter. Implicit grafs may be runs of plain
 /// text, which will be wrapped by `<p>`, or runs of plain text prefixed by a
@@ -39,12 +857,15 @@ use std::borrow::Cow;
 /// `Parser\BlockLevelPass` *and* `Tidy\RemexCompatMunger` (or, in Parsoid,
 /// `DOM\Processors\PWrap`), presumably just to make it nearly impossible for
 /// any one developer to understand how anything works.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "should care, don’t care. hate this code"
 )]
-pub(super) struct GrafEmitter {
+pub(super) struct GrafEmitter<S: Sink + Markable> {
+    /// The output.
+    next: S,
+
     // State for a single line:
     /// If true, the line contains an end tag which triggers a graf state
     /// transition.
@@ -53,7 +874,7 @@ pub(super) struct GrafEmitter {
     /// not.
     force_content: bool,
     /// The start position of the current line of the document.
-    line_start: usize,
+    line_start: Mark,
     /// If true, the line contains a start tag which triggers a graf state
     /// transition.
     open_match: bool,
@@ -74,139 +895,68 @@ pub(super) struct GrafEmitter {
     /// If true, the document is currently inside a graf block.
     in_block: bool,
     /// If non-zero, the document is currently inside a Wikitext list.
-    in_list: usize,
-    /// If true, the document is currently inside a `<pre>`.
+    in_list: u8,
+    /// If true, the document is currently inside an explicitly defined `<pre>`.
     in_pre: bool,
     /// The current DOM depth.
-    level: usize,
+    level: u8,
     /// The next graf to emit.
     pending: GrafPendingState,
 }
 
-impl GrafEmitter {
-    /// Advance line start positions after `at` by `delta`.
-    pub(super) fn advance(&mut self, at: usize, delta: usize) {
-        if self.line_start > at {
-            self.line_start += delta;
+impl<S: Sink + Markable> GrafEmitter<S> {
+    /// Creates a new `GrafEmitter` chained to `next`.
+    pub fn new(mut next: S) -> Self {
+        let line_start = next.mark();
+        Self {
+            next,
+            close_match: <_>::default(),
+            force_content: <_>::default(),
+            line_start,
+            open_match: <_>::default(),
+            pre_close_match: <_>::default(),
+            pre_open_match: <_>::default(),
+            wrap_points: <_>::default(),
+            blockquote_roots: <_>::default(),
+            current: <_>::default(),
+            in_block: <_>::default(),
+            in_list: <_>::default(),
+            in_pre: <_>::default(),
+            level: <_>::default(),
+            pending: <_>::default(),
         }
-        for root in &mut self.blockquote_roots {
-            if root.start > at {
-                root.start += delta;
-            }
-        }
-        for point in &mut self.wrap_points {
-            if point.start > at {
-                point.start += delta;
-            }
-            if let Some(end) = &mut point.end
-                && *end > at
-            {
-                *end += delta;
-            }
-        }
-    }
-
-    /// Updates the graf emitter state for the given end tag.
-    #[inline]
-    pub(super) fn after_end_tag(&mut self, out: &str, name_lower: &str) {
-        if !tags::PHRASING_TAGS.contains(name_lower) {
-            self.level -= 1;
-            // After transitioning back to a blockquote root or document root,
-            // the next content is unconditionally graf-wrapped. (This is the
-            // `RemexCompatMunger` half of this bullshit)
-            self.start_wrap(out.len());
-        }
-    }
-
-    /// Updates the graf emitter state for the given start tag.
-    pub(super) fn after_start_tag(&mut self, out: &str, name_lower: &str) {
-        self.open_match |= BLOCK_TAG.contains(name_lower) || ALWAYS_TAG.contains(name_lower);
-        self.close_match |= ANTI_BLOCK_TAG.contains(name_lower) || NEVER_TAG.contains(name_lower);
-
-        if name_lower == "blockquote" {
-            self.blockquote_roots.push(BlockquoteRoot {
-                level: self.level,
-                start: out.len(),
-            });
-            // Any transition into a blockquote needs to trigger a line
-            // transition because all text in a blockquote is unconditionally
-            // graf-wrapped. (This is the `RemexCompatMunger` half of this
-            // bullshit)
-            self.start_wrap(out.len());
-        } else if name_lower == "pre" {
-            self.in_pre = true;
-            self.pre_open_match = true;
-        }
-    }
-
-    /// Updates the graf emitter state for the given end tag.
-    pub(super) fn before_end_tag(&mut self, out: &str, name_lower: &str) {
-        // Any transition out of a blockquote needs to trigger a line transition
-        // because all text in a blockquote is unconditionally graf-wrapped.
-        // (This is the `RemexCompatMunger` half of this bullshit)
-        if name_lower == "blockquote" {
-            self.end_wrap(out.len());
-            self.blockquote_roots
-                .pop_if(|root| self.level == root.level)
-                .expect("blockquote roots stack corruption");
-        } else if name_lower == "pre" {
-            self.pre_close_match = true;
-        }
-
-        self.open_match |= ANTI_BLOCK_TAG.contains(name_lower) || ALWAYS_TAG.contains(name_lower);
-        self.close_match |= BLOCK_TAG.contains(name_lower) || NEVER_TAG.contains(name_lower);
-    }
-
-    /// Updates the graf emitter state for the given start tag.
-    #[inline]
-    pub(super) fn before_start_tag(&mut self, out: &str, name_lower: &str) {
-        // Any transition from a document root or blockquote root to
-        // non-phrasing content must trigger an unconditional graf-wrap of any
-        // content on the line prior to the transition. (This is the
-        // `RemexCompatMunger` half of this bullshit)
-        if !tags::PHRASING_TAGS.contains(name_lower) {
-            self.end_wrap(out.len());
-            self.level += 1;
-        }
-    }
-
-    /// Updates the graf emitter state for the end of a block strip marker.
-    #[inline]
-    pub(super) fn block_end(&mut self, out: &str) {
-        self.close_match = true;
-        self.level -= 1;
-        self.start_wrap(out.len());
-    }
-
-    /// Updates the graf emitter state for the start of a block strip marker.
-    #[inline]
-    pub(super) fn block_start(&mut self, out: &str) {
-        self.open_match = true;
-        self.end_wrap(out.len());
-        self.level += 1;
     }
 
     /// Emits the end of a graf to the output.
-    fn close(&mut self, out: &mut String, index: Option<usize>) {
+    fn close(&mut self, line_start: bool) {
         self.in_pre = false;
-
         let tag = match core::mem::take(&mut self.current) {
             GrafState::None => return,
             GrafState::Graf => "</p>\n",
             GrafState::Pre => "</pre>\n",
         };
 
-        if let Some(index) = index {
-            out.insert_str(index, tag);
+        if line_start {
+            self.next.with_marks([&self.line_start], |[pos], out| {
+                if let Some(pos) = pos {
+                    out.insert_str(pos, tag);
+                }
+            });
         } else {
-            *out += tag;
+            self.next.raw_html_inline(tag);
         }
     }
 
     /// Finishes processing of a line of source text.
-    pub(super) fn end_line(&mut self, out: &mut String) {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "lots of comments and a bad algorithm"
+    )]
+    pub(super) fn end_line(&mut self, last_line: bool) {
         // I’m doing the bad thing of writing some “what” comments in here
         // because this algorithm is incoherent
+
+        let end = self.next.mark();
 
         if self.open_match || self.close_match {
             // This line had a state-changing tag somewhere inside, which means
@@ -216,14 +966,14 @@ impl GrafEmitter {
             // This is the `RemexCompatMunger` half of this bullshit which
             // inserts grafs around lines of text that are directly inside the
             // document root or a blockquote
-            self.p_wrap(out);
+            self.p_wrap();
 
             if !self.in_pre || self.pre_open_match {
                 // If this line has a `<pre>` tag, or we were not already in a
                 // preformatted context, then this line should not be included
                 // in any previous graf, so finish any graf from the previous
                 // line(s)
-                self.close(out, Some(self.line_start));
+                self.close(true);
             }
 
             // Now, if an explicit `<pre>` was started but not ended in this
@@ -240,14 +990,18 @@ impl GrafEmitter {
             // to be part of a graf-suppressing block
             self.in_block = !self.close_match;
         } else if self.in_list == 0 && !self.in_block && !self.in_pre {
-            // If this line was not inside a graf-suppressing block or `<pre>`
-            // element, maybe it’s time to emit something!
+            // If this line was not inside a graf-suppressing block or explicit
+            // `<pre>` element, maybe it’s time to emit something!
             let has_content = self.force_content
-                || out[self.line_start..].contains(|c: char| !c.is_ascii_whitespace());
+                || self.next.with_marks([&self.line_start], |[pos], out| {
+                    pos.is_some_and(|pos| out[pos..].bytes().any(|c| !c.is_ascii_whitespace()))
+                });
 
             if self.blockquote_roots.is_empty()
                 && (self.current == GrafState::Pre || has_content)
-                && out[self.line_start..].starts_with(' ')
+                && self.next.with_marks([&self.line_start], |[pos], out| {
+                    pos.is_some_and(|pos| out[pos..].starts_with(' '))
+                })
             {
                 // So long as this is not a line inside a blockquote—because
                 // those are apparently special—this line is either a
@@ -256,14 +1010,22 @@ impl GrafEmitter {
                 if self.current == GrafState::Pre {
                     // The space prefix must be removed or the preformatted text
                     // will be improperly indented in the output
-                    out.remove(self.line_start);
+                    self.next.with_marks([&self.line_start], |[pos], out| {
+                        if let Some(pos) = pos {
+                            out.remove(pos);
+                        }
+                    });
                 } else {
                     // The tags are emitted backwards because this is an
                     // insertion; this will either be `</p><pre>` or `<pre>`.
                     // As in the other branch, the space prefix is removed, but
                     // here it is removed by overwriting
-                    out.replace_range(self.line_start..=self.line_start, "<pre>");
-                    self.close(out, Some(self.line_start));
+                    self.next.with_marks([&self.line_start], |[pos], out| {
+                        if let Some(pos) = pos {
+                            out.replace_range(pos..=pos, "<pre>");
+                        }
+                    });
+                    self.close(true);
                     self.current = GrafState::Pre;
 
                     // Having just performed a state transition, there can be
@@ -280,8 +1042,12 @@ impl GrafEmitter {
                     // emitted backwards because it is an insertion; this will
                     // either be `<p><br>` or `</p><p><br>`, and then we will be
                     // definitively inside of a graf
-                    out.insert_str(self.line_start, "<br>");
-                    out.insert_str(self.line_start, self.pending.as_ref());
+                    self.next.with_marks([&self.line_start], |[pos], out| {
+                        if let Some(pos) = pos {
+                            out.insert_str(pos, "<br>");
+                            out.insert_str(pos, self.pending.as_ref());
+                        }
+                    });
                     self.pending = GrafPendingState::None;
                     self.current = GrafState::Graf;
                 } else if self.current != GrafState::Graf {
@@ -289,7 +1055,7 @@ impl GrafEmitter {
                     // a pending graf, since the next line may be a continuation
                     // of a graf or it may be a line containing state-changing
                     // tags
-                    self.close(out, Some(self.line_start));
+                    self.close(true);
                     self.pending = GrafPendingState::Graf;
                 } else {
                     // An empty line when already in a graf means to transition
@@ -303,7 +1069,11 @@ impl GrafEmitter {
                 // The line was not empty, contained only phrasing content, and
                 // we were already in a pending graf state, so this was a graf
                 // line, and we are now in a graf
-                out.insert_str(self.line_start, self.pending.as_ref());
+                self.next.with_marks([&self.line_start], |[pos], out| {
+                    if let Some(pos) = pos {
+                        out.insert_str(pos, self.pending.as_ref());
+                    }
+                });
                 self.pending = GrafPendingState::None;
                 self.current = GrafState::Graf;
             } else if self.current != GrafState::Graf {
@@ -312,79 +1082,106 @@ impl GrafEmitter {
                 // transitioned from a non-graf or preformatted graf to a text
                 // graf. These tags are emitted backwards because it is an
                 // insertion; this will either be `<p>` or `</pre><p>`
-                out.insert_str(self.line_start, "<p>");
-                self.close(out, Some(self.line_start));
+                self.next.with_marks([&self.line_start], |[pos], out| {
+                    if let Some(pos) = pos {
+                        out.insert_str(pos, "<p>");
+                    }
+                });
+                self.close(true);
                 self.current = GrafState::Graf;
             }
         }
 
-        // This is the point where the “buffered” text would be emitted, so
-        // anything before now needs to be `insert`, and anything after here
-        // needs to be `append`
-        if self.pending == GrafPendingState::None && self.in_list == 0 {
-            out.push('\n');
+        // This is the point where the “buffered” text would be emitted. Since
+        // there is no buffering here, the text already exists, and so it is
+        // instead necessary to remove text that would have *not* been inserted
+        if self.pending == GrafPendingState::None {
+            if !last_line || self.current != GrafState::None {
+                self.next.new_line();
+            }
+        } else {
+            self.next
+                .with_marks([&self.line_start, &end], |[pos, end], out| {
+                    if let (Some(pos), Some(end)) = (pos, end) {
+                        out.replace_range(pos..end, "");
+                    }
+                });
         }
 
-        self.line_start = out.len();
+        self.next.free_mark(end);
+        let old = core::mem::replace(&mut self.line_start, self.next.mark());
+        self.next.free_mark(old);
         self.force_content = false;
         self.open_match = false;
         self.close_match = false;
         self.pre_open_match = false;
         self.pre_close_match = false;
-        debug_assert!(
-            self.wrap_points.is_empty(),
-            "did not drain wrappers somehow"
-        );
+        if !self.wrap_points.is_empty() {
+            if !last_line {
+                log::warn!("did not drain wrappers somehow");
+            }
+            for point in self.wrap_points.drain(..) {
+                self.next.free_mark(point.start);
+                if let Some(end) = point.end {
+                    self.next.free_mark(end);
+                }
+            }
+        }
     }
 
     /// Restores normal processing of lines.
     #[inline]
-    pub(super) fn end_list(&mut self, out: &mut String) {
+    pub(super) fn end_list(&mut self) {
         self.pending = GrafPendingState::None;
         self.in_list -= 1;
         if self.in_list == 0 {
-            out.push('\n');
-            self.line_start = out.len();
+            let old = core::mem::replace(&mut self.line_start, self.next.mark());
+            self.next.free_mark(old);
+            self.close_match = true;
         }
     }
 
     /// Marks the end of a p-wrapper.
-    fn end_wrap(&mut self, end: usize) {
+    fn end_wrap(&mut self) {
+        if self.in_list != 0 {
+            return;
+        }
+
         let start = if self.level == 0 {
-            self.line_start
+            &self.line_start
         } else if let Some(root) = self.blockquote_roots.last()
             && root.level == self.level
         {
-            root.start.max(self.line_start)
+            let marks = [&root.start, &self.line_start];
+            let which = self.next.with_marks(marks, |[a, b], _| usize::from(a < b));
+            marks[which]
         } else {
             // Non-phrasing element in some intermediate root which is not the
             // document root nor the current blockquote root
             return;
         };
 
+        let end = self.next.mark();
         if let Some(last) = self.wrap_points.last_mut() {
-            if last.start == end {
+            if self
+                .next
+                .with_marks([&last.start, &end], |[a, b], _| a == b)
+            {
                 // Two non-phrasing elements were directly adjacent
-                self.wrap_points.pop();
+                let last = self.wrap_points.pop().unwrap();
+                self.next.free_mark(last.start);
+                self.next.free_mark(end);
             } else {
                 debug_assert!(last.end.is_none());
-                last.end.get_or_insert(end);
+                last.end = Some(end);
             }
-        } else if start != end {
+        } else if self.next.with_marks([start, &end], |[a, b], _| a != b) {
             // Non-phrasing element, not at the start of the root
             self.wrap_points.push(GrafWrapPoint {
-                start,
+                start: self.next.clone_mark(start),
                 end: Some(end),
             });
         }
-    }
-
-    /// Finishes processing the document.
-    #[inline]
-    pub(super) fn finish(mut self, out: &mut String) {
-        debug_assert_eq!(self.level, 0);
-        self.end_line(out);
-        self.close(out, Some(self.line_start));
     }
 
     /// Forces the emitter to act as if content was emitted.
@@ -395,37 +1192,54 @@ impl GrafEmitter {
 
     /// Wraps bare plain text content within a line also containing non-phrasing
     /// elements into grafs.
-    fn p_wrap(&mut self, out: &mut String) {
+    fn p_wrap(&mut self) {
         if let Some(last) = self.wrap_points.last_mut() {
-            if out[last.start..].bytes().all(|c| c.is_ascii_whitespace()) {
+            if self.next.with_marks([&last.start], |[start], out| {
+                start.is_some_and(|start| out[start..].bytes().all(|c| c.is_ascii_whitespace()))
+            }) {
                 // A non-phrasing element was at the end of the line
-                self.wrap_points.pop();
+                let last = self.wrap_points.pop().unwrap();
+                self.next.free_mark(last.start);
             } else {
-                last.end.get_or_insert(out.len());
+                last.end.get_or_insert_with(|| self.next.mark());
             }
         }
 
         // Because the content is being inserted rather than appended, the
         // order of operations is backwards
         for GrafWrapPoint { start, end } in self.wrap_points.drain(..).rev() {
-            out.insert_str(end.unwrap(), "</p>");
-            out.insert_str(start, "<p>");
+            let end = end.unwrap();
+            self.next.with_marks([&start, &end], |[start, end], out| {
+                if let (Some(start), Some(end)) = (start, end)
+                    && out[start..end].bytes().any(|c| !c.is_ascii_whitespace())
+                {
+                    out.insert_str(end, "</p>");
+                    out.insert_str(start, "<p>");
+                }
+            });
+            self.next.free_mark(start);
+            self.next.free_mark(end);
         }
     }
 
     /// Inhibits normal processing of lines.
     #[inline]
-    pub(super) fn start_list(&mut self, out: &mut String) {
-        self.close(out, None);
+    pub(super) fn start_list(&mut self) {
+        self.close(false);
         self.pending = GrafPendingState::None;
         self.in_list += 1;
     }
 
     /// Marks the start of a possible p-wrapper.
-    fn start_wrap(&mut self, start: usize) {
+    fn start_wrap(&mut self) {
+        if self.in_list != 0 {
+            return;
+        }
+
         if self.level == 0
             || matches!(self.blockquote_roots.last(), Some(last) if last.level == self.level)
         {
+            let start = self.next.mark();
             debug_assert!(matches!(
                 self.wrap_points.last(),
                 None | Some(GrafWrapPoint { end: Some(_), .. })
@@ -435,14 +1249,145 @@ impl GrafEmitter {
     }
 }
 
+chainable!(GrafEmitter);
+
+impl<S: Sink + Markable> Sink for GrafEmitter<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.next.entity(value, raw);
+    }
+
+    fn finish(mut self) -> String {
+        self.end_line(true);
+        self.end_wrap();
+        self.close(true);
+        debug_assert_eq!(self.level, 0);
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.end_line(false);
+    }
+
+    fn raw_html_block(&mut self, html: &str) {
+        self.open_match = true;
+        self.end_wrap();
+        self.next.raw_html_block(html);
+        self.close_match = true;
+        self.start_wrap();
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.force_content = true;
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.next.tag_attribute_start(name);
+    }
+
+    fn tag_end(&mut self, name: &str) {
+        // Any transition out of a blockquote needs to trigger a line transition
+        // because all text in a blockquote is unconditionally graf-wrapped.
+        // (This is the `RemexCompatMunger` half of this bullshit)
+        if name == "blockquote" {
+            self.end_wrap();
+            self.blockquote_roots
+                .pop_if(|root| self.level == root.level)
+                .expect("blockquote roots stack corruption");
+        } else if name == "pre" {
+            self.pre_close_match = true;
+        }
+        self.open_match |= ANTI_BLOCK_TAG.contains(name) || ALWAYS_TAG.contains(name);
+        self.close_match |= BLOCK_TAG.contains(name) || NEVER_TAG.contains(name);
+
+        // Emitting before `end_wrap` will cause that to try to wrap
+        // `</blockquote>`
+        self.next.tag_end(name);
+
+        if matches!(name, "dl" | "ol" | "ul") {
+            self.end_list();
+        } else if !PHRASING_TAGS.contains(name) {
+            self.level -= 1;
+            // After transitioning back to a blockquote root or document root,
+            // the next content is unconditionally graf-wrapped. (This is the
+            // `RemexCompatMunger` half of this bullshit)
+            self.start_wrap();
+        }
+    }
+
+    fn tag_start(&mut self, name: &str) {
+        // Any transition from a document root or blockquote root to
+        // non-phrasing content must trigger an unconditional graf-wrap of any
+        // content on the line prior to the transition. (This is the
+        // `RemexCompatMunger` half of this bullshit)
+        if matches!(name, "dl" | "ol" | "ul") {
+            self.start_list();
+        } else if !PHRASING_TAGS.contains(name) {
+            self.end_wrap();
+            self.level += 1;
+        }
+        self.next.tag_start(name);
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        self.next.tag_start_end(name);
+
+        self.open_match |= BLOCK_TAG.contains(name) || ALWAYS_TAG.contains(name);
+        self.close_match |= ANTI_BLOCK_TAG.contains(name) || NEVER_TAG.contains(name);
+
+        if name == "blockquote" {
+            self.blockquote_roots.push(BlockquoteRoot {
+                level: self.level,
+                start: self.next.mark(),
+            });
+            // Any transition into a blockquote needs to trigger a line
+            // transition because all text in a blockquote is unconditionally
+            // graf-wrapped. (This is the `RemexCompatMunger` half of this
+            // bullshit)
+            self.start_wrap();
+        } else if name == "pre" {
+            self.in_pre = true;
+            self.pre_open_match = true;
+        } else if self.in_list == 0 && !PHRASING_TAGS.contains(name) && VOID_TAGS.contains(name) {
+            // <wbr> is both phrasing and void
+            self.level -= 1;
+            self.start_wrap();
+        }
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.next.text(text);
+    }
+}
+
 /// A record of the position of an unclosed `<blockquote>` element in a
 /// document.
 #[derive(Debug)]
 struct BlockquoteRoot {
     /// The DOM depth of the blockquote element.
-    level: usize,
+    level: u8,
     /// The position of the blockquote element in the output.
-    start: usize,
+    start: Mark,
 }
 
 /// Graf emitter pending output state.
@@ -484,12 +1429,12 @@ enum GrafState {
 }
 
 /// A record of a possible `<p>` wrapper.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 struct GrafWrapPoint {
     /// Insert `<p>` here.
-    start: usize,
+    start: Mark,
     /// Insert `</p>` here.
-    end: Option<usize>,
+    end: Option<Mark>,
 }
 
 /// HTML tags which start a new block when they are encountered as either a
@@ -516,13 +1461,15 @@ static NEVER_TAG: phf::Set<&str> = phf::phf_set! {
 #[derive(Debug, Default)]
 pub(super) struct ListEmitter {
     /// The stack of currently open list items.
-    pub(super) stack: Vec<ListKind>,
+    stack: Vec<ListKind>,
 }
 
 impl ListEmitter {
     /// Emits HTML to match the new state given by `bullets`.
-    pub fn emit<W: fmt::Write + ?Sized>(&mut self, out: &mut W, bullets: &str) -> fmt::Result {
+    pub fn emit<S: Sink + ?Sized>(&mut self, next: &mut S, bullets: &str) {
         let bullets = bullets.as_bytes();
+
+        let last = self.stack.len();
 
         // There are three possible states here:
         //
@@ -538,33 +1485,85 @@ impl ListEmitter {
             .count();
 
         for item in self.stack.drain(common_end..).rev() {
-            item.end(out, true)?;
+            Self::end(next, item, true);
         }
 
         if common_end != 0 && common_end == self.stack.len() && common_end == bullets.len() {
             // Here we are either transitioning dl/dt or li/li
             let old = &mut self.stack[common_end - 1];
             let new = ListKind::from(bullets[common_end - 1]);
-            old.end(out, false)?;
-            out.write_char('\n')?;
-            new.start(out, false)?;
+            Self::end(next, *old, false);
+            next.new_line();
+            Self::start(next, new, false);
             *old = new;
         }
 
-        for item in bullets[common_end..].iter().copied().map(ListKind::from) {
-            item.start(out, true)?;
-            self.stack.push(item);
+        if last != 0 && bullets.len() > common_end {
+            next.new_line();
         }
 
-        Ok(())
+        for item in bullets[common_end..].iter().copied().map(ListKind::from) {
+            Self::start(next, item, true);
+            self.stack.push(item);
+        }
+    }
+
+    /// Emits HTML for the end of this kind of list item.
+    fn end<S: Sink + ?Sized>(next: &mut S, item: ListKind, end_of_list: bool) {
+        match item {
+            ListKind::Detail | ListKind::Term => {
+                next.tag_end(item.tag_name());
+                if end_of_list {
+                    next.tag_end("dl");
+                }
+            }
+            ListKind::Ordered | ListKind::Unordered => {
+                next.tag_end("li");
+                if end_of_list {
+                    next.tag_end(item.tag_name());
+                }
+            }
+        }
     }
 
     /// Emits HTML to finish any incomplete list.
-    pub fn finish<W: fmt::Write + ?Sized>(&mut self, out: &mut W) -> fmt::Result {
+    pub fn finish<S: Sink + ?Sized>(&mut self, next: &mut S) {
         for item in self.stack.drain(..).rev() {
-            item.end(out, true)?;
+            Self::end(next, item, true);
         }
-        Ok(())
+    }
+
+    /// Returns `true` if there are no list items in the stack.
+    pub fn is_empty(&self) -> bool {
+        self.stack.is_empty()
+    }
+
+    /// Emits HTML for the start of this kind of list item.
+    fn start<S: Sink + ?Sized>(next: &mut S, item: ListKind, start_of_list: bool) {
+        match item {
+            ListKind::Detail | ListKind::Term => {
+                if start_of_list {
+                    next.tag_start_full("dl");
+                }
+                next.tag_start_full(item.tag_name());
+            }
+            ListKind::Ordered | ListKind::Unordered => {
+                if start_of_list {
+                    next.tag_start_full(item.tag_name());
+                }
+                next.tag_start_full("li");
+            }
+        }
+    }
+
+    /// Returns the tag name of the list item on the top of the stack, or
+    /// `None` if there are no current list items.
+    pub fn tag_name(&self) -> Option<&str> {
+        self.stack.last().map(|kind| match kind {
+            ListKind::Ordered | ListKind::Unordered => "li",
+            ListKind::Term => "dt",
+            ListKind::Detail => "dd",
+        })
     }
 }
 
@@ -601,25 +1600,6 @@ pub(super) enum ListKind {
 }
 
 impl ListKind {
-    /// Emits HTML for the end of this kind of list item.
-    fn end<W: fmt::Write + ?Sized>(self, out: &mut W, end_of_list: bool) -> fmt::Result {
-        match self {
-            ListKind::Detail | ListKind::Term => {
-                write!(out, "</{}>", self.tag_name())?;
-                if end_of_list {
-                    out.write_str("</dl>")?;
-                }
-            }
-            ListKind::Ordered | ListKind::Unordered => {
-                out.write_str("</li>")?;
-                if end_of_list {
-                    write!(out, "</{}>", self.tag_name())?;
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Returns true if `self` is a definition list item.
     #[inline]
     fn is_definition_list(self) -> bool {
@@ -633,25 +1613,6 @@ impl ListKind {
             ListKind::Ordered | ListKind::Unordered => self == other,
             ListKind::Term | ListKind::Detail => other.is_definition_list(),
         }
-    }
-
-    /// Emits HTML for the start of this kind of list item.
-    fn start<W: fmt::Write + ?Sized>(self, out: &mut W, start_of_list: bool) -> fmt::Result {
-        match self {
-            ListKind::Detail | ListKind::Term => {
-                if start_of_list {
-                    out.write_str("<dl>")?;
-                }
-                write!(out, "<{}>", self.tag_name())?;
-            }
-            ListKind::Ordered | ListKind::Unordered => {
-                if start_of_list {
-                    write!(out, "<{}>", self.tag_name())?;
-                }
-                out.write_str("<li>")?;
-            }
-        }
-        Ok(())
     }
 
     /// The HTML tag for this kind of list item.
@@ -678,6 +1639,222 @@ impl From<u8> for ListKind {
     }
 }
 
+/// A bookmarked position in a string.
+#[derive(Debug)]
+pub(super) struct Mark(u16);
+
+/// A string wrapper where positions can be bookmarked and retrieved later. The
+/// bookmarked positions are automatically adjusted in response to mutations to
+/// the underlying string. To reduce memory use, the size of the underlying
+/// string is limited to [`i32::MAX`] bytes, and there can be no more than
+/// [`u16::MAX`]`- 1` bookmarks.
+///
+/// You may be asking yourself: boy, this sure seems janky. Well, that’s not a
+/// question. But I understand what you mean. Obviously the ‘pure’ way to do
+/// this is to have any of the earlier handlers buffer outputs until they have
+/// everything they need. Very good, such computer science, much purity. But
+/// it is more efficient (citation needed) to allow everything to flow down to
+/// the single final String allocation instead of having a bunch of intermediate
+/// buffers.
+///
+/// Now you might say something like, “well, you know, you could just use a bump
+/// allocator and then all your buffers end up in a contiguous allocation and
+/// also computers are fast and so it is like not much of a big deal”. And then
+/// I would say, well, the code that injected stuff into strings was already
+/// written that way, and this was easier than rewriting everything right now.
+#[derive(Clone, Debug)]
+pub(super) struct MarkableString {
+    /// The underlying string buffer.
+    inner: String,
+    /// The next free mark index, or [`Self::NO_FREE`] if [`marks`](Self::marks)
+    /// needs to be resized.
+    next_free: u16,
+    /// An packed unordered list of marked positions interleaved with a free
+    /// list.
+    marks: Vec<u32>,
+}
+
+impl MarkableString {
+    /// Flag for marks that are actually free list entries.
+    const FREE_BIT: u32 = 0x8000_0000;
+    /// Sentinel value for marks which were invalidated by range deletion.
+    const INVALID: u32 = i32::MAX as u32;
+    /// Marker for the end of the free list.
+    const NO_FREE: u16 = u16::MAX;
+
+    /// Updates the positions of marks above `start`
+    fn adjust_marks(&mut self, start: u32, delta: i32) {
+        let marks = self
+            .marks
+            .iter_mut()
+            .rev()
+            .filter(|&&mut pos| pos & Self::FREE_BIT == 0 && pos > start);
+
+        for pos in marks {
+            *pos = pos.checked_add_signed(delta).unwrap_or(Self::INVALID);
+        }
+    }
+
+    /// Duplicates a mark.
+    #[inline]
+    pub fn clone_mark(&mut self, mark: &Mark) -> Mark {
+        if let Some(&pos) = self.marks.get(usize::from(mark.0)) {
+            self.insert_mark(pos)
+        } else {
+            Mark(Self::NO_FREE)
+        }
+    }
+
+    /// Releases the given mark to the free pool.
+    // TODO: It is bad that this has to be done manually, marks will leak!
+    #[inline]
+    #[expect(clippy::needless_pass_by_value, reason = "this is a destructor")]
+    pub fn free_mark(&mut self, mark: Mark) {
+        self.marks[usize::from(mark.0)] = Self::FREE_BIT | u32::from(self.next_free);
+        self.next_free = mark.0;
+    }
+
+    /// Inserts a mark at the given position `pos`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "free list entries only want the low word"
+    )]
+    fn insert_mark(&mut self, pos: u32) -> Mark {
+        if self.next_free == Self::NO_FREE {
+            let mark = Mark(u16::try_from(self.marks.len()).unwrap());
+            assert!(mark.0 < Self::NO_FREE, "too many marks");
+            self.marks.push(pos);
+            mark
+        } else {
+            let mark = Mark(self.next_free);
+            let slot = &mut self.marks[usize::from(self.next_free)];
+            debug_assert!(*slot & Self::FREE_BIT != 0);
+            self.next_free = *slot as u16;
+            *slot = pos;
+            mark
+        }
+    }
+
+    /// Inserts `string` at byte position `idx`.
+    #[inline]
+    pub fn insert_str(&mut self, idx: usize, string: &str) {
+        if string.is_empty() {
+            return;
+        }
+        self.inner.insert_str(idx, string);
+        let delta = i32::try_from(string.len()).unwrap();
+        self.adjust_marks(u32::try_from(idx).unwrap(), delta);
+    }
+
+    /// Returns the underlying `String`, consuming this object.
+    #[inline]
+    #[must_use]
+    pub fn into_inner(self) -> String {
+        self.inner
+    }
+
+    /// Returns a new mark corresponding to the current length of the string.
+    #[must_use]
+    pub fn mark(&mut self) -> Mark {
+        let pos = u32::try_from(self.inner.len()).unwrap();
+        self.insert_mark(pos)
+    }
+
+    /// Appends `ch` to the string.
+    #[inline]
+    pub fn push(&mut self, ch: char) {
+        self.inner.push(ch);
+    }
+
+    /// Appends `string` to the string.
+    #[inline]
+    pub fn push_str(&mut self, string: &str) {
+        self.inner.push_str(string);
+    }
+
+    /// Replaces the `range` of this string with `replace_with`.
+    pub fn replace_range<R: core::ops::RangeBounds<usize>>(
+        &mut self,
+        range: R,
+        replace_with: &str,
+    ) {
+        let at = match range.start_bound() {
+            core::ops::Bound::Excluded(&start) => start + 1,
+            core::ops::Bound::Included(&start) => start,
+            core::ops::Bound::Unbounded => 0,
+        };
+
+        let before = self.inner.len();
+        self.inner.replace_range(range, replace_with);
+        // TODO: Negative deltas destroy marks in the range.
+        let delta = self
+            .inner
+            .len()
+            .checked_signed_diff(before)
+            .expect("isize-sized delta");
+        if delta != 0 {
+            self.adjust_marks(u32::try_from(at).unwrap(), i32::try_from(delta).unwrap());
+        }
+    }
+
+    /// Removes one character at `idx`.
+    #[inline]
+    pub fn remove(&mut self, idx: usize) -> char {
+        let c = self.inner.remove(idx);
+        self.adjust_marks(u32::try_from(idx).unwrap(), -1);
+        c
+    }
+
+    /// Returns the byte position of the given `mark` in the string, or
+    /// `None` if the bookmarked position was erased by [`Self::remove`] or
+    /// [`Self::replace_range`].
+    pub fn restore_mark(&self, mark: &Mark) -> Option<usize> {
+        self.marks.get(usize::from(mark.0)).and_then(|&pos| {
+            assert!(pos & Self::FREE_BIT == 0, "mark use-after-free");
+            (pos != Self::INVALID).then_some(pos as usize)
+        })
+    }
+}
+
+impl Default for MarkableString {
+    fn default() -> Self {
+        Self {
+            inner: <_>::default(),
+            next_free: Self::NO_FREE,
+            marks: <_>::default(),
+        }
+    }
+}
+
+impl<I> core::ops::Index<I> for MarkableString
+where
+    I: core::slice::SliceIndex<str>,
+{
+    type Output = <I as core::slice::SliceIndex<str>>::Output;
+
+    #[inline]
+    fn index(&self, index: I) -> &Self::Output {
+        self.inner.index(index)
+    }
+}
+
+impl fmt::Write for MarkableString {
+    #[inline]
+    fn write_char(&mut self, c: char) -> fmt::Result {
+        self.inner.write_char(c)
+    }
+
+    #[inline]
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
+        self.inner.write_fmt(args)
+    }
+
+    #[inline]
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.inner.write_str(s)
+    }
+}
+
 /// Collects an outline entry to be emitted to the table of contents.
 ///
 /// Because MediaWiki allows both Wikitext headings and HTML headings to
@@ -687,10 +1864,229 @@ impl From<u8> for ListKind {
 ///
 /// This implementation tries to avoid redoing work by taking already-processed
 /// HTML directly from the corresponding processed document HTML.
+#[derive(Debug)]
+pub(super) struct OutlineEmitter<S: Sink + Markable> {
+    /// The output.
+    next: S,
+    /// TODO: Uh-oh! This isn’t supposed to be here.
+    outline: Outline,
+    /// The currently processing heading.
+    state: OutlineEmitterState,
+}
+
+impl<S: Sink + Markable> OutlineEmitter<S> {
+    /// The list of tags allowed in outlines.
+    ///
+    /// This list comes from Parsoid `Wt2Html\DOM\Handlers\Headings`.
+    const ALLOWED_TAGS: phf::Set<&'static str> = phf::phf_set! {
+        "b", "bdi", "i", "q", "s", "span", "strike", "sub", "sup"
+    };
+
+    /// Creates a new `OutlineEmitter` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            next,
+            outline: <_>::default(),
+            state: <_>::default(),
+        }
+    }
+
+    /// Finishes creating an outline entry, inserting to the global outline and
+    /// adjusting ID attributes if necessary.
+    fn finalize_entry(&mut self, level: HeadingLevel) {
+        const PREFIX: &str = r#" id=""#;
+        const SUFFIX: &str = r#"""#;
+
+        debug_assert_eq!(Some(level), self.state.tag);
+        debug_assert!(self.state.stack.is_empty());
+
+        let state = core::mem::take(&mut self.state);
+        match state.id {
+            OutlineAnchor::Undefined => unreachable!(),
+            OutlineAnchor::Explicit(start, end) => {
+                let end = end.unwrap_or_else(|| self.next.mark());
+                self.next.with_marks([&start, &end], |[start, end], out| {
+                    let (Some(start), Some(end)) = (start, end) else {
+                        return;
+                    };
+                    let value = decode_html(&out[PREFIX.len()..end - SUFFIX.len()]);
+                    if let Some(id) = self.outline.push(level, state.html, value.into_owned()) {
+                        let id = html_escape::encode_double_quoted_attribute(id);
+                        out.replace_range(start..end, &format!("{PREFIX}{id}{SUFFIX}"));
+                    }
+                });
+                self.next.free_mark(start);
+                self.next.free_mark(end);
+            }
+            OutlineAnchor::Implicit(pos, id) => {
+                let id = anchor_encode(&id, AnchorEncodeMode::Html5);
+                let id = self
+                    .outline
+                    .push(level, state.html, id.to_string())
+                    .unwrap_or(&id);
+                self.next.with_marks([&pos], |[pos], out| {
+                    if let Some(pos) = pos {
+                        let id = html_escape::encode_double_quoted_attribute(id);
+                        out.insert_str(pos, &format!("{PREFIX}{id}{SUFFIX}"));
+                    }
+                });
+                self.next.free_mark(pos);
+            }
+        }
+        if let Some(pos) = state.dir {
+            self.next.free_mark(pos);
+        }
+    }
+}
+
+chainable!(OutlineEmitter);
+
+impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    fn entity(&mut self, value: char, raw: &str) {
+        if self.state.tag.is_none() || self.state.in_attrs {
+            self.next.entity(value, raw);
+            return;
+        }
+
+        let start = self.next.mark();
+        self.next.entity(value, raw);
+        self.next.with_marks([&start], |[pos], out| {
+            self.state.html += pos.map_or("", |start| &out[start..]);
+        });
+        self.next.free_mark(start);
+
+        if let OutlineAnchor::Implicit(_, id) = &mut self.state.id {
+            id.push(value);
+        }
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.next.new_line();
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.next.raw_html_inline(html);
+    }
+
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+
+        if self.state.stack.last() == Some(&"span")
+            && name == "dir"
+            && let Some(dir) = self.state.dir.take()
+        {
+            self.next.with_marks([&dir], |[dir], out| {
+                let value = dir.map_or("", |dir| &out[dir..]);
+                if value.len() > " dir".len() {
+                    self.state.html += value;
+                }
+            });
+            self.next.free_mark(dir);
+        } else if self.state.in_entry_attrs && name == "id" {
+            let OutlineAnchor::Explicit(_, end) = &mut self.state.id else {
+                panic!("attributes all goofed up")
+            };
+            *end = Some(self.next.mark());
+        }
+    }
+
+    fn tag_attribute_start(&mut self, name: &str) {
+        if self.state.stack.last() == Some(&"span") && name == "dir" {
+            self.state.dir = Some(self.next.mark());
+        } else if self.state.in_entry_attrs && name == "id" {
+            self.state.id = OutlineAnchor::Explicit(self.next.mark(), None);
+        }
+        self.next.tag_attribute_start(name);
+    }
+
+    fn tag_end(&mut self, name: &str) {
+        self.next.tag_end(name);
+
+        if self.state.stack.pop_if(|tag| *tag == name).is_some() {
+            let _ = write!(self.state.html, "</{name}>");
+        } else if let Ok(level) = name.parse() {
+            self.finalize_entry(level);
+        }
+    }
+
+    fn tag_start(&mut self, name: &str) {
+        self.next.tag_start(name);
+
+        if let Ok(level) = name.parse() {
+            if self.state.tag.is_some() {
+                todo!("invalid heading tag nesting");
+            }
+            self.state.tag = Some(level);
+            self.state.in_entry_attrs = true;
+        } else if self.state.tag.is_some()
+            && let Some(name) = Self::ALLOWED_TAGS.get_key(name)
+        {
+            let _ = write!(self.state.html, "<{name}");
+            self.state.stack.push(name);
+        }
+
+        self.state.in_attrs = true;
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        if self.state.stack.last() == Some(&name) {
+            self.state.html.push('>');
+        } else if self.state.in_entry_attrs {
+            if matches!(self.state.id, OutlineAnchor::Undefined) {
+                self.state.id = OutlineAnchor::Implicit(self.next.mark(), <_>::default());
+            }
+            self.state.in_entry_attrs = false;
+        }
+        self.state.in_attrs = false;
+        self.next.tag_start_end(name);
+    }
+
+    fn text(&mut self, text: &str) {
+        if self.state.tag.is_none() || self.state.in_attrs {
+            self.next.text(text);
+            return;
+        }
+
+        let start = self.next.mark();
+        self.next.text(text);
+        self.next.with_marks([&start], |[pos], out| {
+            self.state.html += pos.map_or("", |start| &out[start..]);
+        });
+        self.next.free_mark(start);
+
+        if let OutlineAnchor::Implicit(_, id) = &mut self.state.id {
+            *id += text;
+        }
+    }
+}
+
+/// An in-progress heading for the outline.
 #[derive(Debug, Default)]
-pub(super) struct OutlineEmitter {
-    /// The position of the tag’s attribute list in the output.
-    attributes_pos: usize,
+struct OutlineEmitterState {
+    /// The position of the `dir` attribute of a span element.
+    dir: Option<Mark>,
     /// The accumulated inner HTML to emit to the table of contents.
     html: String,
     /// The ID of the current outline entry.
@@ -707,150 +2103,15 @@ pub(super) struct OutlineEmitter {
 }
 
 /// An anchor ID.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum OutlineAnchor {
+    /// Indeterminate.
+    #[default]
+    Undefined,
     /// Use an existing ID.
-    Explicit(core::ops::Range<usize>),
+    Explicit(Mark, Option<Mark>),
     /// Generate an ID from the given text.
-    Implicit(String),
-}
-
-impl Default for OutlineAnchor {
-    fn default() -> Self {
-        Self::Implicit(<_>::default())
-    }
-}
-
-impl OutlineEmitter {
-    /// The list of tags allowed in outlines.
-    ///
-    /// This list comes from Parsoid `Wt2Html\DOM\Handlers\Headings`.
-    const ALLOWED_TAGS: phf::Set<&'static str> = phf::phf_set! {
-        "b", "bdi", "i", "q", "s", "span", "strike", "sub", "sup"
-    };
-
-    /// Updates the outline emitter state for the given start tag.
-    pub fn after_start_tag(&mut self, name: &str) {
-        if self.stack.last() == Some(&name) {
-            self.html.push('>');
-        } else {
-            self.in_entry_attrs = false;
-        }
-        self.in_attrs = false;
-    }
-
-    /// Updates the outline emitter state with an attribute for the current tag.
-    pub fn attribute(
-        &mut self,
-        name: &str,
-        value: &str,
-        range: core::ops::Range<usize>,
-    ) -> fmt::Result {
-        if self.stack.last() == Some(&"span") && name == "dir" && !value.is_empty() {
-            write!(self.html, r#" {name}="{value}""#)?;
-        } else if self.in_entry_attrs && name == "id" {
-            self.id = OutlineAnchor::Explicit(range);
-        }
-        Ok(())
-    }
-
-    /// Updates the outline emitter state for the given end tag. Returns the
-    /// number of bytes added to `out` and the position where they were added.
-    pub fn end_tag(
-        &mut self,
-        outline: &mut Outline,
-        out: &mut String,
-        name: &str,
-    ) -> Result<(usize, usize), fmt::Error> {
-        Ok(if self.stack.pop_if(|tag| *tag == name).is_some() {
-            write!(self.html, "</{name}>")?;
-            (0, 0)
-        } else if let Ok(level) = name.parse() {
-            debug_assert_eq!(Some(level), self.tag);
-            debug_assert!(self.stack.is_empty());
-            core::mem::take(self).finish_entry(outline, out, level)
-        } else {
-            (0, 0)
-        })
-    }
-
-    /// Finalises an entry, emitting it to the outline. Returns the number of
-    /// bytes added to `out`.
-    fn finish_entry(
-        self,
-        outline: &mut Outline,
-        out: &mut String,
-        level: HeadingLevel,
-    ) -> (usize, usize) {
-        let (range, id) = match &self.id {
-            OutlineAnchor::Implicit(text) => (None, anchor_encode(text, AnchorEncodeMode::Html5)),
-            OutlineAnchor::Explicit(range) => {
-                (Some(range.clone()), Cow::Borrowed(&out[range.clone()]))
-            }
-        };
-
-        let insert_id = if let Some(id) = outline.push(level, self.html, id.to_string()) {
-            if let Some(range) = range {
-                let delta = id.len() - range.len();
-                let at = range.end;
-                out.replace_range(range, id);
-                return (at, delta);
-            }
-
-            Some(id)
-        } else {
-            range.is_none().then_some(&*id)
-        };
-
-        if let Some(id) = insert_id {
-            let id = format!(r#" id="{id}""#);
-            out.insert_str(self.attributes_pos, &id);
-            (self.attributes_pos, id.len())
-        } else {
-            (0, 0)
-        }
-    }
-
-    /// Updates the outline emitter state for the given start tag.
-    pub fn start_tag(&mut self, name: &str, attributes_pos: usize) -> fmt::Result {
-        if let Ok(level) = name.parse() {
-            if self.tag.is_some() {
-                todo!("invalid heading tag nesting");
-            }
-            self.tag = Some(level);
-            self.in_entry_attrs = true;
-            self.attributes_pos = attributes_pos;
-        } else if self.tag.is_some()
-            && let Some(name) = Self::ALLOWED_TAGS.get_key(name)
-        {
-            write!(self.html, "<{name}")?;
-            self.stack.push(name);
-        }
-        self.in_attrs = true;
-        Ok(())
-    }
-
-    /// Updates the outline emitter state for the given HTML entity.
-    pub fn text_entity(&mut self, value: char, html: &str) {
-        if self.tag.is_none() || self.in_attrs {
-            return;
-        }
-        if let OutlineAnchor::Implicit(id) = &mut self.id {
-            id.push(value);
-        }
-        self.html += html;
-    }
-
-    /// Updates the outline emitter state for the given run of text.
-    pub fn text_run(&mut self, text: &str, html: &str) {
-        if self.tag.is_none() || self.in_attrs {
-            return;
-        }
-        if let OutlineAnchor::Implicit(id) = &mut self.id {
-            *id += text;
-        }
-        self.html += html;
-    }
+    Implicit(Mark, String),
 }
 
 /// Text style emitter.
@@ -870,17 +2131,8 @@ pub(super) enum TextStyleEmitter {
 }
 
 impl TextStyleEmitter {
-    /// Close tag.
-    const CLOSE_TAG: bool = true;
-    /// Open tag.
-    const OPEN_TAG: bool = false;
-
     /// Emits HTML to match the new state given by `style`.
-    pub fn emit<E, F: FnMut(&'static str, bool) -> Result<(), E>>(
-        self,
-        mut cb: F,
-        style: TextStyle,
-    ) -> Result<Self, E> {
+    pub fn emit<S: Sink + ?Sized>(&mut self, next: &mut S, style: TextStyle) {
         // Because I don’t care and we aren’t buffering tags, this does not
         // bother with the pedantic attempt to avoid extra formatting tags by
         // recording the position of a None -> BoldItalic transition and then
@@ -890,103 +2142,531 @@ impl TextStyleEmitter {
         // IB (which, technically, because the HTML5 spec has defined rules
         // about fixing mismatched tags, it does not even really matter if they
         // are emitted in order).
-        Ok(match style {
+        *self = match style {
             TextStyle::Bold(..) => match self {
                 Self::B => {
-                    cb("b", Self::CLOSE_TAG)?;
+                    next.tag_end("b");
                     Self::None
                 }
                 Self::BI => {
-                    cb("i", Self::CLOSE_TAG)?;
-                    cb("b", Self::CLOSE_TAG)?;
-                    cb("i", Self::OPEN_TAG)?;
+                    next.tag_end("i");
+                    next.tag_end("b");
+                    next.tag_start_full("i");
                     Self::I
                 }
                 Self::None => {
-                    cb("b", Self::OPEN_TAG)?;
+                    next.tag_start_full("b");
                     Self::B
                 }
                 Self::I => {
-                    cb("b", Self::OPEN_TAG)?;
+                    next.tag_start_full("b");
                     Self::IB
                 }
                 Self::IB => {
-                    cb("b", Self::CLOSE_TAG)?;
+                    next.tag_end("b");
                     Self::I
                 }
             },
             TextStyle::BoldItalic => match self {
                 Self::None => {
-                    cb("b", Self::OPEN_TAG)?;
-                    cb("i", Self::OPEN_TAG)?;
+                    next.tag_start_full("b");
+                    next.tag_start_full("i");
                     Self::BI
                 }
                 Self::B => {
-                    cb("b", Self::CLOSE_TAG)?;
-                    cb("i", Self::OPEN_TAG)?;
+                    next.tag_end("b");
+                    next.tag_start_full("i");
                     Self::I
                 }
                 Self::BI => {
-                    cb("i", Self::CLOSE_TAG)?;
-                    cb("b", Self::CLOSE_TAG)?;
+                    next.tag_end("i");
+                    next.tag_end("b");
                     Self::None
                 }
                 Self::I => {
-                    cb("i", Self::CLOSE_TAG)?;
-                    cb("b", Self::OPEN_TAG)?;
+                    next.tag_end("i");
+                    next.tag_start_full("b");
                     Self::B
                 }
                 Self::IB => {
-                    cb("b", Self::CLOSE_TAG)?;
-                    cb("i", Self::CLOSE_TAG)?;
+                    next.tag_end("b");
+                    next.tag_end("i");
                     Self::None
                 }
             },
             TextStyle::Italic => match self {
                 Self::None => {
-                    cb("i", Self::OPEN_TAG)?;
+                    next.tag_start_full("i");
                     Self::I
                 }
                 Self::B => {
-                    cb("i", Self::OPEN_TAG)?;
+                    next.tag_start_full("i");
                     Self::BI
                 }
                 Self::BI => {
-                    cb("i", Self::CLOSE_TAG)?;
+                    next.tag_end("i");
                     Self::B
                 }
                 Self::I => {
-                    cb("i", Self::CLOSE_TAG)?;
+                    next.tag_end("i");
                     Self::None
                 }
                 Self::IB => {
-                    cb("b", Self::CLOSE_TAG)?;
-                    cb("i", Self::CLOSE_TAG)?;
-                    cb("b", Self::OPEN_TAG)?;
+                    next.tag_end("b");
+                    next.tag_end("i");
+                    next.tag_start_full("b");
                     Self::B
                 }
             },
-        })
+        };
     }
 
     /// Emits HTML to finish any incomplete style.
-    pub fn finish<E, F: FnMut(&'static str, bool) -> Result<(), E>>(
-        self,
-        mut cb: F,
-    ) -> Result<Self, E> {
+    pub fn finish<S: Sink + ?Sized>(&mut self, next: &mut S) {
         match self {
             Self::None => {}
-            Self::B => cb("b", Self::CLOSE_TAG)?,
+            Self::B => next.tag_end("b"),
             Self::BI => {
-                cb("i", Self::CLOSE_TAG)?;
-                cb("b", Self::CLOSE_TAG)?;
+                next.tag_end("i");
+                next.tag_end("b");
             }
-            Self::I => cb("i", Self::CLOSE_TAG)?,
+            Self::I => next.tag_end("i"),
             Self::IB => {
-                cb("b", Self::CLOSE_TAG)?;
-                cb("i", Self::CLOSE_TAG)?;
+                next.tag_end("b");
+                next.tag_end("i");
             }
         }
-        Ok(Self::None)
+        *self = Self::None;
     }
 }
+
+/// Converts runs of text to typographically beautiful HTML.
+#[derive(Debug)]
+pub(super) struct PrettyText<S: Sink> {
+    /// The current number of code contexts.
+    ///
+    /// Pretty typography does not apply in code contexts.
+    in_code: u8,
+    /// The output.
+    next: S,
+    /// The previous characters.
+    ///
+    /// This is used to determine the correct context for the next character
+    /// and it is required to be a 2-character look-behind because MediaWiki
+    /// does special stuff for “French spaces”.
+    prev_chars: [char; 2],
+    /// Saved contexts.
+    ///
+    /// Context switches occur on input to an attribute, since the content of
+    /// an attribute is displayed out of the flow of the rest of the document.
+    saved_contexts: Vec<[char; 2]>,
+}
+
+chainable!(PrettyText);
+
+impl<S: Sink> PrettyText<S> {
+    /// Creates a new `PrettyText` chained to `next`.
+    #[inline]
+    pub fn new(next: S) -> Self {
+        Self {
+            in_code: 0,
+            next,
+            prev_chars: Self::new_context(),
+            saved_contexts: <_>::default(),
+        }
+    }
+
+    /// Returns `true` if the `prev` or `next` characters indicate a word
+    /// boundary.
+    fn is_break(prev: char, next: Option<char>) -> bool {
+        use unicode_general_category::{
+            GeneralCategory::{
+                DashPunctuation, InitialPunctuation, OpenPunctuation, OtherPunctuation,
+            },
+            get_general_category,
+        };
+        prev.is_whitespace()
+            || (matches!(
+                get_general_category(prev),
+                DashPunctuation | OpenPunctuation | InitialPunctuation
+            ) && !next.is_some_and(char::is_whitespace))
+            || (matches!(get_general_category(prev), OtherPunctuation)
+                && next.is_some_and(char::is_alphabetic))
+    }
+
+    /// Returns `true` if the given tag name is a code tag.
+    #[inline]
+    fn is_code_tag(name: &str) -> bool {
+        matches!(name, "code" | "kbd" | "pre" | "samp" | "var")
+    }
+
+    /// Returns `Some(true)` if the character sequence requires a non-breaking
+    /// space, or `None` if there is not enough information to determine whether
+    /// it is required.
+    #[inline]
+    fn is_french_space([second, first]: [char; 2], next: Option<[char; 2]>) -> Option<bool> {
+        if matches!(first, '«' | '‹') && !second.is_alphabetic() {
+            Some(true)
+        } else {
+            next.map(|[first, second]| {
+                matches!(first, '?' | ':' | ';' | '!' | '%' | '»' | '›') && !second.is_alphabetic()
+            })
+        }
+    }
+
+    /// Returns the default previous character context.
+    #[inline]
+    const fn new_context() -> [char; 2] {
+        ['\n', '\n']
+    }
+
+    /// Pop a look-behind buffer from the stack.
+    #[inline]
+    fn pop_context(&mut self) {
+        self.prev_chars = self
+            .saved_contexts
+            .pop()
+            .expect("symmetrical context stack");
+    }
+
+    /// Push the current look-behind buffer to the stack.
+    #[inline]
+    fn push_context(&mut self) {
+        self.saved_contexts.push(self.prev_chars);
+        self.prev_chars = Self::new_context();
+    }
+
+    /// Push the given `value` to the look-behind buffer.
+    #[inline]
+    fn push_char(&mut self, value: char) {
+        self.prev_chars[0] = self.prev_chars[1];
+        self.prev_chars[1] = value;
+    }
+}
+
+impl<S: Sink> Sink for PrettyText<S> {
+    fn comment_end(&mut self) {
+        self.in_code -= 1;
+        self.pop_context();
+        self.next.comment_end();
+    }
+
+    fn comment_start(&mut self) {
+        self.in_code += 1;
+        self.push_context();
+        self.next.comment_start();
+    }
+
+    fn entity(&mut self, value: char, raw: &str) {
+        self.push_char(value);
+        self.next.entity(value, raw);
+    }
+
+    fn finish(self) -> String {
+        self.next.finish()
+    }
+
+    fn new_line(&mut self) {
+        self.push_char('\n');
+        self.next.new_line();
+    }
+
+    fn raw_html_block(&mut self, html: &str) {
+        self.next.raw_html_block(html);
+    }
+
+    fn raw_html_inline(&mut self, html: &str) {
+        self.next.raw_html_inline(html);
+    }
+
+    fn tag_attribute_end(&mut self, name: &str) {
+        if name != "title" {
+            self.in_code -= 1;
+        }
+        self.pop_context();
+        self.next.tag_attribute_end(name);
+    }
+
+    fn tag_attribute_start(&mut self, name: &str) {
+        if name != "title" {
+            self.in_code += 1;
+        }
+        self.push_context();
+        self.next.tag_attribute_start(name);
+    }
+
+    fn tag_end(&mut self, name: &str) {
+        self.in_code -= u8::from(Self::is_code_tag(name));
+        if !PHRASING_TAGS.contains(name) {
+            self.push_char(' ');
+        }
+        self.next.tag_end(name);
+    }
+
+    fn tag_start(&mut self, name: &str) {
+        if name == "br" || name == "hr" {
+            self.push_char('\n');
+        }
+        self.in_code += u8::from(Self::is_code_tag(name));
+        self.next.tag_start(name);
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        self.next.tag_start_end(name);
+    }
+
+    fn text(&mut self, text: &str) {
+        #[inline]
+        fn flush<S: Sink + ?Sized>(
+            next: &mut S,
+            flushed: &mut usize,
+            text: &str,
+            index: usize,
+            c: char,
+        ) {
+            if index != *flushed {
+                next.text(&text[*flushed..index]);
+            }
+            *flushed = index + c.len_utf8();
+        }
+
+        #[inline]
+        fn peek_array<I: Iterator<Item = (usize, char)>>(
+            iter: &mut peeknth::SizedPeekN<I, 2>,
+        ) -> Option<[char; 2]> {
+            let first = iter.peek().map(|(_, first)| *first);
+            let second = iter.peek_nth(1).map(|(_, second)| *second);
+            first.zip(second).map(|(first, second)| [first, second])
+        }
+
+        // TODO:
+        // #[cfg(debug_assertions)]
+        // if text.contains(MARKER_PREFIX) {
+        //     return Err(Error::StripMarkerInText);
+        // }
+
+        let mut chars = peeknth::sizedpeekn::<_, 2>(text.char_indices());
+
+        let mut flushed = 0;
+        while let Some((index, mut c)) = chars.next() {
+            match c {
+                // If full stops split across runs of text, it is reasonable to
+                // assume that they were not designed to combine
+                '.' if self.in_code == 0 && peek_array(&mut chars) == Some(['.', '.']) => {
+                    flush(&mut self.next, &mut flushed, text, index, c);
+                    flushed += 2;
+                    chars.clear_peeked();
+                    self.next.text("…");
+                    c = '…';
+                }
+                // TODO: Mark the source for a retry later if `None` returns.
+                ' ' if self.in_code == 0
+                    && Self::is_french_space(self.prev_chars, peek_array(&mut chars))
+                        == Some(true) =>
+                {
+                    flush(&mut self.next, &mut flushed, text, index, c);
+                    self.next.text("\u{00a0}");
+                }
+                // TODO: Track balance to differentiate between e.g.
+                // `The ‘90s’` vs `In the ’90s` and other pathological cases
+                // TODO: Escape plain '"' inside of an attribute
+                '"' | '\'' if self.in_code == 0 => {
+                    let next = chars.peek().map(|(_, c)| *c);
+                    let break_before = Self::is_break(self.prev_chars[1], next);
+                    let double = if c == '"' { 0 } else { 2 };
+                    flush(&mut self.next, &mut flushed, text, index, c);
+                    self.next
+                        .text(["”", "“", "’", "‘"][double + usize::from(break_before)]);
+                }
+                '&' | '"' | '<' | '>' => {
+                    flush(&mut self.next, &mut flushed, text, index, c);
+                    self.next.entity(
+                        c,
+                        match c {
+                            '&' => "&amp;",
+                            '"' => "&quot;",
+                            '<' => "&lt;",
+                            '>' => "&gt;",
+                            _ => unreachable!(),
+                        },
+                    );
+                }
+                _ => {}
+            }
+            self.push_char(c);
+        }
+
+        if flushed != text.len() {
+            self.next.text(&text[flushed..]);
+        }
+    }
+}
+
+/// Adds extra `data-wiki-rs` attributes to the root elements of anonymous
+/// templates so they can be identified and styled.
+#[derive(Debug)]
+pub(super) struct TemplateTagger<S: Sink> {
+    /// The current depth of the DOM tree.
+    depth: u8,
+    /// The output.
+    next: S,
+    /// The template processing stack used to identify which template was the
+    /// source of a fragment of the assembled Wikitext document.
+    ///
+    /// This is a workaround for templates that do not identify themselves for
+    /// styling but instead only emit inline styles (like
+    /// 'Template:Climate chart'), which need to have their styles overridden
+    /// nevertheless, which we can do by adding extra data attributes to
+    /// identify the template source of an element.
+    tag_blocks: Vec<(u8, String)>,
+}
+
+chainable!(TemplateTagger);
+
+impl<S: Sink> TemplateTagger<S> {
+    /// Creates a new `TemplateTagger` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            depth: 0,
+            next,
+            tag_blocks: <_>::default(),
+        }
+    }
+
+    /// Ends a template section for a template with the given `name`.
+    pub fn pop(&mut self, name: &str) {
+        self.tag_blocks
+            .pop_if(|(_, other)| name == other)
+            .expect("valid tag block stack");
+    }
+
+    /// Starts a template section for a template with the given `name`.
+    pub fn push(&mut self, name: String) {
+        self.tag_blocks.push((self.depth, name));
+    }
+}
+
+impl<S: Sink> Sink for TemplateTagger<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.next.new_line();
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.next.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        if !VOID_TAGS.contains(name) {
+            self.depth -= 1;
+        }
+        self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.next.tag_start(name);
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        if !PHRASING_TAGS.contains(name) {
+            // It is possible that a template starts in an ambiguous position
+            // where the output of its first tag results in some other elements
+            // being closed. To handle this case, `level` is treated as a
+            // maximum which is reduced so child elements of the template do not
+            // get tagged as it builds its own DOM tree.
+            let mut has_some = false;
+            for (depth, tag) in self
+                .tag_blocks
+                .iter_mut()
+                .rev()
+                .take_while(|(depth, _)| self.depth <= *depth)
+            {
+                *depth = self.depth;
+                if !has_some {
+                    self.next.tag_attribute_start("data-wiki-rs");
+                    has_some = true;
+                }
+                self.next.text(tag);
+            }
+            if has_some {
+                self.next.tag_attribute_end("data-wiki-rs");
+            }
+        }
+        self.next.tag_start_end(name);
+        if !VOID_TAGS.contains(name) {
+            self.depth += 1;
+        }
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.next.text(text);
+    }
+}
+
+/// Generates an implementation of [`Chain`] for a generic type with the given
+/// ident.
+macro_rules! chainable {
+    ($ty:ident) => {
+        chainable! { $ty<S> }
+    };
+
+    ($ty:ident<$($lt:lifetime,)* $s:ident $(, $gen:ident)* $(,)?>) => {
+        impl<$s $(, $gen)*> Chain for $ty<$($lt,)* $s $(, $gen)*>
+        where
+            $s: Sink + Markable,
+        {
+            type Next = $s;
+
+            #[inline]
+            fn next(&self) -> &Self::Next {
+                &self.next
+            }
+
+            #[inline]
+            fn next_mut(&mut self) -> &mut Self::Next {
+                &mut self.next
+            }
+        }
+    };
+}
+
+use chainable;

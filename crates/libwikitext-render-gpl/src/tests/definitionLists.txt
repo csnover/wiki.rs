@@ -584,10 +584,6 @@ Mixed Lists: Test 1
 <dl><dd><dl><dt><ul><li>foo</li>
 <li>bar</li></ul></dt></dl>
 <dl><dt>baz</dt></dl></dd></dl>
-!! html/php
-<dl><dd><dl><dt><ul><li>foo</li>
-<li>bar</li></ul></dt></dl>
-<dl><dt>baz</dt></dl></dd></dl>
 !! html/parsoid
 <dl>
 <dd><dl>

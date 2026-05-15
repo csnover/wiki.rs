@@ -184,7 +184,7 @@ peg::parser! {grammar testfile() for str {
     _version:format()?
     comment_or_blank_line()*
     _options:(sec:option_section() end(<>) { sec })?
-    chunks:chunk()+
+    chunks:chunk()*
   { Testfile { chunks } }
 
   rule format() -> u8
@@ -246,10 +246,18 @@ peg::parser! {grammar testfile() for str {
     name:text()
     sections:(config_section() / option_section() / metadata_section() / section())*
     end(<>)
-  {
-    let mut sections = sections.into_iter().map(|section| {
-        (section.name, section.text)
-    }).collect::<HashMap<_, _>>();
+  {?
+    let mut sections = {
+        // This could just use `collect`, except that `collect` silently
+        // overwrites duplicate keys
+        let mut map = HashMap::with_capacity(sections.len());
+        for section in sections {
+            if map.insert(section.name, section.text).is_some() {
+                return Err("unique test section name");
+            }
+        }
+        map
+    };
 
     // pegjs parser handles item options as follows:
     //   item option             value of item.options.parsoid
@@ -273,7 +281,7 @@ peg::parser! {grammar testfile() for str {
         }
     }
 
-    Chunk::Test { name: name.trim_ascii_end(), pos, sections }
+    Ok(Chunk::Test { name: name.trim_ascii_end(), pos, sections })
   }
 
   rule section() -> Section<'input>

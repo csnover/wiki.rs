@@ -225,8 +225,6 @@ parsoid=wt2html
 <ol><li>REDIRECT <a href="/wiki/Main_Page" title="Main Page">Main Page</a>==hi==</li></ol>
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/><!-- haha --><h2 id="hi">hi</h2>
-!! html/wiki.rs
-<ol><li>REDIRECT <a href="/article/Main%20Page" title="Main Page">Main Page</a>==hi==</li></ol>
 !! end
 
 ## WikiContent::getRedirectTargetAndText() strips the redirect from text so,
@@ -242,8 +240,6 @@ parsoid=wt2html
 <ol><li>REDIRECT <a href="/wiki/Main_Page" title="Main Page">Main Page</a>----</li></ol>
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/><hr/>
-!! html/wiki.rs
-<ol><li>REDIRECT <a href="/article/Main%20Page" title="Main Page">Main Page</a>----</li></ol>
 !! end
 
 !! test

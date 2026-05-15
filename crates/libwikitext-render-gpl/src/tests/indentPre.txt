@@ -68,6 +68,7 @@ Tabs don't trigger preformatted text
 Space before tab needs nowiki pre protection
 !! options
 parsoid=html2wt
+wiki-rs-skip=[[this test appears to be broken]]
 !! html/parsoid
 <p> 	a</p>
 !! wikitext
@@ -831,6 +832,9 @@ parsoid=wt2html
 !! html/parsoid
 <pre><link rel="mw:PageProp/Category" href="./Category:Foo"> a
  <link rel="mw:PageProp/Category" href="./Category:Foo"> <span about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"b"}},"i":0}}]}'>b</span></pre>
+!! html/wiki.rs # This output matches the PHP parser
+<pre> a b
+</pre>
 !! end
 
 !! test

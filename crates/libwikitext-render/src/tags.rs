@@ -1,6 +1,7 @@
 //! Plain HTML rendering functions.
 
-use super::{Error, Paths, Result, StackFrame, State, WriteSurrogate, image};
+use super::{Error, Paths, Result, StackFrame, State, Surrogate, image};
+use crate::document::Document;
 use http::Uri;
 use libmisc::CowExt as _;
 use libwikitext_common::{
@@ -15,7 +16,7 @@ use serde_json_borrow::Value;
 use std::borrow::Cow;
 
 /// Renders an external web site link.
-pub(super) fn render_external_link<W: WriteSurrogate>(
+pub(super) fn render_external_link<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -41,7 +42,8 @@ pub(super) fn render_external_link<W: WriteSurrogate>(
     if content.is_empty() {
         let ordinal = &mut state.globals.external_link_ordinal;
         *ordinal += 1;
-        write!(out, "[{ordinal}]")?;
+        let text = format!("[{ordinal}]");
+        out.adopt_generated(state, sp, None, &text)?;
     } else {
         out.adopt_tokens(state, sp, content)?;
     }
@@ -49,8 +51,8 @@ pub(super) fn render_external_link<W: WriteSurrogate>(
 }
 
 /// Renders a wikilink.
-pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
-    out: &mut W,
+pub(super) fn render_wikilink(
+    out: &mut Document,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &[Spanned<Token>],
@@ -62,6 +64,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
     let force_link = target.starts_with(':');
     if !force_link && title.is_local_category() {
         state.globals.categories.insert(title.key().to_owned());
+        out.category();
         if let Some(trail) = trail {
             out.adopt_generated(state, sp, None, trail)?;
         }
@@ -77,7 +80,7 @@ pub(super) fn render_wikilink<W: WriteSurrogate + ?Sized>(
 }
 
 /// Renders an internal link.
-fn render_internal_link<W: WriteSurrogate + ?Sized>(
+fn render_internal_link<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -134,7 +137,7 @@ fn render_internal_link<W: WriteSurrogate + ?Sized>(
 }
 
 /// Renders an anchor for a link.
-pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
+pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -199,7 +202,7 @@ pub(super) fn render_start_link<W: WriteSurrogate + ?Sized>(
 }
 
 /// Renders an `</a>` tag. This is only suitable for use with a `Document`.
-pub(super) fn render_end_link<W: WriteSurrogate + ?Sized>(
+pub(super) fn render_end_link<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -321,7 +324,7 @@ impl LinkKind<'_> {
 
 /// Serialises values which are structured like
 /// `{argument}{delimiter}{argument}...`.
-pub(super) fn render_single_attribute<W: WriteSurrogate + ?Sized>(
+pub(super) fn render_single_attribute<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
@@ -341,7 +344,7 @@ pub(super) fn render_single_attribute<W: WriteSurrogate + ?Sized>(
 
 /// Renders a runtime-generated token.
 pub(super) fn render_runtime<
-    W: WriteSurrogate + ?Sized,
+    W: Surrogate<Error> + ?Sized,
     F: FnOnce(&mut State<'_, '_, '_>, &mut String) -> Spanned<Token>,
 >(
     out: &mut W,
@@ -356,7 +359,7 @@ pub(super) fn render_runtime<
 
 /// Renders runtime-generated tokens.
 pub(super) fn render_runtime_list<
-    W: WriteSurrogate + ?Sized,
+    W: Surrogate<Error> + ?Sized,
     F: FnOnce(&mut State<'_, '_, '_>, &mut String) -> Vec<Spanned<Token>>,
 >(
     out: &mut W,
@@ -371,7 +374,7 @@ pub(super) fn render_runtime_list<
 
 /// Phrasing content, per the HTML5 specification, including obsolete elements
 /// allowed by MediaWiki.
-pub(super) static PHRASING_TAGS: phf::Set<&str> = phf::phf_set! {
+pub(super) const PHRASING_TAGS: phf::Set<&str> = phf::phf_set! {
     "a", "abbr", "area", "audio", "b", "bdi", "bdo", "big", "br", "button",
     "canvas", "cite", "code", "data", "datalist", "del", "dfn", "em", "embed",
     "font", "i", "iframe", "img", "input", "ins", "kbd", "label", "link", "map",

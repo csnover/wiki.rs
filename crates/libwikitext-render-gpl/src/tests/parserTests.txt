@@ -568,6 +568,13 @@ parsoid=wt2html,wt2wt
 <p><br/></p>
 <p><br/></p>
 <h1 id="b">b</h1>
+!! html/wiki.rs
+<table><tr><td>x
+</td></tr></table>
+<p><br>
+</p><p><br>
+</p>
+<h1 id="b">b</h1>
 !!end
 
 !! test
@@ -799,6 +806,9 @@ Self-closed tag hooks
 <pre></pre>
 <ul class="gallery mw-gallery-traditional">
 </ul>
+!! html/wiki.rs
+<pre></pre>
+<ul class="gallery mw-gallery-traditional"></ul>
 !! html/parsoid
 <pre typeof="mw:Extension/pre" about="#mwt2" data-parsoid='{"stx":"html"}' data-mw='{"name":"pre","attrs":{}}'></pre>
 <ul class="gallery mw-gallery-traditional" typeof="mw:Extension/gallery" about="#mwt5" data-mw='{"name":"gallery","attrs":{}}'>
@@ -952,6 +962,9 @@ Properly escape nowiki when combined with other wiki markup
 parsoid=html2wt
 !! html/parsoid
 <p>* &lt;/nowiki&gt; tag</p>
+!! html/wiki.rs
+<p>* &lt;/nowiki&gt; tag
+</p>
 !! wikitext
 <nowiki>*</nowiki> <nowiki>&lt;/nowiki&gt;</nowiki> tag
 !! end
@@ -962,6 +975,9 @@ T93824: Put escaped HTML tags inside nowiki
 parsoid=html2wt
 !! html/parsoid
 <p>&lt;h2&gt;foo&lt;/h2&gt;</p>
+!! html/wiki.rs
+<p>&lt;h2&gt;foo&lt;/h2&gt;
+</p>
 !! wikitext
 <nowiki><h2>foo</h2></nowiki>
 !! end
@@ -974,6 +990,11 @@ parsoid=html2wt
 <p>This text: L'<a rel="mw:WikiLink" href="./Foo">Foo</a>
 This text: L''<a rel="mw:WikiLink" href="./Foo">Foo</a>
 This text: L'''<a rel="mw:WikiLink" href="./Foo">Foo</a>''</p>
+!! html/wiki.rs
+<p>This text: L’<a href="/wiki/Foo" title="Foo">Foo</a>
+This text: L’’<a href="/wiki/Foo" title="Foo">Foo</a>
+This text: L’’’<a href="/wiki/Foo" title="Foo">Foo</a>’’
+</p>
 !! wikitext
 This text: L'[[Foo]]
 This text: L<nowiki>''</nowiki>[[Foo]]
@@ -986,6 +1007,9 @@ T71950: 2. Put nowiki as close to cause as possible, after ' :'
 parsoid=html2wt
 !! html/parsoid
 <p>This text : L''<a rel="mw:WikiLink" href="./Foo">Foo</a>
+</p>
+!! html/wiki.rs
+<p>This text : L’’<a href="/wiki/Foo" title="Foo">Foo</a>
 </p>
 !! wikitext
 This text : L<nowiki>''</nowiki>[[Foo]]
@@ -1000,6 +1024,10 @@ parsoid=html2wt
 !! html/parsoid
 <p><span typeof="mw:Transclusion" data-mw="{&quot;parts&quot;:[{&quot;template&quot;:{&quot;target&quot;:{&quot;wt&quot;:&quot;1x&quot;,&quot;href&quot;:&quot;./Template:1x&quot;},&quot;params&quot;:{&quot;1&quot;:{&quot;wt&quot;:&quot;foo|bar&quot;}},&quot;i&quot;:0}}]}" about="#mwt1"></span>
 <span typeof="mw:Transclusion" data-mw="{&quot;parts&quot;:[{&quot;template&quot;:{&quot;target&quot;:{&quot;wt&quot;:&quot;1x&quot;,&quot;href&quot;:&quot;./Template:1x&quot;},&quot;params&quot;:{&quot;1&quot;:{&quot;wt&quot;:&quot;foo|bar |[[&quot;}},&quot;i&quot;:0}}]}" about="#mwt2"></p>
+!! html/wiki.rs
+<p>foo|bar
+foo|bar |[[
+</p>
 !! wikitext
 {{1x|foo{{!}}bar}}
 {{1x|<nowiki>foo|bar |[[</nowiki>}}
@@ -1015,6 +1043,13 @@ parsoid=html2wt
 <span typeof="mw:Transclusion" data-mw="{&quot;parts&quot;:[{&quot;template&quot;:{&quot;target&quot;:{&quot;wt&quot;:&quot;1x&quot;,&quot;href&quot;:&quot;./Template:1x&quot;},&quot;params&quot;:{&quot;1&quot;:{&quot;wt&quot;:&quot;a [[ b&quot;}},&quot;i&quot;:0}}]}" about="#mwt3"></span>
 <span typeof="mw:Transclusion" data-mw="{&quot;parts&quot;:[{&quot;template&quot;:{&quot;target&quot;:{&quot;wt&quot;:&quot;1x&quot;,&quot;href&quot;:&quot;./Template:1x&quot;},&quot;params&quot;:{&quot;1&quot;:{&quot;wt&quot;:&quot;a | {{ ]]&quot;}},&quot;i&quot;:0}}]}" about="#mwt4"></span>
 <span typeof="mw:Transclusion" data-mw="{&quot;parts&quot;:[{&quot;template&quot;:{&quot;target&quot;:{&quot;wt&quot;:&quot;1x&quot;,&quot;href&quot;:&quot;./Template:1x&quot;},&quot;params&quot;:{&quot;1&quot;:{&quot;wt&quot;:&quot;a }&quot;}},&quot;i&quot;:0}}]}" about="#mwt5"></span></p>
+!! html/wiki.rs
+<p>a [ b
+a }} b
+a [[ b
+a | {{ ]]
+a }
+</p>
 !! wikitext
 {{1x|a [ b}}
 {{1x|<nowiki>a }} b</nowiki>}}
@@ -1036,6 +1071,13 @@ parsoid=html2wt
 <tr><th>this does not need
 protection !! here</th></tr>
 </table>
+!! html/wiki.rs # This output matches the PHP parser, minus entities and needless <tbody> and some whitespace
+<table><tr><th>this needs protection !! here
+</th></tr></table>
+<table><tr><th>this does not need
+<p>protection !! here
+</p>
+</th></tr></table>
 !! wikitext
 {|
 !<nowiki>this needs protection !! here</nowiki>
@@ -1068,6 +1110,9 @@ Nowiki and french spacing
 <nowiki>test : 123</nowiki>
 !! html/php
 <p>test&#160;: 123
+</p>
+!! html/wiki.rs
+<p>test : 123
 </p>
 !! html/parsoid
 <p><span typeof="mw:Nowiki">test<span typeof="mw:DisplaySpace"> </span>: 123</span></p>
@@ -1138,6 +1183,10 @@ French spacing and spans
 !! html/parsoid
 <p><a rel="mw:WikiLink" href="./Test" title="Test" data-parsoid='{"stx":"simple","a":{"href":"./Test"},"sa":{"href":"Test"}}'>Test</a><span typeof="mw:DisplaySpace"> </span>: <span data-parsoid='{"stx":"html"}'>123</span>
 «<span typeof="mw:DisplaySpace"> </span>Test<span typeof="mw:DisplaySpace"> </span>»<span data-parsoid='{"stx":"html"}'>123</span></p>
+!! html/wiki.rs
+<p><a href="/wiki/Test" title="Test">Test</a> : <span>123</span>
+« Test »<span>123</span>
+</p>
 !! end
 
 !! test
@@ -1237,6 +1286,9 @@ T17491: <ins>/<del> in blockquote (2)
 !! html
 <blockquote><p>Foo <del>bar</del> <ins>baz</ins> quux
 </p></blockquote>
+!! html/wiki.rs
+<blockquote><p>Foo <del>bar</del> <ins>baz</ins> quux</p>
+</blockquote>
 !! end
 
 # Regression test to prevent problematic simplifications of parser tests
@@ -1573,6 +1625,9 @@ Parsoid: Pipe in template with nested template in external link target in templa
 !! html/php
 <p><a rel="nofollow" class="external text" href="http://example.org/index.php?title=Parser_test&amp;action=edit">bar</a>
 </p>
+!! html/wiki.rs
+<p><a rel="nofollow" class="external text" href="//example.org/wiki/Parser_test?action=edit">bar</a>
+</p>
 !! html/parsoid
 <p><a rel="mw:ExtLink" href="http://example.org/index.php?title=Parser_test&amp;action=edit" typeof="mw:Transclusion" class="external text" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"[{{fullurl:{{FULLPAGENAME}}|action=edit}} bar]"}},"i":0}}]}'>bar</a></p>
 !! end
@@ -1689,6 +1744,11 @@ parsoid=wt2html
 </p><p>[[{}]]
 </p><p>[[1, <a href="/index.php?title=2,_3&amp;action=edit&amp;redlink=1" class="new" title="2, 3 (page does not exist)">2, 3</a>, 4]]
 </p>
+!! html/wiki.rs
+<p>[[1],[2]]
+</p><p>[[{}]]
+</p><p>[[1, <a href="/wiki/2,_3?action=edit&amp;redlink=1" class="new" title="2, 3 (page does not exist)">2, 3</a>, 4]]
+</p>
 !! html/parsoid
 <p><span about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"[[1],[2]]"}},"i":0}}]}'>[[1],[2]]</span></p>
 
@@ -1703,6 +1763,8 @@ Non-wikilinks with html tags in target position
 <table><td>[[</td><td>[[link]]</td><td>]]</td></table>
 !! html/php
 <table><tbody><tr><td>[[</td><td><a href="/wiki/Link" title="Link">link</a></td><td>]]</td></tr></tbody></table>
+!! html/wiki.rs
+<table><tr><td>[[</td><td><a href="/wiki/Link" title="Link">link</a></td><td>]]</td></tr></table>
 !! html/parsoid
 <table data-parsoid='{"stx":"html"}'><tbody><tr data-parsoid='{"autoInsertedStart":true,"autoInsertedEnd":true}'><td data-parsoid='{"stx":"html"}'>[[</td><td data-parsoid='{"stx":"html"}'><a rel="mw:WikiLink" href="./Link" title="Link">link</a></td><td data-parsoid='{"stx":"html"}'>]]</td></tr></tbody></table>
 !! end
@@ -1753,6 +1815,9 @@ Template returning pipe used in wikilink target
 !! html/php
 <p><a href="/index.php?title=Main&amp;action=edit&amp;redlink=1" class="new" title="Main (page does not exist)">Page</a>
 </p>
+!! html/wiki.rs
+<p><a href="/wiki/Main?action=edit&amp;redlink=1" class="new" title="Main (page does not exist)">Page</a>
+</p>
 !! html/parsoid
 <p>[[<span about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"pipe page","href":"./Template:Pipe_page"},"params":{},"i":0}}]}'>Main|Page</span>]]</p>
 !! end
@@ -1792,6 +1857,12 @@ parsoid={ "modes": ["html2wt"], "suppressErrors": true }
 <a rel="mw:WikiLink" href="[[foo]]">*text</a>
 <a rel="mw:WikiLink" href="[[foo]]">[[foo]]</a>
 <a rel="mw:WikiLink" href="[[foo]]">*a [[foo]]</a>
+!! html/wiki.rs
+<p>text
+*text
+[[foo]]
+*a [[foo]]
+</p>
 !! wikitext
 text
 <nowiki>*</nowiki>text
@@ -1811,6 +1882,14 @@ parsoid=html2wt
 <p>
 <a rel="mw:ExtLink" href="http://en.wikipedia.org/wiki/European_Robin">European Robin</a>
 <a rel="mw:WikiLink" href="http://en.wikipedia.org/wiki/European_Robin">European Robin</a>
+</p>
+!! html/wiki.rs
+<p><a href="/wiki/Foo" title="Foo">Bar</a>
+<a href="/wiki/Foo" title="Foo">Bar</a>
+<a href="http://en.wikipedia.org/wiki/Foo" title="en:Foo">Bar</a>
+<a href="http://en.wikipedia.org/wiki/Foo" title="en:Foo">Bar</a>
+</p><p><a href="http://en.wikipedia.org/wiki/European_Robin" title="en:European Robin">European Robin</a>
+<a href="http://en.wikipedia.org/wiki/European_Robin" title="en:European Robin">European Robin</a>
 </p>
 !! wikitext
 [[Foo|Bar]]
@@ -1838,6 +1917,9 @@ parsoid=wt2html,html2html
 Break on | in element attribute name in template
 !! wikitext
 {{1x|<div cla|ss="hiho">ha</div>}}
+!! html/wiki.rs
+<p>&lt;div cla
+</p>
 !! html/parsoid
 <p><span about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"},{"k":"ss","named":true}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;div cla"},"ss":{"wt":"\"hiho\">ha&lt;/div>"}},"i":0}}]}'>&lt;div cla</span></p>
 !! end
@@ -1846,6 +1928,9 @@ Break on | in element attribute name in template
 Don't break on | in extension attribute in template
 !! wikitext
 {{1x|<tag name="hi|ho">ha</tag>}}
+!! html/wiki.rs
+<p>ho"&gt;ha&lt;/tag&gt;
+</p>
 !! html/parsoid
 <pre typeof="mw:Extension/tag mw:Transclusion" data-mw='{"name":"tag","attrs":{"name":"hi|ho"},"body":{"extsrc":"ha"},"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;tag name=\"hi|ho\">ha&lt;/tag>"}},"i":0}}]}'>'ha'
 array (
@@ -2182,6 +2267,9 @@ Link to namespace preferred over interwiki with correct rel attribute
 parsoid=html2wt,html2html
 !! html/parsoid
 <p><a rel="mw:WikiLink" href="./MemoryAlpha:AlphaTest" title="MemoryAlpha:AlphaTest">MemoryAlpha:AlphaTest</a></p>
+!! html/wiki.rs
+<p><a href="/wiki/MemoryAlpha:AlphaTest" title="MemoryAlpha:AlphaTest">MemoryAlpha:AlphaTest</a>
+</p>
 !! wikitext
 [[MemoryAlpha:AlphaTest]]
 !! end
@@ -2440,6 +2528,12 @@ Link with double quotes in title part (literal) and alternate part (interpreted)
 <p><a rel="mw:WikiLink" href="./''Pentecoste''" title="''Pentecoste''" data-parsoid='{"stx":"piped","a":{"href":"./&apos;&apos;Pentecoste&apos;&apos;"},"sa":{"href":"&apos;&apos;Pentecoste&apos;&apos;"}}'>Pentecoste</a></p>
 
 <p><a rel="mw:WikiLink" href="./''Pentecoste''" title="''Pentecoste''" data-parsoid='{"stx":"piped","a":{"href":"./&apos;&apos;Pentecoste&apos;&apos;"},"sa":{"href":"&apos;&apos;Pentecoste&apos;&apos;"}}'><i>Pentecoste</i></a></p>
+!! html/wiki.rs
+<p><a href="/wiki/File:Denys_Savchenko_%27%27Pentecoste%27%27.jpg?action=edit&amp;redlink=1" class="new" title="File:Denys Savchenko ‘‘Pentecoste’’.jpg (page does not exist)"><img src="/http://example.com/images/3/3a/Denys%20Savchenko%20%27%27Pentecoste%27%27.jpg"></a>
+</p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’">‘‘Pentecoste’’</a>
+</p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’">Pentecoste</a>
+</p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’"><i>Pentecoste</i></a>
+</p>
 !! end
 
 !! test
@@ -2752,6 +2846,7 @@ language=en
 Internal link with ca linktrail with apostrophes (T29473)
 !! options
 language=ca
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 [[Something]]'nice
 !! html/php
@@ -2765,6 +2860,7 @@ language=ca
 Internal link with kaa linktrail with apostrophes (T29473)
 !! options
 language=kaa
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 [[Something]]'nice
 !! html/php
@@ -2964,6 +3060,7 @@ Test.
 Internal link with is link prefix
 !! options
 language=is
+wiki-rs-expect-failure=[[link prefixes are not supported]]
 !! wikitext
 Aðrir mótmælenda[[söfnuður|söfnuðir]] og
 {{1x|mótmælenda[[söfnuður|söfnuðir]]}}
@@ -2989,6 +3086,7 @@ Test.
 Internal link with is link trail and link prefix
 !! options
 language=is
+wiki-rs-expect-failure=[[link prefixes are not supported]]
 !! wikitext
 [[mótmælendatrú|xxx]]ar
 [[mótmælendatrú]]ar
@@ -3010,6 +3108,9 @@ Parsoid link trail escaping
 parsoid=html2wt,html2html
 !! html/parsoid
 <p><a rel="mw:WikiLink" href="./Apple" title="Apple">apple</a>s</p>
+!! html/wiki.rs
+<p><a href="/wiki/Apple?action=edit&amp;redlink=1" class="new" title="Apple (page does not exist)">apple</a>s
+</p>
 !! wikitext
 [[apple]]<nowiki/>s
 !! end
@@ -3019,6 +3120,7 @@ Parsoid link prefix escaping
 !! options
 language=is
 parsoid=html2wt,html2html
+wiki-rs-expect-failure=[[link prefixes are not supported]]
 !! html/parsoid
 <p>Aðrir mótmælenda<a rel="mw:WikiLink" href="./Söfnuður" title="Söfnuður">söfnuður</a></p>
 !! wikitext
@@ -3036,6 +3138,14 @@ parsoid=html2wt,html2html
 <p>[[[<a rel="mw:WikiLink" href="./Test" title="Test">Test</a>]]]</p>
 <p>[[[[<a rel="mw:WikiLink" href="./Test" title="Test">Test</a>]]]]</p>
 <p>[[[[[<a rel="mw:WikiLink" href="./Test" title="Test">Test</a>]]]]]</p>
+!! html/wiki.rs
+<p><a href="/wiki/Test" title="Test">Test</a>
+</p><p>[<a href="/wiki/Test" title="Test">Test</a>]
+</p><p>[[<a href="/wiki/Test" title="Test">Test</a>]]
+</p><p>[[[<a href="/wiki/Test" title="Test">Test</a>]]]
+</p><p>[[[[<a href="/wiki/Test" title="Test">Test</a>]]]]
+</p><p>[[[[[<a href="/wiki/Test" title="Test">Test</a>]]]]]
+</p>
 !! wikitext
 [[Test]]
 
@@ -3074,6 +3184,9 @@ Parsoid: Scoped parsing should handle mixed transclusions and plain text
 [[Foo|{{1x|a}} b {{1x|c}}]]
 !! html/parsoid
 <p><a rel="mw:WikiLink" href="./Foo" title="Foo"><span about="#mwt2" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"a"}},"i":0}}]}'>a</span> b <span about="#mwt3" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"c"}},"i":0}}]}'>c</span></a></p>
+!! html/wiki.rs
+<p><a href="/wiki/Foo" title="Foo">a b c</a>
+</p>
 !! end
 
 !! test
@@ -3093,6 +3206,8 @@ wgFragmentMode=[ "html5", "legacy" ]
 Link with angle bracket after anchor (legacy)
 !! config
 wgFragmentMode=[ "legacy" ]
+!! options
+wiki-rs-expect-failure=[[legacy encoding switch is not implemented]]
 !! wikitext
 [[Foo#<bar>]]
 !! html/php
@@ -3134,6 +3249,7 @@ parsoid=wt2html
 Parsoid-specific test: Wikilinks with &nbsp; should RT properly
 !! options
 language=ln
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 [[WW&nbsp;II]]
 !! html/php
@@ -3174,6 +3290,10 @@ Wikilinks with : should roundtrip correctly, with and without redlinks
 !! html/parsoid
 <p><a rel="mw:WikiLink" href="./16:30" title="16:30" data-parsoid='{"stx":"simple","a":{"href":"./16:30"},"sa":{"href":"16:30"}}'>16:30</a>
 <a rel="mw:WikiLink" href="./18:30?action=edit&amp;redlink=1" title="18:30" class="new" typeof="mw:LocalizedAttrs" data-parsoid='{"stx":"simple","a":{"href":"./18:30"},"sa":{"href":"18:30"}}' data-mw-i18n='{"title":{"lang":"x-page","key":"red-link-title","params":["18:30"]}}'>18:30</a></p>
+!! html/wiki.rs
+<p><a href="/wiki/16:30" title="16:30">16:30</a>
+<a href="/wiki/18:30?action=edit&amp;redlink=1" class="new" title="18:30 (page does not exist)">18:30</a>
+</p>
 !! end
 
 # html2wt will fail because of title normalization without data-parsoid
@@ -3201,6 +3321,9 @@ Template parameter named "constructor"
 {{1x|  constructor =  |hi}}
 !! html/parsoid
 <p><span about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"constructor","named":true,"spc":["  "," ","","  "]},{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"constructor":{"wt":""},"1":{"wt":"hi"}},"i":0}}]}'>hi</span></p>
+!! html/wiki.rs
+<p>hi
+</p>
 !! end
 
 ##
@@ -3251,6 +3374,9 @@ Incorrecly removing closing slashes from correctly formed XHTML
 !! html
 <p><br style="clear:both;" />
 </p>
+!! html/wiki.rs
+<p><br style="--mw-output-clear:both;">
+</p>
 !! end
 
 !! test
@@ -3263,6 +3389,11 @@ Failing to transform badly formed HTML into correct XHTML
 <p><br style="clear: left;" />
 <br style="clear: right;" />
 <br style="clear: both;" />
+</p>
+!! html/wiki.rs
+<p><br style="--mw-output-clear:left;">
+<br style="--mw-output-clear:right;">
+<br style="--mw-output-clear:both;">
 </p>
 !!end
 
@@ -3333,6 +3464,14 @@ Handling html with a br self-closing tag
 <br title="bar" />
 <br title="bar/" />
 </p>
+!! html/wiki.rs
+<p><br title="">
+<br title="">
+<br title="">
+<br title="bar">
+<br title="bar">
+<br title="bar/">
+</p>
 !! end
 
 !! test
@@ -3345,6 +3484,8 @@ parsoid=wt2html
 <div class="foo" style="color:red">red</div>
 !! html/parsoid
 <div class="foo" style="color:red">red</div>
+!! html/wiki.rs
+<div class="foo" style="--mw-output-color:red;">red</div>
 !! end
 
 !! test
@@ -3362,6 +3503,10 @@ foo </p><hr /><p> bar</p>
 <hr data-parsoid='{"stx":"html","noClose":true}'/>
 <hr data-parsoid='{"stx":"html","noClose":true}'/><p>
 foo </p><hr data-parsoid='{"stx":"html","noClose":true}'/><p> bar</p>
+!! html/wiki.rs
+<hr>
+<hr>
+<p>foo </p><hr><p> bar</p>
 !! end
 
 !! test
@@ -12833,6 +12978,8 @@ HTML5 data attributes
 
 !! test
 Strip reserved data attributes
+!! options
+wiki-rs-expect-failure=[[reserved data attributes are not implemented]]
 !! wikitext
 <div data-mw="foo" data-parsoid="bar" data-mw-someext="baz" data-ok="fred" data-object-id="123" data-ooui="xyzzy" data-bad:ns="ns">d</div>
 !! html/php
@@ -12966,6 +13113,7 @@ language=tr
 T33490 Turkish: ucfırst (with a dotless i)
 !! options
 language=tr
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{ucfırst:blah}}
 !! html/php
@@ -13002,6 +13150,8 @@ title=[[Main Page]]
 {{int:T34057}}
 !! html/php
 <div class="mw-heading mw-heading2"><h2 id="OK">OK</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Main_Page&amp;action=edit&amp;section=1" title="Edit section: OK">edit</a><span class="mw-editsection-bracket">]</span></span></div>
+!! html/wiki.rs
+<h2 id="OK">OK</h2>
 !! html/parsoid+integrated
 <h2 about="#mwt1" typeof="mw:Transclusion" id="OK" data-mw='{"parts":[{"template":{"target":{"wt":"int:T34057","function":"int"},"params":{},"i":0}}]}'>OK</h2>
 !! end
@@ -13073,6 +13223,7 @@ Strip marker in formatNum
 Check noCommafy in formatNum
 !! options
 language=be-tarask
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{formatnum:123456.78}}
 {{formatnum:123456.78|NOSEP}}
@@ -13103,6 +13254,7 @@ Check lossless in formatNum
 Check bn lossless in formatNum
 !! options
 language=bn
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{formatnum:9999999999999999}}
 {{formatnum:9999999999999999|LOSSLESS}}
@@ -13210,6 +13362,14 @@ Ignore pipe between table row attributes
 <td>quux
 </td></tr>
 <tr id="foo" style="color: red">
+<td>bar
+</td></tr></tbody></table>
+!! html/wiki.rs
+<table>
+<tbody><tr>
+<td>quux
+</td></tr>
+<tr id="foo" style="--mw-output-color:red;">
 <td>bar
 </td></tr></tbody></table>
 !! end
@@ -13656,6 +13816,9 @@ parsoid=wt2html
 [[Test|</span>]]
 !! html/parsoid
 <p><a rel="mw:WikiLink" href="./Test" title="Test" data-parsoid='{"stx":"piped","a":{"href":"./Test"},"sa":{"href":"Test"}}'></a></p>
+!! html/wiki.rs
+<p><a href="/wiki/Test" title="Test"></a>
+</p>
 !! end
 
 #### ----------------------------------------------------------------
@@ -13666,6 +13829,8 @@ parsoid=wt2html
 
 !! test
 LST Sections: Newfangled approach
+!! options
+wiki-rs-skip=[[applies only to parsoid]]
 !! wikitext
 <section begin="2011-05-16" />
 <section end="2014-04-10 (MW 1.23wmf22)" />
@@ -13680,6 +13845,7 @@ LST Sections: Newfangled approach
 LST Sections: Fostering
 !! options
 parsoid=wt2html
+wiki-rs-skip=[[applies only to parsoid]]
 !! wikitext
 {|
 <section name="testing"/>
@@ -13855,6 +14021,9 @@ parsoid=wt2html,html2html
 <tr>
 <td title="Hello world">Foo
 </td></tr></table>
+!! html/wiki.rs
+<table><tr><td title="Hello world">Foo
+</td></tr></table>
 !! end
 
 !! test
@@ -13879,6 +14048,10 @@ parsoid=wt2html,html2html
 <td title="Hello world">Foo
 </td><td style="color:red">Bar
 </td></tr></tbody></table>
+!! html/wiki.rs
+<table><tr><td title="Hello world">Foo
+</td><td style="--mw-output-color:red;">Bar
+</td></tr></table>
 !! end
 
 !!test
@@ -13892,6 +14065,9 @@ Accept empty td cell attribute
 <tbody><tr>
 <td align="center">foo</td>
 <td>
+</td></tr></tbody></table>
+!! html/wiki.rs
+<table><tr><td align="center">foo</td><td>
 </td></tr></tbody></table>
 !! end
 
@@ -13907,6 +14083,9 @@ Non-empty attributes in th-cells
 <th>Foo</th>
 <th style="color: red">Bar
 </th></tr></tbody></table>
+!! html/wiki.rs
+<table><tr><th>Foo</th><th style="--mw-output-color:red;">Bar
+</th></tr></table>
 !! end
 
 !!test
@@ -13921,6 +14100,9 @@ Accept empty attributes in th-cells
 <th>foo</th>
 <th>bar
 </th></tr></tbody></table>
+!! html/wiki.rs
+<table><tr><th>foo</th><th>bar
+</th></tr></table>
 !! end
 
 !! test
@@ -13947,6 +14129,10 @@ Empty table rows go away
 <td>there</td></tr>
 <tr class="foo mw-empty-elt"></tr>
 <tr class="mw-empty-elt"></tr>
+!! html/wiki.rs
+<table><tr><td>Hello
+</td><td>there
+</td></tr></table>
 !! end
 
 ###
@@ -13969,6 +14155,8 @@ RT-ed inter-element separators should be valid separators
 <table>
 <tbody class='mw-empty-elt'><tr class='mw-empty-elt' data-parsoid='{"startTagSrc":"|-","a":{"[[foo]]":null},"sa":{"[[foo]]":""}}'></tr>
 </tbody></table>
+!! html/wiki.rs
+<table></table>
 !!end
 
 # Parsoid-only test of a DOM pass
@@ -13992,6 +14180,13 @@ bar
 <table>
 <tbody><tr data-parsoid='{"autoInsertedStart":true}'><td data-parsoid='{}'><small data-parsoid='{"stx":"html","autoInsertedEnd":true}'>foo<small data-parsoid='{"stx":"html","autoInsertedEnd":true}'></small></small></td></tr>
 </tbody></table>
+!! html/wiki.rs
+<table><tr><td><small>foo
+<p>bar
+</p>
+</small></td></tr></table>
+<table><tr><td><small>foo<small>
+</small></small></td></tr></table>
 !!end
 
 # Note that the "style" attribute is really a template parameter here.
@@ -14030,6 +14225,10 @@ Indented table with an empty td
 </td>
 <td>foo
 </td></tr></tbody></table>
+!! html/wiki.rs
+<table><tr><td>
+</td><td>foo
+</td></tr></table>
 !! end
 
 !! test
@@ -14053,6 +14252,11 @@ Indented table with blank lines in between (T85627)
  <p>
  <br /></p></td></tr>
  </tbody></table>
+!! html/wiki.rs
+<table><tr><td>foo
+<p><br>
+</p>
+</td></tr></table>
 !! end
 
 !!test
@@ -14141,6 +14345,8 @@ Empty TR followed by mixed-ws-comment line should RT correctly
 <tr class="mw-empty-elt">
 <!--c--> </tr><!--d-->
 </tbody></table>
+!! html/wiki.rs
+<table></table>
 !! end
 
 !!test
@@ -14151,6 +14357,9 @@ Multi-line image caption generated by templates with/without trailing newlines
 !! html/parsoid
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="34" width="300" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/450px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/600px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>foo\n<span about="#mwt9" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"A"}},"i":0}}]}'>A</span>\n<span about="#mwt10" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"B"}},"i":0}}]}'>B</span>\n<span about="#mwt11" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"C"}},"i":0}}]}'>C</span></figcaption></figure>
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="34" width="300" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/450px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/600px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>foo\n<span about="#mwt12" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"A"}},"i":0}}]}'>A</span>\n<span about="#mwt13" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"B"}},"i":0}}]}'>B</span>\n<span about="#mwt14" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"C"}},"i":0}}]}'>C</span>\n\n</figcaption></figure>
+!! html/wiki.rs
+<figure><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img width="300" src="http://example.com/images/thumb/3/3a/Foobar.jpg" height="300"></a><figcaption>foo\nA\nB\nC</figcaption></figure>
+<figure><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img height="300" width="300" src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg"></a><figcaption>foo\nA\nB\nC\n\n</figcaption></figure>
 !! end
 
 !! test
@@ -14161,6 +14370,10 @@ parsoid=html2wt
 <meta typeof="mw:Includes/IncludeOnly" data-parsoid='{"src":"&lt;includeonly>foo&lt;/includeonly>"}' data-mw='{"src":"&lt;includeonly>foo&lt;/includeonly>"}'/><meta typeof="mw:Includes/IncludeOnly/End" data-parsoid='{"src":""}'/><p>new para</p>
 
 <link rel="mw:PageProp/Category" href="./Category:Foo" data-parsoid='{}'/><h1>new heading</h1>
+!! html/wiki.rs
+<p>new para
+</p>
+<h1 id="new_heading">new heading</h1>
 !! wikitext
 <includeonly>foo</includeonly>
 new para
@@ -14179,6 +14392,10 @@ parsoid=html2wt
 !! html/parsoid
 <p><span> <s>x</s></span><s> </s>
 <b> <i>x</i></b><i> </i>
+</p>
+!! html/wiki.rs
+<p><span> <s>x</s></span><s> </s>
+<b> <i>x</i></b>
 </p>
 !! wikitext
 <span> <s>x</s></span><s> </s>
@@ -14225,6 +14442,8 @@ parsoid=wt2html
 hi<table></table>ho<table></table>
 !! html/parsoid
 <p data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true}'>hi</p><table data-parsoid='{"stx":"html"}'></table><p data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true}'>ho</p><table data-parsoid='{"stx":"html"}'></table>
+!! html/wiki.rs # Let the browser do the fostering
+<table>hi</table><table>ho</table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14247,6 +14466,11 @@ parsoid=wt2html,wt2wt
 <table data-parsoid='{"stx":"html"}'>
 <tbody><tr data-parsoid='{"stx":"html"}'><td data-parsoid='{"stx":"html"}'> a
 </td></tr></tbody></table>
+!! html/wiki.rs # Let the browser do the fostering
+<table>
+<tr> || ||
+<td> a
+</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14258,6 +14482,8 @@ parsoid=wt2html,wt2wt
 {{1x|<table>foo<tr><td>bar</td></tr></table>}}
 !! html/parsoid
 <p about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;table>foo&lt;tr>&lt;td>bar&lt;/td>&lt;/tr>&lt;/table>"}},"i":0}}]}'>foo</p><table about="#mwt1" data-parsoid='{"stx":"html"}'><tbody><tr><td>bar</td></tr></tbody></table>
+!! html/wiki.rs # Let the browser do the fostering
+<table>foo<tr><td>bar</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14271,6 +14497,8 @@ parsoid=wt2wt,wt2html
 foo<table><tbody><tr><td>bar</td></tr></tbody></table>
 !! html/parsoid
 <p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE_html","pi":[[{"k":"1"}]]}' data-mw='{"parts":["&lt;table>",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"foo&lt;tr>&lt;td>bar&lt;/td>&lt;/tr>"}},"i":0}},"&lt;/table>"]}'>foo</p><table about="#mwt2" data-parsoid='{"stx":"html"}'><tbody><tr><td>bar</td></tr></tbody></table>
+!! html/wiki.rs # Let the browser do the fostering
+<table>foo<tr><td>bar</td></tr></table>
 !! end
 
 !! test
@@ -14288,6 +14516,8 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
+!! html/wiki.rs # Let the browser do the fostering
+<table><div>foo</div><tr><td>bar</td></tr></table>
 !! end
 
 !! test
@@ -14326,6 +14556,8 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
+!! html/wiki.rs # Let the browser do the fostering
+<table><div><p>foo</p></div><tr><td>bar</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14339,6 +14571,8 @@ parsoid=wt2wt,wt2html
 foo<table><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table>
 !! html/parsoid
 <p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE_html","pi":[[{"k":"1"}]]}' data-mw='{"parts":["&lt;table>&lt;tr>&lt;td>&lt;div>&lt;p>",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"foo&lt;/p>&lt;/div>&lt;/td>foo"}},"i":0}},"&lt;/tr>&lt;/table>"]}'>foo</p><table about="#mwt2" data-parsoid='{"stx":"html"}'><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table>
+!! html/wiki.rs # Let the browser do the fostering
+<table><tr><td><div><p>foo</p></div></td>foo</tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14352,6 +14586,8 @@ parsoid=wt2wt,wt2html
 foo<table><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table><p>ok</p>
 !! html/parsoid
 <p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE_html","pi":[[{"k":"1"}]]}' data-mw='{"parts":["&lt;table>&lt;tr>&lt;td>&lt;div>&lt;p>",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"foo&lt;/p>&lt;/div>&lt;/td>foo&lt;/tr>&lt;/table>"}},"i":0}}]}'>foo</p><table about="#mwt2" data-parsoid='{"stx":"html"}'><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table><p data-parsoid='{"stx":"html"}'>ok</p>
+!! html/wiki.rs # Let the browser do the fostering
+<table><tr><td><div><p>foo</p></div></td>foo</tr></table><p>ok</p>
 !! end
 
 !! test
@@ -14369,6 +14605,8 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
+!! html/wiki.rs # Let the browser do the fostering
+<table><p>foo</p><td>bar</td></table>
 !! end
 
 ## Remex doesn't account for fostered content.

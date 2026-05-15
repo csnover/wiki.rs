@@ -281,30 +281,33 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// etc.
     rule heading(ctx: &Context) -> Vec<Spanned<Token>>
     = t:spanned(<
-      &"=" // guard, to make sure '='+ will match.
-      // XXX: Also check to end to avoid inline parsing?
       s:spanned(<$("="+)>)
-      c:inlineline(&ctx.with_h())?
-      // If `inlineline` matches, this needs to see at least one `=` since this
-      // could also be some template argument on a new line that starts with a
-      // `=`, not a heading
-      e:spanned(<$("="+)>)
-      &assert(c.is_some() || s.len() > 2, "heading")
+      // If `inlineline` matches, `e` needs to see at least one `=` since
+      // otherwise this would also match some non-heading template argument on a
+      // new line that starts with a `=`. If it is just an “oops, all `=`”
+      // header, `c` will be `None` and then `s` needs to be at least 3 long for
+      // the same reason
+      ce:(c:inlineline(&ctx.with_h())? e:spanned(<$("="+)>) { (c, e) })?
+      &assert(ce.is_some() || s.len() > 2, "heading")
       {
-        let level = if e.is_empty() {
-            (s.len() - 1) / 2
+        let (s, c, e, level) = if let Some((c, e)) = ce {
+            (s.span, c, e.span, s.len().min(e.len()))
         } else {
-            s.len().min(e.len())
-        }.min(6);
+            let level = (s.len() - 1) / 2;
+            let e = Span::new(s.span.start + level, s.span.end);
+            let s = Span::new(s.span.start, s.span.start + level);
+            (s, None, e, level)
+        };
+        let level = level.min(6);
 
         let extra_left = (s.len() > level).then(|| {
             let delta = s.len() - level;
-            Spanned::new(Token::Text, s.span.end - delta, s.span.end)
+            Spanned::new(Token::Text, s.end - delta, s.end)
         });
 
         let extra_right = (e.len() > level).then(|| {
             let delta = e.len() - level;
-            Spanned::new(Token::Text, e.span.start, e.span.start + delta)
+            Spanned::new(Token::Text, e.start, e.start + delta)
         });
 
         let content = extra_left.into_iter()
@@ -525,14 +528,16 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// This rule *assumes* start-of-line position and is faster than using
     /// `sol_block_line` in table contexts.
     rule table_line(ctx: &Context) -> Vec<Spanned<Token>>
-    = space_or_comment()*
+    = // Retaining the space is necessary for indented text lines that look like
+      // table tokens but are not
+      s:space_or_comment()*
       !inline_breaks(ctx)
       t:(
         table_start_tag(ctx)
         / table_content_line(&ctx.with_table())
         / t:table_end_tag() { vec![t] }
       )
-    { t }
+    { s.into_iter().chain(t).collect() }
 
     /// A table start tag.
     ///
