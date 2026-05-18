@@ -145,6 +145,7 @@ pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
 ) -> Result {
     let (missing, query) = if let LinkKind::Internal(title) = link
         && title.interwiki().is_none()
+        && !title.key().is_empty()
         && !state.statics.db.contains(title)
     {
         (
@@ -186,7 +187,7 @@ pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
                                         "title" => message.replace("$1", title.key())
                                     }]);
                                 }
-                            } else {
+                            } else if !title.prefixed_text().is_empty() {
                                 args.push(token![source, Argument {
                                     "title" => title.prefixed_text()
                                 }]);
@@ -300,7 +301,7 @@ impl LinkKind<'_> {
                     } else {
                         url
                     }
-                } else if title.text().is_empty() {
+                } else if title.prefixed_text().is_empty() {
                     format!(
                         "#{}",
                         anchor_encode(
