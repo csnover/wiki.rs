@@ -4,7 +4,7 @@ use super::{
     Error, Result, State, StripMarker,
     emitters::{
         Accumulator, AfterHeadingChomper, CategoryTrim, Chain as _, DomTree, EmptyTagger,
-        GrafEmitter, ListEmitter, OutlineEmitter, PrettyText, Sink, TemplateTagger,
+        GrafEmitter, ListEmitter, OutlineEmitter, PrettyText, Sink, TableFoster, TemplateTagger,
         TextStyleEmitter,
     },
     extension_tags,
@@ -28,7 +28,9 @@ use std::borrow::Cow;
 type RendererChain = CategoryTrim<
     DomTree<
         AfterHeadingChomper<
-            GrafEmitter<OutlineEmitter<PrettyText<TemplateTagger<EmptyTagger<Accumulator>>>>>,
+            GrafEmitter<
+                TableFoster<OutlineEmitter<PrettyText<TemplateTagger<EmptyTagger<Accumulator>>>>>,
+            >,
         >,
     >,
 >;
@@ -58,8 +60,8 @@ impl Document {
             fragment,
             in_include: <_>::default(),
             next: CategoryTrim::new(DomTree::new(AfterHeadingChomper::new(GrafEmitter::new(
-                OutlineEmitter::new(PrettyText::new(TemplateTagger::new(EmptyTagger::new(
-                    Accumulator::new(),
+                TableFoster::new(OutlineEmitter::new(PrettyText::new(TemplateTagger::new(
+                    EmptyTagger::new(Accumulator::new()),
                 )))),
             )))),
             stack: <_>::default(),
@@ -279,10 +281,12 @@ impl Document {
                     .next_mut()
                     .next_mut()
                     .next_mut()
+                    .next_mut()
                     .push(name.clone());
             }
             StripMarker::WikiRsSourceEnd(name) => {
                 self.next
+                    .next_mut()
                     .next_mut()
                     .next_mut()
                     .next_mut()

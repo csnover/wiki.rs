@@ -1684,13 +1684,7 @@ impl MarkableString {
 
     /// Updates the positions of marks above `start`
     fn adjust_marks(&mut self, start: u32, delta: i32) {
-        let marks = self
-            .marks
-            .iter_mut()
-            .rev()
-            .filter(|&&mut pos| pos & Self::FREE_BIT == 0 && pos > start);
-
-        for pos in marks {
+        for pos in self.iter_marks_mut(start) {
             *pos = pos.checked_add_signed(delta).unwrap_or(Self::INVALID);
         }
     }
@@ -1753,11 +1747,60 @@ impl MarkableString {
         self.inner
     }
 
+    /// Returns a mutable iterator over all mark positions above `start`.
+    fn iter_marks_mut(&mut self, start: u32) -> impl Iterator<Item = &'_ mut u32> {
+        self.marks
+            .iter_mut()
+            .rev()
+            .filter(move |&&mut pos| pos & Self::FREE_BIT == 0 && pos > start)
+    }
+
     /// Returns a new mark corresponding to the current length of the string.
     #[must_use]
     pub fn mark(&mut self) -> Mark {
         let pos = u32::try_from(self.inner.len()).unwrap();
         self.insert_mark(pos)
+    }
+
+    /// Moves the string in `range` to `dest`.
+    pub fn move_range<R: core::ops::RangeBounds<usize>>(&mut self, range: R, dest: usize) {
+        // TODO: core::slice::range is unstable. rust-lang/rust#76393
+        let start = match range.start_bound() {
+            core::ops::Bound::Included(&start) => start,
+            core::ops::Bound::Excluded(&start) => start + 1,
+            core::ops::Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            core::ops::Bound::Included(&end) => end + 1,
+            core::ops::Bound::Excluded(&end) => end,
+            core::ops::Bound::Unbounded => self.inner.len(),
+        };
+
+        let (start, mid, end) = if dest < start {
+            (dest, start - dest, end)
+        } else if dest < end {
+            (start, end, dest + end - start)
+        } else {
+            (start, end - start, dest)
+        };
+
+        assert!(self.inner.is_char_boundary(start));
+        assert!(self.inner.is_char_boundary(end));
+        assert!(self.inner.is_char_boundary(dest));
+        // SAFETY: All of start, end, and dest are asserted to be on character
+        // boundaries.
+        (unsafe { self.inner.as_bytes_mut() })[start..end].rotate_left(mid - start);
+
+        let start = u32::try_from(start).unwrap();
+        let mid = u32::try_from(mid).unwrap();
+        let end = u32::try_from(end).unwrap();
+        let delta_left = i32::try_from(end).unwrap().strict_sub_unsigned(mid);
+        let delta_right = i32::try_from(start).unwrap().strict_sub_unsigned(mid);
+        for pos in self.iter_marks_mut(start).filter(|pos| **pos <= end) {
+            *pos = pos
+                .checked_add_signed(if *pos > mid { delta_right } else { delta_left })
+                .unwrap_or(Self::INVALID);
+        }
     }
 
     /// Appends `ch` to the string.
@@ -2610,6 +2653,142 @@ impl<S: Sink> Sink for PrettyText<S> {
     }
 }
 
+/// Ejects content from inside tables to outside tables.
+///
+/// This is, strictly speaking, unnecessary. Browsers all follow the HTML5 spec
+/// from which this behaviour derives. However, to satisfy the MW test suite
+/// without going insane, fostering is also implemented in the renderer.
+#[derive(Debug)]
+pub(super) struct TableFoster<S: Sink + Markable> {
+    /// The position just before the nearest table. Since tables can be nested,
+    /// this is a stack.
+    before_table: Vec<Mark>,
+    /// The starting position of the currently processing space between table
+    /// children.
+    interstitial: Option<Mark>,
+    /// The output.
+    next: S,
+}
+
+impl<S: Sink + Markable> TableFoster<S> {
+    /// Creates a new `TableFoster` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            before_table: <_>::default(),
+            interstitial: <_>::default(),
+            next,
+        }
+    }
+
+    /// Gives up the child to the state.
+    fn foster(&mut self) {
+        if let Some(start) = self.interstitial.take()
+            && let Some(before) = self.before_table.last()
+        {
+            let end = self.next.mark();
+            self.next
+                .with_marks([before, &start, &end], |[before, start, end], out| {
+                    if let (Some(before), Some(start), Some(end)) = (before, start, end) {
+                        if out[start..end].bytes().all(|c| c.is_ascii_whitespace()) {
+                            out.replace_range(start..end, "\n");
+                        } else {
+                            out.move_range(start..end, before);
+                        }
+                    }
+                });
+        }
+    }
+}
+
+chainable!(TableFoster);
+
+impl<S: Sink + Markable> Sink for TableFoster<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+        self.next.finish(state)
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.next.new_line();
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.next.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        if name == "table" {
+            let mark = self.before_table.pop().expect("table mark");
+            self.next.free_mark(mark);
+        }
+        if matches!(name, "table" | "tr") {
+            self.foster();
+        }
+        self.next.tag_end(name);
+        if matches!(name, "caption" | "td" | "th" | "tr") {
+            debug_assert!(self.interstitial.is_none());
+            self.interstitial = Some(self.next.mark());
+        }
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        if name == "table" {
+            self.before_table.push(self.next.mark());
+        } else if matches!(name, "caption" | "td" | "th" | "tr") {
+            self.foster();
+        }
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.next.tag_start_end(name);
+        if matches!(name, "table" | "tr") {
+            debug_assert!(self.interstitial.is_none());
+            self.interstitial = Some(self.next.mark());
+        }
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.next.text(text);
+    }
+}
+
 /// Adds extra `data-wiki-rs` attributes to the root elements of anonymous
 /// templates so they can be identified and styled.
 #[derive(Debug)]
@@ -2778,3 +2957,53 @@ macro_rules! chainable {
 }
 
 use chainable;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn move_range() {
+        let mut s = MarkableString::default();
+        let before = s.mark();
+        s.push('a');
+        let after_a = s.mark();
+        s.push_str("bc");
+        let after_c = s.mark();
+        s.push('d');
+        let after_d = s.mark();
+        let start = s.inner.len();
+        s.push('e');
+        let after_e = s.mark();
+        s.push_str("fghi");
+        let after_i = s.mark();
+        let end = s.inner.len();
+
+        s.move_range(start..end, 0);
+        let positions = [&before, &after_a, &after_c, &after_d, &after_e, &after_i]
+            .map(|mark| s.restore_mark(mark));
+        assert_eq!(s.inner, "efghiabcd");
+        assert_eq!(
+            positions,
+            [Some(0), Some(6), Some(8), Some(9), Some(1), Some(5)]
+        );
+
+        s.move_range(0..4, 5);
+        let positions = [&before, &after_a, &after_c, &after_d, &after_e, &after_i]
+            .map(|mark| s.restore_mark(mark));
+        assert_eq!(s.inner, "iefghabcd");
+        assert_eq!(
+            positions,
+            [Some(0), Some(6), Some(8), Some(9), Some(2), Some(1)]
+        );
+
+        s.move_range(3..6, 5);
+        let positions = [&before, &after_a, &after_c, &after_d, &after_e, &after_i]
+            .map(|mark| s.restore_mark(mark));
+        assert_eq!(s.inner, "iefbcghad");
+        assert_eq!(
+            positions,
+            [Some(0), Some(8), Some(5), Some(9), Some(2), Some(1)]
+        );
+    }
+}
