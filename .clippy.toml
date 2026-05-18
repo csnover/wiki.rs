@@ -1,3 +1,4 @@
 allow-private-module-inception = true
+array-size-threshold = 1024
 check-inconsistent-struct-field-initializers = true
 doc-valid-idents = ["EasyTimeline", "GeoJSON", "MediaWiki", "ParserFunctions", "PubMed", "TopoJSON", ".."]

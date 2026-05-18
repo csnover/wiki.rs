@@ -910,112 +910,16 @@ enum Range<'s> {
 }
 
 impl<'s> Range<'s> {
-    /// Predefined category 10 colours from D3.
-    const CATEGORY_10: &'static [Value<'static>] = &[
-        Value::Str(Cow::Borrowed("#1f77b4")),
-        Value::Str(Cow::Borrowed("#ff7f0e")),
-        Value::Str(Cow::Borrowed("#2ca02c")),
-        Value::Str(Cow::Borrowed("#d62728")),
-        Value::Str(Cow::Borrowed("#9467bd")),
-        Value::Str(Cow::Borrowed("#8c564b")),
-        Value::Str(Cow::Borrowed("#e377c2")),
-        Value::Str(Cow::Borrowed("#7f7f7f")),
-        Value::Str(Cow::Borrowed("#bcbd22")),
-        Value::Str(Cow::Borrowed("#17becf")),
-    ];
-
-    /// Predefined category 20 colours from D3.
-    const CATEGORY_20: &'static [Value<'static>] = &[
-        Value::Str(Cow::Borrowed("#1f77b4")),
-        Value::Str(Cow::Borrowed("#aec7e8")),
-        Value::Str(Cow::Borrowed("#ff7f0e")),
-        Value::Str(Cow::Borrowed("#ffbb78")),
-        Value::Str(Cow::Borrowed("#2ca02c")),
-        Value::Str(Cow::Borrowed("#98df8a")),
-        Value::Str(Cow::Borrowed("#d62728")),
-        Value::Str(Cow::Borrowed("#ff9896")),
-        Value::Str(Cow::Borrowed("#9467bd")),
-        Value::Str(Cow::Borrowed("#c5b0d5")),
-        Value::Str(Cow::Borrowed("#8c564b")),
-        Value::Str(Cow::Borrowed("#c49c94")),
-        Value::Str(Cow::Borrowed("#e377c2")),
-        Value::Str(Cow::Borrowed("#f7b6d2")),
-        Value::Str(Cow::Borrowed("#7f7f7f")),
-        Value::Str(Cow::Borrowed("#c7c7c7")),
-        Value::Str(Cow::Borrowed("#bcbd22")),
-        Value::Str(Cow::Borrowed("#dbdb8d")),
-        Value::Str(Cow::Borrowed("#17becf")),
-        Value::Str(Cow::Borrowed("#9edae5")),
-    ];
-
-    /// Predefined category 20 colours (variant B) from D3.
-    const CATEGORY_20_B: &'static [Value<'static>] = &[
-        Value::Str(Cow::Borrowed("#393b79")),
-        Value::Str(Cow::Borrowed("#5254a3")),
-        Value::Str(Cow::Borrowed("#6b6ecf")),
-        Value::Str(Cow::Borrowed("#9c9ede")),
-        Value::Str(Cow::Borrowed("#637939")),
-        Value::Str(Cow::Borrowed("#8ca252")),
-        Value::Str(Cow::Borrowed("#b5cf6b")),
-        Value::Str(Cow::Borrowed("#cedb9c")),
-        Value::Str(Cow::Borrowed("#8c6d31")),
-        Value::Str(Cow::Borrowed("#bd9e39")),
-        Value::Str(Cow::Borrowed("#e7ba52")),
-        Value::Str(Cow::Borrowed("#e7cb94")),
-        Value::Str(Cow::Borrowed("#843c39")),
-        Value::Str(Cow::Borrowed("#ad494a")),
-        Value::Str(Cow::Borrowed("#d6616b")),
-        Value::Str(Cow::Borrowed("#e7969c")),
-        Value::Str(Cow::Borrowed("#7b4173")),
-        Value::Str(Cow::Borrowed("#a55194")),
-        Value::Str(Cow::Borrowed("#ce6dbd")),
-        Value::Str(Cow::Borrowed("#de9ed6")),
-    ];
-
-    /// Predefined category 20 colours (variant C) from D3.
-    const CATEGORY_20_C: &'static [Value<'static>] = &[
-        Value::Str(Cow::Borrowed("#3182bd")),
-        Value::Str(Cow::Borrowed("#6baed6")),
-        Value::Str(Cow::Borrowed("#9ecae1")),
-        Value::Str(Cow::Borrowed("#c6dbef")),
-        Value::Str(Cow::Borrowed("#e6550d")),
-        Value::Str(Cow::Borrowed("#fd8d3c")),
-        Value::Str(Cow::Borrowed("#fdae6b")),
-        Value::Str(Cow::Borrowed("#fdd0a2")),
-        Value::Str(Cow::Borrowed("#31a354")),
-        Value::Str(Cow::Borrowed("#74c476")),
-        Value::Str(Cow::Borrowed("#a1d99b")),
-        Value::Str(Cow::Borrowed("#c7e9c0")),
-        Value::Str(Cow::Borrowed("#756bb1")),
-        Value::Str(Cow::Borrowed("#9e9ac8")),
-        Value::Str(Cow::Borrowed("#bcbddc")),
-        Value::Str(Cow::Borrowed("#dadaeb")),
-        Value::Str(Cow::Borrowed("#636363")),
-        Value::Str(Cow::Borrowed("#969696")),
-        Value::Str(Cow::Borrowed("#bdbdbd")),
-        Value::Str(Cow::Borrowed("#d9d9d9")),
-    ];
-
-    /// Predefined shapes.
-    const SHAPES: &'static [Value<'static>] = &[
-        Value::Str(Cow::Borrowed("circle")),
-        Value::Str(Cow::Borrowed("cross")),
-        Value::Str(Cow::Borrowed("diamond")),
-        Value::Str(Cow::Borrowed("square")),
-        Value::Str(Cow::Borrowed("triangle-down")),
-        Value::Str(Cow::Borrowed("triangle-up")),
-    ];
-
     /// Gets the range as a list of values.
     fn get(&self, node: &Node<'s, '_>) -> Cow<'s, [Value<'s>]> {
         match self {
             Range::Width => Cow::Owned(vec![Value::from(0.0), Value::from(node.width())]),
             Range::Height => Cow::Owned(vec![Value::from(0.0), Value::from(node.height())]),
-            Range::Shapes => Cow::Borrowed(Self::SHAPES),
-            Range::Category10 => Cow::Borrowed(Self::CATEGORY_10),
-            Range::Category20 => Cow::Borrowed(Self::CATEGORY_20),
-            Range::Category20b => Cow::Borrowed(Self::CATEGORY_20_B),
-            Range::Category20c => Cow::Borrowed(Self::CATEGORY_20_C),
+            Range::Shapes => Cow::Borrowed(SHAPES),
+            Range::Category10 => Cow::Borrowed(CATEGORY_10),
+            Range::Category20 => Cow::Borrowed(CATEGORY_20),
+            Range::Category20b => Cow::Borrowed(CATEGORY_20_B),
+            Range::Category20c => Cow::Borrowed(CATEGORY_20_C),
             // TODO: Self-referential struct to avoid clones.
             Range::Fixed(values) => Cow::Owned(values.clone()),
             Range::Derived(data_ref) => Cow::Owned(data_ref.get(node)),
@@ -1494,3 +1398,99 @@ fn range_override<'s, G, M>(
         }
     }
 }
+
+/// Predefined category 10 colours from D3.
+static CATEGORY_10: &[Value<'static>] = &[
+    Value::Str(Cow::Borrowed("#1f77b4")),
+    Value::Str(Cow::Borrowed("#ff7f0e")),
+    Value::Str(Cow::Borrowed("#2ca02c")),
+    Value::Str(Cow::Borrowed("#d62728")),
+    Value::Str(Cow::Borrowed("#9467bd")),
+    Value::Str(Cow::Borrowed("#8c564b")),
+    Value::Str(Cow::Borrowed("#e377c2")),
+    Value::Str(Cow::Borrowed("#7f7f7f")),
+    Value::Str(Cow::Borrowed("#bcbd22")),
+    Value::Str(Cow::Borrowed("#17becf")),
+];
+
+/// Predefined category 20 colours from D3.
+static CATEGORY_20: &[Value<'static>] = &[
+    Value::Str(Cow::Borrowed("#1f77b4")),
+    Value::Str(Cow::Borrowed("#aec7e8")),
+    Value::Str(Cow::Borrowed("#ff7f0e")),
+    Value::Str(Cow::Borrowed("#ffbb78")),
+    Value::Str(Cow::Borrowed("#2ca02c")),
+    Value::Str(Cow::Borrowed("#98df8a")),
+    Value::Str(Cow::Borrowed("#d62728")),
+    Value::Str(Cow::Borrowed("#ff9896")),
+    Value::Str(Cow::Borrowed("#9467bd")),
+    Value::Str(Cow::Borrowed("#c5b0d5")),
+    Value::Str(Cow::Borrowed("#8c564b")),
+    Value::Str(Cow::Borrowed("#c49c94")),
+    Value::Str(Cow::Borrowed("#e377c2")),
+    Value::Str(Cow::Borrowed("#f7b6d2")),
+    Value::Str(Cow::Borrowed("#7f7f7f")),
+    Value::Str(Cow::Borrowed("#c7c7c7")),
+    Value::Str(Cow::Borrowed("#bcbd22")),
+    Value::Str(Cow::Borrowed("#dbdb8d")),
+    Value::Str(Cow::Borrowed("#17becf")),
+    Value::Str(Cow::Borrowed("#9edae5")),
+];
+
+/// Predefined category 20 colours (variant B) from D3.
+static CATEGORY_20_B: &[Value<'static>] = &[
+    Value::Str(Cow::Borrowed("#393b79")),
+    Value::Str(Cow::Borrowed("#5254a3")),
+    Value::Str(Cow::Borrowed("#6b6ecf")),
+    Value::Str(Cow::Borrowed("#9c9ede")),
+    Value::Str(Cow::Borrowed("#637939")),
+    Value::Str(Cow::Borrowed("#8ca252")),
+    Value::Str(Cow::Borrowed("#b5cf6b")),
+    Value::Str(Cow::Borrowed("#cedb9c")),
+    Value::Str(Cow::Borrowed("#8c6d31")),
+    Value::Str(Cow::Borrowed("#bd9e39")),
+    Value::Str(Cow::Borrowed("#e7ba52")),
+    Value::Str(Cow::Borrowed("#e7cb94")),
+    Value::Str(Cow::Borrowed("#843c39")),
+    Value::Str(Cow::Borrowed("#ad494a")),
+    Value::Str(Cow::Borrowed("#d6616b")),
+    Value::Str(Cow::Borrowed("#e7969c")),
+    Value::Str(Cow::Borrowed("#7b4173")),
+    Value::Str(Cow::Borrowed("#a55194")),
+    Value::Str(Cow::Borrowed("#ce6dbd")),
+    Value::Str(Cow::Borrowed("#de9ed6")),
+];
+
+/// Predefined category 20 colours (variant C) from D3.
+static CATEGORY_20_C: &[Value<'static>] = &[
+    Value::Str(Cow::Borrowed("#3182bd")),
+    Value::Str(Cow::Borrowed("#6baed6")),
+    Value::Str(Cow::Borrowed("#9ecae1")),
+    Value::Str(Cow::Borrowed("#c6dbef")),
+    Value::Str(Cow::Borrowed("#e6550d")),
+    Value::Str(Cow::Borrowed("#fd8d3c")),
+    Value::Str(Cow::Borrowed("#fdae6b")),
+    Value::Str(Cow::Borrowed("#fdd0a2")),
+    Value::Str(Cow::Borrowed("#31a354")),
+    Value::Str(Cow::Borrowed("#74c476")),
+    Value::Str(Cow::Borrowed("#a1d99b")),
+    Value::Str(Cow::Borrowed("#c7e9c0")),
+    Value::Str(Cow::Borrowed("#756bb1")),
+    Value::Str(Cow::Borrowed("#9e9ac8")),
+    Value::Str(Cow::Borrowed("#bcbddc")),
+    Value::Str(Cow::Borrowed("#dadaeb")),
+    Value::Str(Cow::Borrowed("#636363")),
+    Value::Str(Cow::Borrowed("#969696")),
+    Value::Str(Cow::Borrowed("#bdbdbd")),
+    Value::Str(Cow::Borrowed("#d9d9d9")),
+];
+
+/// Predefined shapes.
+static SHAPES: &[Value<'static>] = &[
+    Value::Str(Cow::Borrowed("circle")),
+    Value::Str(Cow::Borrowed("cross")),
+    Value::Str(Cow::Borrowed("diamond")),
+    Value::Str(Cow::Borrowed("square")),
+    Value::Str(Cow::Borrowed("triangle-down")),
+    Value::Str(Cow::Borrowed("triangle-up")),
+];
