@@ -192,14 +192,14 @@ impl Document {
     }
 
     /// Finalises the document and returns the resulting output.
-    pub(crate) fn finish(mut self) -> String {
+    pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
         self.text_style_emitter.finish(&mut self.next);
 
         for rest in self.stack.drain(..).rev() {
             rest.close(&mut self.next);
         }
 
-        self.next.finish()
+        self.next.finish(state)
     }
 
     /// Returns true if the document is currently processing any table.

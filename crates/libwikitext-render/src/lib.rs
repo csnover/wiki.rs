@@ -521,7 +521,7 @@ fn render(
 
     let mut renderer = Document::new(false);
     renderer.adopt_output(&mut state, &sp, &root)?;
-    let content = renderer.finish();
+    let content = renderer.finish(&mut state);
 
     let mut timings = state.timing.into_iter().collect::<Vec<_>>();
     timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));

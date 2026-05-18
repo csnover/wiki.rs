@@ -277,7 +277,11 @@ fn gallery(
 
         let mut inner = Document::new(true);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
-        write!(out, r#"<li class="gallerybox">{}</li>"#, inner.finish())?;
+        write!(
+            out,
+            r#"<li class="gallerybox">{}</li>"#,
+            inner.finish(state)
+        )?;
     }
     write!(out, "</ul>")?;
 
@@ -331,7 +335,7 @@ fn indicator(
     if let Some(image) = image {
         let mut out = Document::new(true);
         out.adopt_token(state, &sp, image)?;
-        let indicator = out.finish();
+        let indicator = out.finish(state);
         state.globals.indicators.insert(name.to_string(), indicator);
     }
 
@@ -1203,7 +1207,7 @@ fn eval_string(state: &mut State<'_, '_, '_>, sp: &StackFrame<'_>, text: &str) -
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
     let mut out = Document::new(true);
     out.adopt_output(state, &sp, &root)?;
-    Ok(out.finish())
+    Ok(out.finish(state))
 }
 
 /// Preprocesses the given text in a root document scope.

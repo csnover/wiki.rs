@@ -1,6 +1,6 @@
 //! HTML emitters for Wikitext fragments that require state management.
 
-use super::{document::Node, globals::Outline, tags::PHRASING_TAGS};
+use super::{State, document::Node, globals::Outline, tags::PHRASING_TAGS};
 use core::fmt::{self, Write as _};
 use libphp_rs::strtr;
 use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html};
@@ -96,7 +96,7 @@ pub(super) trait Sink {
     fn entity(&mut self, value: char, raw: &str);
 
     /// Finish processing input.
-    fn finish(self) -> String;
+    fn finish(self, state: &mut State<'_, '_, '_>) -> String;
 
     /// A source newline.
     ///
@@ -206,8 +206,8 @@ impl<S: Sink> Sink for AfterHeadingChomper<S> {
     }
 
     #[inline]
-    fn finish(self) -> String {
-        self.next.finish()
+    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+        self.next.finish(state)
     }
 
     #[inline]
@@ -371,7 +371,7 @@ impl Sink for Accumulator {
     }
 
     #[inline]
-    fn finish(self) -> String {
+    fn finish(self, _: &mut State<'_, '_, '_>) -> String {
         self.inner.into_inner()
     }
 
@@ -506,9 +506,9 @@ impl<S: Sink> Sink for CategoryTrim<S> {
     }
 
     #[inline]
-    fn finish(mut self) -> String {
+    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
         self.flush();
-        self.next.finish()
+        self.next.finish(state)
     }
 
     #[inline]
@@ -615,11 +615,11 @@ impl<S: Sink> Sink for DomTree<S> {
     }
 
     #[inline]
-    fn finish(mut self) -> String {
+    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
         for e in self.stack.drain(..).rev() {
             e.close(&mut self.next);
         }
-        self.next.finish()
+        self.next.finish(state)
     }
 
     #[inline]
@@ -758,8 +758,8 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
     }
 
     #[inline]
-    fn finish(self) -> String {
-        self.next.finish()
+    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+        self.next.finish(state)
     }
 
     #[inline]
@@ -1267,12 +1267,12 @@ impl<S: Sink + Markable> Sink for GrafEmitter<S> {
         self.next.entity(value, raw);
     }
 
-    fn finish(mut self) -> String {
+    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
         self.end_line(true);
         self.end_wrap();
         self.close(true);
         debug_assert_eq!(self.level, 0);
-        self.next.finish()
+        self.next.finish(state)
     }
 
     #[inline]
@@ -1866,10 +1866,14 @@ impl fmt::Write for MarkableString {
 /// HTML directly from the corresponding processed document HTML.
 #[derive(Debug)]
 pub(super) struct OutlineEmitter<S: Sink + Markable> {
+    /// Pending outline entries.
+    entries: Vec<OutlineEmitterEntry>,
+    /// The HTML string buffer for this emitter.
+    html_buffer: String,
+    /// The ID string buffer for this emitter.
+    id_buffer: String,
     /// The output.
     next: S,
-    /// TODO: Uh-oh! This isn’t supposed to be here.
-    outline: Outline,
     /// The currently processing heading.
     state: OutlineEmitterState,
 }
@@ -1878,39 +1882,59 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
     /// The list of tags allowed in outlines.
     ///
     /// This list comes from Parsoid `Wt2Html\DOM\Handlers\Headings`.
-    const ALLOWED_TAGS: phf::Set<&'static str> = phf::phf_set! {
+    const ALLOWED_TAGS: phf::Set<&str> = phf::phf_set! {
         "b", "bdi", "i", "q", "s", "span", "strike", "sub", "sup"
     };
 
     /// Creates a new `OutlineEmitter` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
+            entries: <_>::default(),
+            html_buffer: <_>::default(),
+            id_buffer: <_>::default(),
             next,
-            outline: <_>::default(),
             state: <_>::default(),
         }
     }
 
-    /// Finishes creating an outline entry, inserting to the global outline and
-    /// adjusting ID attributes if necessary.
-    fn finalize_entry(&mut self, level: HeadingLevel) {
+    /// Emits an outline entry with the given `level`, `html`, and `id` to
+    /// `outline`.
+    fn emit_entry(
+        &mut self,
+        outline: &mut Outline,
+        level: HeadingLevel,
+        html: core::ops::Range<usize>,
+        id: OutlineEmitterEntryId,
+    ) {
         const PREFIX: &str = r#" id=""#;
         const SUFFIX: &str = r#"""#;
 
-        debug_assert_eq!(Some(level), self.state.tag);
-        debug_assert!(self.state.stack.is_empty());
-
-        let state = core::mem::take(&mut self.state);
-        match state.id {
-            OutlineAnchor::Undefined => unreachable!(),
-            OutlineAnchor::Explicit(start, end) => {
-                let end = end.unwrap_or_else(|| self.next.mark());
+        match id {
+            OutlineEmitterEntryId::Implicit {
+                start,
+                end,
+                out_pos,
+            } => {
+                let id = &self.id_buffer[start as usize..end as usize];
+                let id = anchor_encode(id, AnchorEncodeMode::Html5);
+                let id = outline
+                    .push(level, &self.html_buffer[html], &id)
+                    .unwrap_or(&id);
+                self.next.with_marks([&out_pos], |[out_pos], out| {
+                    if let Some(out_pos) = out_pos {
+                        let id = html_escape::encode_double_quoted_attribute(id);
+                        out.insert_str(out_pos, &format!("{PREFIX}{id}{SUFFIX}"));
+                    }
+                });
+                self.next.free_mark(out_pos);
+            }
+            OutlineEmitterEntryId::Explicit { start, end } => {
                 self.next.with_marks([&start, &end], |[start, end], out| {
                     let (Some(start), Some(end)) = (start, end) else {
                         return;
                     };
                     let value = decode_html(&out[PREFIX.len()..end - SUFFIX.len()]);
-                    if let Some(id) = self.outline.push(level, state.html, value.into_owned()) {
+                    if let Some(id) = outline.push(level, &self.html_buffer[html], &value) {
                         let id = html_escape::encode_double_quoted_attribute(id);
                         out.replace_range(start..end, &format!("{PREFIX}{id}{SUFFIX}"));
                     }
@@ -1918,21 +1942,40 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
                 self.next.free_mark(start);
                 self.next.free_mark(end);
             }
-            OutlineAnchor::Implicit(pos, id) => {
-                let id = anchor_encode(&id, AnchorEncodeMode::Html5);
-                let id = self
-                    .outline
-                    .push(level, state.html, id.to_string())
-                    .unwrap_or(&id);
-                self.next.with_marks([&pos], |[pos], out| {
-                    if let Some(pos) = pos {
-                        let id = html_escape::encode_double_quoted_attribute(id);
-                        out.insert_str(pos, &format!("{PREFIX}{id}{SUFFIX}"));
-                    }
-                });
-                self.next.free_mark(pos);
-            }
         }
+    }
+
+    /// Records an entry with the given `level` to be emitted to the global
+    /// outline when the emitter is finished.
+    fn save_entry(&mut self, level: HeadingLevel) {
+        debug_assert_eq!(Some(level), self.state.tag);
+        debug_assert!(self.state.stack.is_empty());
+
+        let state = core::mem::take(&mut self.state);
+        let id = match state.id {
+            OutlineEmitterStateId::Undefined => unreachable!(),
+            OutlineEmitterStateId::Explicit { start, end } => {
+                let end = end.unwrap_or_else(|| self.next.mark());
+                OutlineEmitterEntryId::Explicit { start, end }
+            }
+            OutlineEmitterStateId::Implicit {
+                id_pos: start,
+                out_pos,
+            } => {
+                let end = u16::try_from(self.id_buffer.len()).unwrap();
+                OutlineEmitterEntryId::Implicit {
+                    out_pos,
+                    start,
+                    end,
+                }
+            }
+        };
+        self.entries.push(OutlineEmitterEntry {
+            html: state.html,
+            id,
+            level,
+        });
+
         if let Some(pos) = state.dir {
             self.next.free_mark(pos);
         }
@@ -1961,18 +2004,31 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
         let start = self.next.mark();
         self.next.entity(value, raw);
         self.next.with_marks([&start], |[pos], out| {
-            self.state.html += pos.map_or("", |start| &out[start..]);
+            self.html_buffer
+                .push_str(pos.map_or("", |start| &out[start..]));
         });
         self.next.free_mark(start);
 
-        if let OutlineAnchor::Implicit(_, id) = &mut self.state.id {
-            id.push(value);
+        if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
+            self.id_buffer.push(value);
         }
     }
 
     #[inline]
-    fn finish(self) -> String {
-        self.next.finish()
+    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
+        let mut entries = core::mem::take(&mut self.entries).into_iter().peekable();
+        while let Some(entry) = entries.next() {
+            let next_html = entries
+                .peek()
+                .map_or(self.html_buffer.len(), |next| next.html as usize);
+            self.emit_entry(
+                &mut state.globals.outline,
+                entry.level,
+                entry.html as usize..next_html,
+                entry.id,
+            );
+        }
+        self.next.finish(state)
     }
 
     #[inline]
@@ -2000,12 +2056,12 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
             self.next.with_marks([&dir], |[dir], out| {
                 let value = dir.map_or("", |dir| &out[dir..]);
                 if value.len() > " dir".len() {
-                    self.state.html += value;
+                    self.html_buffer.push_str(value);
                 }
             });
             self.next.free_mark(dir);
         } else if self.state.in_entry_attrs && name == "id" {
-            let OutlineAnchor::Explicit(_, end) = &mut self.state.id else {
+            let OutlineEmitterStateId::Explicit { end, .. } = &mut self.state.id else {
                 panic!("attributes all goofed up")
             };
             *end = Some(self.next.mark());
@@ -2016,7 +2072,10 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
         if self.state.stack.last() == Some(&"span") && name == "dir" {
             self.state.dir = Some(self.next.mark());
         } else if self.state.in_entry_attrs && name == "id" {
-            self.state.id = OutlineAnchor::Explicit(self.next.mark(), None);
+            self.state.id = OutlineEmitterStateId::Explicit {
+                start: self.next.mark(),
+                end: None,
+            };
         }
         self.next.tag_attribute_start(name);
     }
@@ -2025,9 +2084,9 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
         self.next.tag_end(name);
 
         if self.state.stack.pop_if(|tag| *tag == name).is_some() {
-            let _ = write!(self.state.html, "</{name}>");
+            let _ = write!(self.html_buffer, "</{name}>");
         } else if let Ok(level) = name.parse() {
-            self.finalize_entry(level);
+            self.save_entry(level);
         }
     }
 
@@ -2039,11 +2098,12 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
                 todo!("invalid heading tag nesting");
             }
             self.state.tag = Some(level);
+            self.state.html = u32::try_from(self.html_buffer.len()).unwrap();
             self.state.in_entry_attrs = true;
         } else if self.state.tag.is_some()
             && let Some(name) = Self::ALLOWED_TAGS.get_key(name)
         {
-            let _ = write!(self.state.html, "<{name}");
+            let _ = write!(self.html_buffer, "<{name}");
             self.state.stack.push(name);
         }
 
@@ -2052,10 +2112,13 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
 
     fn tag_start_end(&mut self, name: &str) {
         if self.state.stack.last() == Some(&name) {
-            self.state.html.push('>');
+            self.html_buffer.push('>');
         } else if self.state.in_entry_attrs {
-            if matches!(self.state.id, OutlineAnchor::Undefined) {
-                self.state.id = OutlineAnchor::Implicit(self.next.mark(), <_>::default());
+            if matches!(self.state.id, OutlineEmitterStateId::Undefined) {
+                self.state.id = OutlineEmitterStateId::Implicit {
+                    out_pos: self.next.mark(),
+                    id_pos: u16::try_from(self.id_buffer.len()).unwrap(),
+                };
             }
             self.state.in_entry_attrs = false;
         }
@@ -2072,14 +2135,47 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
         let start = self.next.mark();
         self.next.text(text);
         self.next.with_marks([&start], |[pos], out| {
-            self.state.html += pos.map_or("", |start| &out[start..]);
+            self.html_buffer
+                .push_str(pos.map_or("", |start| &out[start..]));
         });
         self.next.free_mark(start);
 
-        if let OutlineAnchor::Implicit(_, id) = &mut self.state.id {
-            *id += text;
+        if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
+            self.id_buffer.push_str(text);
         }
     }
+}
+
+/// A fully resolved outline entry, pending insertion to the article outline.
+#[derive(Debug)]
+struct OutlineEmitterEntry {
+    /// The start position of the outline entry HTML in the HTML string buffer.
+    html: u32,
+    /// The position of the ID in the output.
+    id: OutlineEmitterEntryId,
+    /// The heading level.
+    level: HeadingLevel,
+}
+
+/// A fully resolved outline anchor ID.
+#[derive(Debug)]
+enum OutlineEmitterEntryId {
+    /// An explicit ID given by the `id` attribute of the heading.
+    Explicit {
+        /// The start position of the ID in the output.
+        start: Mark,
+        /// The end position of the ID in the output.
+        end: Mark,
+    },
+    /// An implicit ID generated from the text of the heading.
+    Implicit {
+        /// The start position of the generated ID in the ID string buffer.
+        start: u16,
+        /// The end position of the generated ID in the ID string buffer.
+        end: u16,
+        /// The position where the ID should be inserted in the output.
+        out_pos: Mark,
+    },
 }
 
 /// An in-progress heading for the outline.
@@ -2087,11 +2183,12 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
 struct OutlineEmitterState {
     /// The position of the `dir` attribute of a span element.
     dir: Option<Mark>,
-    /// The accumulated inner HTML to emit to the table of contents.
-    html: String,
+    /// The start position for the HTML to emit to the table of contents in the
+    /// HTML buffer.
+    html: u32,
     /// The ID of the current outline entry.
-    id: OutlineAnchor,
-    /// If true, the emitter is currently in attribute processing mode.
+    id: OutlineEmitterStateId,
+    /// If true, the emitter is currently processing attributes of some element.
     in_attrs: bool,
     /// If true, the emitter is currently processing the attributes of the root
     /// element of the outline entry.
@@ -2104,14 +2201,25 @@ struct OutlineEmitterState {
 
 /// An anchor ID.
 #[derive(Debug, Default)]
-enum OutlineAnchor {
+enum OutlineEmitterStateId {
     /// Indeterminate.
     #[default]
     Undefined,
     /// Use an existing ID.
-    Explicit(Mark, Option<Mark>),
+    Explicit {
+        /// The start position of the `id` attribute in the output.
+        start: Mark,
+        /// The end position of the `id` attribute in the output. `None` if the
+        /// attribute has not been closed yet.
+        end: Option<Mark>,
+    },
     /// Generate an ID from the given text.
-    Implicit(Mark, String),
+    Implicit {
+        /// The output position for the eventual `id` attribute.
+        out_pos: Mark,
+        /// The start position of the ID text in the ID buffer.
+        id_pos: u16,
+    },
 }
 
 /// Text style emitter.
@@ -2362,8 +2470,8 @@ impl<S: Sink> Sink for PrettyText<S> {
         self.next.entity(value, raw);
     }
 
-    fn finish(self) -> String {
-        self.next.finish()
+    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+        self.next.finish(state)
     }
 
     fn new_line(&mut self) {
@@ -2563,8 +2671,8 @@ impl<S: Sink> Sink for TemplateTagger<S> {
     }
 
     #[inline]
-    fn finish(self) -> String {
-        self.next.finish()
+    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+        self.next.finish(state)
     }
 
     #[inline]

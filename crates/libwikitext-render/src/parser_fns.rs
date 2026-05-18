@@ -124,7 +124,7 @@ impl PluginFnArgs<'_, '_, '_> {
         let root = state.0.statics.parser.parse_no_expansion(&sp.source)?;
         let mut out = Document::new(fragment);
         out.adopt_output(state.0, &sp, &root)?;
-        Ok(Some(out.finish().into()))
+        Ok(Some(out.finish(state.0).into()))
     }
 
     /// Returns true if there are no arguments.

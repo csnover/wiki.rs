@@ -1,6 +1,6 @@
 //! Collections for semi-structured article data.
 
-use core::fmt;
+use core::fmt::{self, Write as _};
 use http::Uri;
 use libwikitext_common::make_url;
 use libwikitext_parse::HeadingLevel;
@@ -71,6 +71,8 @@ impl core::fmt::Display for Indicators {
 /// An article outline (table of contents).
 #[derive(Debug, Default)]
 pub struct Outline {
+    /// The string buffer for the outline.
+    buffer: String,
     /// The contents of the outline.
     entries: Vec<OutlineEntry>,
     /// A map from a base anchor ID to the next free suffix for that base ID.
@@ -80,19 +82,41 @@ pub struct Outline {
 
 /// An outline entry.
 #[derive(Debug)]
-pub struct OutlineEntry {
+struct OutlineEntry {
+    /// The length of the HTML part.
+    html_len: u16,
+    /// The length of the ID part.
+    id_len: u16,
+    /// The level of the entry.
+    level: HeadingLevel,
+    /// The position of the entry in the string buffer.
+    pos: u32,
+}
+
+/// An outline iterator item.
+#[derive(Clone, Copy, Debug)]
+pub struct OutlineIterItem<'a> {
     /// The HTML for the entry.
-    pub html: String,
+    pub html: &'a str,
     /// The encoded anchor ID for the entry.
-    pub id: String,
+    pub id: &'a str,
     /// The level of the entry.
     pub level: HeadingLevel,
 }
 
 impl Outline {
     /// Returns an iterator over the recorded outline.
-    pub fn iter(&self) -> impl Iterator<Item = &OutlineEntry> {
-        self.entries.iter()
+    pub fn iter(&self) -> impl Iterator<Item = OutlineIterItem<'_>> {
+        self.entries.iter().map(|entry| {
+            let pos = entry.pos as usize;
+            let html_len = entry.html_len as usize;
+            let id_len = entry.id_len as usize;
+            OutlineIterItem {
+                html: &self.buffer[pos..pos + html_len],
+                id: &self.buffer[pos + html_len..pos + html_len + id_len],
+                level: entry.level,
+            }
+        })
     }
 
     /// Returns the number of outline entries.
@@ -102,19 +126,30 @@ impl Outline {
 
     /// Pushes a new entry to the outline at the given heading level. If the
     /// given ID conflicted with an existing one, a new unique ID is returned.
-    pub(super) fn push(&mut self, level: HeadingLevel, html: String, id: String) -> Option<&str> {
+    pub(super) fn push(&mut self, level: HeadingLevel, html: &str, id: &str) -> Option<&str> {
+        let pos = self.buffer.len();
+        self.buffer.push_str(html);
+
+        let id_pos = self.buffer.len();
         let lower = id.to_ascii_lowercase();
-        let (conflict, id) = if let Some(suffix) = self.ids.get_mut(&lower) {
+        let conflict = if let Some(suffix) = self.ids.get_mut(&lower) {
             *suffix += 1;
-            (true, format!("{id}_{suffix}"))
+            let _ = write!(self.buffer, "{id}_{suffix}");
+            true
         } else {
             self.ids.insert(lower, 1);
-            (false, id)
+            self.buffer.push_str(id);
+            false
         };
 
-        self.entries.push(OutlineEntry { html, id, level });
+        self.entries.push(OutlineEntry {
+            html_len: u16::try_from(html.len()).unwrap(),
+            id_len: u16::try_from(self.buffer.len() - id_pos).unwrap(),
+            level,
+            pos: u32::try_from(pos).unwrap(),
+        });
 
-        conflict.then(|| self.entries.last().unwrap().id.as_str())
+        conflict.then(|| &self.buffer[id_pos..])
     }
 }
 
@@ -126,12 +161,12 @@ impl core::fmt::Display for Outline {
 
         write!(f, r##"<ul><li><a href="#">(Top)</a></li>"##)?;
         let mut current = 2;
-        for OutlineEntry { html, id, level } in &self.entries {
-            while current > u8::from(*level) {
+        for OutlineIterItem { html, id, level } in self.iter() {
+            while current > u8::from(level) {
                 write!(f, "</ul>")?;
                 current -= 1;
             }
-            while current < u8::from(*level) {
+            while current < u8::from(level) {
                 write!(f, "<ul>")?;
                 current += 1;
             }
