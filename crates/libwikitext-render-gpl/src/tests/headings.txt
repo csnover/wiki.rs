@@ -565,7 +565,6 @@ Section headings with TOC and language conversion (T295187, T306862)
 wgUsePigLatinVariant=true
 !! options
 language=en htmlVariantLanguage=en-x-piglatin
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 ==Headline 1==
 ===Subheadline 1===
@@ -681,7 +680,6 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 <!--
 -->-{H|Foo=>en:Boo;Foo=>en-x-piglatin:Bob;}-<!--

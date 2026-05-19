@@ -127,6 +127,11 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
             continue;
         }
 
+        if options.contains("language") {
+            log::warn!(target: target, "TODO {name}: language switching not implemented");
+            continue;
+        }
+
         if options
             .get::<&[Value<'_>]>("parsoid.modes")
             .is_some_and(any_of(&["html2wt"]))

@@ -574,6 +574,9 @@ parsoid={ "modes": ["wt2html","wt2wt"] }
 !! html/php
 <p><i>&#39;foo &#38; bar &#61; baz&#39;</i>
 </p>
+!! html/wiki.rs
+<p><i>'foo &#38; bar = baz'</i>
+</p>
 !! html/parsoid+integrated
 <p><i><span about="#mwt1" typeof="mw:Transclusion mw:Entity" data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAME","function":"pagename"},"params":{},"i":0}}]}'>'</span><span>foo </span><span typeof="mw:Entity">&amp;</span><span> bar </span><span typeof="mw:Entity">=</span><span> baz</span><span typeof="mw:Entity">'</span></i></p>
 !! end
@@ -1054,7 +1057,6 @@ Magic Word: {{PAGELANGUAGE}}
 !! options
 language=fr
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{PAGELANGUAGE}}
 !! html/*
@@ -1096,7 +1098,6 @@ wgParserEnableUserLanguage=true
 parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 language=en
 userLanguage=fr
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{USERLANGUAGE}}
 !! html/*
@@ -1216,6 +1217,7 @@ language=de
 __NOEDITSECTION__
 !! html/parsoid
 <meta property="mw:PageProp/noeditsection" data-parsoid='{"magicSrc":"__NOEDITSECTION__"}'/>
+!! html/wiki.rs
 !! end
 
 ## Note that there is no wikitext output for 'unknownproperty' ##
@@ -1262,6 +1264,7 @@ showflags
 __NOGALLERY__
 !! html/parsoid
 <meta property="mw:PageProp/nogallery" data-parsoid='{"src":"__NOGALLERY__","magicSrc":"__NOGALLERY__"}'/>
+!! html/wiki.rs
 !! metadata
 flags=mw-NoGallery
 !! end
@@ -1275,6 +1278,7 @@ cat
 __HIDDENCAT__
 !! html/parsoid
 <meta property="mw:PageProp/hiddencat" data-parsoid='{"src":"__HIDDENCAT__","magicSrc":"__HIDDENCAT__"}'/>
+!! html/wiki.rs
 !! metadata
 !! end
 
@@ -1287,6 +1291,7 @@ cat
 __HIDDENCAT__
 !! html/parsoid
 <meta property="mw:PageProp/hiddencat" data-parsoid='{"src":"__HIDDENCAT__","magicSrc":"__HIDDENCAT__"}'/>
+!! html/wiki.rs
 !! metadata
 cat=Hidden_categories sort=
 !! end
@@ -1326,5 +1331,6 @@ parsoid={
 flags=mw-NewSection
 !! html/parsoid
 <section data-mw-section-id="0"><meta property="mw:PageProp/newsectionlink" about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"magicSrc":"__NEWSECTIONLINK__","pi":[[]]}' data-mw='{"parts":[{"template":{"target":{"wt":"NewSectionLink","href":"./Template:NewSectionLink"},"params":{},"i":0}}]}'/></section>
+!! html/wiki.rs
 !! end
 

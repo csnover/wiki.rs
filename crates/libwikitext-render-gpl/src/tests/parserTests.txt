@@ -2846,7 +2846,6 @@ language=en
 Internal link with ca linktrail with apostrophes (T29473)
 !! options
 language=ca
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 [[Something]]'nice
 !! html/php
@@ -2860,7 +2859,6 @@ wiki-rs-expect-failure=[[language overrides are not implemented]]
 Internal link with kaa linktrail with apostrophes (T29473)
 !! options
 language=kaa
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 [[Something]]'nice
 !! html/php
@@ -3206,8 +3204,6 @@ wgFragmentMode=[ "html5", "legacy" ]
 Link with angle bracket after anchor (legacy)
 !! config
 wgFragmentMode=[ "legacy" ]
-!! options
-wiki-rs-expect-failure=[[legacy encoding switch is not implemented]]
 !! wikitext
 [[Foo#<bar>]]
 !! html/php
@@ -3249,7 +3245,6 @@ parsoid=wt2html
 Parsoid-specific test: Wikilinks with &nbsp; should RT properly
 !! options
 language=ln
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 [[WW&nbsp;II]]
 !! html/php
@@ -13113,7 +13108,6 @@ language=tr
 T33490 Turkish: ucfırst (with a dotless i)
 !! options
 language=tr
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{ucfırst:blah}}
 !! html/php
@@ -13223,7 +13217,6 @@ Strip marker in formatNum
 Check noCommafy in formatNum
 !! options
 language=be-tarask
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{formatnum:123456.78}}
 {{formatnum:123456.78|NOSEP}}
@@ -13254,7 +13247,6 @@ Check lossless in formatNum
 Check bn lossless in formatNum
 !! options
 language=bn
-wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 {{formatnum:9999999999999999}}
 {{formatnum:9999999999999999|LOSSLESS}}
