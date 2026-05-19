@@ -33,6 +33,30 @@ pub(super) type Error = peg::error::ParseError<peg::str::LineCol>;
 /// A collection of named test sections.
 pub(super) type Sections<'input> = HashMap<&'input str, SectionText<'input>>;
 
+/// A trait for converting from `&`[`Value`] to some other type.
+pub(super) trait FromValue<'b>: Sized {
+    /// Converts a reference to a [`Value`] to `Self`.
+    fn from_value(value: &'b Value<'b>) -> Option<Self>;
+}
+
+impl<'b> FromValue<'b> for &'b Value<'b> {
+    fn from_value(value: &'b Value<'b>) -> Option<Self> {
+        Some(value)
+    }
+}
+
+impl<'b> FromValue<'b> for &'b str {
+    fn from_value(value: &'b Value<'b>) -> Option<Self> {
+        value.as_str()
+    }
+}
+
+impl<'b> FromValue<'b> for &'b [Value<'b>] {
+    fn from_value(value: &'b Value<'b>) -> Option<Self> {
+        value.as_array()
+    }
+}
+
 /// A test file.
 pub(super) struct Testfile<'input> {
     /// The chunks of a test file.
@@ -138,10 +162,22 @@ impl SectionText<'_> {
         }
     }
 
-    /// Gets a string value with the given `key` from a key-value section.
-    pub fn get(&self, key: &str) -> Option<&str> {
+    /// Gets a value with the given `key` from a key-value section.
+    pub fn get<'a, T: FromValue<'a>>(&'a self, key: &str) -> Option<T> {
+        let (key, rest) = key
+            .split_once('.')
+            .map_or((key, None), |(key, rest)| (key, Some(rest)));
         match self {
-            SectionText::Kv(kv) => kv.get(key).and_then(Value::as_str),
+            SectionText::Kv(kv) => kv
+                .get(key)
+                .and_then(|value| {
+                    if let Some(rest) = rest {
+                        recurse(value, rest)
+                    } else {
+                        Some(value)
+                    }
+                })
+                .and_then(FromValue::from_value),
             SectionText::Meta(_) | SectionText::Text(_) => None,
         }
     }
@@ -273,10 +309,10 @@ peg::parser! {grammar testfile() for str {
         if parsoid.as_str() == Some("") {
             *parsoid = Value::Object(<_>::default());
         } else if let Value::Str(s) = parsoid {
-            let map = Map::from([("modes", core::mem::take(s))]);
+            let map = Map::from([("modes", vec![core::mem::take(s)])]);
             *parsoid = Value::Object(map);
         } else if let Value::Array(v) = parsoid && let [s @ Value::Str(_)] = v.as_mut_slice() {
-            let map = Map::from([("modes", core::mem::take(s))]);
+            let map = Map::from([("modes", vec![core::mem::take(s)])]);
             *parsoid = Value::Object(map);
         }
     }
@@ -487,3 +523,9 @@ peg::parser! {grammar testfile() for str {
   = t:$((!"!!" [^'\n']*) ** eol()) (eol() / &"!!")
   { t }
 }}
+
+fn recurse<'a, 'b: 'a>(item: &'a Value<'b>, key: &str) -> Option<&'a Value<'b>> {
+    key.split('.')
+        .try_fold(item, |item, part| item.as_object()?.get(part))
+        .filter(|item| !item.is_null())
+}

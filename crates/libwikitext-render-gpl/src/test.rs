@@ -11,11 +11,13 @@ use libwikitext_common::{
 };
 use libwikitext_data::MESSAGES;
 use libwikitext_parse::{FileMap, inspect};
+use libwikitext_parse_gpl::Parser;
 use libwikitext_render::{
     LoadMode, Paths, PluginFnArgs, PluginParserFn, PluginResult, PluginState, RenderOutput,
     Statics, render_article,
 };
 use regex::{Regex, RegexBuilder};
+use serde_json_borrow::Value;
 use similar_asserts::SimpleDiff;
 use std::{
     borrow::Cow,
@@ -94,14 +96,85 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
     let file_map = FileMap::new(&code);
 
     let mut db = MockDatabase::new(&CONFIG);
-    let redirect_parser = libwikitext_parse_gpl::Parser::new(&CONFIG);
 
     let mut total = 0;
     let mut fails = 0;
 
     // Like everything in MediaWiki, multiple passes are *required* to parse the
-    // file correctly
-    for chunk in &tests.chunks {
+    // test suite file correctly
+    load_articles(base_time, &mut db, &tests.chunks);
+
+    let mut db = Arc::new(db);
+
+    for chunk in tests.chunks {
+        #[rustfmt::skip]
+        let Chunk::Test { name, pos, sections, } = chunk else {
+            continue;
+        };
+
+        let name = strtr(name, &[("\n", " - ")]);
+        let line = file_map.find_line_col(pos).line;
+        let target = &format!("{suite}.txt:{line}");
+        let options = sections.get("options").unwrap_or(&empty_options);
+
+        let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
+            log::warn!(target: target, "Could not find wikitext for {name}!");
+            continue;
+        };
+
+        if let Some(reason) = options.get::<&str>("wiki-rs-skip") {
+            log::info!(target: target, "Skipping {name}: {reason}");
+            continue;
+        }
+
+        if options
+            .get::<&[Value<'_>]>("parsoid.modes")
+            .is_some_and(any_of(&["html2wt"]))
+        {
+            log::info!(target: target, "Skipping {name}: html2wt");
+            continue;
+        }
+
+        log::info!(target: target, "Running {name}");
+        total += 1;
+
+        let expect_failure = options.get::<&str>("wiki-rs-expect-failure");
+        let log_level = if expect_failure.is_some() {
+            log::Level::Warn
+        } else {
+            log::Level::Error
+        };
+
+        let Some(result) = render_test(target, log_level, base_time, &mut db, options, wikitext)
+        else {
+            fails += 1;
+            continue;
+        };
+
+        let fail = check_test_results(target, log_level, &sections, options, &result);
+
+        if let Some(reason) = expect_failure {
+            if fail {
+                log::warn!(target: target, "Ignoring test failure: {reason}");
+            } else {
+                log::error!(target: target, "passed, but should have failed");
+                fails += 1;
+            }
+        } else {
+            fails += i32::from(fail);
+            if !fail {
+                log::info!(target: target, "pass");
+            }
+        }
+    }
+
+    assert!(fails == 0, "failed {fails}/{total}");
+}
+
+#[track_caller]
+fn load_articles(base_time: DateTime, db: &mut MockDatabase<'_>, chunks: &[Chunk<'_>]) {
+    let redirect_parser = Parser::new(&CONFIG);
+    for chunk in chunks {
         match chunk {
             Chunk::Article { title, text } => {
                 let article = Article::builder()
@@ -111,6 +184,7 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
                     .model("wikitext")
                     .revision_id(1337)
                     .revision_timestamp(base_time.to_offset_time().to_utc());
+
                 db.insert(if let Ok(redirect) = redirect_parser.parse_redirect(text) {
                     article.redirect(redirect).build()
                 } else {
@@ -126,66 +200,6 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
             }
         }
     }
-
-    let mut db = Arc::new(db);
-
-    for chunk in tests.chunks {
-        if let Chunk::Test {
-            name,
-            pos,
-            sections,
-        } = chunk
-        {
-            let line = file_map.find_line_col(pos).line;
-            let target = &format!("{suite}.txt:{line}");
-            let options = sections.get("options").unwrap_or(&empty_options);
-
-            let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
-                log::warn!(target: target, "Could not find wikitext for {name}!");
-                continue;
-            };
-
-            if let Some(reason) = options.get("wiki-rs-skip") {
-                log::info!(target: target, "Skipping {name:?}: {reason}");
-                continue;
-            }
-
-            log::info!(target: target, "Running {}", strtr(name, &[("\n", " - ")]));
-            total += 1;
-
-            let expect_failure = options.get("wiki-rs-expect-failure");
-            let log_level = if expect_failure.is_some() {
-                log::Level::Warn
-            } else {
-                log::Level::Error
-            };
-
-            let Some(result) =
-                render_test(target, log_level, base_time, &mut db, options, wikitext)
-            else {
-                fails += 1;
-                continue;
-            };
-
-            let fail = check_test_results(target, log_level, &sections, options, &result);
-
-            if let Some(reason) = expect_failure {
-                if fail {
-                    log::warn!(target: target, "Ignoring test failure: {reason}");
-                } else {
-                    log::error!(target: target, "passed, but should have failed");
-                    fails += 1;
-                }
-            } else {
-                fails += i32::from(fail);
-                if !fail {
-                    log::info!(target: target, "pass");
-                }
-            }
-        }
-    }
-
-    assert!(fails == 0, "failed {fails}/{total}");
 }
 
 struct DivTagPf;
@@ -224,6 +238,15 @@ impl PluginParserFn for DivTagPf {
 
         write!(out, "<{tag}>{content}</{tag}>")?;
         Ok(())
+    }
+}
+
+fn any_of(choices: &[&str]) -> impl FnOnce(&[Value<'_>]) -> bool {
+    |values| {
+        values
+            .iter()
+            .filter_map(Value::as_str)
+            .any(|value| choices.contains(&value))
     }
 }
 
