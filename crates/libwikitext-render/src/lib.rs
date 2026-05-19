@@ -937,98 +937,11 @@ pub fn resolve_redirects<Db: DatabaseProvider>(
 /// Writes a run of text to the given output as entity-encoded HTML, converting
 /// wretched typewriter quote marks to beautiful works of fine typographical
 /// art. We are not savages here today.
-fn text_run<W: fmt::Write + ?Sized>(
-    out: &mut W,
-    mut prev: char,
-    text: &str,
-    in_code: bool,
-    encode: bool,
-) -> Result<char> {
-    fn is_break(prev: char, next: Option<char>) -> bool {
-        use unicode_general_category::{
-            GeneralCategory::{
-                DashPunctuation, InitialPunctuation, OpenPunctuation, OtherPunctuation,
-            },
-            get_general_category,
-        };
-        prev.is_whitespace()
-            || (matches!(
-                get_general_category(prev),
-                DashPunctuation | OpenPunctuation | InitialPunctuation
-            ) && !next.is_some_and(char::is_whitespace))
-            || (matches!(get_general_category(prev), OtherPunctuation)
-                && next.is_some_and(char::is_alphabetic))
-    }
-
-    // TODO: This requires two-character look-behind and look-ahead.
-    #[inline]
-    fn is_french_space(prev: char, next: Option<char>) -> bool {
-        matches!(next, Some('?' | ':' | ';' | '!' | '%' | '»' | '›')) || matches!(prev, '«' | '‹')
-    }
-
-    let mut chars = text.chars().peekable();
-    let mut dot_count = 0;
-    while let Some(mut c) = chars.next() {
-        if c == '.' && !in_code && dot_count != 3 {
-            dot_count += 1;
-            continue;
-        }
-
-        if !in_code && dot_count == 3 {
-            out.write_char('…')?;
-            prev = '…';
-            dot_count = 0;
-        }
-
-        for _ in 0..dot_count {
-            out.write_char('.')?;
-            prev = '.';
-        }
-
-        match c {
-            '"' if !in_code => {
-                out.write_char(if is_break(prev, chars.peek().copied()) {
-                    c = '“';
-                    c
-                } else {
-                    c = '”';
-                    c
-                })?;
-            }
-            '\'' if !in_code => {
-                out.write_char(if is_break(prev, chars.peek().copied()) {
-                    c = '‘';
-                    c
-                } else {
-                    c = '’';
-                    c
-                })?;
-            }
-            '<' if encode => write!(out, "&lt;")?,
-            '>' if encode => write!(out, "&gt;")?,
-            '&' if encode => write!(out, "&amp;")?,
-            ' ' if !in_code => {
-                out.write_char(if is_french_space(prev, chars.peek().copied()) {
-                    '\u{00a0}'
-                } else {
-                    c
-                })?;
-            }
-            c => out.write_char(c)?,
-        }
-        prev = c;
-        dot_count = 0;
-    }
-
-    if dot_count == 3 {
-        out.write_char('…')?;
-        prev = '…';
-    } else {
-        for _ in 0..dot_count {
-            out.write_char('.')?;
-            prev = '.';
-        }
-    }
-
-    Ok(prev)
+// TODO: This sucks, do something better.
+#[inline]
+fn text_run(state: &mut State<'_, '_, '_>, text: &str) -> String {
+    use emitters::Sink as _;
+    let mut emitter = emitters::PrettyText::new(emitters::Accumulator::new());
+    emitter.text(text);
+    emitter.finish(state)
 }

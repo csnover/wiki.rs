@@ -20,6 +20,7 @@ libphp-rs.workspace = true
 libwikitext-common.workspace = true
 libwikitext-data.workspace = true
 libwikitext-parse.workspace = true
+libwikitext-parse-gpl.workspace = true
 libwikitext-render.workspace = true
 log.workspace = true
 phf.workspace = true

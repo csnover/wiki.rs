@@ -1046,6 +1046,7 @@ dependencies = [
  "libwikitext-common",
  "libwikitext-data",
  "libwikitext-parse",
+ "libwikitext-parse-gpl",
  "libwikitext-render",
  "log",
  "peg",

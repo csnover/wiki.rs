@@ -244,9 +244,11 @@ fn gallery(
 
     // MW put this *inside* the list, which is obviously stupid and wrong
     if let Some(caption) = arguments.get(state, "caption")? {
-        write!(out, r#"<div class="gallerycaption">"#)?;
-        text_run(out, ' ', &caption, false, true)?;
-        write!(out, "</div>")?;
+        write!(
+            out,
+            r#"<div class="gallerycaption">{}</div>"#,
+            text_run(state, &caption)
+        )?;
     }
 
     let space = if class.is_empty() { "" } else { " " };

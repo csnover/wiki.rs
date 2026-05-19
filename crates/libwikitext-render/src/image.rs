@@ -104,15 +104,14 @@ pub(super) fn media_options<'s>(
         MediaKind::Image
     };
 
+    let path = format_args!("{}/{}", state.statics.paths.media, url_encode(title.text()));
     options.attrs.insert(
         "src".into(),
-        Cow::Owned(make_url(
-            &state.statics.base_uri,
-            None,
-            format_args!("{}/{}", state.statics.paths.media, url_encode(title.text())),
-            None,
-            None,
-        )),
+        Cow::Owned(if is_absolute_url(state.statics.paths.media) {
+            path.to_string()
+        } else {
+            make_url(&state.statics.base_uri, None, path, None, None)
+        }),
     );
 
     options.link = Some(LinkKind::Internal(title));
@@ -147,9 +146,7 @@ pub(super) fn media_options<'s>(
                 // sign, the alt statement will be treated as a caption.”
                 // This will happen because evaluating `argument.name` does
                 // not strip whitespace so the key will not match.
-                let mut alt = String::new();
-                text_run(&mut alt, '\n', &value, false, false)?;
-                options.attrs.insert(name, alt.into());
+                options.attrs.insert(name, text_run(state, &value).into());
             } else {
                 match name.trim_ascii() {
                     "upright" => {
@@ -237,15 +234,10 @@ pub(super) fn media_options<'s>(
     } else if let Some(caption) = options.caption.take() {
         let mut extractor = TextContent::new(state.statics.db.config(), &sp.source, String::new());
         extractor.visit_tokens(caption)?;
-        let mut title = String::new();
-        text_run(
-            &mut title,
-            '\n',
-            extractor.finish().trim_ascii(),
-            false,
-            false,
-        )?;
-        options.attrs.insert("title".into(), title.into());
+        options.attrs.insert(
+            "title".into(),
+            text_run(state, extractor.finish().trim_ascii()).into(),
+        );
     }
 
     Ok(options)
@@ -416,4 +408,11 @@ fn alignment(
         None
     }
     .into_iter()
+}
+
+/// Returns `true` if the string appears to be an absolute URL.
+// TODO: This is a hack for the test suite.
+#[inline]
+fn is_absolute_url(str: &str) -> bool {
+    str.starts_with("http://") || str.starts_with("https://")
 }

@@ -225,7 +225,7 @@ pub(super) fn render_template<'tt>(
     arguments: &'tt [Spanned<Argument>],
     line_start: bool,
 ) -> Result<bool> {
-    // eprintln!("render_template {sp:?} {:?}", inspect(&sp.source, target));
+    // eprintln!("render_template {sp:?} {:?}", libwikitext_parse::inspect(&sp.source, target));
 
     if state.load_mode == LoadMode::Base {
         render_fallback(out, state)?;

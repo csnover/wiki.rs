@@ -4,7 +4,7 @@ use core::fmt::{self, Write as _};
 use http::Uri;
 use libwikitext_common::make_url;
 use libwikitext_parse::HeadingLevel;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 
 /// A sorted set of categories which the article belongs to.
 #[derive(Debug, Default)]
@@ -126,18 +126,34 @@ impl Outline {
 
     /// Pushes a new entry to the outline at the given heading level. If the
     /// given ID conflicted with an existing one, a new unique ID is returned.
-    pub(super) fn push(&mut self, level: HeadingLevel, html: &str, id: &str) -> Option<&str> {
+    pub(super) fn push<'a>(
+        &'a mut self,
+        level: HeadingLevel,
+        html: &str,
+        id: &str,
+    ) -> Option<&'a str> {
         let pos = self.buffer.len();
         self.buffer.push_str(html);
 
         let id_pos = self.buffer.len();
         let lower = id.to_ascii_lowercase();
-        let conflict = if let Some(suffix) = self.ids.get_mut(&lower) {
-            *suffix += 1;
-            let _ = write!(self.buffer, "{id}_{suffix}");
+        let conflict = if let Some(mut suffix) = self.ids.get(&lower).copied() {
+            let id = loop {
+                match self.ids.entry(format!("{lower}_{suffix}")) {
+                    Entry::Occupied(_) => {
+                        suffix += 1;
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert_entry(1);
+                        break format!("{id}_{suffix}");
+                    }
+                }
+            };
+            *self.ids.get_mut(&lower).unwrap() = suffix;
+            let _ = write!(self.buffer, "{id}");
             true
         } else {
-            self.ids.insert(lower, 1);
+            self.ids.insert(lower, 2);
             self.buffer.push_str(id);
             false
         };

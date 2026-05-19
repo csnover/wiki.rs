@@ -94,6 +94,7 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
     let file_map = FileMap::new(&code);
 
     let mut db = MockDatabase::new(&CONFIG);
+    let redirect_parser = libwikitext_parse_gpl::Parser::new(&CONFIG);
 
     let mut total = 0;
     let mut fails = 0;
@@ -103,16 +104,18 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
     for chunk in &tests.chunks {
         match chunk {
             Chunk::Article { title, text } => {
-                db.insert(
-                    Article::builder()
-                        .id(0)
-                        .body(text)
-                        .title(title)
-                        .model("wikitext")
-                        .revision_id(1337)
-                        .revision_timestamp(base_time.to_offset_time().to_utc())
-                        .build(),
-                );
+                let article = Article::builder()
+                    .id(0)
+                    .body(text)
+                    .title(title)
+                    .model("wikitext")
+                    .revision_id(1337)
+                    .revision_timestamp(base_time.to_offset_time().to_utc());
+                db.insert(if let Ok(redirect) = redirect_parser.parse_redirect(text) {
+                    article.redirect(redirect).build()
+                } else {
+                    article.build()
+                });
             }
             Chunk::FunctionHooks => {
                 panic!("but no tests use this?!");
@@ -147,7 +150,7 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
                 continue;
             }
 
-            log::info!(target: target, "Running {name:?}");
+            log::info!(target: target, "Running {}", strtr(name, &[("\n", " - ")]));
             total += 1;
 
             let expect_failure = options.get("wiki-rs-expect-failure");
@@ -320,7 +323,14 @@ fn check_test_results(
 
     let expected_meta = sections
         .get("metadata/wiki.rs")
-        .or_else(|| sections.get("metadata/php"))
+        .or_else(|| {
+            let use_parsoid_metadata = options.contains("wiki-rs-use-parsoid-metadata");
+            sections.get(if use_parsoid_metadata {
+                "metadata/parsoid"
+            } else {
+                "metadata/php"
+            })
+        })
         .or_else(|| sections.get("metadata"))
         .and_then(SectionText::meta);
 

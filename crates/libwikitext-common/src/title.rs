@@ -233,7 +233,8 @@ impl PartialEq for Title {
 }
 
 impl Title {
-    /// Creates a title from a known namespace plus text parts.
+    /// Creates a title from a known namespace plus text parts which need to be
+    /// normalised.
     ///
     /// # Errors
     ///
@@ -248,51 +249,10 @@ impl Title {
         fragment: Option<&str>,
         interwiki: Option<&str>,
     ) -> Result<Self, core::fmt::Error> {
-        let mut text = String::with_capacity(title.len());
-
-        let iw_delimiter = interwiki
-            .map(|interwiki| {
-                let interwiki = normalize(interwiki);
-                let iw_delimiter = interwiki.len();
-                write!(text, "{interwiki}:")?;
-                Ok(u16::try_from(iw_delimiter).unwrap())
-            })
-            .transpose()?;
-
-        let ns_delimiter = (!namespace.name.is_empty())
-            .then(|| {
-                let ns_delimiter = text.len() + namespace.name.len();
-                write!(text, "{}:", namespace.name)?;
-                Ok(u16::try_from(ns_delimiter).unwrap())
-            })
-            .transpose()?;
-
+        let interwiki = interwiki.map(normalize);
         let title = normalize(title);
-        if namespace.case == NamespaceCase::FirstLetter
-            && let Some(first) = title.chars().next()
-            && first.is_lowercase()
-        {
-            let rest = &title[first.len_utf8()..];
-            write!(text, "{}{rest}", first.to_uppercase())?;
-        } else {
-            text += &title;
-        }
-
-        let fragment_delimiter = fragment
-            .map(|fragment| {
-                let fragment_delimiter = text.len();
-                write!(text, "#{}", normalize(fragment))?;
-                Ok(u16::try_from(fragment_delimiter).unwrap())
-            })
-            .transpose()?;
-
-        Ok(Self {
-            fragment_delimiter,
-            iw_delimiter,
-            namespace,
-            ns_delimiter,
-            text,
-        })
+        let fragment = fragment.map(normalize);
+        Self::new_normalized(namespace, &title, fragment.as_deref(), interwiki.as_deref())
     }
 
     /// Creates a new [`Title`] from a title string and optional default
@@ -350,7 +310,68 @@ impl Title {
             .split_once('#')
             .map_or((text, None), |(text, frag)| (text.trim_end(), Some(frag)));
 
-        Self::from_parts(ns, text, fragment, iw).unwrap()
+        Self::new_normalized(ns, text, fragment, iw).unwrap()
+    }
+
+    /// Creates a title from a known namespace plus text parts which are already
+    /// normalised.
+    ///
+    /// # Errors
+    ///
+    /// * A write to the internal buffer fails
+    ///
+    /// # Panics
+    ///
+    /// * `title.len() > u16::MAX`
+    fn new_normalized(
+        namespace: &'static Namespace,
+        title: &str,
+        fragment: Option<&str>,
+        interwiki: Option<&str>,
+    ) -> Result<Self, core::fmt::Error> {
+        let mut text = String::with_capacity(title.len());
+
+        let iw_delimiter = interwiki
+            .map(|interwiki| {
+                let iw_delimiter = interwiki.len();
+                write!(text, "{interwiki}:")?;
+                Ok(u16::try_from(iw_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        let ns_delimiter = (!namespace.name.is_empty())
+            .then(|| {
+                let ns_delimiter = text.len() + namespace.name.len();
+                write!(text, "{}:", namespace.name)?;
+                Ok(u16::try_from(ns_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        if namespace.case == NamespaceCase::FirstLetter
+            && let Some(first) = title.chars().next()
+            && first.is_lowercase()
+        {
+            let rest = &title[first.len_utf8()..];
+            write!(text, "{}{rest}", first.to_uppercase())?;
+        } else {
+            text += title;
+        }
+
+        let fragment_delimiter = fragment
+            .map(|fragment| {
+                let fragment_delimiter = text.len();
+                write!(text, "#{fragment}")?;
+                Ok(u16::try_from(fragment_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        Ok(Self {
+            fragment_delimiter,
+            iw_delimiter,
+            namespace,
+            ns_delimiter,
+            text,
+        })
     }
 
     /// The parent path of the page.
@@ -689,42 +710,23 @@ fn bidi(c: char) -> bool {
     ('\u{200e}'..='\u{200f}').contains(&c) || ('\u{202a}'..='\u{202e}').contains(&c)
 }
 
-/// Normalises a title text part by decoding HTML entities and converting
-/// runs of whitespace + underscore to a single space character.
+/// Normalises a title text part by decoding HTML entities, converting runs of
+/// whitespace + underscore to a single space character, and trimming.
+#[must_use]
 pub fn normalize(text: &str) -> Cow<'_, str> {
-    let decoded = decode_html(text);
-    let mut out = String::new();
-    let mut flushed = 0;
-    let mut iter = decoded.char_indices().peekable();
+    decode_html(text).map(|text| super::normalize_whitespace::<true>(text, trimmable, spacelike))
+}
 
-    while let Some((index, c)) = iter.next() {
-        // Peek to avoid switching to owned-mode when encountering a single
-        // space
-        if trimmable(c) && (c != ' ' || matches!(iter.peek(), Some((_, c)) if trimmable(*c))) {
-            // Non-space whitespace + underscores are converted to space and
-            // runs of whitespace are collapsed into a single character
-            while iter.next_if(|(_, c)| trimmable(*c)).is_some() {}
-
-            // This acts like `trim`, not emitting a space at the start
-            // (`index == 0`) or end (`peek().is_none()`) of the text.
-            if let Some((next_index, _)) = iter.peek() {
-                out += &decoded[flushed..index];
-                flushed = *next_index;
-                // Bidi markers get stripped because “Sometimes they slip
-                // into cut-n-pasted page titles”
-                if index != 0 && spacelike(c) {
-                    out.push(' ');
-                }
-            }
-        }
-    }
-
-    if flushed == 0 {
-        decoded.map_ref(|b| b.trim_matches(trimmable))
-    } else {
-        out += decoded[flushed..].trim_end_matches(trimmable);
-        Cow::Owned(out)
-    }
+/// Normalises a title fragment part by decoding HTML entities, converting runs
+/// of whitespace + underscore to a single space character, and trimming the
+/// right side.
+///
+/// This is *not* the same as MediaWiki `normalizeFragment`, it is the same as
+/// calling `Title::splitTitleString` with a '#' at the start, like
+/// `Parser::normalizeSectionName`.
+#[must_use]
+pub fn normalize_fragment(text: &str) -> Cow<'_, str> {
+    decode_html(text).map(|text| super::normalize_whitespace::<false>(text, trimmable, spacelike))
 }
 
 /// Returns true if the character `c` is considered like whitespace in title

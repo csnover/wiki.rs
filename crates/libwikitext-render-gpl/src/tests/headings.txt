@@ -225,6 +225,7 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
+wiki-rs-use-parsoid-metadata
 !! wikitext
 ==<span><div></div></span>x==
 ==<span dir='ltr'><i dir='ltr'></i></span>y==
@@ -267,6 +268,7 @@ wgRawHtml=1
 !! options
 nohtml
 showtocdata
+wiki-rs-expect-failure=[[raw html mode is not supported]]
 !! wikitext
 ==hi<html><!--ho--></html>==
 !! metadata/php
@@ -377,6 +379,7 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
+wiki-rs-expect-failure=[[tag is not implemented]]
 !! wikitext
 ==c<tag>d</tag>==
 !! metadata
@@ -562,6 +565,7 @@ Section headings with TOC and language conversion (T295187, T306862)
 wgUsePigLatinVariant=true
 !! options
 language=en htmlVariantLanguage=en-x-piglatin
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 ==Headline 1==
 ===Subheadline 1===
@@ -677,6 +681,7 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
+wiki-rs-expect-failure=[[language overrides are not implemented]]
 !! wikitext
 <!--
 -->-{H|Foo=>en:Boo;Foo=>en-x-piglatin:Bob;}-<!--
@@ -841,10 +846,10 @@ parsoid=wt2html
 <h4 id="Level_4_Heading">Level 4 Heading</h4>
 <h5 id="Level_5_Heading">Level 5 Heading</h5>
 <h6 id="Level_6_Heading">Level 6 Heading</h6>
-<h6 id=".3DLevel_7_Heading.3D">=Level 7 Heading=</h6>
-<h6 id=".3D.3DLevel_8_Heading.3D.3D">==Level 8 Heading==</h6>
-<h6 id=".3D.3D.3DLevel_9_Heading.3D.3D.3D">===Level 9 Heading===</h6>
-<h6 id=".3D.3D.3D.3DLevel_10_Heading.3D.3D.3D.3D">====Level 10 Heading====</h6>
+<h6 id="=Level_7_Heading="><span id=".3DLevel_7_Heading.3D"></span>=Level 7 Heading=</h6>
+<h6 id="==Level_8_Heading=="><span id=".3D.3DLevel_8_Heading.3D.3D"></span>==Level 8 Heading==</h6>
+<h6 id="===Level_9_Heading==="><span id=".3D.3D.3DLevel_9_Heading.3D.3D.3D"></span>===Level 9 Heading===</h6>
+<h6 id="====Level_10_Heading===="><span id=".3D.3D.3D.3DLevel_10_Heading.3D.3D.3D.3D"></span>====Level 10 Heading====</h6>
 !! end
 
 !! test
@@ -1531,7 +1536,7 @@ __TOC__
 <meta property="mw:PageProp/toc" data-parsoid='{}'/>
 <h2 id="Image" data-parsoid='{}'>Image <span class="mw-default-size" typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"Image:foobar.jpg"}}' class="mw-file-element"/></a></span></h2>
 !! html/wiki.rs
-<h2 id="Image">Image <a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1"><img src="/media/Foobar.jpg"></a></h2>
+<h2 id="Image">Image <a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Foobar.jpg"></a></h2>
 !! end
 
 !! test
@@ -1645,7 +1650,7 @@ __TOC__
 <h2 id='b">Evilbye'><span id="b.22.3EEvilbye" typeof="mw:FallbackId"></span><sup class="a " data-parsoid='{"stx":"html"}'> b">Evilbye</sup></h2>
 !! html/wiki.rs
 <h2 id="Hello"><sup class="in-h2">Hello</sup></h2>
-<h2 id="b.22.3EEvilbye"><sup class="a"> b”&gt;Evilbye</sup></h2>
+<h2 id="b&quot;&gt;Evilbye"><span id="b.22.3EEvilbye"></span><sup class="a "> b”&gt;Evilbye</sup></h2>
 !! end
 
 !! test
@@ -1675,8 +1680,8 @@ __TOC__
 <h2 id="זבנג!"><span id=".D7.96.D7.91.D7.A0.D7.92.21" typeof="mw:FallbackId"></span><span dir="rtl">זבנג!</span></h2>
 <h2 id="Attributes_other_than_dir"><span style="font-style: italic" dir="ltr" title="hello">Attributes other than dir</span></h2>
 !! html/wiki.rs
-<h2 id="C.2B.2B"><span dir="ltr">C++</span></h2>
-<h2 id=".D7.96.D7.91.D7.A0.D7.92.21"><span dir="rtl">זבנג!</span></h2>
+<h2 id="C++"><span id="C.2B.2B"></span><span dir="ltr">C++</span></h2>
+<h2 id="זבנג!"><span id=".D7.96.D7.91.D7.A0.D7.92.21"></span><span dir="rtl">זבנג!</span></h2>
 <h2 id="Attributes_other_than_dir"><span style="--mw-output-font-style:italic;" dir="ltr" title="hello">Attributes other than dir</span></h2>
 !! end
 
@@ -1724,6 +1729,7 @@ __TOC__
 T198618: style element in ToC
 !! options
 styletag=1
+wiki-rs-expect-failure=[[styletag is not implemented]]
 !! wikitext
 __TOC__
 ==<style>.foo {}</style>Style<style>.bar {}</style>==
@@ -1746,6 +1752,7 @@ __TOC__
 T198618: script element in ToC
 !! options
 wgRawHtml=1
+wiki-rs-expect-failure=[[raw html is not supported]]
 !! wikitext
 __TOC__
 ==<html><script>alert(1);</script></html>Script<html><script>alert(1);</script></html>==
@@ -1760,8 +1767,6 @@ __TOC__
 !! html/parsoid
 <meta property="mw:PageProp/toc" data-parsoid='{}'/>
 <h2 id="Script" data-parsoid='{}'><script typeof="mw:Extension/html" about="#mwt4" data-mw='{"name":"html","attrs":{},"body":{"extsrc":"&lt;script>alert(1);&lt;/script>"}}'>alert(1);</script>Script<script typeof="mw:Extension/html" about="#mwt6" data-mw='{"name":"html","attrs":{},"body":{"extsrc":"&lt;script>alert(1);&lt;/script>"}}'>alert(1);</script></h2>
-!! html/wiki.rs
-<h2 id="Script"><script>alert(1);</script>Script<script>alert(1);</script></h2>
 !! end
 
 !! test
@@ -1843,10 +1848,10 @@ But just in case it doesn't...
 --> <!-- -->
 <p>But just in case it doesn't...</p>
 !! html/wiki.rs
-<h1 id=".3D">=</h1>
+<h1 id="="><span id=".3D"></span>=</h1>
 <p>The line above must have a trailing space!
 </p>
-<h1 id=".3D_2">=</h1>
+<h1 id="=_2"><span id=".3D_2"></span>=</h1>
 <p>But just in case it doesn’t…
 </p>
 !! end
@@ -1918,19 +1923,19 @@ section 5
 !! html/wiki.rs # Uses HTML5 escaping by default
 <p>The tooltips shall not show entities to the user (ie. be double escaped)
 </p>
-<h2 id="text_&gt;_text">text &gt; text</h2>
+<h2 id="text_&gt;_text"><span id="text_.3E_text"></span>text &gt; text</h2>
 <p>section 1
 </p>
-<h2 id="text_&lt;_text">text &lt; text</h2>
+<h2 id="text_&lt;_text"><span id="text_.3C_text"></span>text &lt; text</h2>
 <p>section 2
 </p>
-<h2 id="text_&amp;_text">text &amp; text</h2>
+<h2 id="text_&amp;_text"><span id="text_.26_text"></span>text &amp; text</h2>
 <p>section 3
 </p>
-<h2 id="text_'_text">text ‘ text</h2>
+<h2 id="text_'_text"><span id="text_.27_text"></span>text ‘ text</h2>
 <p>section 4
 </p>
-<h2 id="text_&quot;_text">text “ text</h2>
+<h2 id="text_&quot;_text"><span id="text_.22_text"></span>text “ text</h2>
 <p>section 5
 </p>
 !! end
@@ -2035,26 +2040,26 @@ section 6
 <h2 id="Space_between_Text">Space between Text</h2>
 <p>section 1
 </p>
-<h2 id="Space-Entity_between_Text">Space-Entity&#32;between&#32;Text</h2>
+<h2 id="Space-Entity_between_Text">Space-Entity between Text</h2>
 <p>section 2
 </p>
-<h2 id="Plus.2Bbetween.2BText">Plus+between+Text</h2>
+<h2 id="Plus+between+Text"><span id="Plus.2Bbetween.2BText"></span>Plus+between+Text</h2>
 <p>section 3
 </p>
-<h2 id="Plus-Entity.2Bbetween.2BText">Plus-Entity&#43;between&#43;Text</h2>
+<h2 id="Plus-Entity+between+Text"><span id="Plus-Entity.2Bbetween.2BText"></span>Plus-Entity+between+Text</h2>
 <p>section 4
 </p>
 <h2 id="Underscore_between_Text">Underscore_between_Text</h2>
 <p>section 5
 </p>
-<h2 id="Underscore-Entity_between_Text">Underscore-Entity&#95;between&#95;Text</h2>
+<h2 id="Underscore-Entity_between_Text">Underscore-Entity_between_Text</h2>
 <p>section 6
 </p><p><a href="#Space_between_Text">#Space between Text</a>
-<a href="#Space-Entity_between_Text">#Space-Entity&#32;between&#32;Text</a>
-<a href="#Plus.2Bbetween.2BText">#Plus+between+Text</a>
-<a href="#Plus-Entity.2Bbetween.2BText">#Plus-Entity&#43;between&#43;Text</a>
+<a href="#Space-Entity_between_Text">#Space-Entity between Text</a>
+<a href="#Plus+between+Text">#Plus+between+Text</a>
+<a href="#Plus-Entity+between+Text">#Plus-Entity+between+Text</a>
 <a href="#Underscore_between_Text">#Underscore_between_Text</a>
-<a href="#Underscore-Entity_between_Text">#Underscore-Entity&#95;between&#95;Text</a>
+<a href="#Underscore-Entity_between_Text">#Underscore-Entity_between_Text</a>
 </p>
 !! end
 
@@ -2089,10 +2094,10 @@ parsoid=wt2html,wt2wt,html2html
 <h1 id="italic_heading=" data-parsoid="{}"><span id="italic_heading.3D" typeof="mw:FallbackId"></span><i>italic</i> heading=</h1>
 <h1 id="=italic_heading" data-parsoid="{}"><span id=".3Ditalic_heading" typeof="mw:FallbackId"></span>=<i>italic</i> heading</h1>
 !! html/wiki.rs
-<h1 id="foo.3D">foo=</h1>
-<h1 id=".3Dfoo">=foo</h1>
-<h1 id="italic_heading.3D"><i>italic</i> heading=</h1>
-<h1 id=".3Ditalic_heading">=<i>italic</i> heading</h1>
+<h1 id="foo="><span id="foo.3D"></span>foo=</h1>
+<h1 id="=foo"><span id=".3Dfoo"></span>=foo</h1>
+<h1 id="italic_heading="><span id="italic_heading.3D"></span><i>italic</i> heading=</h1>
+<h1 id="=italic_heading"><span id=".3Ditalic_heading"></span>=<i>italic</i> heading</h1>
 !! end
 
 !! test
@@ -2258,6 +2263,7 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
+wiki-rs-expect-failure=[[spantag is not implemented]]
 !! wikitext
 __FORCETOC__
 <spantag>
@@ -2309,6 +2315,7 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
+wiki-rs-expect-failure=[[styletag is not implemented]]
 !! wikitext
 __FORCETOC__
 {{1x|1=foo
@@ -2366,6 +2373,7 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
+wiki-rs-expect-failure=[[styletag is not implemented]]
 !! wikitext
 __FORCETOC__
 {{1x|1=<spantag>
@@ -2521,7 +2529,6 @@ Extra newlines between heading and content are swallowed (Parsoid does not)
 Heading with line break in nowiki
 !! options
 parsoid=wt2html
-wiki-rs-expect-failure=[[legacy encoding switch is not implemented]]
 !! config
 wgFragmentMode=[ "html5", "legacy" ]
 !! wikitext
@@ -2533,13 +2540,15 @@ C</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span>
 !! html/parsoid
 <h2 id="A_B_C"><span id="A_B.0AC" typeof="mw:FallbackId"></span>A <span typeof="mw:Nowiki">B
 C</span></h2>
+!! html/wiki.rs
+<h2 id="A_B_C">A B
+C</h2>
 !! end
 
 !! test
 Heading with nonbreaking space in prefix/suffix (T235684)
 !! options
 parsoid=wt2html,html2html
-wiki-rs-expect-failure=[[legacy encoding switch is not implemented]]
 !! config
 wgFragmentMode=[ "html5", "legacy" ]
 !! wikitext
@@ -2548,6 +2557,8 @@ wgFragmentMode=[ "html5", "legacy" ]
 <div class="mw-heading mw-heading2"><h2 id="_A_B">&#160; A &#160; B &#160;</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=1" title="Edit section:   A   B  ">edit</a><span class="mw-editsection-bracket">]</span></span></div>
 !! html/parsoid
 <h2 id="_A_B"><span typeof="mw:Entity"> </span> A <span typeof="mw:Entity"> </span> B <span typeof="mw:Entity"> </span></h2>
+!! html/wiki.rs
+<h2 id="_A_B">  A   B  </h2>
 !! end
 
 !! test
@@ -2560,6 +2571,9 @@ wgFragmentMode=[ "html5" ]
 !! html/php
 <div class="mw-heading mw-heading2"><h2 id="{{PAGENAME}}">{{PAGENAME}}</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=1" title="Edit section: {{PAGENAME}}">edit</a><span class="mw-editsection-bracket">]</span></span></div>
 <div class="mw-heading mw-heading2"><h2 id="{{PAGENAME}}_2">&#123;&#123;PAGENAME}}</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=2" title="Edit section: {{PAGENAME}}">edit</a><span class="mw-editsection-bracket">]</span></span></div>
+!! html/wiki.rs
+<h2 id="{{PAGENAME}}"><span id=".7B.7BPAGENAME.7D.7D"></span>{{PAGENAME}}</h2>
+<h2 id="{{PAGENAME}}_2"><span id=".7B.7BPAGENAME.7D.7D_2"></span>{{PAGENAME}}</h2>
 !! end
 
 !! article
@@ -2609,8 +2623,8 @@ http://</p><div id="toc" class="toc" role="navigation" aria-labelledby="mw-toc-h
 !! html/parsoid
 <h2 id="onmouseover="><span id="onmouseover.3D" typeof="mw:FallbackId"></span>onmouseover=</h2>
 <p><a rel="mw:ExtLink" href="http://__TOC__" class="external free" data-parsoid='{"stx":"url"}'>http://__TOC__</a></p>
-!! html/wiki.rs # Uses HTML5 escaping by default
-<h2 id="onmouseover=">onmouseover=</h2>
+!! html/wiki.rs
+<h2 id="onmouseover="><span id="onmouseover.3D"></span>onmouseover=</h2>
 <p><a rel="nofollow" class="external free" href="http://__TOC__">http://__TOC__</a>
 </p>
 !! end
@@ -2632,7 +2646,7 @@ parsoid=wt2html,html2html
 <table style="__TOC__"></table>
 !! html/wiki.rs
 <h2 id="a">a</h2>
-<table style="__TOC__"></table>
+<table style></table>
 !! end
 
 
@@ -2717,6 +2731,10 @@ parsoid={
 !! html/parsoid
 <section data-mw-section-id="0"></section><section data-mw-section-id="1"><h2 id="A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E"><span id="A.26B.26C.26amp.3BD.26amp.3Bamp.3BE" typeof="mw:FallbackId"></span>A&amp;B<span typeof="mw:Entity" data-parsoid='{"src":"&amp;amp;","srcContent":"&amp;"}'>&amp;</span>C<span typeof="mw:Entity" data-parsoid='{"src":"&amp;amp;","srcContent":"&amp;"}'>&amp;</span>amp;D<span typeof="mw:Entity" data-parsoid='{"src":"&amp;amp;","srcContent":"&amp;"}'>&amp;</span>amp;amp;E</h2>
 <p><a rel="mw:WikiLink" href="./Parser_test#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E" class="mw-selflink-fragment" data-parsoid='{"stx":"simple","a":{"href":"./Parser_test#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E"},"sa":{"href":"#A&amp;B&amp;amp;C&amp;amp;amp;D&amp;amp;amp;amp;E"}}'>#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E</a></p></section>
+!! html/wiki.rs
+<h2 id="A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E"><span id="A.26B.26C.26amp.3BD.26amp.3Bamp.3BE"></span>A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E</h2>
+<p><a href="#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E">#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E</a>
+</p>
 !! metadata
 Sections:
  h2 index:1 toclevel:1 number:1 title:Parser_test off:0 anchor/linkAnchor:A&B&C&amp;D&amp;amp;E line:A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E
@@ -2732,6 +2750,10 @@ wgFragmentMode=[ "legacy" ]
 !! html/php
 <div class="mw-heading mw-heading2"><h2 id="A.26B.26C.26amp.3BD.26amp.3Bamp.3BE">A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=1" title="Edit section: A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E">edit</a><span class="mw-editsection-bracket">]</span></span></div>
 <p><a href="#A.26B.26C.26amp.3BD.26amp.3Bamp.3BE">#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E</a>
+</p>
+!! html/wiki.rs
+<h2 id="A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E"><span id="A.26B.26C.26amp.3BD.26amp.3Bamp.3BE"></span>A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E</h2>
+<p><a href="#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E">#A&amp;B&amp;C&amp;amp;D&amp;amp;amp;E</a>
 </p>
 !! end
 
@@ -2804,9 +2826,9 @@ wgFragmentMode=[ "html5", "legacy" ]
 <h2 id="foo_Bar_2">foo Bar</h2>
 <h2 id="Тест"><span id=".D0.A2.D0.B5.D1.81.D1.82"></span>Тест</h2>
 <h2 id="Тест_2"><span id=".D0.A2.D0.B5.D1.81.D1.82_2"></span>Тест</h2>
-<h2 id="тест"><span id=".D1.82.D0.B5.D1.81.D1.82"></span>тест</h2
-<h2 id="Hey_&lt;_#_&quot;_&gt;_%_:_'"><span id="Hey_.3C_.23_.22_.3E_.25_:_.27"></span>Hey &lt; # " &gt;&#160;%&#160;: '</h2>
-<p><a href="#Foo_bar">#Foo bar</a> <a href="#foo_Bar">#foo Bar</a> <a href="#Тест">#Тест</a> <a href="#тест">#тест</a> <a href="#Hey_&lt;_#_&quot;_&gt;_%_:_&#39;">#Hey &lt; # " &gt;&#160;%&#160;: '</a>
+<h2 id="тест"><span id=".D1.82.D0.B5.D1.81.D1.82"></span>тест</h2>
+<h2 id="Hey_&lt;_#_&quot;_&gt;_%_:_'"><span id="Hey_.3C_.23_.22_.3E_.25_:_.27"></span>Hey &lt; # “ &gt; % : ‘</h2>
+<p><a href="#Foo_bar">#Foo bar</a> <a href="#foo_Bar">#foo Bar</a> <a href="#Тест">#Тест</a> <a href="#тест">#тест</a> <a href="#Hey_&lt;_#_&quot;_&gt;_%_:_'">#Hey &lt; # “ &gt; % : ‘</a>
 </p><p>💩 <span id="💩"></span>
 </p><p><a href="#啤酒">#啤酒</a> <a href="#啤酒">#啤酒</a>
 </p>
@@ -2861,13 +2883,13 @@ wgFragmentMode=[ "legacy", "html5" ]
 !! html/wiki.rs
 <h2 id="Foo_bar">Foo bar</h2>
 <h2 id="foo_Bar_2">foo Bar</h2>
-<h2 id=".D0.A2.D0.B5.D1.81.D1.82"><span id="Тест"></span>Тест</h2>
-<h2 id=".D0.A2.D0.B5.D1.81.D1.82_2"><span id="Тест_2"></span>Тест</h2>
-<h2 id=".D1.82.D0.B5.D1.81.D1.82"><span id="тест"></span>тест</h2>
-<h2 id="Hey_.3C_.23_.22_.3E_.25_:_.27"><span id="Hey_&lt;_#_&quot;_&gt;_%_:_'"></span>Hey &lt; # " &gt;&#160;%&#160;: '</h2>
-<p><a href="#Foo_bar">#Foo bar</a> <a href="#foo_Bar">#foo Bar</a> <a href="#.D0.A2.D0.B5.D1.81.D1.82">#Тест</a> <a href="#.D1.82.D0.B5.D1.81.D1.82">#тест</a> <a href="#Hey_.3C_.23_.22_.3E_.25_:_.27">#Hey &lt; # " &gt;&#160;%&#160;: '</a>
-</p><p>.F0.9F.92.A9 <span id=".F0.9F.92.A9"></span>
-</p><p><a href="#.E5.95.A4.E9.85.92">#啤酒</a> <a href="#.E5.95.A4.E9.85.92">#啤酒</a>
+<h2 id="Тест"><span id=".D0.A2.D0.B5.D1.81.D1.82"></span>Тест</h2>
+<h2 id="Тест_2"><span id=".D0.A2.D0.B5.D1.81.D1.82_2"></span>Тест</h2>
+<h2 id="тест"><span id=".D1.82.D0.B5.D1.81.D1.82"></span>тест</h2>
+<h2 id="Hey_&lt;_#_&quot;_&gt;_%_:_'"><span id="Hey_.3C_.23_.22_.3E_.25_:_.27"></span>Hey &lt; # “ &gt; % : ‘</h2>
+<p><a href="#Foo_bar">#Foo bar</a> <a href="#foo_Bar">#foo Bar</a> <a href="#Тест">#Тест</a> <a href="#тест">#тест</a> <a href="#Hey_&lt;_#_&quot;_&gt;_%_:_'">#Hey &lt; # “ &gt; % : ‘</a>
+</p><p>💩 <span id="💩"></span>
+</p><p><a href="#啤酒">#啤酒</a> <a href="#啤酒">#啤酒</a>
 </p>
 !! end
 
@@ -2920,11 +2942,11 @@ wgFragmentMode=[ "html5" ]
 !! html/wiki.rs
 <h2 id="Foo_bar">Foo bar</h2>
 <h2 id="foo_Bar_2">foo Bar</h2>
-<h2 id="Тест">Тест</h2>
-<h2 id="Тест_2">Тест</h2>
-<h2 id="тест">тест</h2>
-<h2 id="Hey_&lt;_#_&quot;_&gt;_%_:_'">Hey &lt; # " &gt;&#160;%&#160;: '</h2>
-<p><a href="#Foo_bar">#Foo bar</a> <a href="#foo_Bar">#foo Bar</a> <a href="#Тест">#Тест</a> <a href="#тест">#тест</a> <a href="#Hey_&lt;_#_&quot;_&gt;_%_:_&#39;">#Hey &lt; # " &gt;&#160;%&#160;: '</a>
+<h2 id="Тест"><span id=".D0.A2.D0.B5.D1.81.D1.82"></span>Тест</h2>
+<h2 id="Тест_2"><span id=".D0.A2.D0.B5.D1.81.D1.82_2"></span>Тест</h2>
+<h2 id="тест"><span id=".D1.82.D0.B5.D1.81.D1.82"></span>тест</h2>
+<h2 id="Hey_&lt;_#_&quot;_&gt;_%_:_'"><span id="Hey_.3C_.23_.22_.3E_.25_:_.27"></span>Hey &lt; # “ &gt; % : ‘</h2>
+<p><a href="#Foo_bar">#Foo bar</a> <a href="#foo_Bar">#foo Bar</a> <a href="#Тест">#Тест</a> <a href="#тест">#тест</a> <a href="#Hey_&lt;_#_&quot;_&gt;_%_:_'">#Hey &lt; # “ &gt; % : ‘</a>
 </p><p>💩 <span id="💩"></span>
 </p><p><a href="#啤酒">#啤酒</a> <a href="#啤酒">#啤酒</a>
 </p>
@@ -2979,6 +3001,13 @@ notoc
 <div class="mw-heading mw-heading2">
 <h2 id="Normal_heading_with_existing_wrapper!" data-parsoid='{}'><span id="Normal_heading_with_existing_wrapper.21" typeof="mw:FallbackId"></span>Normal heading with existing wrapper!</h2>
 </div>
+!! html/wiki.rs
+<h2 id="Normal_heading!"><span id="Normal_heading.21"></span>Normal heading!</h2>
+<h2 id="HTML_heading!"><span id="HTML_heading.21"></span>HTML heading!</h2>
+<h2 style="--mw-output-border:1px solid green;--mw-output-background:lightgreen;--mw-output-padding:5px;--mw-output-font-size:1.5em;" id="HTML_heading_with_attributes!"><span id="HTML_heading_with_attributes.21"></span>HTML heading with attributes!</h2>
+<div class="mw-heading mw-heading2">
+<h2 id="Normal_heading_with_existing_wrapper!"><span id="Normal_heading_with_existing_wrapper.21"></span>Normal heading with existing wrapper!</h2>
+</div>
 !! end
 
 !! test
@@ -3010,11 +3039,11 @@ T365413: Headings with dollar signs
 <div class="mw-heading mw-heading2"><h2 id=".5C.24text">\$text</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=4" title="Edit section: \$text">edit</a><span class="mw-editsection-bracket">]</span></span></div>
 <div class="mw-heading mw-heading2"><h2 id=".24.24text">$$text</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=5" title="Edit section: $$text">edit</a><span class="mw-editsection-bracket">]</span></span></div>
 !! html/wiki.rs
-<h2 id=".24text">$text</h2>
-<h2 id=".24_text">$ text</h2>
-<h2 id="text_.24text">text $text</h2>
-<h2 id=".5C.24text">\$text</h2>
-<h2 id=".24.24text">$$text</h2>
+<h2 id="$text"><span id=".24text"></span>$text</h2>
+<h2 id="$_text"><span id=".24_text"></span>$ text</h2>
+<h2 id="text_$text"><span id="text_.24text"></span>text $text</h2>
+<h2 id="\$text"><span id=".5C.24text"></span>\$text</h2>
+<h2 id="$$text"><span id=".24.24text"></span>$$text</h2>
 !! end
 
 !! article

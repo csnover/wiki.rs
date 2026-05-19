@@ -27,23 +27,23 @@ pub enum AnchorEncodeMode {
 /// This is equivalent to `escapeIdForAttribute`.
 #[must_use]
 pub fn anchor_encode(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
-    decode_html(s.trim_ascii())
-        .map(title::normalize)
-        .map_ref(|id| &id[..id.floor_char_boundary(1024)])
-        .map(|id| match mode {
-            AnchorEncodeMode::Html5 => strtr(
-                id,
-                &[
-                    ("\t", "_"),
-                    ("\n", "_"),
-                    ("\x0c", "_"),
-                    ("\r", "_"),
-                    (" ", "_"),
-                ],
-            ),
-            AnchorEncodeMode::Legacy => Cow::from(url_encode(id))
-                .map(|id| strtr(id, &[("%3A", ":"), ("%20", "_"), ("%", ".")])),
-        })
+    let id = &s[..s.floor_char_boundary(1024)];
+    match mode {
+        AnchorEncodeMode::Html5 => strtr(
+            id,
+            &[
+                ("\t", "_"),
+                ("\n", "_"),
+                ("\x0c", "_"),
+                ("\r", "_"),
+                (" ", "_"),
+            ],
+        ),
+        AnchorEncodeMode::Legacy => {
+            Cow::from(percent_encoding::utf8_percent_encode(id, &PHP_ALPHABET))
+                .map(|id| strtr(id, &[("%3A", ":"), ("%20", "_"), ("%", ".")]))
+        }
+    }
 }
 
 /// Decodes HTML entities according to the Wikitext rules.
@@ -378,6 +378,91 @@ pub fn parse_formatted_number(s: &str) -> Cow<'_, str> {
     }
 }
 
+/// Normalises `text` by converting runs of ASCII whitespace to a single space
+/// character and trimming. This is like `Sanitizer::normalizeWhitespace`.
+#[must_use]
+pub fn normalize_ascii_whitespace(text: &str) -> Cow<'_, str> {
+    #[inline]
+    fn spacelike(c: char) -> bool {
+        c.is_ascii_whitespace()
+    }
+    normalize_whitespace::<true>(text, spacelike, spacelike)
+}
+
+/// Normalises `text` by converting runs of ASCII whitespace to a single space
+/// character, trimming, and decoding HTML. This is like
+/// `Sanitizer::decodeTagAttributes`.
+#[must_use]
+pub fn normalize_attr(text: &str) -> Cow<'_, str> {
+    #[inline]
+    fn spacelike(c: char) -> bool {
+        c.is_ascii_whitespace()
+    }
+    normalize_whitespace::<true>(text, spacelike, spacelike).map(decode_html)
+}
+
+/// Normalises `text` by converting runs of whitespace that might exist in
+/// a normalised [`Title`](title::Title) to a single space character and
+/// trimming. This is like `Sanitizer::normalizeSectionNameWhitespace`.
+#[must_use]
+pub fn normalize_section_name(text: &str) -> Cow<'_, str> {
+    #[inline]
+    fn spacelike(c: char) -> bool {
+        matches!(c, ' ' | '_')
+    }
+    normalize_whitespace::<true>(text, spacelike, spacelike)
+}
+
+/// A generic function for normalising text by converting runs of whitespace to
+/// a single space character and trimming the end and (optionally) start.
+///
+/// * `trimmable` should return true if the character `c` should be trimmed from
+///   the start and end of `text`.
+/// * `spacelike` should return true if the character `c` should be part of a
+///   run of whitespace that gets collapsed to a single space character.
+pub fn normalize_whitespace<const LTRIM: bool>(
+    text: &str,
+    mut trimmable: impl FnMut(char) -> bool,
+    mut spacelike: impl FnMut(char) -> bool,
+) -> Cow<'_, str> {
+    let mut out = String::new();
+    let mut flushed = 0;
+    let mut iter = text.char_indices().peekable();
+
+    while let Some((index, c)) = iter.next() {
+        // Peek to avoid switching to owned-mode when encountering a single
+        // space
+        if trimmable(c) && (c != ' ' || matches!(iter.peek(), Some((_, c)) if trimmable(*c))) {
+            // Non-space whitespace are converted to space, and runs of
+            // whitespace are collapsed into a single character
+            while iter.next_if(|(_, c)| trimmable(*c)).is_some() {}
+
+            // This acts like `trim`, not emitting a space at the start
+            // (`index == 0`) or end (`peek().is_none()`) of the text.
+            if let Some((next_index, _)) = iter.peek() {
+                out += &text[flushed..index];
+                flushed = *next_index;
+                // Bidi markers get stripped because “Sometimes they slip
+                // into cut-n-pasted page titles”
+                if (!LTRIM || index != 0) && spacelike(c) {
+                    out.push(' ');
+                }
+            }
+        }
+    }
+
+    if flushed == 0 {
+        Cow::Borrowed(if LTRIM {
+            text.trim_matches(trimmable)
+        } else {
+            text.trim_end_matches(trimmable)
+        })
+    } else {
+        out += text[flushed..].trim_end_matches(trimmable);
+        Cow::Owned(out)
+    }
+}
+
 /// Converts an iterator of strings into a regular expression alternates
 /// subexpression.
 #[must_use]
@@ -399,16 +484,7 @@ where
 /// Decodes a possibly URL-encoded title from a Wikitext link target.
 #[must_use]
 pub fn title_decode(target: &str) -> Cow<'_, str> {
-    let mut target = Cow::Borrowed(target);
-    if target.contains('%') {
-        if let Cow::Owned(text) = url_decode(&target) {
-            target = Cow::Owned(text);
-        }
-        if let Cow::Owned(text) = strtr(&target, &[("<", "&lt;"), (">", "&gt;")]) {
-            target = Cow::Owned(text);
-        }
-    }
-    target
+    url_decode(target).map(|target| strtr(target, &[("<", "&lt;"), (">", "&gt;")]))
 }
 
 /// Percent-decodes a URL part.
@@ -461,10 +537,7 @@ pub fn url_encode_bytes(input: &[u8]) -> percent_encoding::PercentEncode<'_> {
 ///
 /// This is a combination of “all non-alphanumeric characters except `-_.`” from
 /// PHP’s `urlencode`, and then MediaWiki also excludes `!$()*,/:;@~`.
-const ALPHABET: percent_encoding::AsciiSet = percent_encoding::NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.')
+const ALPHABET: percent_encoding::AsciiSet = PHP_ALPHABET
     .remove(b'!')
     .remove(b'$')
     .remove(b'(')
@@ -476,6 +549,13 @@ const ALPHABET: percent_encoding::AsciiSet = percent_encoding::NON_ALPHANUMERIC
     .remove(b';')
     .remove(b'@')
     .remove(b'~');
+
+/// The alphabet of characters to percent-encode when encoding URLs used by PHP
+/// `urlencode`.
+const PHP_ALPHABET: percent_encoding::AsciiSet = percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.');
 
 #[cfg(test)]
 mod tests {

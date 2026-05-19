@@ -17,7 +17,7 @@ use core::fmt::Write as _;
 use either::Either;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
-use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html};
+use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html, normalize_attr};
 use libwikitext_parse::{
     AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
     Spanned, TextStyle, Token, VOID_TAGS,
@@ -131,6 +131,7 @@ impl Document {
             }
             "id" => Either::Left(
                 sp.eval_unstrip(state, value)?
+                    .map(normalize_attr)
                     .map(|v| anchor_encode(v, AnchorEncodeMode::Html5)),
             ),
             "style" => {
@@ -167,7 +168,7 @@ impl Document {
                 let mut out = String::new();
                 for v in value
                     .split_ascii_whitespace()
-                    .map(|v| anchor_encode(v, AnchorEncodeMode::Html5))
+                    .map(|v| normalize_attr(v).map(|v| anchor_encode(v, AnchorEncodeMode::Html5)))
                 {
                     if !out.is_empty() {
                         out += " ";
