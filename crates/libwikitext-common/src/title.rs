@@ -272,7 +272,7 @@ impl Title {
         // It is not possible to know at this point.
         let (empty_start, mut text) = text
             .strip_prefix(':')
-            .map_or((false, &*text), |text| (true, text));
+            .map_or((false, text.as_ref()), |text| (true, text));
 
         // Namespaces and interwiki prefixes may have the same name, and
         // namespaces are given priority. (It does not make much sense that

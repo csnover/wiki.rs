@@ -973,7 +973,7 @@ impl<'s> ScaleRef<'s> {
     /// Gets the scale.
     fn get<'b>(&self, node: &'b Node<'s, 'b>) -> Option<ScaleNode<'s, 'b>> {
         let name = if let FieldRef::Field(name) = &self.name {
-            Cow::Borrowed(&**name)
+            Cow::Borrowed(name.as_ref())
         } else {
             self.name.get(node)?.into_string()
         };
@@ -1102,7 +1102,7 @@ where
             Self::Value(ValueRefLiteral::Value(value)) => Some(value.clone().into()),
             Self::Field(field) => field.get(node),
             Self::Group(key) => vega_1_group(node, key),
-            Self::Signal(name) => match &**name {
+            Self::Signal(name) => match name.as_ref() {
                 "width" => Some(Value::from(node.width())),
                 "height" => Some(Value::from(node.height())),
                 _ => {

@@ -50,7 +50,7 @@ impl<'a> Ast<'a> {
                 Item::Template { field, filters } => {
                     let init = field.eval(node).unwrap_or(Cow::Owned("undefined".into()));
                     let value = filters.iter().fold(init, |out, filter| filter.apply(out));
-                    out.push_str(&ValueExt::to_string(&*value));
+                    out.push_str(&ValueExt::to_string(value.as_ref()));
                 }
             }
         }
@@ -454,12 +454,12 @@ mod tests {
         let input = Cow::Borrowed(&Value::Str("hello world".into()));
 
         let result = Filter::Truncate(6, Position::Left).apply(input.clone());
-        assert_eq!(ValueExt::to_string(&*result), "…world");
+        assert_eq!(ValueExt::to_string(result.as_ref()), "…world");
 
         let result = Filter::Truncate(6, Position::Right).apply(input.clone());
-        assert_eq!(ValueExt::to_string(&*result), "hello…");
+        assert_eq!(ValueExt::to_string(result.as_ref()), "hello…");
 
         let result = Filter::Truncate(6, Position::Center).apply(input);
-        assert_eq!(ValueExt::to_string(&*result), "hel…ld");
+        assert_eq!(ValueExt::to_string(result.as_ref()), "hel…ld");
     }
 }

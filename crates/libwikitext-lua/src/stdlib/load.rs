@@ -61,7 +61,7 @@ pub fn load_load_text(ctx: Context<'_>) {
             exec.fuel()
                 .consume(count_fuel(LOAD_BYTES_PER_FUEL, source.len()));
 
-            let closure = Closure::load_with_env(ctx, Some(&*name), source, env)?;
+            let closure = Closure::load_with_env(ctx, Some(&name), source, env)?;
             Ok(closure.into())
         }),
     );

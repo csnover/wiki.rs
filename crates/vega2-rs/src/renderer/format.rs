@@ -603,7 +603,7 @@ impl Specifier {
             };
             (&value_str[..end], fract_part)
         } else {
-            (&*value_str, Cow::Borrowed(""))
+            (value_str.as_ref(), Cow::Borrowed(""))
         };
 
         // When the padding fill character is '0' it should be treated as part

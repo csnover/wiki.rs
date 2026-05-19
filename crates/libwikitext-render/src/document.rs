@@ -140,7 +140,7 @@ impl Document {
                 // that `!important` is not required to style pages
                 let value = sp.eval_unstrip(state, value)?.map(decode_html);
                 let mut out = String::new();
-                let mut input = &*value;
+                let mut input = value.as_ref();
                 while !input.is_empty() {
                     // 'Template:Table cell templates' contains a bunch of
                     // invalid garbage. When this happens, just try skipping to
@@ -612,7 +612,7 @@ impl Surrogate<Error> for Document {
         self.next.text("redirectText");
         self.next.tag_attribute_end("class");
         self.next.tag_start_end("p");
-        tags::render_wikilink(self, state, sp, target, content, trail.map(|v| &**v))?;
+        tags::render_wikilink(self, state, sp, target, content, trail.map(|v| v.as_ref()))?;
         self.next.tag_end("p");
         Ok(())
     }

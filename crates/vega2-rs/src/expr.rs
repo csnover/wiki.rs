@@ -671,7 +671,7 @@ impl BinaryOp {
             Self::Shl => f64::from(lhs.into_i32() << rhs.into_i32()).into(),
             Self::Sshr => f64::from(lhs.into_i32() >> rhs.into_i32()).into(),
             Self::Ushr => f64::from(lhs.into_i32().cast_unsigned() >> rhs.into_i32()).into(),
-            Self::Add => match (&*lhs.to_primitive(), &*rhs.to_primitive()) {
+            Self::Add => match (lhs.to_primitive().as_ref(), rhs.to_primitive().as_ref()) {
                 (Value::Str(lhs), rhs) => {
                     format!("{lhs}{rhs}", rhs = ValueExt::to_string(rhs)).into()
                 }
@@ -1233,9 +1233,9 @@ mod built_ins {
                 |s| {
                     let needle = needle.to_string();
                     if BACKWARDS {
-                        s.rfind(&*needle)
+                        s.rfind(needle.as_ref())
                     } else {
-                        s.find(&*needle)
+                        s.find(needle.as_ref())
                     }
                     .map(|index| s[..index].encode_utf16().count())
                 },
@@ -1280,9 +1280,9 @@ mod built_ins {
         Ok(match pattern {
             VmValue::Regex(regex, flags) => {
                 let result = if flags.contains('g') {
-                    regex.replace_all(&haystack, &*replacement)
+                    regex.replace_all(&haystack, replacement)
                 } else {
-                    regex.replace(&haystack, &*replacement)
+                    regex.replace(&haystack, replacement)
                 };
                 result.owned().unwrap_or(haystack)
             }

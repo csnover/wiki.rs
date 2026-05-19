@@ -196,7 +196,7 @@ pub(super) fn media_options<'s>(
         } else if let Some(value) = value.strip_prefix("upright ") {
             options.upright = Some(value.parse::<f64>().unwrap_or(1.0));
         } else {
-            match &*value {
+            match value.as_ref() {
                 "upright" => {
                     options.upright = Some(0.75);
                 }

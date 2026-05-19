@@ -875,7 +875,7 @@ fn section(
     }
 
     if let Some(name) = end
-        && let Some(section) = title.get_mut(&*name)
+        && let Some(section) = title.get_mut(name.as_ref())
     {
         section.end = bounds.start;
     }

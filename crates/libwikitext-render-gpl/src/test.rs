@@ -206,7 +206,7 @@ impl PluginParserFn for DivTagPf {
         let mut raw_html = false;
         let len = args.len();
         for index in 1..len {
-            match &*args.eval(state, index)?.unwrap() {
+            match args.eval(state, index)?.unwrap().as_ref() {
                 "raw" => raw = true,
                 "isRawHTML" => raw_html = true,
                 flag => log::warn!("TODO: #divtagpf: flag {flag}"),
@@ -263,7 +263,7 @@ fn render_test(
     let mut statics = Statics::builder()
         .base_time(base_time)
         .base_uri(Uri::from_static("http://example.org"))
-        .db(Arc::clone(&*db) as Arc<dyn DatabaseProvider>)
+        .db(Arc::clone(db) as Arc<dyn DatabaseProvider>)
         .parser(db.config())
         .parser_fns(HashMap::from_iter([
             ("divtagpf", &DivTagPf as &dyn PluginParserFn),
