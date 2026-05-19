@@ -1780,7 +1780,7 @@ impl MarkableString {
         };
 
         let (start, mid, end) = if dest < start {
-            (dest, start - dest, end)
+            (dest, start, end)
         } else if dest < end {
             (start, end, dest + end - start)
         } else {
@@ -2742,30 +2742,39 @@ impl<S: Sink> Sink for PrettyText<S> {
 /// without going insane, fostering is also implemented in the renderer.
 #[derive(Debug)]
 pub(super) struct TableFoster<S: Sink + Markable> {
+    /// The output.
+    next: S,
     /// The position just before the nearest table. Since tables can be nested,
     /// this is a stack.
-    before_table: Vec<Mark>,
+    stack: Vec<TableFosterFrame>,
+}
+
+/// A currently processing table.
+#[derive(Debug)]
+struct TableFosterFrame {
+    /// The position just before the nearest table.
+    before_table: Mark,
     /// The starting position of the currently processing space between table
     /// children.
     interstitial: Option<Mark>,
-    /// The output.
-    next: S,
 }
 
 impl<S: Sink + Markable> TableFoster<S> {
     /// Creates a new `TableFoster` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
-            before_table: <_>::default(),
-            interstitial: <_>::default(),
             next,
+            stack: <_>::default(),
         }
     }
 
     /// Gives up the child to the state.
     fn foster(&mut self) {
-        if let Some(start) = self.interstitial.take()
-            && let Some(before) = self.before_table.last()
+        if let Some(TableFosterFrame {
+            before_table: before,
+            interstitial,
+        }) = self.stack.last_mut()
+            && let Some(start) = interstitial.take()
         {
             let end = self.next.mark();
             self.next
@@ -2832,24 +2841,29 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        if name == "table" {
-            let mark = self.before_table.pop().expect("table mark");
-            self.next.free_mark(mark);
-        }
         if matches!(name, "table" | "tr") {
             self.foster();
         }
+        if name == "table" {
+            let last = self.stack.pop().expect("table mark");
+            self.next.free_mark(last.before_table);
+        }
         self.next.tag_end(name);
-        if matches!(name, "caption" | "td" | "th" | "tr") {
-            debug_assert!(self.interstitial.is_none());
-            self.interstitial = Some(self.next.mark());
+        if matches!(name, "caption" | "td" | "th" | "tr")
+            && let Some(last) = self.stack.last_mut()
+        {
+            debug_assert!(last.interstitial.is_none());
+            last.interstitial = Some(self.next.mark());
         }
     }
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
         if name == "table" {
-            self.before_table.push(self.next.mark());
+            self.stack.push(TableFosterFrame {
+                before_table: self.next.mark(),
+                interstitial: None,
+            });
         } else if matches!(name, "caption" | "td" | "th" | "tr") {
             self.foster();
         }
@@ -2859,9 +2873,11 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
         self.next.tag_start_end(name);
-        if matches!(name, "table" | "tr") {
-            debug_assert!(self.interstitial.is_none());
-            self.interstitial = Some(self.next.mark());
+        if matches!(name, "table" | "tr")
+            && let Some(last) = self.stack.last_mut()
+        {
+            debug_assert!(last.interstitial.is_none(), "oops, {name}");
+            last.interstitial = Some(self.next.mark());
         }
     }
 
