@@ -800,11 +800,17 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
 
     #[inline]
     fn raw_html_block(&mut self, html: &str) {
+        if html.bytes().any(|c| !c.is_ascii_whitespace()) {
+            self.clear();
+        }
         self.next.raw_html_block(html);
     }
 
     #[inline]
     fn raw_html_inline(&mut self, html: &str) {
+        if html.bytes().any(|c| !c.is_ascii_whitespace()) {
+            self.clear();
+        }
         self.next.raw_html_inline(html);
     }
 
