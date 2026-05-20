@@ -789,6 +789,7 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
 
     #[inline]
     fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+        debug_assert!(self.last.is_none());
         self.next.finish(state)
     }
 
@@ -1201,6 +1202,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
                 let last = self.wrap_points.pop().unwrap();
                 self.next.free_mark(last.start);
                 self.next.free_mark(end);
+                debug_assert!(last.end.is_none());
             } else {
                 debug_assert!(last.end.is_none());
                 last.end = Some(end);
@@ -1211,6 +1213,8 @@ impl<S: Sink + Markable> GrafEmitter<S> {
                 start: self.next.clone_mark(start),
                 end: Some(end),
             });
+        } else {
+            self.next.free_mark(end);
         }
     }
 
@@ -1230,6 +1234,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
                 // A non-phrasing element was at the end of the line
                 let last = self.wrap_points.pop().unwrap();
                 self.next.free_mark(last.start);
+                debug_assert!(last.end.is_none());
             } else {
                 last.end.get_or_insert_with(|| self.next.mark());
             }
@@ -1302,6 +1307,9 @@ impl<S: Sink + Markable> Sink for GrafEmitter<S> {
         self.end_wrap();
         self.close(true);
         debug_assert_eq!(self.level, 0);
+        debug_assert!(self.blockquote_roots.is_empty());
+        debug_assert!(self.wrap_points.is_empty());
+        self.next.free_mark(self.line_start);
         self.next.finish(state)
     }
 
@@ -1340,9 +1348,11 @@ impl<S: Sink + Markable> Sink for GrafEmitter<S> {
         // (This is the `RemexCompatMunger` half of this bullshit)
         if name == "blockquote" {
             self.end_wrap();
-            self.blockquote_roots
+            let root = self
+                .blockquote_roots
                 .pop_if(|root| self.level == root.level)
                 .expect("blockquote roots stack corruption");
+            self.next.free_mark(root.start);
         } else if name == "pre" {
             self.pre_close_match = true;
         }
@@ -1673,6 +1683,16 @@ impl From<u8> for ListKind {
 #[derive(Debug)]
 pub(super) struct Mark(u16);
 
+#[cfg(debug_assertions)]
+impl Drop for Mark {
+    #[track_caller]
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            debug_assert!(self.0 == MarkableString::NO_FREE, "leaked");
+        }
+    }
+}
+
 /// A string wrapper where positions can be bookmarked and retrieved later. The
 /// bookmarked positions are automatically adjusted in response to mutations to
 /// the underlying string. To reduce memory use, the size of the underlying
@@ -1732,10 +1752,12 @@ impl MarkableString {
     /// Releases the given mark to the free pool.
     // TODO: It is bad that this has to be done manually, marks will leak!
     #[inline]
-    #[expect(clippy::needless_pass_by_value, reason = "this is a destructor")]
-    pub fn free_mark(&mut self, mark: Mark) {
+    pub fn free_mark(&mut self, mut mark: Mark) {
         self.marks[usize::from(mark.0)] = Self::FREE_BIT | u32::from(self.next_free);
         self.next_free = mark.0;
+        if cfg!(debug_assertions) {
+            mark.0 = Self::NO_FREE;
+        }
     }
 
     /// Inserts a mark at the given position `pos`.
@@ -2157,6 +2179,9 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
 
     #[inline]
     fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
+        debug_assert!(self.state.body_pos.is_none());
+        debug_assert!(self.state.dir.is_none());
+        debug_assert!(self.state.tag.is_none());
         let mut entries = core::mem::take(&mut self.entries).into_iter().peekable();
         while let Some(entry) = entries.next() {
             let next_html = entries
@@ -2845,6 +2870,8 @@ impl<S: Sink + Markable> TableFoster<S> {
                         }
                     }
                 });
+            self.next.free_mark(start);
+            self.next.free_mark(end);
         }
     }
 }
