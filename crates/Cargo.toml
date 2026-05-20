@@ -82,6 +82,7 @@ fancy-regex = "0.16"
 gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "5a7534b883b703f23cfb8c3cfdf033460aa77ea9", features = ["allocator-api2", "hashbrown"] }
 goldenfile = "1.9"
 html-escape = "0.2"
+htmlparser = "0.2"
 http = "1.0.0"
 indexmap = { version = "2.12", features = ["serde"] }
 libmisc = { path = "libmisc" }

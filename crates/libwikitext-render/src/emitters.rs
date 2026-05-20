@@ -1976,6 +1976,34 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
         }
     }
 
+    /// Adds text content from an opaque blob of HTML to the currently
+    /// processing outline entry.
+    fn add_html(&mut self, html: &str) {
+        if self.state.tag.is_none() || self.state.in_attrs {
+            return;
+        }
+
+        // TODO: SIGH, all extension tag outputs need to be tokenised like this,
+        // but then the inner elements need to *not* apply to the outline.
+        let text = htmlparser::Tokenizer::from(html).filter_map(|token| {
+            token.ok().and_then(|token| {
+                if let htmlparser::Token::Text { text } = token {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
+        });
+
+        for text in text {
+            self.html_buffer.push_str(text);
+
+            if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
+                self.id_buffer.push_str(text);
+            }
+        }
+    }
+
     /// Emits an outline entry with the given `level`, `html`, and `id` to
     /// `outline`.
     fn emit_entry(
@@ -1996,7 +2024,7 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
                     .map(normalize_fragment)
                     .map(|id| anchor_encode(id, AnchorEncodeMode::Html5));
                 let id = outline
-                    .push(level, &self.html_buffer[html], &id)
+                    .push(level, self.html_buffer[html].trim_ascii(), &id)
                     .unwrap_or(&id);
                 let legacy = Self::id_to_legacy(id);
                 self.next.with_marks([&out_pos], |[out_pos], out| {
@@ -2015,7 +2043,8 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
                     };
                     let id =
                         decode_html(&out[start + Self::PREFIX.len()..end - Self::SUFFIX.len()]);
-                    if let Some(id) = outline.push(level, &self.html_buffer[html], &id) {
+                    if let Some(id) = outline.push(level, self.html_buffer[html].trim_ascii(), &id)
+                    {
                         out.replace_range(start..end, &Self::id_to_attr(id));
                         Self::id_to_legacy(id)
                     } else {
@@ -2151,11 +2180,13 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
 
     #[inline]
     fn raw_html_block(&mut self, html: &str) {
+        self.add_html(html);
         self.next.raw_html_block(html);
     }
 
     #[inline]
     fn raw_html_inline(&mut self, html: &str) {
+        self.add_html(html);
         self.next.raw_html_inline(html);
     }
 
