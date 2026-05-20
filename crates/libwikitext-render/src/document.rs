@@ -16,7 +16,6 @@ use super::{
 use core::fmt::Write as _;
 use either::Either;
 use libmisc::CowExt as _;
-use libphp_rs::strtr;
 use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html, normalize_attr};
 use libwikitext_parse::{
     AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
@@ -227,52 +226,19 @@ impl Document {
             StripMarker::NoWiki(text) => {
                 // The mere presence of a strip marker needs to cause the
                 // GrafEmitter to decide that there is content, even if the
-                // marker is actually empty
+                // marker is actually empty.
+                // TODO: The mere presence of *any* tag needs to cause
+                // GrafEmitter to decide that there is content, even if the
+                // tag is not actually participating in the DOM at all because
+                // it is mismatched.
                 self.next.next_mut().next_mut().next_mut().force_content();
                 self.next.text(&decode_html(text));
             }
             StripMarker::Inline(text) => {
-                // TODO: This should be a redundant check and garbage-in-attr
-                // is handled correctly elsewhere
-                if matches!(self.stack.last(), Some(Node::Attribute)) {
-                    let escaped = strtr(text, &[("<", "&lt;"), (">", "&gt;")]);
-                    if matches!(escaped, Cow::Owned(_)) {
-                        // At least malformed Wikitext tables can cause this to
-                        // happen by putting extension tags in attributes.
-                        // TODO: This is supposed to take the attributes from
-                        // the outermost tag, put them into the attributes
-                        // map for the element, and then be overwritten by any
-                        // later duplicate attribute
-                        log::warn!("Stripped tags inside attributes");
-                    }
-                    self.next.text(&escaped);
-                } else {
-                    self.next.raw_html_inline(text);
-                }
+                self.next.raw_html_inline(text);
             }
             StripMarker::Block(text) => {
-                if matches!(self.stack.last(), Some(Node::Attribute)) {
-                    let escaped = strtr(text, &[("<", "&lt;"), (">", "&gt;")]);
-                    if matches!(escaped, Cow::Owned(_)) {
-                        // At least malformed Wikitext tables can cause this to
-                        // happen by putting extension tags in attributes.
-                        // TODO: This is supposed to take the attributes from
-                        // the outermost tag, put them into the attributes
-                        // map for the element, and then be overwritten by any
-                        // later duplicate attribute
-                        log::warn!("Stripped tags inside attributes");
-                    }
-                    self.next.text(&escaped);
-                } else {
-                    // Using "div" is a hack but one which does not really matter
-                    // since anything that cannot parent a `<div>` cannot parent any
-                    // other block-level element
-                    while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
-                        e.close(&mut self.next);
-                        self.next.new_line();
-                    }
-                    self.next.raw_html_block(text);
-                }
+                self.next.raw_html_block(text);
             }
             StripMarker::WikiRsSourceStart(name) => {
                 self.next
@@ -718,6 +684,9 @@ impl Surrogate<Error> for Document {
             self.wikitext_table_count -= 1;
             if self.in_table() {
                 self.next.tag_end("table");
+                self.stack
+                    .pop_if(|node| matches!(node, Node::Tag(name) if name == "table"))
+                    .expect("table hack balance");
             }
         }
         Ok(())
@@ -763,6 +732,9 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
     ) -> Result {
         self.wikitext_table_count += 1;
+        // TODO: This is for the table indent hack. Document really needs to
+        // integrate with the DomTree balancing stack to work properly :-(((
+        self.stack.push(Node::Tag("table".into()));
         self.adopt_start_tag(state, sp, span, "table", attributes, false)
     }
 
@@ -820,11 +792,20 @@ impl Surrogate<Error> for Document {
     }
 }
 
+/// An HTML attribute state.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(super) enum Attribute {
+    /// In the name part.
+    Name,
+    /// In the value part.
+    Value,
+}
+
 /// An HTML tree node.
 #[derive(Debug)]
 pub(super) enum Node {
     /// An HTML attribute.
-    Attribute,
+    Attribute(Attribute),
     /// A run of Wikitext list items.
     List(ListEmitter),
     /// An HTML tag.
@@ -860,14 +841,14 @@ impl Node {
                 // actually <li>s
                 !list.is_empty()
             }
-            Node::Attribute => unreachable!(),
+            Node::Attribute(_) => unreachable!(),
         }
     }
 
     /// Writes the terminator for this element to the given output.
     pub(super) fn close<S: Sink>(self, next: &mut S) {
         match self {
-            Node::Attribute => {}
+            Node::Attribute(_) => {}
             Node::Tag(name) => {
                 debug_assert!(!VOID_TAGS.contains(&name));
                 next.tag_end(&name);
@@ -881,7 +862,7 @@ impl Node {
     /// The tag name for this node.
     pub(super) fn tag_name(&self) -> Option<&str> {
         match self {
-            Node::Attribute => None,
+            Node::Attribute(_) => None,
             Node::Tag(name) => Some(name),
             Node::List(list) => list.tag_name(),
         }

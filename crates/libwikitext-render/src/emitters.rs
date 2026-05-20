@@ -1,6 +1,11 @@
 //! HTML emitters for Wikitext fragments that require state management.
 
-use super::{State, document::Node, globals::Outline, tags::PHRASING_TAGS};
+use super::{
+    State,
+    document::{Attribute, Node},
+    globals::Outline,
+    tags::PHRASING_TAGS,
+};
 use core::fmt::{self, Write as _};
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
@@ -632,21 +637,45 @@ impl<S: Sink> Sink for DomTree<S> {
 
     #[inline]
     fn raw_html_block(&mut self, html: &str) {
-        self.next.raw_html_block(html);
+        if let Some(Node::Attribute(pos)) = self.stack.last() {
+            if *pos == Attribute::Name {
+                log::warn!("invalid HTML block in attribute position; ignoring");
+            } else {
+                log::warn!("invalid HTML block in attribute position; treating as text");
+                self.next.text(html);
+            }
+        } else {
+            self.next.raw_html_block(html);
+        }
     }
 
     #[inline]
     fn raw_html_inline(&mut self, html: &str) {
-        self.next.raw_html_inline(html);
+        if let Some(Node::Attribute(pos)) = self.stack.last() {
+            if *pos == Attribute::Name {
+                log::warn!("invalid HTML block in attribute position; ignoring");
+            } else {
+                log::warn!("invalid HTML block in attribute position; treating as text");
+                self.next.text(html);
+            }
+        } else {
+            self.next.raw_html_inline(html);
+        }
     }
 
     #[inline]
     fn tag_attribute_end(&mut self, name: &str) {
+        if let Some(Node::Attribute(pos)) = self.stack.last_mut() {
+            *pos = Attribute::Name;
+        }
         self.next.tag_attribute_end(name);
     }
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
+        if let Some(Node::Attribute(pos)) = self.stack.last_mut() {
+            *pos = Attribute::Value;
+        }
         self.next.tag_attribute_start(name);
     }
 
@@ -670,10 +699,8 @@ impl<S: Sink> Sink for DomTree<S> {
         // However, there is one case where elements should be allowed to be
         // placed in an illegal position: when table-row templates get things
         // like 'Template:Tfd' applied to them, this will try to put non-table
-        // content into the table—but this is actually desirable, because the
-        // browser will automatically foster content in this position out of the
-        // table. So, parenting-close rules are skipped if the last element is a
-        // table or tr.
+        // content into the table, and this content is supposed to be fostered
+        // out of the table later instead of ending the table.
         let close_tags = !matches!(
             self.stack.last(),
             Some(node @ Node::Tag(last))
@@ -696,14 +723,14 @@ impl<S: Sink> Sink for DomTree<S> {
         if !VOID_TAGS.contains(name) {
             self.stack.push(Node::Tag(name.to_owned().into()));
         }
-        self.stack.push(Node::Attribute);
+        self.stack.push(Node::Attribute(Attribute::Name));
         self.next.tag_start(name);
     }
 
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
         self.stack
-            .pop_if(|node| matches!(node, Node::Attribute))
+            .pop_if(|node| matches!(node, Node::Attribute(_)))
             .expect("attribute node");
         self.next.tag_start_end(name);
     }
@@ -2811,6 +2838,7 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
 
     #[inline]
     fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+        debug_assert!(self.stack.is_empty());
         self.next.finish(state)
     }
 
