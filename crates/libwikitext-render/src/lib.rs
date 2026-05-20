@@ -828,11 +828,25 @@ impl StripMarkers {
         self.0.push(marker);
     }
 
-    /// Recursively replaces all strip markers in the given string with their
+    /// Recursively replaces all strip markers in the given `text` with their
     /// original contents.
     #[inline]
-    fn unstrip<'a>(&self, body: &'a str) -> Cow<'a, str> {
-        self.for_each_marker(body, |marker| Some(Cow::Borrowed(marker)))
+    fn unstrip<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        self.unstrip_recursive(text, 0)
+    }
+
+    /// Recursively replaces all strip markers in the given `text` with their
+    /// original contents.
+    #[inline]
+    fn unstrip_recursive<'a>(&self, text: &'a str, level: u8) -> Cow<'a, str> {
+        if level == 20 {
+            log::error!("unstrip recursed over 20 times");
+            Cow::Borrowed(text)
+        } else {
+            self.for_each_marker(text, |marker| {
+                Some(self.unstrip_recursive(marker, level + 1))
+            })
+        }
     }
 }
 
