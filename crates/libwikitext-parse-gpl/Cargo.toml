@@ -15,6 +15,7 @@ libmisc.workspace = true
 libphp-rs.workspace = true
 libwikitext-common.workspace = true
 libwikitext-parse.workspace = true
+memchr.workspace = true
 peg.workspace = true
 phf.workspace = true
 regex.workspace = true

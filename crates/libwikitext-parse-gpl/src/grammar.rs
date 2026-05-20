@@ -856,7 +856,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       )*
       // No need to preserve this -- canonicalize on RT via dirty diff
       space_or_newline_or_solidus()*
-      selfclose:"/"?
+      self_close:"/"?
       // not preserved - canonicalized on RT via dirty diff
       space()*
       ">"
@@ -878,7 +878,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
               Token::StartTag {
                   name: name.span,
                   attributes,
-                  self_closing: selfclose.is_some()
+                  self_closing: self_close.is_some()
               }
           }
       }
@@ -1242,7 +1242,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         let content = if is_end {
             None
         } else {
-            find_end_tag(&input[t.span.end..], name)
+            find_end_tag(&input[t.span.end..], name, str::eq_ignore_ascii_case)
         };
 
         let mode = if name.eq_ignore_ascii_case("includeonly") {
@@ -1372,10 +1372,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       start:xmlish_start()
       &assert({
         let (name, _) = start;
-        // MW used Unicode case folding here, but why? All these are ASCII.
+        // Non-ASCII names are allowed in extension tags (T19663)
         name.node == "wiki-rs" || (
-            contains_ignore_case(&state.config.extension_tags, &name)
-            && !contains_ignore_case(&state.config.annotation_tags, &name)
+            contains_ignore_case_unicode(&state.config.extension_tags, &name)
+            && !contains_ignore_case_unicode(&state.config.annotation_tags, &name)
         )
       }, "extension tag")
 
@@ -1414,7 +1414,9 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
             },
             Token::StartTag { name, attributes, self_closing } => {
                 let Some((content_len, end_pos)) = find_end_tag(
-                    &input[pos..], &input[name.into_range()]
+                    &input[pos..], &input[name.into_range()],
+                    // TODO: Use a non-allocating comparator
+                    |a, b| a.to_lowercase() == b.to_lowercase()
                 ) else {
                     // This is undefined behaviour. The old parser returns text
                     // here (see core commit 674e8388cba).
@@ -3190,36 +3192,35 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
 /// This avoids the overhead of compiling and/or caching regular expressions
 /// for every possible tag, without bothering to first check that any such
 /// overhead exists or matters. :-)
-fn find_end_tag(input: &str, tag_name: &str) -> Option<(usize, usize)> {
-    let mut iter = input.char_indices().peekable();
+fn find_end_tag(
+    input: &str,
+    tag_name: &str,
+    mut comparator: impl FnMut(&str, &str) -> bool,
+) -> Option<(usize, usize)> {
+    // There is no point in checking for a closing tag beyond the point where
+    // it would be possible for a closing tag with this `tag_name` to exist in
+    // the input
+    let max_start = input.len().saturating_sub(tag_name.len() + ">".len());
 
-    let max_start = input.len().saturating_sub(tag_name.len() + 3);
-    loop {
-        let mut start = None;
-        while let Some((pos, c)) = iter.next() {
-            if pos > max_start {
-                return None;
-            }
-
-            if c == '<'
-                && let Some((next, _)) = iter.next_if(|(_, c)| *c == '/')
-                && input.is_char_boundary(next + 1 + tag_name.len())
-                && input[next + 1..next + 1 + tag_name.len()].eq_ignore_ascii_case(tag_name)
-            {
-                start = Some(pos);
-                iter.nth(tag_name.len() - 1);
-                break;
-            }
-        }
-        if let Some(start) = start {
-            while iter.next_if(|(_, b)| b.is_ascii_whitespace()).is_some() {}
-            if let Some((pos, '>')) = iter.peek() {
-                break Some((start, pos + 1));
-            }
+    let bytes = input.as_bytes();
+    memchr::memmem::find_iter(&bytes[..max_start], b"</").find_map(|start| {
+        let tag_name_start = start + "</".len();
+        let tag_name_end = tag_name_start + tag_name.len();
+        // `tag_name_end` cannot be beyond `input` but it might be in the middle
+        // of a UTF-8 code sequence, so this has to be a fallible check
+        if let Some(slice) = input.get(tag_name_start..tag_name_end)
+            && comparator(slice, tag_name)
+            && let Some(tag_end) =
+                memchr::memchr(b'>', &bytes[tag_name_end..]).map(|e| tag_name_end + e)
+            && bytes[tag_name_end..tag_end]
+                .iter()
+                .all(u8::is_ascii_whitespace)
+        {
+            Some((start, tag_end + ">".len()))
         } else {
-            break None;
+            None
         }
-    }
+    })
 }
 
 /// A lookahead that matches if the input is at a terminator for whatever
@@ -3867,6 +3868,13 @@ static HTML5_TAGS: phf::Set<&str> = phf::phf_set! {
 fn contains_ignore_case(candidates: &phf::Set<&str>, value: &str) -> bool {
     // TODO: Use a case-insensitive hashable type instead of allocating.
     candidates.contains(&value.to_ascii_lowercase())
+}
+
+/// Returns true if any `candidates` case-insensitively match `value`.
+#[inline]
+fn contains_ignore_case_unicode(candidates: &phf::Set<&str>, value: &str) -> bool {
+    // TODO: Use a case-insensitive hashable type instead of allocating.
+    candidates.contains(&value.to_lowercase())
 }
 
 /// Returns the canonical name for the given case-insensitive `alias`.
