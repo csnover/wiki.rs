@@ -490,7 +490,10 @@ impl Title {
 
         let bytes = maybe_title.as_bytes();
         for pos in 0..maybe_title.len() {
-            if !config.valid_title_bytes.contains(bytes[pos])
+            if bytes[pos] == b'#' {
+                // Anything goes after the fragment part
+                return true;
+            } else if !config.valid_title_bytes.contains(bytes[pos])
                 || is_percent_encoding(&bytes[pos..])
                 || is_html_entity(&bytes[pos..])
             {
