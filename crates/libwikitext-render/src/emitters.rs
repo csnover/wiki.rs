@@ -2868,7 +2868,9 @@ impl<S: Sink + Markable> TableFoster<S> {
             let end = self.next.mark();
             self.next
                 .with_marks([before, &start, &end], |[before, start, end], out| {
-                    if let (Some(before), Some(start), Some(end)) = (before, start, end) {
+                    if let (Some(before), Some(start), Some(end)) = (before, start, end)
+                        && start != end
+                    {
                         if out[start..end].bytes().all(|c| c.is_ascii_whitespace()) {
                             out.replace_range(start..end, "\n");
                         } else {
