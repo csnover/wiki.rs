@@ -324,6 +324,7 @@ mod trim;
 use core::{fmt, time::Duration};
 use document::Document;
 use expand_templates::{ExpandMode, ExpandTemplates};
+pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
 use http::Uri;
 use libphp_rs::DateTime;
 use libwikitext_common::{
@@ -334,7 +335,7 @@ use libwikitext_common::{
 };
 use libwikitext_parse::{FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, inspect, strip};
 use libwikitext_parse_gpl::Parser;
-pub use parser_fns::{PluginFnArgs, PluginParserFn, PluginResult, PluginState};
+pub use parser_fns::{PluginFnArgs, PluginParserFn};
 use piccolo::Lua;
 use schnellru::LruMap;
 use stack::{Kv, StackFrame};
@@ -377,6 +378,22 @@ impl Default for Limits {
             vm_time: Duration::new(10, 0),
             vm_total_mem: 128 * 1024 * 1024,
         }
+    }
+}
+
+/// The result of a plugin extension tag call.
+pub type PluginResult<T = (), E = anyhow::Error> = core::result::Result<T, E>;
+
+/// An opaque mutable state object for plugin calls.
+pub struct PluginState<'call, 's, 'config, 'dict>(&'call mut State<'s, 'config, 'dict>);
+
+impl PluginState<'_, '_, '_, '_> {
+    /// Replaces all strip markers in the given `text` with their original
+    /// contents.
+    #[inline]
+    #[must_use]
+    pub fn unstrip<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        self.0.strip_markers.unstrip(text)
     }
 }
 
@@ -735,6 +752,9 @@ pub struct Statics<'config> {
     /// The article database.
     #[builder(setter(doc = "Sets the article database."))]
     db: Arc<dyn DatabaseProvider>,
+    /// Extra extension tags.
+    #[builder(default)]
+    extension_tags: HashMap<&'static str, &'static dyn PluginExtensionTag>,
     /// Time and memory limits.
     #[builder(
         default,

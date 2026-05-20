@@ -8,7 +8,7 @@
 )]
 
 use super::{
-    Document, Error, Result, State, extension_tags,
+    Document, Error, PluginResult, PluginState, Result, State, extension_tags,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     template::call_module,
@@ -141,12 +141,6 @@ impl PluginFnArgs<'_, '_, '_> {
         self.0.len()
     }
 }
-
-/// The result of a plugin parser function call.
-pub type PluginResult<T = (), E = anyhow::Error> = core::result::Result<T, E>;
-
-/// An opaque mutable state object for plugin calls.
-pub struct PluginState<'call, 's, 'config, 'dict>(&'call mut State<'s, 'config, 'dict>);
 
 /// The function signature of a parser function.
 type ParserFn = fn(&mut String, &mut State<'_, '_, '_>, &IndexedArgs<'_, '_, '_>) -> Result;

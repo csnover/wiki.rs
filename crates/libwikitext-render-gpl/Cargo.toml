@@ -23,6 +23,7 @@ libwikitext-parse.workspace = true
 libwikitext-parse-gpl.workspace = true
 libwikitext-render.workspace = true
 log.workspace = true
+memchr.workspace = true
 phf.workspace = true
 regex.workspace = true
 similar-asserts.workspace = true

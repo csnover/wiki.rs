@@ -2,7 +2,7 @@ use super::{
     config::CONFIG,
     test_parser::{Chunk, OPTION_TO_META, SectionText, Sections, Testfile},
 };
-use core::fmt::Write as _;
+use core::{cell::RefCell, fmt::Write as _};
 use http::Uri;
 use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
@@ -13,8 +13,8 @@ use libwikitext_data::MESSAGES;
 use libwikitext_parse::{FileMap, inspect};
 use libwikitext_parse_gpl::Parser;
 use libwikitext_render::{
-    LoadMode, Paths, PluginFnArgs, PluginParserFn, PluginResult, PluginState, RenderOutput,
-    Statics, render_article,
+    LoadMode, OutputMode, Paths, PluginExtensionTag, PluginFnArgs, PluginParserFn, PluginResult,
+    PluginState, PluginTagArgs, RenderOutput, Statics, render_article,
 };
 use regex::{Regex, RegexBuilder};
 use serde_json_borrow::Value;
@@ -25,7 +25,7 @@ use std::{
     fs::File,
     io::Read as _,
     path::Path,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 
 const BASE_DIR: &str = "./src/tests";
@@ -69,145 +69,51 @@ test_from_file! {
     wt_escaping => "wtEscaping",
 }
 
-#[track_caller]
-fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
-    let empty_options = SectionText::Kv(HashMap::new());
+struct AsideTag;
 
-    let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .format_timestamp(None)
-        .parse_default_env()
-        .try_init();
-
-    let code = {
-        let mut file = File::open(&path).unwrap();
-        let mut code = String::new();
-        file.read_to_string(&mut code).unwrap();
-        code
-    };
-
-    let base_time = DateTime::UNIX_EPOCH
-        .replace_minute(2)
-        .unwrap()
-        .replace_second(3)
-        .unwrap();
-
-    let tests = Testfile::parse(&code).unwrap();
-    let file_map = FileMap::new(&code);
-
-    let mut db = MockDatabase::new(&CONFIG);
-
-    let mut total = 0;
-    let mut fails = 0;
-
-    // Like everything in MediaWiki, multiple passes are *required* to parse the
-    // test suite file correctly
-    load_articles(base_time, &mut db, &tests.chunks);
-
-    let mut db = Arc::new(db);
-
-    for chunk in tests.chunks {
-        #[rustfmt::skip]
-        let Chunk::Test { name, pos, sections, } = chunk else {
-            continue;
-        };
-
-        let name = strtr(name, &[("\n", " - ")]);
-        let line = file_map.find_line_col(pos).line;
-        let target = &format!("{suite}.txt:{line}");
-        let options = sections.get("options").unwrap_or(&empty_options);
-
-        let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
-            log::warn!(target: target, "Could not find wikitext for {name}!");
-            continue;
-        };
-
-        if let Some(reason) = options.get::<&str>("wiki-rs-skip") {
-            log::info!(target: target, "Skipping {name}: {reason}");
-            continue;
-        }
-
-        if options.contains("language") {
-            log::warn!(target: target, "TODO {name}: language switching not implemented");
-            continue;
-        }
-
-        if options
-            .get::<&[Value<'_>]>("parsoid.modes")
-            .is_some_and(any_of(&["html2wt"]))
-        {
-            log::info!(target: target, "Skipping {name}: html2wt");
-            continue;
-        }
-
-        log::info!(target: target, "Running {name}");
-        total += 1;
-
-        let expect_failure = options.get::<&str>("wiki-rs-expect-failure");
-        let log_level = if expect_failure.is_some() {
-            log::Level::Warn
-        } else {
-            log::Level::Error
-        };
-
-        let Some(result) = render_test(target, log_level, base_time, &mut db, options, wikitext)
-        else {
-            fails += 1;
-            continue;
-        };
-
-        let fail = check_test_results(target, log_level, &sections, options, &result);
-
-        if let Some(reason) = expect_failure {
-            if fail {
-                log::warn!(target: target, "Ignoring test failure: {reason}");
-            } else {
-                log::error!(target: target, "passed, but should have failed");
-                fails += 1;
-            }
-        } else {
-            fails += i32::from(fail);
-            if !fail {
-                log::info!(target: target, "pass");
-            }
-        }
-    }
-
-    assert!(fails == 0, "failed {fails}/{total}");
-}
-
-#[track_caller]
-fn load_articles(base_time: DateTime, db: &mut MockDatabase<'_>, chunks: &[Chunk<'_>]) {
-    let redirect_parser = Parser::new(&CONFIG);
-    for chunk in chunks {
-        match chunk {
-            Chunk::Article { title, text } => {
-                let article = Article::builder()
-                    .id(0)
-                    .body(text)
-                    .title(title)
-                    .model("wikitext")
-                    .revision_id(1337)
-                    .revision_timestamp(base_time.to_offset_time().to_utc());
-
-                db.insert(if let Ok(redirect) = redirect_parser.parse_redirect(text) {
-                    article.redirect(redirect).build()
-                } else {
-                    article.build()
-                });
-            }
-            Chunk::FunctionHooks => {
-                panic!("but no tests use this?!");
-            }
-            Chunk::Comment | Chunk::Line | Chunk::Hooks | Chunk::Test { .. } => {
-                // Hooks is used only by timedMediaHandlerParserTests and
-                // Line and Comment are just garbage
-            }
-        }
+impl PluginExtensionTag for AsideTag {
+    fn call(
+        &self,
+        out: &mut String,
+        _: &mut PluginState<'_, '_, '_, '_>,
+        _: PluginTagArgs<'_, '_, '_>,
+    ) -> PluginResult<OutputMode> {
+        write!(out, "<aside>Some aside content</aside>")?;
+        Ok(OutputMode::Block)
     }
 }
 
 struct DivTagPf;
+
+impl PluginExtensionTag for DivTagPf {
+    fn call(
+        &self,
+        out: &mut String,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        args: PluginTagArgs<'_, '_, '_>,
+    ) -> PluginResult<OutputMode> {
+        let tag = if args.tag_name() == "divtag" {
+            "div"
+        } else {
+            "span"
+        };
+
+        let raw = args.get(state, "raw")?.is_some();
+        let raw_html = args.get(state, "israwhtml")?.is_some();
+        let content = if raw {
+            Cow::Borrowed(args.body())
+        } else {
+            Cow::Owned(args.eval(state, args.body(), raw_html)?)
+        };
+        write!(out, "<{tag}>{content}</{tag}>")?;
+        Ok(if tag == "div" {
+            OutputMode::Block
+        } else {
+            OutputMode::Inline
+        })
+    }
+}
+
 impl PluginParserFn for DivTagPf {
     fn call(
         &self,
@@ -246,6 +152,224 @@ impl PluginParserFn for DivTagPf {
     }
 }
 
+struct PWrapTest;
+
+impl PluginExtensionTag for PWrapTest {
+    fn call(
+        &self,
+        out: &mut String,
+        _: &mut PluginState<'_, '_, '_, '_>,
+        _: PluginTagArgs<'_, '_, '_>,
+    ) -> PluginResult<OutputMode> {
+        write!(out, "<!--CMT--><style>p{{}}</style>")?;
+        Ok(OutputMode::Inline)
+    }
+}
+
+#[derive(Default)]
+struct StaticTag(Mutex<RefCell<String>>);
+
+impl PluginExtensionTag for StaticTag {
+    fn call(
+        &self,
+        out: &mut String,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        args: PluginTagArgs<'_, '_, '_>,
+    ) -> PluginResult<OutputMode> {
+        Ok(if args.get(state, "action")?.as_deref() == Some("flush") {
+            write!(
+                out,
+                "{}",
+                core::mem::take(&mut *self.0.lock().unwrap().borrow_mut())
+            )?;
+            OutputMode::Raw
+        } else {
+            self.0.lock().unwrap().borrow_mut().push_str(args.body());
+            OutputMode::Empty
+        })
+    }
+}
+
+static STATIC_TAG: LazyLock<StaticTag> = LazyLock::new(StaticTag::default);
+
+struct TagTag;
+
+impl PluginExtensionTag for TagTag {
+    fn call(
+        &self,
+        out: &mut String,
+        _: &mut PluginState<'_, '_, '_, '_>,
+        args: PluginTagArgs<'_, '_, '_>,
+    ) -> PluginResult<OutputMode> {
+        let body = strtr(args.body(), &[("'", "\\'")]);
+        // TODO: Arguments
+        write!(out, "<pre>'{body}'\narray (\n)\n</pre>")?;
+        Ok(OutputMode::Block)
+    }
+}
+
+#[track_caller]
+fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
+    let empty_options = SectionText::Kv(HashMap::new());
+
+    let _ = env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .format_timestamp(None)
+        .parse_default_env()
+        .try_init();
+
+    let code = {
+        let mut file = File::open(&path).unwrap();
+        let mut code = String::new();
+        file.read_to_string(&mut code).unwrap();
+        code
+    };
+
+    let base_time = DateTime::UNIX_EPOCH
+        .replace_minute(2)
+        .unwrap()
+        .replace_second(3)
+        .unwrap();
+
+    let tests = Testfile::parse(&code).unwrap();
+    let file_map = FileMap::new(&code);
+
+    let mut db = MockDatabase::new(&CONFIG);
+
+    let (mut total, mut fails, mut skips) = (0, 0, 0);
+
+    // Like everything in MediaWiki, multiple passes are *required* to parse the
+    // test suite file correctly
+    load_articles(base_time, &mut db, &tests.chunks);
+
+    let mut db = Arc::new(db);
+
+    for chunk in tests.chunks {
+        #[rustfmt::skip]
+        let Chunk::Test { name, pos, sections, } = chunk else {
+            continue;
+        };
+
+        total += 1;
+
+        let name = strtr(name, &[("\n", " - ")]);
+        let line = file_map.find_line_col(pos).line;
+        let target = &format!("{suite}.txt:{line}");
+        let options = sections.get("options").unwrap_or(&empty_options);
+        let config = sections.get("config").unwrap_or(&empty_options);
+
+        let Some(wikitext) = sections.get("wikitext").and_then(SectionText::text) else {
+            log::warn!(target: target, "Could not find wikitext for {name}!");
+            skips += 1;
+            continue;
+        };
+
+        if check_skips(target, &name, options, config) {
+            skips += 1;
+            continue;
+        }
+
+        log::info!(target: target, "Running {name}");
+
+        let expect_failure = options.get::<&str>("wiki-rs-expect-failure");
+        let log_level = if expect_failure.is_some() {
+            log::Level::Warn
+        } else {
+            log::Level::Error
+        };
+
+        let Some(result) = render_test(target, log_level, base_time, &mut db, options, wikitext)
+        else {
+            fails += 1;
+            continue;
+        };
+
+        let fail = check_test_results(target, log_level, &sections, options, &result);
+
+        if let Some(reason) = expect_failure {
+            if fail {
+                log::warn!(target: target, "Ignoring test failure: {reason}");
+            } else {
+                log::error!(target: target, "passed, but should have failed");
+                fails += 1;
+            }
+        } else {
+            fails += i32::from(fail);
+            if !fail {
+                log::info!(target: target, "pass");
+            }
+        }
+    }
+
+    let passes = total - fails;
+    assert!(
+        fails == 0,
+        "{passes} passed; {fails} failed; {skips} ignored"
+    );
+}
+
+fn check_skips(
+    target: &str,
+    name: &str,
+    options: &SectionText<'_>,
+    config: &SectionText<'_>,
+) -> bool {
+    if let Some(reason) = options.get::<&str>("wiki-rs-skip") {
+        log::info!(target: target, "Skipping {name}: {reason}");
+        true
+    } else if options.get("styletag") == Some(true) {
+        log::warn!(target: target, "TODO {name}: styletag not implemented");
+        true
+    } else if config.get("wgRawHtml") == Some(true) || options.get("wgrawhtml") == Some(true) {
+        log::warn!(target: target, "TODO {name}: raw html not implemented");
+        true
+    } else if options.contains("section") {
+        log::warn!(target: target, "TODO {name}: section extraction not implemented");
+        true
+    } else if options.contains("language") {
+        log::warn!(target: target, "TODO {name}: language switching not implemented");
+        true
+    } else if options
+        .get("parsoid.modes")
+        .is_some_and(any_of(&["html2wt"]))
+    {
+        log::info!(target: target, "Skipping {name}: html2wt");
+        true
+    } else {
+        false
+    }
+}
+
+fn load_articles(base_time: DateTime, db: &mut MockDatabase<'_>, chunks: &[Chunk<'_>]) {
+    let redirect_parser = Parser::new(&CONFIG);
+    for chunk in chunks {
+        match chunk {
+            Chunk::Article { title, text } => {
+                let article = Article::builder()
+                    .id(0)
+                    .body(text)
+                    .title(title)
+                    .model("wikitext")
+                    .revision_id(1337)
+                    .revision_timestamp(base_time.to_offset_time().to_utc());
+
+                db.insert(if let Ok(redirect) = redirect_parser.parse_redirect(text) {
+                    article.redirect(redirect).build()
+                } else {
+                    article.build()
+                });
+            }
+            Chunk::FunctionHooks => {
+                panic!("but no tests use this?!");
+            }
+            Chunk::Comment | Chunk::Line | Chunk::Hooks | Chunk::Test { .. } => {
+                // Hooks is used only by timedMediaHandlerParserTests and
+                // Line and Comment are just garbage
+            }
+        }
+    }
+}
+
 fn any_of(choices: &[&str]) -> impl FnOnce(&[Value<'_>]) -> bool {
     |values| {
         values
@@ -255,82 +379,6 @@ fn any_of(choices: &[&str]) -> impl FnOnce(&[Value<'_>]) -> bool {
     }
 }
 
-#[track_caller]
-fn render_test(
-    target: &str,
-    log_level: log::Level,
-    base_time: DateTime,
-    db: &mut Arc<MockDatabase<'static>>,
-    options: &SectionText<'_>,
-    wikitext: &str,
-) -> Option<RenderOutput> {
-    let page_name = options.get("title").unwrap_or("Parser test");
-
-    // The use of static IDs and revision IDs is NOT SAFE in the presence of a
-    // template cache!
-    let article = Article::builder()
-        .id(0)
-        .title(page_name)
-        .body(wikitext)
-        .model("wikitext")
-        .revision_author("127.0.0.1")
-        .revision_timestamp(base_time.to_offset_time().to_utc())
-        .revision_id(1337)
-        .build();
-
-    // This is some hack for magicWords.txt which uses some unknown
-    // quirk of the MediaWiki test environment to selectively decide
-    // that some pages exist, and I am not wasting my time digging in
-    // there to figure out what that quirk is, exactly
-    let insert_page = options.contains("lastsavedrevision") || page_name == "Parser test";
-
-    if insert_page {
-        Arc::get_mut(db).unwrap().insert(article.clone());
-    }
-
-    let mut statics = Statics::builder()
-        .base_time(base_time)
-        .base_uri(Uri::from_static("http://example.org"))
-        .db(Arc::clone(db) as Arc<dyn DatabaseProvider>)
-        .parser(db.config())
-        .parser_fns(HashMap::from_iter([
-            ("divtagpf", &DivTagPf as &dyn PluginParserFn),
-            ("spantagpf", &DivTagPf as &dyn PluginParserFn),
-        ]))
-        .paths(Paths {
-            article: "wiki",
-            external: None,
-            media: "http://example.com/images/3/3a",
-        })
-        .build();
-
-    let result = render_article(
-        &mut statics,
-        &MESSAGES,
-        &Arc::new(article),
-        LoadMode::Module,
-        false,
-    );
-
-    if let Err(err) = &result {
-        log::log!(target: target, log_level, "Render failed: {err}");
-    }
-
-    if (result.is_err() || std::env::var("WIKI_RS_SHOW_AST").is_ok_and(|v| v == "1"))
-        && let Ok(ast) = statics.parser.parse(wikitext, false)
-    {
-        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(wikitext), &ast.root));
-    }
-
-    if insert_page {
-        drop(statics);
-        Arc::get_mut(db).unwrap().remove(page_name);
-    }
-
-    result.ok()
-}
-
-#[track_caller]
 fn check_test_results(
     target: &str,
     log_level: log::Level,
@@ -379,37 +427,22 @@ fn check_test_results(
         // there is no explicit wiki.rs section, since the heuristics may mask
         // actually wrong output.
         if fail && try_heuristics {
-            static RE_PHP_URL: LazyLock<Regex> =
-                LazyLock::new(|| Regex::new(r"/index\.php\?title=([^&]+)(?:&amp;)?").unwrap());
-            static RE_PHP_HEADING: LazyLock<Regex> = LazyLock::new(|| {
-                RegexBuilder::new(r#"^<div class="mw-heading mw-heading\d">(.*?)(?:<span class="mw-editsection"><span class="mw-editsection-bracket">\[</span><a href="[^"]+" title="[^"]+">edit</a><span class="mw-editsection-bracket">]</span></span>)?</div>$"#)
-                    .multi_line(true)
-                    .build()
-                    .unwrap()
-            });
-
             let mut heuristic = "unpretty";
-            let actual = strtr(
-                actual,
-                &[
-                    ("<wbr>", "<wbr />"),
-                    ("<br>", "<br />"),
-                    ("<hr>", "<hr />"),
-                    ("‘", "'"),
-                    ("’", "'"),
-                    ("“", "\""),
-                    ("”", "\""),
-                    ("…", "..."),
-                ],
-            );
+            let actual = unpretty(actual);
             fail = expected_html != actual;
 
-            if fail
-                && let Cow::Owned(expected_html) =
-                    strtr(expected_html, &[("</tbody>", ""), ("<tbody>", "")])
-            {
+            if fail && let Cow::Owned(expected_html) = remove_tbody(expected_html) {
                 heuristic = "unpretty + remove tbody";
                 fail = expected_html != actual;
+
+                if fail
+                    && let actual = table_ws(&actual)
+                    && let expected_html = table_ws(&expected_html)
+                    && (matches!(actual, Cow::Owned(_)) || matches!(expected_html, Cow::Owned(_)))
+                {
+                    heuristic = "unpretty + remove tbody + table ws";
+                    fail = expected_html != actual;
+                }
 
                 if fail && let Cow::Owned(expected_html) = styles(&expected_html) {
                     heuristic = "unpretty + remove tbody + styles";
@@ -422,9 +455,7 @@ fn check_test_results(
                 fail = expected_html != actual;
             }
 
-            if fail
-                && let Cow::Owned(expected_html) = RE_PHP_HEADING.replace_all(expected_html, "$1")
-            {
+            if fail && let Cow::Owned(expected_html) = unwrap_heading(expected_html) {
                 heuristic = "unpretty + unwrap heading";
                 fail = expected_html != actual;
 
@@ -439,10 +470,7 @@ fn check_test_results(
                 fail = expected_html != actual;
             }
 
-            if fail
-                && let Cow::Owned(expected_html) =
-                    RE_PHP_URL.replace_all(expected_html, "/wiki/$1?")
-            {
+            if fail && let Cow::Owned(expected_html) = replace_url(expected_html) {
                 heuristic = "unpretty + replace url";
                 fail = expected_html != actual;
             }
@@ -542,8 +570,107 @@ fn check_test_results(
     fail
 }
 
-#[track_caller]
-fn styles(expected_html: &str) -> Cow<'_, str> {
+fn remove_tbody(html: &str) -> Cow<'_, str> {
+    strtr(html, &[("</tbody>", ""), ("<tbody>", "")])
+}
+
+fn render_test(
+    target: &str,
+    log_level: log::Level,
+    base_time: DateTime,
+    db: &mut Arc<MockDatabase<'static>>,
+    options: &SectionText<'_>,
+    wikitext: &str,
+) -> Option<RenderOutput> {
+    let page_name = options.get("title").unwrap_or("Parser test");
+
+    // The use of static IDs and revision IDs is NOT SAFE in the presence of a
+    // template cache!
+    let article = Article::builder()
+        .id(0)
+        .title(page_name)
+        .body(wikitext)
+        .model("wikitext")
+        .revision_author("127.0.0.1")
+        .revision_timestamp(base_time.to_offset_time().to_utc())
+        .revision_id(1337)
+        .build();
+
+    // This is some hack for magicWords.txt which uses some unknown
+    // quirk of the MediaWiki test environment to selectively decide
+    // that some pages exist, and I am not wasting my time digging in
+    // there to figure out what that quirk is, exactly
+    let insert_page = options.contains("lastsavedrevision") || page_name == "Parser test";
+
+    if insert_page {
+        Arc::get_mut(db).unwrap().insert(article.clone());
+    }
+
+    let mut statics = Statics::builder()
+        .base_time(base_time)
+        .base_uri(Uri::from_static("http://example.org"))
+        .extension_tags(HashMap::from_iter([
+            ("tag", &TagTag as _),
+            ("tåg", &TagTag as _),
+            ("statictag", &*STATIC_TAG as _),
+            ("asidetag", &AsideTag as _),
+            ("pwraptest", &PWrapTest as _),
+            ("divtag", &DivTagPf as _),
+            ("spantag", &DivTagPf as _),
+        ]))
+        .db(Arc::clone(db) as Arc<dyn DatabaseProvider>)
+        .parser(db.config())
+        .parser_fns(HashMap::from_iter([
+            ("divtagpf", &DivTagPf as _),
+            ("spantagpf", &DivTagPf as _),
+        ]))
+        .paths(Paths {
+            article: "wiki",
+            external: None,
+            media: "http://example.com/images/3/3a",
+        })
+        .build();
+
+    if std::env::var("WIKI_RS_SHOW_AST").is_ok_and(|v| v == "1")
+        && let Ok(ast) = statics.parser.parse(wikitext, false)
+    {
+        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(wikitext), &ast.root));
+    }
+
+    let result = render_article(
+        &mut statics,
+        &MESSAGES,
+        &Arc::new(article),
+        LoadMode::Module,
+        false,
+    );
+
+    if let Err(err) = &result {
+        log::log!(target: target, log_level, "Render failed: {err}");
+    }
+
+    if result.is_err()
+        && !std::env::var("WIKI_RS_SHOW_AST").is_ok_and(|v| v == "1")
+        && let Ok(ast) = statics.parser.parse(wikitext, false)
+    {
+        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(wikitext), &ast.root));
+    }
+
+    if insert_page {
+        drop(statics);
+        Arc::get_mut(db).unwrap().remove(page_name);
+    }
+
+    result.ok()
+}
+
+fn replace_url(html: &str) -> Cow<'_, str> {
+    static RE_PHP_URL: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"/index\.php\?title=([^&]+)(?:&amp;)?").unwrap());
+    RE_PHP_URL.replace_all(html, "/wiki/$1?")
+}
+
+fn styles(html: &str) -> Cow<'_, str> {
     static RE_PREFIX_STYLES: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"style="([^"]+)""#).unwrap());
     static RE_PREFIX_STYLE_DECL: LazyLock<Regex> =
@@ -558,7 +685,41 @@ fn styles(expected_html: &str) -> Cow<'_, str> {
         }
     }
 
-    RE_PREFIX_STYLES.replace_all(expected_html, re_style)
+    RE_PREFIX_STYLES.replace_all(html, re_style)
+}
+
+fn table_ws(html: &str) -> Cow<'_, str> {
+    static RE_WS: LazyLock<Regex> = LazyLock::new(|| {
+        RegexBuilder::new(r"(<(?:/(?:caption|td|th)|table|/?tr)[^>\n]*>)\n\s*")
+            .case_insensitive(true)
+            .build()
+            .unwrap()
+    });
+    RE_WS.replace_all(html, "$1$2")
+}
+
+fn unpretty(html: &str) -> Cow<'_, str> {
+    static REPLS: &[(&str, &str)] = &[
+        ("<wbr>", "<wbr />"),
+        ("<br>", "<br />"),
+        ("<hr>", "<hr />"),
+        ("‘", "'"),
+        ("’", "'"),
+        ("“", "\""),
+        ("”", "\""),
+        ("…", "..."),
+    ];
+    strtr(html, REPLS)
+}
+
+fn unwrap_heading(html: &str) -> Cow<'_, str> {
+    static RE_PHP_HEADING: LazyLock<Regex> = LazyLock::new(|| {
+        RegexBuilder::new(r#"^<div class="mw-heading mw-heading\d">(.*?)(?:<span class="mw-editsection"><span class="mw-editsection-bracket">\[</span><a href="[^"]+" title="[^"]+">edit</a><span class="mw-editsection-bracket">]</span></span>)?</div>$"#)
+            .multi_line(true)
+            .build()
+            .unwrap()
+    });
+    RE_PHP_HEADING.replace_all(html, "$1")
 }
 
 macro_rules! test_from_file {

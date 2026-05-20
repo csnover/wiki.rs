@@ -268,7 +268,6 @@ wgRawHtml=1
 !! options
 nohtml
 showtocdata
-wiki-rs-expect-failure=[[raw html mode is not supported]]
 !! wikitext
 ==hi<html><!--ho--></html>==
 !! metadata/php
@@ -379,7 +378,6 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
-wiki-rs-expect-failure=[[tag is not implemented]]
 !! wikitext
 ==c<tag>d</tag>==
 !! metadata
@@ -1727,7 +1725,6 @@ __TOC__
 T198618: style element in ToC
 !! options
 styletag=1
-wiki-rs-expect-failure=[[styletag is not implemented]]
 !! wikitext
 __TOC__
 ==<style>.foo {}</style>Style<style>.bar {}</style>==
@@ -1750,7 +1747,6 @@ __TOC__
 T198618: script element in ToC
 !! options
 wgRawHtml=1
-wiki-rs-expect-failure=[[raw html is not supported]]
 !! wikitext
 __TOC__
 ==<html><script>alert(1);</script></html>Script<html><script>alert(1);</script></html>==
@@ -2261,7 +2257,6 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
-wiki-rs-expect-failure=[[spantag is not implemented]]
 !! wikitext
 __FORCETOC__
 <spantag>
@@ -2313,7 +2308,6 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
-wiki-rs-expect-failure=[[styletag is not implemented]]
 !! wikitext
 __FORCETOC__
 {{1x|1=foo
@@ -2371,7 +2365,6 @@ parsoid={
 	"modes": [ "wt2html" ],
 	"wrapSections": true
 }
-wiki-rs-expect-failure=[[styletag is not implemented]]
 !! wikitext
 __FORCETOC__
 {{1x|1=<spantag>

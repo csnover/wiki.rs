@@ -130,7 +130,8 @@
 //!    typographical beautification
 
 use super::{
-    Error, ExpandMode, ExpandTemplates, LinkKind, LinkKindOptions, State, StripMarker,
+    Error, ExpandMode, ExpandTemplates, LinkKind, LinkKindOptions, PluginResult, PluginState,
+    State, StripMarker,
     document::Document,
     image,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
@@ -156,6 +157,93 @@ use std::{
     collections::{HashMap, HashSet},
     sync::LazyLock,
 };
+
+/// A trait for plugins to add new extension tags.
+pub trait PluginExtensionTag {
+    /// Invokes the new extension tag.
+    ///
+    /// # Errors
+    ///
+    /// * the parser call fails
+    fn call(
+        &self,
+        out: &mut String,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        args: PluginTagArgs<'_, '_, '_>,
+    ) -> PluginResult<OutputMode>;
+}
+
+/// An opaque arguments object for plugin calls.
+pub struct PluginTagArgs<'args, 'call, 'sp>(&'call ExtensionTag<'args, 'call, 'sp>);
+
+impl PluginTagArgs<'_, '_, '_> {
+    /// Gets the raw body text of the tag.
+    #[inline]
+    #[must_use]
+    pub fn body(&self) -> &str {
+        self.0.body()
+    }
+
+    /// Evaluates `text` as a Wikitext document, returning the rendered Wikitext
+    /// as an HTML string.
+    ///
+    /// If `unstrip` is false, this is roughly equivalent to `recursiveTagParse`
+    /// except that all Wikitext is fully converted to HTML and only raw strip
+    /// markers remain. (In MediaWiki, this output would also not include
+    /// processing by `GrafEmitter`, all links would be `<!-- LINK -->`
+    /// comments, and there would be no language translation nor HTML
+    /// sanitisation.)
+    ///
+    /// If `unstrip` is true, this is equivalent to `recursiveTagParseFully`.
+    ///
+    /// # Errors
+    ///
+    /// * parsing or rendering fails
+    #[inline]
+    pub fn eval(
+        &self,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        text: &str,
+        unstrip: bool,
+    ) -> PluginResult<String> {
+        eval_string(state.0, self.0.sp, text, unstrip).map_err(Into::into)
+    }
+
+    /// A convenience function for evaluating the body as a Wikitext document
+    /// fragment.
+    ///
+    /// # Errors
+    ///
+    /// * parsing or rendering fails
+    #[inline]
+    pub fn eval_body(&self, state: &mut PluginState<'_, '_, '_, '_>) -> PluginResult<String> {
+        self.eval(state, self.body(), false)
+    }
+
+    /// Evaluates the extension tag attribute with the given `key`.
+    ///
+    /// The returned value will include any leading and trailing whitespace
+    /// present in the original text.
+    ///
+    /// # Errors
+    ///
+    /// * parsing or rendering fails
+    #[inline]
+    pub fn get(
+        &self,
+        state: &mut PluginState<'_, '_, '_, '_>,
+        key: &str,
+    ) -> PluginResult<Option<Cow<'_, str>>> {
+        self.0.get(state.0, key).map_err(Into::into)
+    }
+
+    /// Gets the name of the extension tag.
+    #[inline]
+    #[must_use]
+    pub fn tag_name(&self) -> &str {
+        self.0.callee
+    }
+}
 
 /// The result type for an extension tag function.
 type Result<T = OutputMode, E = Error> = super::Result<T, E>;
@@ -192,7 +280,7 @@ impl ExtensionTag<'_, '_, '_> {
     /// Evaluates the body of the tag.
     #[inline]
     pub fn eval_body(&self, state: &mut State<'_, '_, '_>) -> Result<String> {
-        eval_string(state, self.sp, self.body())
+        eval_string(state, self.sp, self.body(), false)
     }
 
     /// Returns the body of the tag as a token tree.
@@ -484,7 +572,7 @@ fn poem(
     }
     write!(text, "{nl}</div>")?;
 
-    let body = eval_string(state, arguments.sp, &text)?.replace("<hr><br>", "<hr>");
+    let body = eval_string(state, arguments.sp, &text, false)?.replace("<hr><br>", "<hr>");
     let body = state.strip_markers.unstrip(&body);
     write!(out, "{body}")?;
 
@@ -719,7 +807,7 @@ fn r#ref(
     // Due to transclusion it is necessary to render immediately instead of
     // storing the node list for later, since rendering later would require
     // retaining the stack frame too
-    let reference = eval_string(state, arguments.sp, arguments.body().trim_ascii())?;
+    let reference = eval_string(state, arguments.sp, arguments.body().trim_ascii(), false)?;
 
     let group = arguments
         .get(state, "group")?
@@ -1151,26 +1239,25 @@ pub(super) fn render_extension_tag(
         }
     };
     let arguments = KeyCacheKvs::new(&arguments);
-
+    let args = ExtensionTag {
+        arguments: IndexedArgs {
+            arguments,
+            callee,
+            sp,
+            span,
+        },
+        body,
+        from_parser_fn,
+        in_document,
+    };
     let mut out = String::new();
-    let mode = if let Some(extension_tag) = EXTENSION_TAGS.get(callee) {
+    let mode = if let Some(extension_tag) = state.statics.extension_tags.get(callee) {
+        extension_tag
+            .call(&mut out, &mut PluginState(state), PluginTagArgs(&args))
+            .map_err(Error::Plugin)?
+    } else if let Some(extension_tag) = EXTENSION_TAGS.get(callee) {
         if let Some(span) = span {
-            extension_tag(
-                &mut out,
-                state,
-                &ExtensionTag {
-                    arguments: IndexedArgs {
-                        arguments,
-                        callee,
-                        sp,
-                        span: Some(span),
-                    },
-                    body,
-                    from_parser_fn,
-                    in_document,
-                },
-            )
-            .map_err(|err| Error::Node {
+            extension_tag(&mut out, state, &args).map_err(|err| Error::Node {
                 frame: sp.name.to_string() + "$<" + callee + ">",
                 start: sp.source.find_line_col(span.start),
                 err: Box::new(err),
@@ -1180,7 +1267,7 @@ pub(super) fn render_extension_tag(
             // function and then stores the returned value, expecting that the
             // return value can be cached and reused. So, give it a value that
             // can be cached and reused…
-            render_raw(state, sp, callee, body, &arguments, &mut out)?
+            render_raw(state, sp, callee, body, &args.arguments.arguments, &mut out)?
         }
     } else {
         log::warn!("TODO: {callee} tag");
@@ -1203,11 +1290,16 @@ pub(super) fn render_extension_tag(
 
 /// Evaluates a Wikitext string as a document fragment, returning the rendered
 /// fragment.
-fn eval_string(state: &mut State<'_, '_, '_>, sp: &StackFrame<'_>, text: &str) -> Result<String> {
+fn eval_string(
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    text: &str,
+    unstrip: bool,
+) -> Result<String> {
     let source = preprocess_frame(state, sp, text)?;
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
-    let mut out = Document::new(true);
+    let mut out = Document::new(!unstrip);
     out.adopt_output(state, &sp, &root)?;
     Ok(out.finish(state))
 }

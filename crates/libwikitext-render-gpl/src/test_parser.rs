@@ -45,6 +45,15 @@ impl<'b> FromValue<'b> for &'b Value<'b> {
     }
 }
 
+impl<'b> FromValue<'b> for bool {
+    fn from_value(value: &'b Value<'b>) -> Option<Self> {
+        value
+            .as_bool()
+            .or_else(|| value.as_i64().map(|v| v != 0))
+            .or_else(|| value.as_str().map(|v| !matches!(v, "" | "0")))
+    }
+}
+
 impl<'b> FromValue<'b> for &'b str {
     fn from_value(value: &'b Value<'b>) -> Option<Self> {
         value.as_str()
@@ -206,7 +215,7 @@ pub(super) struct Toc<'input> {
     // pub index: &'input str,
     // pub level: u32,
     /// The expected HTML contents of the entry.
-    pub line: &'input str,
+    pub line: Cow<'input, str>,
     // pub number: &'input str,
     // pub offset: Option<u32>,
     /// The expected HTML heading tag.
@@ -417,8 +426,12 @@ peg::parser! {grammar testfile() for str {
     " title:" _title:("NULL" { None } / s:$([^' ']*) { Some(s) })
     " off:" _offset:("NULL" { None } / n:number() { Some(n) })
     " anchor/linkAnchor:" _anchor:$([^' ']*)
-    " line:" line:rest_of_line()
+    " line:" line:metadata_toc_line_text()
   { Toc { line, tag } }
+
+  rule metadata_toc_line_text() -> Cow<'input, str>
+  = v:quoted_value() {? serde_json::from_str(v).map_err(|_| "json string") }
+  / v:rest_of_line() { Cow::Borrowed(v) }
 
   rule metadata_text() -> &'input str
   = !(metadata_key() "=" / "Sections:" / "!!")
