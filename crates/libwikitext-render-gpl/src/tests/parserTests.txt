@@ -3707,6 +3707,11 @@ array (
 array (
 )
 </pre></li></ul>
+!! html/wiki.rs
+<ul><li><pre>NULL
+array (
+)
+</pre></li></ul>
 !! end
 
 !! test
