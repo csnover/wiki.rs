@@ -1411,7 +1411,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     node: Token::Extension { name, attributes, content: None },
                     span: t.span,
                 })
-            },
+            }
+
             Token::StartTag { name, attributes, self_closing } => {
                 let Some((content_len, end_pos)) = find_end_tag(
                     &input[pos..], &input[name.into_range()],
@@ -1479,13 +1480,18 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     attributes,
                     content: Some(Span::new(t.span.end, t.span.end + content_len))
                 }, t.span.start, after_end))
-            },
+            }
+
+            Token::EndTag { name } if contains_ignore_case(&HTML5_TAGS, &input[name.into_range()]) => {
+                RuleResult::Matched(pos, t)
+            }
 
             Token::EndTag { .. } => {
                 // This production is impossible unless the start tag was
                 // missing or invalid
                 RuleResult::Matched(pos, t.map_node(|_| Token::Text))
-            },
+            }
+
             _ => unreachable!("got a non-tag token from xmlish_tag")
         }
     }} { t }
