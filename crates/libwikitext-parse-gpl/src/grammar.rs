@@ -3814,6 +3814,19 @@ impl core::hash::Hash for Context {
     }
 }
 
+impl peg::Cacheable for Context {
+    type Cached = Self;
+    type Key = Self;
+
+    fn key(&self) -> &Self::Key {
+        self
+    }
+
+    fn to_cached(&self) -> Self::Cached {
+        self.clone()
+    }
+}
+
 /// A container production state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ProdKind {

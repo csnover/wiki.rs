@@ -104,7 +104,7 @@ memchr = "2.7"
 minidom = "0.18"
 numerals = "0.1"
 peeknth = { version = "0.3", features = ["peekdn"] }
-peg = { git = "https://github.com/csnover/rust-peg.git", rev = "68a910801dbcf6acc19ba2f81c352435a9072cb4" }
+peg = { git = "https://github.com/csnover/rust-peg.git", rev = "c6f3b978d4896dd7e7f3cf19146a3429a67e7c15" }
 # urlencoding is smaller, but percent-encoding is already a sub-dependency
 percent-encoding = "2"
 phf = { version = "0.13.1", features = ["macros"] }

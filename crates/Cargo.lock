@@ -676,6 +676,17 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
@@ -1255,8 +1266,8 @@ checksum = "12793344a11375a6f1dc0b7f6e014ade0345f02865627c645fce9445cbc5e049"
 
 [[package]]
 name = "peg"
-version = "0.8.5"
-source = "git+https://github.com/csnover/rust-peg.git?rev=68a910801dbcf6acc19ba2f81c352435a9072cb4#68a910801dbcf6acc19ba2f81c352435a9072cb4"
+version = "0.8.6"
+source = "git+https://github.com/csnover/rust-peg.git?rev=c6f3b978d4896dd7e7f3cf19146a3429a67e7c15#c6f3b978d4896dd7e7f3cf19146a3429a67e7c15"
 dependencies = [
  "peg-macros",
  "peg-runtime",
@@ -1264,8 +1275,8 @@ dependencies = [
 
 [[package]]
 name = "peg-macros"
-version = "0.8.5"
-source = "git+https://github.com/csnover/rust-peg.git?rev=68a910801dbcf6acc19ba2f81c352435a9072cb4#68a910801dbcf6acc19ba2f81c352435a9072cb4"
+version = "0.8.6"
+source = "git+https://github.com/csnover/rust-peg.git?rev=c6f3b978d4896dd7e7f3cf19146a3429a67e7c15#c6f3b978d4896dd7e7f3cf19146a3429a67e7c15"
 dependencies = [
  "peg-runtime",
  "proc-macro2",
@@ -1274,8 +1285,11 @@ dependencies = [
 
 [[package]]
 name = "peg-runtime"
-version = "0.8.5"
-source = "git+https://github.com/csnover/rust-peg.git?rev=68a910801dbcf6acc19ba2f81c352435a9072cb4#68a910801dbcf6acc19ba2f81c352435a9072cb4"
+version = "0.8.6"
+source = "git+https://github.com/csnover/rust-peg.git?rev=c6f3b978d4896dd7e7f3cf19146a3429a67e7c15#c6f3b978d4896dd7e7f3cf19146a3429a67e7c15"
+dependencies = [
+ "hashbrown 0.16.1",
+]
 
 [[package]]
 name = "percent-encoding"
