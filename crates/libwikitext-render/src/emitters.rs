@@ -1182,7 +1182,15 @@ impl<S: Sink + Markable> GrafEmitter<S> {
                 // insertion; this will either be `<p>` or `</pre><p>`
                 self.next.with_marks([&self.line_start], |[pos], out| {
                     if let Some(pos) = pos {
-                        out.insert_str(pos, "<p>");
+                        // TODO: This is a hack which should not exist, the
+                        // `EmptyTagger` should be 100% reponsible for doing
+                        // this.
+                        let tag = if out[pos..].bytes().all(|c| c.is_ascii_whitespace()) {
+                            r#"<p class="mw-empty-elt">"#
+                        } else {
+                            "<p>"
+                        };
+                        out.insert_str(pos, tag);
                     }
                 });
                 self.close(true);
