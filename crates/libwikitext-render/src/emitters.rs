@@ -141,6 +141,18 @@ pub(super) trait Sink {
     /// ```
     fn tag_end(&mut self, name: &str);
 
+    // TODO: This is a hack to get `GrafEmitter` to respond correctly when a
+    // tag is removed. Maybe the order of composition is wrong, and
+    // `GrafEmitter` actually just needs to go before `DomTree` to work
+    // correctly?
+    /// An end tag with the given `name` without a corresponding start tag.
+    ///
+    /// ```html
+    /// text&#8253;<!-- comment --></tag>
+    ///                            ^^^^^^
+    /// ```
+    fn tag_end_unbalanced(&mut self, name: &str);
+
     /// Start a tag with the given `name`.
     ///
     /// ```html
@@ -258,6 +270,11 @@ impl<S: Sink> Sink for AfterHeadingChomper<S> {
             self.hungry = HungerLevel::Low;
         }
         self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -427,6 +444,9 @@ impl Sink for Accumulator {
     }
 
     #[inline]
+    fn tag_end_unbalanced(&mut self, _: &str) {}
+
+    #[inline]
     fn tag_start(&mut self, name: &str) {
         self.writing();
         self.inner.push('<');
@@ -552,6 +572,11 @@ impl<S: Sink> Sink for CategoryTrim<S> {
     fn tag_end(&mut self, name: &str) {
         self.flush();
         self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -688,6 +713,11 @@ impl<S: Sink> Sink for DomTree<S> {
         } else {
             log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
         }
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -835,6 +865,11 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
             self.next.free_mark(last);
         }
         self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -1378,6 +1413,16 @@ impl<S: Sink + Markable> Sink for GrafEmitter<S> {
             // `RemexCompatMunger` half of this bullshit)
             self.start_wrap();
         }
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        // TODO: Or call `force_content`?
+        if name == "pre" {
+            self.pre_close_match = true;
+        }
+        self.force_content();
+        self.next.tag_end_unbalanced(name);
     }
 
     fn tag_start(&mut self, name: &str) {
@@ -2269,6 +2314,11 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
         }
     }
 
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
+    }
+
     fn tag_start(&mut self, name: &str) {
         self.next.tag_start(name);
 
@@ -2667,40 +2717,48 @@ impl<S: Sink> PrettyText<S> {
 }
 
 impl<S: Sink> Sink for PrettyText<S> {
+    #[inline]
     fn comment_end(&mut self) {
         self.in_code -= 1;
         self.pop_context();
         self.next.comment_end();
     }
 
+    #[inline]
     fn comment_start(&mut self) {
         self.in_code += 1;
         self.push_context();
         self.next.comment_start();
     }
 
+    #[inline]
     fn entity(&mut self, value: char, raw: &str) {
         self.push_char(value);
         self.next.entity(value, raw);
     }
 
+    #[inline]
     fn finish(self, state: &mut State<'_, '_, '_>) -> String {
         self.next.finish(state)
     }
 
+    #[inline]
     fn new_line(&mut self) {
         self.push_char('\n');
         self.next.new_line();
     }
 
+    #[inline]
     fn raw_html_block(&mut self, html: &str) {
         self.next.raw_html_block(html);
     }
 
+    #[inline]
     fn raw_html_inline(&mut self, html: &str) {
         self.next.raw_html_inline(html);
     }
 
+    #[inline]
     fn tag_attribute_end(&mut self, name: &str) {
         if name != "title" {
             self.in_code -= 1;
@@ -2709,6 +2767,7 @@ impl<S: Sink> Sink for PrettyText<S> {
         self.next.tag_attribute_end(name);
     }
 
+    #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
         if name != "title" {
             self.in_code += 1;
@@ -2717,6 +2776,7 @@ impl<S: Sink> Sink for PrettyText<S> {
         self.next.tag_attribute_start(name);
     }
 
+    #[inline]
     fn tag_end(&mut self, name: &str) {
         self.in_code -= u8::from(Self::is_code_tag(name));
         if !PHRASING_TAGS.contains(name) {
@@ -2725,6 +2785,12 @@ impl<S: Sink> Sink for PrettyText<S> {
         self.next.tag_end(name);
     }
 
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
+    }
+
+    #[inline]
     fn tag_start(&mut self, name: &str) {
         if name == "br" || name == "hr" {
             self.push_char('\n');
@@ -2733,6 +2799,7 @@ impl<S: Sink> Sink for PrettyText<S> {
         self.next.tag_start(name);
     }
 
+    #[inline]
     fn tag_start_end(&mut self, name: &str) {
         self.next.tag_start_end(name);
     }
@@ -2952,6 +3019,11 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
     }
 
     #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
+    }
+
+    #[inline]
     fn tag_start(&mut self, name: &str) {
         if name == "table" {
             self.stack.push(TableFosterFrame {
@@ -3077,6 +3149,11 @@ impl<S: Sink> Sink for TemplateTagger<S> {
             self.depth -= 1;
         }
         self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
