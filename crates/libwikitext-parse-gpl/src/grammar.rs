@@ -2331,11 +2331,9 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       "]]"
       trail:wikilink_trail()?
       {
+          let (bare_pipe, content) = content;
           // <https://www.mediawiki.org/wiki/Help:Links#Pipe_trick>
-          let pipe_trick = matches!(
-              content.as_slice(),
-              [Spanned { span, node: Argument { content, .. } }] if span.is_empty()
-          );
+          let pipe_trick = bare_pipe && content.is_empty();
           if !pipe_trick && let Some(target) = target {
               Token::Link {
                   target,
@@ -2444,9 +2442,13 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// [[Link target|extra|arguments]]
     ///              ^^^^^^^^^^^^^^^^
     /// ```
-    rule wikilink_content(ctx: &Context) -> Vec<Spanned<Argument>>
+    rule wikilink_content(ctx: &Context) -> (bool, Vec<Spanned<Argument>>)
     = ctx:({ ctx.with_linkdesc() })
-      (pipe() / &"]]")
+      // This production is weird because it is necessary to know if there was
+      // a pipe here for the “pipe trick”, but it is not actually part of the
+      // arguments list (which is itself a list only because of the ambiguous
+      // image syntax)
+      p:(pipe() { true } / &"]]" { false })
       start:position!()
       t:spanned(<
         !"]]"
@@ -2474,7 +2476,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
             last.span.end = bracket.span.end;
             last.node.content.push(bracket);
         }
-        t
+        (p, t)
     }
 
     /// A wikilink argument.
