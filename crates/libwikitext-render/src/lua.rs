@@ -1,9 +1,9 @@
 //! Renderer types and functions for calling the Lua interpreter.
 
 use super::{
-    Kv, StackFrame, State, StripMarker,
+    ExpandMode, Kv, StackFrame, State, StripMarker,
     parser_fns::call_parser_fn,
-    surrogate::Surrogate as _,
+    preprocess_frame,
     template::{call_template, resolve_callee},
 };
 use core::{ops::ControlFlow, pin::Pin};
@@ -341,12 +341,7 @@ fn preprocess(
     })?;
 
     with_sp(&frame_id, sp, |sp| {
-        let source = FileMap::new(&text);
-        let root = state.statics.parser.parse(&source, true)?;
-        let sp = sp.clone_with_source(source);
-        let mut expand = super::ExpandTemplates::new(super::ExpandMode::Include);
-        expand.adopt_output(state, &sp, &root)?;
-        let result = expand.finish();
+        let result = preprocess_frame(state, sp, &text, ExpandMode::Include)?;
         Ok(state
             .statics
             .vm

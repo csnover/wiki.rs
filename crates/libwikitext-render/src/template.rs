@@ -152,7 +152,7 @@ pub(super) fn call_module(
 
 /// Renders a parameter.
 pub(super) fn render_parameter(
-    out: &mut ExpandTemplates,
+    out: &mut ExpandTemplates<'_>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     span: Span,
@@ -160,13 +160,13 @@ pub(super) fn render_parameter(
     default: Option<&[Spanned<Token>]>,
 ) -> Result {
     if state.load_mode == LoadMode::Base {
-        return render_fallback(out, state);
+        return render_fallback(out.out(), state);
     }
 
     let key = sp.eval(state, name)?;
 
     if let Some(value) = sp.expand(state, key.trim_ascii())? {
-        write!(out, "{value}")?;
+        write!(out.out(), "{value}")?;
     } else if let Some(default) = default {
         out.adopt_tokens(state, sp, default)?;
     } else {
@@ -216,8 +216,8 @@ pub(super) fn render_parameter(
 ///    stack recursion limits.
 /// 6. Query a database.
 /// 7. Emit as text.
-pub(super) fn render_template<'tt>(
-    out: &mut String,
+pub(super) fn render_template<'tt, W: fmt::Write + ?Sized>(
+    out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &'tt StackFrame<'_>,
     bounds: Span,
@@ -498,7 +498,7 @@ pub(crate) fn call_template(
     log::trace!("Expanding {resolved_title}");
 
     let start = Instant::now();
-    let mut expansion = ExpandTemplates::new(ExpandMode::Include);
+    let mut expansion = ExpandTemplates::new(out, ExpandMode::Include);
 
     // The 'Module:Arguments' wrapper argument requires that redirects are
     // using the final name, not a redirect alias
@@ -534,9 +534,6 @@ pub(crate) fn call_template(
         let root = state.statics.parser.parse(&sp.source, true)?;
         expansion.adopt_output(state, &sp, &root)?;
     }
-
-    // TODO: Could just write directly to the out.
-    write!(out, "{}", expansion.finish())?;
 
     state
         .timing

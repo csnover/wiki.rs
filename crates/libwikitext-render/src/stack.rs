@@ -102,13 +102,17 @@ impl<'a> StackFrame<'a> {
             return Ok(Cow::Borrowed(&self.source[span.into_range()]));
         };
 
-        let mut evaluator = ExpandTemplates::new(if self.parent.is_some() {
-            ExpandMode::Include
-        } else {
-            ExpandMode::Normal
-        });
+        let mut out = String::new();
+        let mut evaluator = ExpandTemplates::new(
+            &mut out,
+            if self.parent.is_some() {
+                ExpandMode::Include
+            } else {
+                ExpandMode::Normal
+            },
+        );
         evaluator.adopt_tokens(state, self, expr)?;
-        Ok(evaluator.finish().into())
+        Ok(out.into())
     }
 
     /// Evaluates the given `expr` in the scope of this stack frame, removing

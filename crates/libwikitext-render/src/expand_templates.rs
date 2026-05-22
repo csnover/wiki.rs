@@ -7,10 +7,7 @@ use super::{
     surrogate::{self, Surrogate},
     tags, template,
 };
-use core::{
-    fmt::{self, Write as _},
-    ops::Range,
-};
+use core::{fmt::Write as _, ops::Range};
 use either::Either;
 use libwikitext_parse::{
     AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
@@ -31,25 +28,31 @@ pub(crate) enum ExpandMode {
 /// Performs partial evaluation of a Wikitext string, extracting extension tags
 /// into strip markers and expanding templates while converting all other tokens
 /// back into their original Wikitext.
-pub(crate) struct ExpandTemplates {
+pub(crate) struct ExpandTemplates<'s> {
     /// The inclusion control tag stack.
     inclusion_mode: Vec<InclusionMode>,
     /// The processing mode.
     mode: ExpandMode,
     /// The result of the evaluation.
-    out: String,
+    out: &'s mut String,
 }
 
-impl ExpandTemplates {
+impl<'s> ExpandTemplates<'s> {
     /// Creates a new [`ExpandTemplates`] with the given writer and inclusion
     /// mode.
     #[inline]
-    pub fn new(mode: ExpandMode) -> Self {
+    pub fn new(out: &'s mut String, mode: ExpandMode) -> Self {
         Self {
             inclusion_mode: vec![],
             mode,
-            out: <_>::default(),
+            out,
         }
+    }
+
+    /// Gets a reference to the output.
+    #[inline]
+    pub fn out(&mut self) -> &mut String {
+        self.out
     }
 
     /// Serialises a token which is structured like
@@ -74,7 +77,6 @@ impl ExpandTemplates {
 
     /// Serialises a token which is structured like
     /// `{prefix}{target}{delimiter}{arguments}{suffix}`.
-    #[inline]
     fn adopt_target_arguments(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -90,12 +92,6 @@ impl ExpandTemplates {
         tags::render_single_attribute(self, state, sp, arguments)?;
         self.out.write_str(&sp.source[suffix])?;
         Ok(())
-    }
-
-    /// Consumes this object, returning the result.
-    #[inline]
-    pub fn finish(self) -> String {
-        self.out
     }
 
     /// Serialises the delimiter between two groups of spanned elements like
@@ -115,14 +111,8 @@ impl ExpandTemplates {
     }
 }
 
-impl fmt::Write for ExpandTemplates {
+impl Surrogate<Error> for ExpandTemplates<'_> {
     #[inline]
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.out.write_str(s)
-    }
-}
-
-impl Surrogate<Error> for ExpandTemplates {
     fn adopt_autolink(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -135,6 +125,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_behavior_switch(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -146,6 +137,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_comment(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -159,6 +151,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_end_annotation(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -169,6 +162,7 @@ impl Surrogate<Error> for ExpandTemplates {
         todo!("annotation detected")
     }
 
+    #[inline]
     fn adopt_end_include(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -182,6 +176,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_end_tag(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -193,6 +188,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_entity(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -248,6 +244,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_generated(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -268,12 +265,13 @@ impl Surrogate<Error> for ExpandTemplates {
         content: &[Spanned<Token>],
     ) -> Result {
         let (prefix, suffix) = calc_prefix_suffix(span, content, content);
-        self.write_str(&sp.source[prefix])?;
+        self.out.write_str(&sp.source[prefix])?;
         self.adopt_tokens(state, sp, content)?;
-        self.write_str(&sp.source[suffix])?;
+        self.out.write_str(&sp.source[suffix])?;
         Ok(())
     }
 
+    #[inline]
     fn adopt_horizontal_rule(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -285,6 +283,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_lang_variant(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -301,6 +300,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_link(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -313,6 +313,7 @@ impl Surrogate<Error> for ExpandTemplates {
         self.adopt_target_arguments(state, sp, span, target, content)
     }
 
+    #[inline]
     fn adopt_list_item(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -322,7 +323,7 @@ impl Surrogate<Error> for ExpandTemplates {
         content: &[Spanned<Token>],
     ) -> Result {
         let (prefix, suffix) = calc_prefix_suffix(span, content, content);
-        self.write_str(&sp.source[prefix])?;
+        self.out.write_str(&sp.source[prefix])?;
         self.adopt_tokens(state, sp, content)?;
         // Any non-whitespace in the list item suffix should be ignored since it
         // could be an `include_limits` trailer or other detritus that the
@@ -332,10 +333,11 @@ impl Surrogate<Error> for ExpandTemplates {
         let suffix = suffix
             .rsplit_once(|c: char| !c.is_ascii_whitespace())
             .map_or(suffix, |(_, suffix)| suffix);
-        self.write_str(suffix)?;
+        self.out.write_str(suffix)?;
         Ok(())
     }
 
+    #[inline]
     fn adopt_new_line(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -373,6 +375,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_parameter(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -384,6 +387,7 @@ impl Surrogate<Error> for ExpandTemplates {
         template::render_parameter(self, state, sp, span, name, default)
     }
 
+    #[inline]
     fn adopt_redirect(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -397,6 +401,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_start_annotation(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -408,6 +413,7 @@ impl Surrogate<Error> for ExpandTemplates {
         todo!("annotation detected")
     }
 
+    #[inline]
     fn adopt_start_include(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -452,6 +458,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_strip_marker(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -470,6 +477,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_table_caption(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -480,6 +488,7 @@ impl Surrogate<Error> for ExpandTemplates {
         self.adopt_attributes_content(state, sp, span, attributes, &[])
     }
 
+    #[inline]
     fn adopt_table_data(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -490,6 +499,7 @@ impl Surrogate<Error> for ExpandTemplates {
         self.adopt_attributes_content(state, sp, span, attributes, &[])
     }
 
+    #[inline]
     fn adopt_table_end(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -500,6 +510,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_table_heading(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -510,6 +521,7 @@ impl Surrogate<Error> for ExpandTemplates {
         self.adopt_attributes_content(state, sp, span, attributes, &[])
     }
 
+    #[inline]
     fn adopt_table_row(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -520,6 +532,7 @@ impl Surrogate<Error> for ExpandTemplates {
         self.adopt_attributes_content(state, sp, span, attributes, &[])
     }
 
+    #[inline]
     fn adopt_table_start(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -556,6 +569,7 @@ impl Surrogate<Error> for ExpandTemplates {
         }
     }
 
+    #[inline]
     fn adopt_text(
         &mut self,
         _state: &mut State<'_, '_, '_>,
@@ -567,6 +581,7 @@ impl Surrogate<Error> for ExpandTemplates {
         Ok(())
     }
 
+    #[inline]
     fn adopt_text_style(
         &mut self,
         _state: &mut State<'_, '_, '_>,

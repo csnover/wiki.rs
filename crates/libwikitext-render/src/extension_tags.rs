@@ -130,10 +130,9 @@
 //!    typographical beautification
 
 use super::{
-    Error, ExpandMode, ExpandTemplates, LinkKind, LinkKindOptions, PluginResult, PluginState,
-    State, StripMarker,
+    Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
     document::Document,
-    image,
+    image, preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     tags::ExternalLinkKind,
@@ -384,7 +383,7 @@ fn gallery(
             Namespace::find_by_id(state.statics.db.config(), Namespace::FILE),
         );
 
-        let args = preprocess_frame(state, arguments.sp, rest)?;
+        let args = preprocess_frame(state, arguments.sp, rest, ExpandMode::Normal)?;
         let sp = arguments.sp.clone_with_source(FileMap::new(&args));
         let args = state.statics.parser.parse_gallery_media(&sp.source)?;
         let options = image::media_options(state, &sp, title, &args, defaults.clone())?;
@@ -1320,25 +1319,12 @@ fn eval_string(
     text: &str,
     unstrip: bool,
 ) -> Result<String> {
-    let source = preprocess_frame(state, sp, text)?;
+    let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
     let mut out = Document::new(!unstrip);
     out.adopt_output(state, &sp, &root)?;
     Ok(out.finish(state))
-}
-
-/// Preprocesses the given text in a root document scope.
-fn preprocess_frame(
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-    text: &str,
-) -> Result<String> {
-    let sp = sp.clone_with_source(FileMap::new(text));
-    let root = state.statics.parser.parse(&sp.source, false)?;
-    let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
-    preprocessor.adopt_output(state, &sp, &root)?;
-    Ok(preprocessor.finish())
 }
 
 /// Re-emits an extension tag.

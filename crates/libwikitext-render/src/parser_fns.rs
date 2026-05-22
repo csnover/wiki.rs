@@ -8,7 +8,9 @@
 )]
 
 use super::{
-    Document, Error, PluginResult, PluginState, Result, State, extension_tags,
+    Document, Error, PluginResult, PluginState, Result, State,
+    expand_templates::ExpandMode,
+    extension_tags, preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     template::call_module,
@@ -26,8 +28,8 @@ use libwikitext_common::{
     AnchorEncodeMode, anchor_encode,
     config::Configuration,
     db::{Article, DatabaseProvider as _, Error as DatabaseError},
-    decode_html, format_date_mediawiki, format_message, format_number, make_url,
-    parse_formatted_number,
+    decode_html, format_date_mediawiki, format_message, format_number, format_raw_message,
+    make_url, parse_formatted_number,
     title::{Namespace, Title},
     url_encode,
 };
@@ -955,11 +957,36 @@ mod string {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let message = format_message(state.messages, [value], |key| {
-                let index = key.parse::<usize>().unwrap();
-                arguments.eval(state, index)
-            })?;
+        if let Some(which) = arguments.eval(state, 0)?.map(trim) {
+            let config = state.statics.db.config();
+            // TODO: This is supposed to check for /lang first,
+            // then fall back to non-lang.
+            let title = Title::new(
+                config,
+                &format!("{}{}", which.to_ascii_uppercase(), which),
+                Namespace::find_by_id(config, Namespace::MEDIAWIKI),
+            );
+
+            let message = match state.statics.db.get(&title) {
+                Ok(article) => {
+                    // TODO: Is this supposed to follow redirects?
+                    // TODO: This should probably identify the frame by the
+                    // title instead of anonymous text.
+                    let message =
+                        preprocess_frame(state, arguments.sp, article.body(), ExpandMode::Normal)?;
+                    format_raw_message(&message, |key| {
+                        let index = key.parse::<usize>().unwrap();
+                        arguments.eval(state, index)
+                    })?
+                    .into_owned()
+                    .into()
+                }
+                Err(DatabaseError::NotFound) => format_message(state.messages, [which], |key| {
+                    let index = key.parse::<usize>().unwrap();
+                    arguments.eval(state, index)
+                })?,
+                Err(err) => return Err(err)?,
+            };
             write!(out, "{message}")?;
         }
         Ok(())

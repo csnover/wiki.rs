@@ -490,7 +490,7 @@ pub fn render_string(
     match mode {
         EvalPp::Post => render(statics, messages, &article, &sp, load_mode),
         EvalPp::Pre | EvalPp::PreTree | EvalPp::Tree => {
-            let (state, source) = preprocess(statics, messages, &article, &sp, load_mode)?;
+            let (state, source) = render_preprocess(statics, messages, &article, &sp, load_mode)?;
             let mut content = if mode == EvalPp::Pre {
                 source
             } else if mode == EvalPp::PreTree {
@@ -527,7 +527,7 @@ fn render(
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
 ) -> Result<RenderOutput> {
-    let (mut state, source) = preprocess(statics, messages, article, sp, load_mode)?;
+    let (mut state, source) = render_preprocess(statics, messages, article, sp, load_mode)?;
 
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse_no_expansion(&sp.source)?;
@@ -578,7 +578,7 @@ fn render(
 /// Expands all templates for the given root frame, collecting out-of-band
 /// information and returning the incomplete state and the final pre-processed
 /// Wikitext.
-fn preprocess<'a, 'b, 'c>(
+fn render_preprocess<'a, 'b, 'c>(
     statics: &'a mut Statics<'b>,
     messages: &'c serde_json_borrow::Value<'c>,
     article: &Arc<Article>,
@@ -600,9 +600,25 @@ fn preprocess<'a, 'b, 'c>(
 
     // TODO: Rewrite the PEG so that it does the expansions instead of
     // doing this awful double-parsing.
-    let mut preprocessor = ExpandTemplates::new(ExpandMode::Normal);
+    let mut out = String::new();
+    let mut preprocessor = ExpandTemplates::new(&mut out, ExpandMode::Normal);
     preprocessor.adopt_output(&mut state, sp, &root)?;
-    Ok((state, preprocessor.finish()))
+    Ok((state, out))
+}
+
+/// Preprocesses the given text in a root document scope.
+fn preprocess_frame(
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    text: &str,
+    mode: ExpandMode,
+) -> Result<String> {
+    let sp = sp.clone_with_source(FileMap::new(text));
+    let root = state.statics.parser.parse(&sp.source, false)?;
+    let mut out = String::new();
+    let mut preprocessor = ExpandTemplates::new(&mut out, mode);
+    preprocessor.adopt_output(state, &sp, &root)?;
+    Ok(out)
 }
 
 /// Creates a new template cache with the given size in bytes.
