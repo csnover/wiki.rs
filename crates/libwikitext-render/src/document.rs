@@ -47,7 +47,7 @@ pub(crate) struct Document {
     /// The stack of open HTML elements.
     stack: Vec<Node>,
     /// The [`TextStyle`] emitter.
-    text_style_emitter: TextStyleEmitter,
+    text_style_emitter: Vec<TextStyleEmitter>,
     /// The number of open Wikitext tables.
     wikitext_table_count: usize,
 }
@@ -64,7 +64,7 @@ impl Document {
                 )))),
             )))),
             stack: <_>::default(),
-            text_style_emitter: <_>::default(),
+            text_style_emitter: vec![TextStyleEmitter::default()],
             wikitext_table_count: <_>::default(),
         }
     }
@@ -195,7 +195,10 @@ impl Document {
 
     /// Finalises the document and returns the resulting output.
     pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
-        self.text_style_emitter.finish(&mut self.next);
+        self.text_style_emitter
+            .last_mut()
+            .unwrap()
+            .finish(&mut self.next);
 
         for rest in self.stack.drain(..).rev() {
             rest.close(&mut self.next);
@@ -463,6 +466,7 @@ impl Surrogate<Error> for Document {
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
     ) -> Result {
+        self.text_style_emitter.push(<_>::default());
         tags::render_wikilink(
             self,
             state,
@@ -470,7 +474,9 @@ impl Surrogate<Error> for Document {
             target,
             content,
             trail.map(|trail| trail.node),
-        )
+        )?;
+        self.text_style_emitter.pop();
+        Ok(())
     }
 
     fn adopt_list_item(
@@ -519,7 +525,10 @@ impl Surrogate<Error> for Document {
         _sp: &StackFrame<'_>,
         _span: Span,
     ) -> Result {
-        self.text_style_emitter.finish(&mut self.next);
+        self.text_style_emitter
+            .last_mut()
+            .unwrap()
+            .finish(&mut self.next);
         if let Some(Node::List(list)) = self.stack.last_mut() {
             list.finish(&mut self.next);
             self.stack.pop();
@@ -767,7 +776,10 @@ impl Surrogate<Error> for Document {
         _span: Span,
         style: TextStyle,
     ) -> Result {
-        self.text_style_emitter.emit(&mut self.next, style);
+        self.text_style_emitter
+            .last_mut()
+            .unwrap()
+            .emit(&mut self.next, style);
         Ok(())
     }
 

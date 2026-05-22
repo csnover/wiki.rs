@@ -180,8 +180,8 @@ impl PluginTagArgs<'_, '_, '_> {
     /// Gets the raw body text of the tag.
     #[inline]
     #[must_use]
-    pub fn body(&self) -> &str {
-        self.0.body()
+    pub fn body(&self) -> Option<&str> {
+        self.0.body
     }
 
     /// Evaluates `text` as a Wikitext document, returning the rendered Wikitext
@@ -217,7 +217,7 @@ impl PluginTagArgs<'_, '_, '_> {
     /// * parsing or rendering fails
     #[inline]
     pub fn eval_body(&self, state: &mut PluginState<'_, '_, '_, '_>) -> PluginResult<String> {
-        self.eval(state, self.body(), false)
+        self.eval(state, self.0.body(), false)
     }
 
     /// Evaluates the extension tag attribute with the given `key`.
@@ -235,6 +235,30 @@ impl PluginTagArgs<'_, '_, '_> {
         key: &str,
     ) -> PluginResult<Option<Cow<'_, str>>> {
         self.0.get(state.0, key).map_err(Into::into)
+    }
+
+    /// Iterates over all attributes of the extension tag.
+    ///
+    /// The returned values will include any leading and trailing whitespace
+    /// present in the original text.
+    ///
+    /// # Errors
+    ///
+    /// * parsing or rendering fails
+    #[inline]
+    pub fn iter(
+        &self,
+        state: &mut PluginState<'_, '_, '_, '_>,
+    ) -> impl Iterator<Item = PluginResult<(Cow<'_, str>, Option<Cow<'_, str>>)>> {
+        self.0.iter().map(|kv| {
+            let name = kv.name(state.0, self.0.sp)?;
+            let value = kv.value(state.0, self.0.sp)?;
+            Ok(if let Some(name) = name {
+                (name, Some(value))
+            } else {
+                (value, None)
+            })
+        })
     }
 
     /// Gets the name of the extension tag.
