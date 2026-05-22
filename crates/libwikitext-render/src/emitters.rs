@@ -629,6 +629,22 @@ impl<S: Sink> DomTree<S> {
             .rev()
             .any(|e| matches!(e, Node::Tag(name) if name == "table"))
     }
+
+    /// Tries closing all tags up to and including the nearest `name`. Returns
+    /// `true` if some elements were closed.
+    fn try_close(&mut self, name: &str) -> bool {
+        // TODO: Any `<a>` elements that were drained need to be restored.
+        // Which means that there needs to be another component that tracks
+        // those specifically.
+        if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(name)) {
+            for e in self.stack.drain(pair..).rev() {
+                e.close(&mut self.next);
+            }
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl<S: Sink> Sink for DomTree<S> {
@@ -670,6 +686,9 @@ impl<S: Sink> Sink for DomTree<S> {
                 self.next.text(html);
             }
         } else {
+            while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
+                e.close(&mut self.next);
+            }
             self.next.raw_html_block(html);
         }
     }
@@ -706,12 +725,15 @@ impl<S: Sink> Sink for DomTree<S> {
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(name)) {
-            for e in self.stack.drain(pair..).rev() {
-                e.close(&mut self.next);
+        if !self.try_close(name) {
+            if name == "p" {
+                // Why????
+                self.next.tag_start_full("p");
+                self.next.tag_end("p");
+            } else {
+                self.next.tag_end_unbalanced(name);
+                log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
             }
-        } else {
-            log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
         }
     }
 
@@ -722,6 +744,10 @@ impl<S: Sink> Sink for DomTree<S> {
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
+        if name == "a" {
+            self.try_close(name);
+        }
+
         // Normally, receiving a new start tag should close any tags which cause
         // it to be in an invalid position in the DOM. This is especially
         // important for wikitable markup because wikitable children are
