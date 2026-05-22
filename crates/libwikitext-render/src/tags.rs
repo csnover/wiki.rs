@@ -1,7 +1,6 @@
 //! Plain HTML rendering functions.
 
-use super::{Error, Paths, Result, StackFrame, State, Surrogate, image};
-use crate::document::Document;
+use super::{Error, Paths, Result, StackFrame, State, Surrogate};
 use http::Uri;
 use libmisc::CowExt as _;
 use libwikitext_common::{
@@ -9,7 +8,7 @@ use libwikitext_common::{
     db::DatabaseProvider as _,
     decode_html, make_url,
     title::{Namespace, Title},
-    title_decode, url_encode_sanitized,
+    url_encode_sanitized,
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
 use serde_json_borrow::Value;
@@ -50,37 +49,8 @@ pub(super) fn render_external_link<W: Surrogate<Error> + ?Sized>(
     render_end_link(out, state, sp)
 }
 
-/// Renders a wikilink.
-pub(super) fn render_wikilink(
-    out: &mut Document,
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-    target: &[Spanned<Token>],
-    content: &[Spanned<Argument>],
-    trail: Option<&str>,
-) -> Result<(), Error> {
-    let target = sp.eval(state, target)?.map(title_decode);
-    let title = Title::new(state.statics.db.config(), &target, None);
-    let force_link = target.starts_with(':');
-    if !force_link && title.is_local_category() {
-        state.globals.categories.insert(title.key().to_owned());
-        out.category();
-        if let Some(trail) = trail {
-            out.adopt_generated(state, sp, None, trail)?;
-        }
-    } else if !force_link && title.is_local_file() {
-        image::render_media(out, state, sp, title, content)?;
-        if let Some(trail) = trail {
-            out.adopt_generated(state, sp, None, trail)?;
-        }
-    } else {
-        render_internal_link(out, state, sp, &target, content, trail, title)?;
-    }
-    Ok(())
-}
-
 /// Renders an internal link.
-fn render_internal_link<W: Surrogate<Error> + ?Sized>(
+pub(super) fn render_internal_link<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,

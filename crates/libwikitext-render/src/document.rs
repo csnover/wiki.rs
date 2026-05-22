@@ -16,7 +16,9 @@ use super::{
 use core::fmt::Write as _;
 use either::Either;
 use libmisc::CowExt as _;
-use libwikitext_common::{AnchorEncodeMode, anchor_encode, decode_html, normalize_attr};
+use libwikitext_common::{
+    AnchorEncodeMode, anchor_encode, decode_html, normalize_attr, title::Title, title_decode,
+};
 use libwikitext_parse::{
     AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
     Spanned, TextStyle, Token, VOID_TAGS,
@@ -461,20 +463,41 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
     ) -> Result {
+        let target = sp.eval(state, target)?.map(title_decode);
+        if !Title::is_valid(state.statics.db.config(), &target) {
+            return self.adopt_text(state, sp, span, &sp.source[span.into_range()]);
+        }
+        let target = state.globals.title.join(&target);
+        let title = Title::new(state.statics.db.config(), &target, None);
         self.text_style_emitter.push(<_>::default());
-        tags::render_wikilink(
-            self,
-            state,
-            sp,
-            target,
-            content,
-            trail.map(|trail| trail.node),
-        )?;
+        let force_link = target.starts_with(':');
+        if !force_link && title.is_local_category() {
+            state.globals.categories.insert(title.key().to_owned());
+            self.category();
+            if let Some(trail) = trail {
+                self.adopt_generated(state, sp, None, &trail)?;
+            }
+        } else if !force_link && title.is_local_file() {
+            super::image::render_media(self, state, sp, title, content)?;
+            if let Some(trail) = trail {
+                self.adopt_generated(state, sp, None, &trail)?;
+            }
+        } else {
+            tags::render_internal_link(
+                self,
+                state,
+                sp,
+                &target,
+                content,
+                trail.map(|v| v.as_ref()),
+                title,
+            )?;
+        }
         self.text_style_emitter.pop();
         Ok(())
     }
@@ -577,7 +600,7 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
@@ -587,7 +610,7 @@ impl Surrogate<Error> for Document {
         self.next.text("redirectText");
         self.next.tag_attribute_end("class");
         self.next.tag_start_end("p");
-        tags::render_wikilink(self, state, sp, target, content, trail.map(|v| v.as_ref()))?;
+        self.adopt_link(state, sp, span, target, content, trail)?;
         self.next.tag_end("p");
         Ok(())
     }
