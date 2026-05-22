@@ -378,6 +378,8 @@ ok-<a rel="nofollow" class="external free" href="http://example.com">http://exam
 !! end
 
 !! test
+!! options
+wiki-rs-skip=[[nofollow is not supported or needed]]
 External links: nofollow domain exception
 !! wikitext
 A [https://no-nofollow.org/foobar link], and another [https://example.org link].

@@ -300,6 +300,7 @@ y&#160;:)
 pwrap test
 !! options
 parsoid=wt2html
+wiki-rs-skip=[[applies only to parsoid]]
 !! wikitext
 {{T1}}{{T1}}
 !! html/parsoid
