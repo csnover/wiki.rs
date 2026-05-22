@@ -13,6 +13,13 @@ pub trait CowExt<'a, B>
 where
     B: 'a + ToOwned + ?Sized,
 {
+    /// If `self` is borrowed, returns `self`. Otherwise, returns the result of
+    /// calling `f` with the inner owned value.
+    #[must_use]
+    fn borrowed_or<F>(self, other: F) -> Cow<'a, B>
+    where
+        F: FnOnce(<B as ToOwned>::Owned) -> <B as ToOwned>::Owned;
+
     /// Makes a new `Cow` for an optional component of the borrowed data,
     /// extending the borrow if `self` is borrowed.
     #[must_use]
@@ -54,6 +61,16 @@ impl<'a, B> CowExt<'a, B> for Cow<'a, B>
 where
     B: 'a + ToOwned + ?Sized,
 {
+    fn borrowed_or<F>(self, other: F) -> Cow<'a, B>
+    where
+        F: FnOnce(<B as ToOwned>::Owned) -> <B as ToOwned>::Owned,
+    {
+        match self {
+            b @ Cow::Borrowed(_) => b,
+            Cow::Owned(o) => Cow::Owned(other(o)),
+        }
+    }
+
     fn filter_map<F>(self, f: F) -> Option<Self>
     where
         F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, B>>,

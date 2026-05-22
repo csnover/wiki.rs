@@ -484,7 +484,8 @@ where
 /// Decodes a possibly URL-encoded title from a Wikitext link target.
 #[must_use]
 pub fn title_decode(target: &str) -> Cow<'_, str> {
-    url_decode(target).map(|target| strtr(target, &[("<", "&lt;"), (">", "&gt;")]))
+    url_decode(target)
+        .borrowed_or(|target| strtr(&target, &[("<", "&lt;"), (">", "&gt;")]).into_owned())
 }
 
 /// Percent-decodes a URL part.
