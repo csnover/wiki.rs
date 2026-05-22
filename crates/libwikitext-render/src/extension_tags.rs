@@ -664,6 +664,16 @@ fn pre(
     };
 
     let body = state.strip_markers.unstrip(&body);
+
+    // TODO: No idea what does this in MediaWiki. BlockLevelPass? Right now
+    // `GrafEmitter` does not see the elements from extension tags so it is not
+    // able to use its `in_pre` logic to suppress whitespace in the output.
+    // Unclear whether this is what it is.
+    let body = body
+        .strip_prefix('\n')
+        .and_then(|body| (!body.starts_with('\n')).then_some(body))
+        .unwrap_or(&body);
+
     write!(out, ">{body}</pre>")?;
     Ok(OutputMode::Block)
 }
