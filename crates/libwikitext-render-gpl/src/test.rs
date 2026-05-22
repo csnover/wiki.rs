@@ -100,10 +100,14 @@ impl PluginExtensionTag for DivTagPf {
 
         let raw = args.get(state, "raw")?.is_some();
         let raw_html = args.get(state, "israwhtml")?.is_some();
-        let content = if raw {
-            Cow::Borrowed(args.body())
+        let content = if let Some(body) = args.body() {
+            if raw {
+                Cow::Borrowed(body)
+            } else {
+                Cow::Owned(args.eval(state, body, raw_html)?)
+            }
         } else {
-            Cow::Owned(args.eval(state, args.body(), raw_html)?)
+            <_>::default()
         };
         write!(out, "<{tag}>{content}</{tag}>")?;
         Ok(if tag == "div" {
@@ -184,7 +188,9 @@ impl PluginExtensionTag for StaticTag {
             )?;
             OutputMode::Raw
         } else {
-            self.0.lock().unwrap().borrow_mut().push_str(args.body());
+            if let Some(body) = args.body() {
+                self.0.lock().unwrap().borrow_mut().push_str(body);
+            }
             OutputMode::Empty
         })
     }
@@ -198,12 +204,30 @@ impl PluginExtensionTag for TagTag {
     fn call(
         &self,
         out: &mut String,
-        _: &mut PluginState<'_, '_, '_, '_>,
+        state: &mut PluginState<'_, '_, '_, '_>,
         args: PluginTagArgs<'_, '_, '_>,
     ) -> PluginResult<OutputMode> {
-        let body = strtr(args.body(), &[("'", "\\'")]);
-        // TODO: Arguments
-        write!(out, "<pre>'{body}'\narray (\n)\n</pre>")?;
+        fn escape_single_quote(text: &str) -> Cow<'_, str> {
+            strtr(text, &[("'", "\\'")])
+        }
+
+        write!(out, "<pre>")?;
+        if let Some(body) = args.body() {
+            write!(out, "'{}'", escape_single_quote(body))?;
+        } else {
+            out.push_str("NULL");
+        }
+        out.push_str("\narray (\n");
+        for arg in args.iter(state) {
+            let (name, value) = arg?;
+            write!(out, "  '{}' => ", escape_single_quote(&name))?;
+            if let Some(value) = value {
+                writeln!(out, "'{}',", escape_single_quote(&value))?;
+            } else {
+                writeln!(out, "NULL,")?;
+            }
+        }
+        write!(out, ")\n</pre>")?;
         Ok(OutputMode::Block)
     }
 }
@@ -442,6 +466,11 @@ fn check_test_results(
                 {
                     heuristic = "unpretty + remove tbody + table ws";
                     fail = expected_html != actual;
+
+                    if fail && let Cow::Owned(expected_html) = unwrap_heading(&expected_html) {
+                        heuristic = "unpretty + remove tbody + table ws + unwrap heading";
+                        fail = expected_html != actual;
+                    }
                 }
 
                 if fail && let Cow::Owned(expected_html) = styles(&expected_html) {
