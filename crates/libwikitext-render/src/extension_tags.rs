@@ -1288,21 +1288,21 @@ pub(super) fn render_extension_tag(
         extension_tag
             .call(&mut out, &mut PluginState(state), PluginTagArgs(&args))
             .map_err(Error::Plugin)?
-    } else if let Some(extension_tag) = EXTENSION_TAGS.get(callee) {
-        if let Some(span) = span {
-            extension_tag(&mut out, state, &args).map_err(|err| Error::Node {
-                frame: sp.name.to_string() + "$<" + callee + ">",
-                start: sp.source.find_line_col(span.start),
-                err: Box::new(err),
-            })?
-        } else {
-            // At least 'Module:Navbox/configuration' invokes the `#tag` parser
-            // function and then stores the returned value, expecting that the
-            // return value can be cached and reused. So, give it a value that
-            // can be cached and reused…
-            render_raw(state, sp, callee, body, &args.arguments.arguments, &mut out)?
-        }
-    } else {
+    } else if let Some(extension_tag) = EXTENSION_TAGS.get(callee)
+        && let Some(span) = span
+    {
+        // At least 'Module:Navbox/configuration' invokes the `#tag` parser
+        // function and then stores the returned value, expecting that the
+        // return value can be cached and reused, which a strip marker cannot.
+        // So, give it a value that *can* be cached and reused by only actually
+        // invoking extension tags when there is an associated span, which means
+        // that it came from a document and not from a parser function.
+        extension_tag(&mut out, state, &args).map_err(|err| Error::Node {
+            frame: sp.name.to_string() + "$<" + callee + ">",
+            start: sp.source.find_line_col(span.start),
+            err: Box::new(err),
+        })?
+    } else if span.is_some() && state.statics.db.config().extension_tags.contains(callee) {
         log::warn!("TODO: {callee} tag");
         write!(
             out,
@@ -1310,6 +1310,11 @@ pub(super) fn render_extension_tag(
             html_escape::encode_text(&decode_html(body.unwrap_or("")))
         )?;
         OutputMode::Block
+    } else {
+        // Any arbitrary tag name can be passed to the `#tag` parser function
+        // and then expect that a tag will be emitted as if the equivalent
+        // HTML was written in its place.
+        render_raw(state, sp, callee, body, &args.arguments.arguments, &mut out)?
     };
 
     Ok(match mode {
