@@ -24,7 +24,7 @@ use libwikitext_parse::{
     MARKER_SUFFIX, STOP_CHAR, Span, Spanned, TextStyle, TextStylePosition, Token, VOID_TAGS,
 };
 use peg::RuleResult;
-use std::collections::HashSet;
+use std::{collections::HashSet, rc::Rc};
 
 peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals) for str {
     /// The top-level start rule.
@@ -3602,7 +3602,7 @@ struct Context {
     /// In a wikilink argument.
     linkdesc: bool,
     /// In a container item.
-    prod_kind: Cell<Option<ProdKind>>,
+    prod_kind: Rc<Cell<Option<ProdKind>>>,
     /// In a table.
     table: bool,
     /// In a table caption content.
@@ -3612,7 +3612,7 @@ struct Context {
     /// In a block nested in a table.
     table_data_block: bool,
     /// In a table heading cell.
-    table_head: Cell<bool>,
+    table_head: Rc<Cell<bool>>,
     /// In an XML-like tag.
     tag_kind: Option<TagKind>,
     /// In a template argument.
@@ -3710,8 +3710,8 @@ impl Context {
 
     /// Makes the context an expression with a terminator of `ProdKind`.
     fn with_prod_kind(&self, kind: Option<ProdKind>) -> Self {
-        let this = self.clone();
-        this.prod_kind.set(kind);
+        let mut this = self.clone();
+        this.prod_kind = Rc::new(Cell::new(kind));
         this
     }
 
