@@ -864,7 +864,7 @@ impl Node {
                     // span. And technically it works in browsers, even though
                     // it is illegal in HTML.
                     true
-                } else if PHRASING_TAGS.contains(parent) {
+                } else if parent == "p" || PHRASING_TAGS.contains(parent) {
                     PHRASING_TAGS.contains(tag)
                 } else {
                     // `parent` must be an unrestricted block element
