@@ -2312,7 +2312,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// the context object.
     rule wikilink_preproc(ctx: &Context) -> Vec<Spanned<Token>>
     = t:wikilink_preproc_valid(ctx) { vec![t] }
-    / t:wikilink_preproc_invalid(ctx)
+    / wikilink_extlink(ctx)
+    / wikilink_preproc_invalid(ctx)
 
     /// A well-formed and valid wikilink item production.
     ///
@@ -2362,6 +2363,22 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         }
     }}
 
+    /// A confused external link preceded by a literal "[".
+    ///
+    /// ```wikitext
+    /// [[//example.com]]
+    /// [[//example.com]
+    /// ```
+    rule wikilink_extlink(ctx: &Context) -> Vec<Spanned<Token>>
+    = t0:spanned(<"[" { Token::Text }>)
+      // In this position, an external link is treated as if it is a wikilink
+      // for the purposes of `inline_breaks`, so that a template argument does
+      // not break on any internal `|`. Normally, an extlink in a template
+      // argument would break on `|` and be treated as plain text.
+      t1:extlink(&ctx.without_template_arg().without_linkdesc())
+      t2:spanned(<"]" { Token::Text }>)
+    { vec![t0, t1, t2] }
+
     /// A syntatically valid but semantically invalid wikilink production.
     ///
     /// ```wikitext
@@ -2377,13 +2394,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                 .chain(iter::once(c))
       ) }
 
-    /// A wikilink with no terminator. This could also be a confused external
-    /// link preceded by a literal "[".
+    /// A wikilink with no terminator.
     ///
     /// ```wikitext
     /// [[Link target
-    ///
-    /// [[//example.com]
     /// ```
     rule broken_wikilink(ctx: &Context) -> Vec<Spanned<Token>>
     = t0:spanned(<"[" { Token::Text }>)
@@ -2400,7 +2414,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///
     /// (In parsoid: `wikilink_preprocessor_text`)
     rule wikilink_target(ctx: &Context) -> Vec<Spanned<Token>>
-    = t:(t:wikilink_target_simple(ctx) { vec![t] } / wikilink_target_complex(ctx))+
+    = !(space_or_newline()* url_protocol())
+      t:(t:wikilink_target_simple(ctx) { vec![t] } / wikilink_target_complex(ctx))+
     { reduce_tree(t.into_iter().flatten()) }
 
     /// A simple wikilink target production.
@@ -2718,6 +2733,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         // `urltext_special_performance_hack` is responsible for advancing the
         // cursor to an appropriate position to check for this
         if !ctx.extlink
+            && !ctx.linkdesc
             && !matches!(
                 input[..pos].chars().nth_back(0),
                 Some(c) if c.is_ascii_alphanumeric() || c == '_'
@@ -3789,6 +3805,13 @@ impl Context {
     fn with_template_arg(&self) -> Self {
         let mut this = self.clone();
         this.template_arg = true;
+        this
+    }
+
+    /// Makes the context *not* a template argument.
+    fn without_template_arg(&self) -> Self {
+        let mut this = self.clone();
+        this.template_arg = false;
         this
     }
 }
