@@ -133,6 +133,12 @@ pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
     };
     let href = link.to_string(&options, query);
 
+    let href = if missing {
+        href.split_once('#').map_or(href.as_str(), |(lhs, _)| lhs)
+    } else {
+        &href
+    };
+
     render_runtime(out, state, sp, |_, source| {
         token!(
             source,
