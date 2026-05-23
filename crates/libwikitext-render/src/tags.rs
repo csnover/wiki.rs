@@ -272,8 +272,12 @@ impl LinkKind<'_> {
                             None,
                             format_args!("{external}/{url}"),
                             None,
-                            None,
+                            title.fragment(),
                         )
+                    } else if let Some(fragment) = title.fragment()
+                        && !fragment.is_empty()
+                    {
+                        format!("{url}#{}", anchor_encode(fragment, AnchorEncodeMode::Html5))
                     } else {
                         url
                     }
