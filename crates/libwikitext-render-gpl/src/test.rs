@@ -373,6 +373,12 @@ fn check_skips(
     {
         log::info!(target: target, "Skipping {name}: html2wt");
         true
+    } else if options
+        .get("parsoid.modes")
+        .is_some_and(any_of(&["selser"]))
+    {
+        log::info!(target: target, "Skipping {name}: selser");
+        true
     } else {
         false
     }
