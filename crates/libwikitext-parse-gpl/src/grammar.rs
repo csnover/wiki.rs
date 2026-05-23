@@ -1419,10 +1419,14 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     // TODO: Use a non-allocating comparator
                     |a, b| a.to_lowercase() == b.to_lowercase()
                 ) else {
-                    // This is undefined behaviour. The old parser returns text
-                    // here (see core commit 674e8388cba).
                     return RuleResult::Matched(pos, Spanned {
-                        node: Token::Text,
+                        node: if contains_ignore_case(&HTML5_TAGS, &input[name.into_range()]) {
+                            Token::StartTag { name, attributes, self_closing }
+                        } else {
+                            // This is undefined behaviour. The old parser
+                            // returns text here (see core commit 674e8388cba).
+                            Token::Text
+                        },
                         span: t.span,
                     });
                 };
