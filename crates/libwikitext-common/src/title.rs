@@ -206,7 +206,7 @@ impl Namespace {
 }
 
 /// A normalised article title.
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Eq)]
 pub struct Title {
     /// The location of the fragment delimiter in the title, if one exists.
     ///
@@ -237,22 +237,6 @@ pub struct Title {
 
     /// The full title text.
     text: String,
-}
-
-impl core::hash::Hash for Title {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.interwiki().unwrap_or_default().hash(state);
-        self.namespace.hash(state);
-        self.text().hash(state);
-    }
-}
-
-impl PartialEq for Title {
-    fn eq(&self, other: &Self) -> bool {
-        self.interwiki().unwrap_or_default() == other.interwiki().unwrap_or_default()
-            && self.namespace == other.namespace
-            && self.text() == other.text()
-    }
 }
 
 impl Title {
@@ -736,6 +720,47 @@ impl Title {
     }
 }
 
+impl core::fmt::Debug for Title {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Title")
+            .field("fragment", &self.fragment())
+            .field("interwiki", &self.interwiki())
+            .field("namespace", &self.namespace)
+            .field("key", &self.key())
+            .field("text", &self.text())
+            .finish_non_exhaustive()
+    }
+}
+
+impl core::fmt::Display for Title {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.full_text())
+    }
+}
+
+impl core::hash::Hash for Title {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.interwiki().unwrap_or_default().hash(state);
+        self.namespace.hash(state);
+        self.text().hash(state);
+    }
+}
+
+impl PartialEq for Title {
+    fn eq(&self, other: &Self) -> bool {
+        self.interwiki().unwrap_or_default() == other.interwiki().unwrap_or_default()
+            && self.namespace == other.namespace
+            && self.text() == other.text()
+    }
+}
+
+/// Returns true if the given character `c` is a bidirectional text control
+/// character.
+#[inline]
+fn bidi(c: char) -> bool {
+    ('\u{200e}'..='\u{200f}').contains(&c) || ('\u{202a}'..='\u{202e}').contains(&c)
+}
+
 /// Returns true if all the bytes in the given `key` are valid for use in a
 /// title.
 #[must_use]
@@ -783,25 +808,6 @@ fn max_namespace_len(ns: &Namespace) -> usize {
     }
 }
 
-/// Returns `true` if `text` contains any upward path traversal parts.
-#[inline]
-fn path_like(text: &str) -> bool {
-    text.split('/').any(|part| matches!(part, "." | ".."))
-}
-
-impl core::fmt::Display for Title {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(self.full_text())
-    }
-}
-
-/// Returns true if the given character `c` is a bidirectional text control
-/// character.
-#[inline]
-fn bidi(c: char) -> bool {
-    ('\u{200e}'..='\u{200f}').contains(&c) || ('\u{202a}'..='\u{202e}').contains(&c)
-}
-
 /// Normalises a title text part by decoding HTML entities, converting runs of
 /// whitespace + underscore to a single space character, and trimming.
 #[must_use]
@@ -819,6 +825,12 @@ pub fn normalize(text: &str) -> Cow<'_, str> {
 #[must_use]
 pub fn normalize_fragment(text: &str) -> Cow<'_, str> {
     decode_html(text).map(|text| super::normalize_whitespace::<false>(text, trimmable, spacelike))
+}
+
+/// Returns `true` if `text` contains any upward path traversal parts.
+#[inline]
+fn path_like(text: &str) -> bool {
+    text.split('/').any(|part| matches!(part, "." | ".."))
 }
 
 /// Returns true if the character `c` is considered like whitespace in title
