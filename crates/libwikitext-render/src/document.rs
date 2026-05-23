@@ -866,6 +866,8 @@ impl Node {
                     true
                 } else if parent == "p" || PHRASING_TAGS.contains(parent) {
                     PHRASING_TAGS.contains(tag)
+                } else if parent == "li" && tag == "li" {
+                    false
                 } else {
                     // `parent` must be an unrestricted block element
                     true
