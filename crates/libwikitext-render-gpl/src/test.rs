@@ -170,6 +170,20 @@ impl PluginExtensionTag for PWrapTest {
     }
 }
 
+struct SealTag;
+
+impl PluginExtensionTag for SealTag {
+    fn call(
+        &self,
+        out: &mut String,
+        _: &mut PluginState<'_, '_, '_, '_>,
+        _: PluginTagArgs<'_, '_, '_>,
+    ) -> PluginResult<OutputMode> {
+        write!(out, "<span></span>")?;
+        Ok(OutputMode::Inline)
+    }
+}
+
 #[derive(Default)]
 struct StaticTag(Mutex<RefCell<String>>);
 
@@ -648,13 +662,14 @@ fn render_test(
         .base_time(base_time)
         .base_uri(Uri::from_static("http://example.org"))
         .extension_tags(HashMap::from_iter([
+            ("asidetag", &AsideTag as _),
+            ("divtag", &DivTagPf as _),
+            ("pwraptest", &PWrapTest as _),
+            ("sealtag", &SealTag as _),
+            ("spantag", &DivTagPf as _),
+            ("statictag", &*STATIC_TAG as _),
             ("tag", &TagTag as _),
             ("tåg", &TagTag as _),
-            ("statictag", &*STATIC_TAG as _),
-            ("asidetag", &AsideTag as _),
-            ("pwraptest", &PWrapTest as _),
-            ("divtag", &DivTagPf as _),
-            ("spantag", &DivTagPf as _),
         ]))
         .db(Arc::clone(db) as Arc<dyn DatabaseProvider>)
         .parser(db.config())
