@@ -993,7 +993,7 @@ fn section(
     if let Some(name) = end
         && let Some(section) = title.get_mut(name.as_ref())
     {
-        section.end = bounds.start;
+        section.end = bounds.start as usize;
     }
 
     Ok(OutputMode::Empty)

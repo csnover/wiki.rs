@@ -76,17 +76,21 @@ macro_rules! token {
 pub use token;
 
 /// Builds a [`Spanned<T>`].
+///
+/// # Panics
+///
+/// * `source.len()` is ≥2**32
 pub fn tok<P, T, S, D>(source: &mut String, prefix: P, data: D, suffix: S) -> Spanned<T>
 where
     P: AsRef<str>,
     S: AsRef<str>,
     D: FnOnce(&mut String) -> T,
 {
-    let start = source.len();
+    let start = u32::try_from(source.len()).unwrap();
     source.push_str(prefix.as_ref());
     let node = data(source);
     source.push_str(suffix.as_ref());
-    Spanned::new(node, start, source.len())
+    Spanned::new(node, start, u32::try_from(source.len()).unwrap())
 }
 
 /// Builds a [`Spanned<Argument>`].
@@ -113,6 +117,10 @@ where
 }
 
 /// Builds a [`Span`].
+///
+/// # Panics
+///
+/// * `source.len()` is ≥2**32
 pub fn tok_span<T, P, S>(source: &mut String, prefix: P, text: T, suffix: S) -> Span
 where
     T: AsRef<str>,
@@ -120,16 +128,20 @@ where
     S: AsRef<str>,
 {
     source.push_str(prefix.as_ref());
-    let start = source.len();
+    let start = u32::try_from(source.len()).unwrap();
     source.push_str(text.as_ref());
-    let end = source.len();
+    let end = u32::try_from(source.len()).unwrap();
     source.push_str(suffix.as_ref());
     Span { start, end }
 }
 
 /// Builds a [`Spanned<Token>`] using [`Token::Text`].
+///
+/// # Panics
+///
+/// * `source.len()` is ≥2**32
 pub fn tok_text(source: &mut String, text: impl AsRef<str>) -> Spanned<Token> {
-    let start = source.len();
+    let start = u32::try_from(source.len()).unwrap();
     source.push_str(text.as_ref());
-    Spanned::new(Token::Text, start, source.len())
+    Spanned::new(Token::Text, start, u32::try_from(source.len()).unwrap())
 }

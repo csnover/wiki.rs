@@ -104,8 +104,9 @@ impl<'s> ExpandTemplates<'s> {
         after: &[Spanned<U>],
     ) -> Result {
         if let (Some(last_before), Some(first_after)) = (before.last(), after.first()) {
-            self.out
-                .write_str(&sp.source[last_before.span.end..first_after.span.start])?;
+            self.out.write_str(
+                &sp.source[last_before.span.end as usize..first_after.span.start as usize],
+            )?;
         }
         Ok(())
     }
@@ -657,7 +658,7 @@ pub(crate) fn calc_prefix_suffix<T, U>(
         .map(|last| last.span.end)
         .or_else(|| begin.last().map(|last| last.span.end))
         .unwrap_or(span.end);
-    let prefix = span.start..first;
-    let suffix = last..span.end;
+    let prefix = span.start as usize..first as usize;
+    let suffix = last as usize..span.end as usize;
     (prefix, suffix)
 }

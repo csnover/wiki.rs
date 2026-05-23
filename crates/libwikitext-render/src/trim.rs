@@ -73,7 +73,7 @@ impl<'a, W: Surrogate<Error> + ?Sized> Trim<'a, W> {
             let content = &sp.source[token.span.into_range()];
             self.last_ws.push(Stored::Memoised(
                 content.to_owned(),
-                Spanned::new(token.node, 0, content.len()),
+                Spanned::new(token.node, 0, u32::try_from(content.len()).unwrap()),
             ));
         }
     }
@@ -110,7 +110,10 @@ impl<'a, W: Surrogate<Error> + ?Sized> Trim<'a, W> {
 
         // The character part
         if end != 0 {
-            let span = Span::new(span.start + start, span.start + end);
+            let span = Span::new(
+                span.start + u32::try_from(start).unwrap(),
+                span.start + u32::try_from(end).unwrap(),
+            );
             let text = &text[start..end];
             self.flush(state)?;
             if IS_GENERATED {
@@ -122,7 +125,7 @@ impl<'a, W: Surrogate<Error> + ?Sized> Trim<'a, W> {
 
         // The whitespace part
         if end != text.len() {
-            let span = Span::new(span.start + end, span.end);
+            let span = Span::new(span.start + u32::try_from(end).unwrap(), span.end);
             debug_assert!(text[end..].bytes().all(|c| c.is_ascii_whitespace()));
             self.store(
                 sp,

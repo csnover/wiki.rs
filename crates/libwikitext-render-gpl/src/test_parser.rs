@@ -101,7 +101,7 @@ pub(super) enum Chunk<'input> {
         /// The name of the test.
         name: &'input str,
         /// The byte position of the test in the test file.
-        pos: usize,
+        pos: u32,
         /// The subsections of the test.
         sections: Sections<'input>,
     },
@@ -326,7 +326,11 @@ peg::parser! {grammar testfile() for str {
         }
     }
 
-    Ok(Chunk::Test { name: name.trim_ascii_end(), pos, sections })
+    Ok(Chunk::Test {
+        name: name.trim_ascii_end(),
+        pos: u32::try_from(pos).unwrap(),
+        sections
+    })
   }
 
   rule section() -> Section<'input>

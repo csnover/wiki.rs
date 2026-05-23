@@ -281,19 +281,19 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// etc.
     rule heading(ctx: &Context) -> Vec<Spanned<Token>>
     = t:spanned(<
-      s:spanned(<$("="+)>)
+      s:spanned(<"="+ { Token::Text }>)
       // If `inlineline` matches, `e` needs to see at least one `=` since
       // otherwise this would also match some non-heading template argument on a
       // new line that starts with a `=`. If it is just an “oops, all `=`”
       // header, `c` will be `None` and then `s` needs to be at least 3 long for
       // the same reason
-      ce:(c:inlineline(&ctx.with_h())? e:spanned(<$("="+)>) { (c, e) })?
-      &assert(ce.is_some() || s.len() > 2, "heading")
+      ce:(c:inlineline(&ctx.with_h())? e:spanned(<"="+ { Token::Text }>) { (c, e) })?
+      &assert(ce.is_some() || s.span.len() > 2, "heading")
       {
         let (s, c, e, level) = if let Some((c, e)) = ce {
-            (s.span, c, e.span, s.len().min(e.len()))
+            (s.span, c, e.span, s.span.len().min(e.span.len()))
         } else {
-            let level = (s.len() - 1) / 2;
+            let level = (s.span.len() - 1) / 2;
             let e = Span::new(s.span.start + level, s.span.end);
             let s = Span::new(s.span.start, s.span.start + level);
             (s, None, e, level)
@@ -1242,7 +1242,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         let content = if is_end {
             None
         } else {
-            find_end_tag(&input[t.span.end..], name, str::eq_ignore_ascii_case)
+            find_end_tag(&input[t.span.end as usize..], name, str::eq_ignore_ascii_case)
         };
 
         let mode = if name.eq_ignore_ascii_case("includeonly") {
@@ -1263,7 +1263,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     // should be equivalent to emitting an HTML `<pre>` at the
                     // output stage.
                     let pre_hack = content.is_some_and(|_| {
-                        input[..t.span.start].ends_with("<pre")
+                        input[..t.span.start as usize].ends_with("<pre")
                     });
 
                     // Discard the tag, parse the content
@@ -1478,8 +1478,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                 RuleResult::Matched(after_end, Spanned::new(Token::Extension {
                     name,
                     attributes,
-                    content: Some(Span::new(t.span.end, t.span.end + content_len))
-                }, t.span.start, after_end))
+                    content: Some(Span::new(t.span.end, t.span.end + u32::try_from(content_len).unwrap()))
+                }, t.span.start, u32::try_from(after_end).unwrap()))
             }
 
             Token::EndTag { name } if contains_ignore_case(&HTML5_TAGS, &input[name.into_range()]) => {
@@ -1596,7 +1596,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     let name = Spanned {
                         node: AnnoAttribute {
                             name: either::Left("name"),
-                            value: Some(Span::new(name.end - name_attr.len(), name.end))
+                            value: Some(Span::new(name.end - u32::try_from(name_attr.len()).unwrap(), name.end))
                         },
                         span: name,
                     };
@@ -2357,7 +2357,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     = #{|input, pos| {
         if let Some(captures) = state.config.link_trail_pattern.captures(&input[pos..]).ok().flatten()
             && let Some(trail) = captures.get(1) {
-            RuleResult::Matched(pos + trail.end(), Span::new(pos, pos + trail.end()))
+            let end = pos + trail.end();
+            RuleResult::Matched(end, Span::new(u32::try_from(pos).unwrap(), u32::try_from(end).unwrap()))
         } else {
             RuleResult::Failed
         }
@@ -2560,7 +2561,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         // In `handleInternalLinks2`: T1500, T4095
         let consume_bracket = input[pos..].starts_with("]]]") && input[start..pos].contains('[');
         if consume_bracket {
-            RuleResult::Matched(pos + 1, Spanned::new(Token::Text, pos, pos + 1))
+            let pos32 = u32::try_from(pos).unwrap();
+            RuleResult::Matched(pos + 1, Spanned::new(Token::Text, pos32, pos32 + 1))
         } else {
             RuleResult::Failed
         }
@@ -2784,6 +2786,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     && (include_bracket || b != b')')
                 });
                 if let Some(end) = end {
+                    let end = u32::try_from(end).unwrap();
                     *span = Span::new(span.start, span.start + end + 1);
                 }
 
@@ -2796,7 +2799,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                     return RuleResult::Failed;
                 }
 
-                span.end
+                span.end as usize
             } else {
                 pos
             };
@@ -3085,9 +3088,9 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                         // TODO: Kinda seems like this should be using a more
                         // generic rule for Unicode space? But Parsoid only checks
                         // ASCII ' '.
-                        if at > 0 && input.as_bytes()[at - 1] == b' ' {
+                        if at > 0 && input.as_bytes()[at as usize - 1] == b' ' {
                             TextStylePosition::Space
-                        } else if at > 1 && input.as_bytes()[at - 2] == b' ' {
+                        } else if at > 1 && input.as_bytes()[at as usize - 2] == b' ' {
                             TextStylePosition::Orphan
                         } else {
                             TextStylePosition::Normal
@@ -3206,7 +3209,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// Wraps some `T` in a span.
     rule spanned<T>(r: rule<T>) -> Spanned<T>
     = start:position!() node:r() end:position!()
-    { Spanned::new(node, start, end) }
+    { Spanned::new(node, u32::try_from(start).unwrap(), u32::try_from(end).unwrap()) }
 }}
 
 /// Finds the start and end position of the next XML-like close tag which

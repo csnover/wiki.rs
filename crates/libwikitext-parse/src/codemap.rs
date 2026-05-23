@@ -7,16 +7,16 @@ use peg::str::LineCol;
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Span {
     /// The position in the codemap representing the first byte of the span.
-    pub start: usize,
+    pub start: u32,
     /// The position after the last byte of the span.
-    pub end: usize,
+    pub end: u32,
 }
 
 impl Span {
     /// Creates a new span.
     #[inline]
     #[must_use]
-    pub fn new(start: usize, end: usize) -> Self {
+    pub fn new(start: u32, end: u32) -> Self {
         Span { start, end }
     }
 
@@ -27,7 +27,7 @@ impl Span {
     // resolution fails in common use with `.into()` which eliminates any
     // benefit of using a standard conversion trait
     pub fn into_range(self) -> core::ops::Range<usize> {
-        self.start..self.end
+        self.start as usize..self.end as usize
     }
 
     /// Returns true if this span is empty.
@@ -40,7 +40,7 @@ impl Span {
     /// The length of the span, in bytes.
     #[inline]
     #[must_use]
-    pub fn len(self) -> usize {
+    pub fn len(self) -> u32 {
         self.end - self.start
     }
 
@@ -67,7 +67,7 @@ pub struct Spanned<T> {
 impl<T> Spanned<T> {
     /// Creates a new [`Spanned`].
     #[inline]
-    pub fn new(node: T, start: usize, end: usize) -> Self {
+    pub fn new(node: T, start: u32, end: u32) -> Self {
         Self {
             node,
             span: Span { start, end },
@@ -153,9 +153,8 @@ impl<'a> FileMap<'a> {
     ///
     /// * `pos` is out of range of the source
     #[must_use]
-    fn find_line(&self, pos: usize) -> usize {
-        assert!(pos <= self.source.len());
-        let pos = u32::try_from(pos).unwrap();
+    fn find_line(&self, pos: u32) -> usize {
+        assert!(pos as usize <= self.source.len());
         match self.lines.binary_search(&pos) {
             Ok(i) => i,
             Err(i) => i - 1,
@@ -169,14 +168,16 @@ impl<'a> FileMap<'a> {
     /// * `pos` is out of range of the source
     /// * `pos` is in the middle of a multi-byte character
     #[must_use]
-    pub fn find_line_col(&self, pos: usize) -> LineCol {
+    pub fn find_line_col(&self, pos: u32) -> LineCol {
         let line = self.find_line(pos);
         let line_span = self.line_span(line);
-        let column = self.source[line_span.start..pos].chars().count();
+        let column = self.source[line_span.start as usize..pos as usize]
+            .chars()
+            .count();
         LineCol {
             line: line + 1,
             column: column + 1,
-            offset: pos,
+            offset: pos as usize,
         }
     }
 
@@ -193,11 +194,11 @@ impl<'a> FileMap<'a> {
         self.lines
             .get(line)
             .map(|start| Span {
-                start: usize::try_from(*start).unwrap(),
+                start: *start,
                 end: self
                     .lines
                     .get(line + 1)
-                    .map_or(self.source.len(), |end| usize::try_from(*end).unwrap()),
+                    .map_or(u32::try_from(self.source.len()).unwrap(), |end| *end),
             })
             .unwrap()
     }
