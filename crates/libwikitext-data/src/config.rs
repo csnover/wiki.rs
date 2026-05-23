@@ -35,6 +35,62 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "references", "score", "section", "source", "syntaxhighlight", "templatedata",
         "templatestyles", "timeline"
     },
+    extra_words: phf::phf_map! {
+        "#default" => & ["default",], "$1px" => & ["img_width",],
+        "__expectwithoutscans__" => & ["expectwithoutscans",], "__keeptitle__" => &
+        ["keeptitle",], "all" => & ["pagesincategory_all",], "alt=$1" => & ["img_alt",],
+        "arg:" => & ["chart_arg",], "aya" => & ["a/ya",], "baseline" => &
+        ["img_baseline",], "bcp47" => & ["language_option_bcp47",], "border" => &
+        ["img_border",], "both" => & ["timef-both",], "bottom" => & ["img_bottom",],
+        "calendar" => & ["calendar",], "canonical" => & ["contentmodel_canonical",],
+        "center" => & ["img_center",], "centre" => & ["img_center",], "class=$1" => &
+        ["img_class",], "communityrequests" => & ["communityrequests",], "count" => &
+        ["count",], "data" => & ["chart_data",], "date" => & ["timef-date",], "dd2dms" =>
+        & ["dd2dms",], "deg2dd" => & ["deg2dd",], "disablecontrols=$1" => &
+        ["timedmedia_disablecontrols",], "e" => & ["e/",], "ega" => & ["e/ga",], "end=$1"
+        => & ["timedmedia_endtime",], "enframed" => & ["img_framed",], "eulruel" => &
+        ["eul/ruel",], "eunneun" => & ["eun/neun",], "euro" => & ["euro/ro",], "explode"
+        => & ["explode",], "files" => & ["pagesincategory_files",], "frame" => &
+        ["img_framed",], "framed" => & ["img_framed",], "frameless" => &
+        ["img_frameless",], "function" => & ["function",], "geolink" => & ["geolink",],
+        "gwawa" => & ["gwa/wa",], "insider" => & ["insider",], "isin" => & ["isin",],
+        "lang=$1" => & ["img_lang",], "left" => & ["img_left",], "len" => & ["len",],
+        "link=$1" => & ["img_link",], "local" => & ["contentmodel_local",], "loop" => &
+        ["timedmedia_loop",], "lossless" => & ["lossless",], "lossy=$1" => &
+        ["img_lossy",], "lqtpagelimit" => & ["lqtpagelimit",], "middle" => &
+        ["img_middle",], "msg:" => & ["msg",], "msgnw:" => & ["msgnw",], "muted" => &
+        ["timedmedia_muted",], "noerror" => & ["defaultsort_noerror",
+        "displaytitle_noerror",], "none" => & ["img_none",], "noreplace" => &
+        ["defaultsort_noreplace", "shortdesc_noreplace", "displaytitle_noreplace",],
+        "nosep" => & ["nocommafysuffix",], "numberoffunctions" => &
+        ["magic_count_functions",], "numberofimplementations" => &
+        ["magic_count_implementations",], "numberoflanguages" => &
+        ["magic_count_languages",], "numberofobjects" => & ["magic_count_all",],
+        "numberoftestcases" => & ["magic_count_testers",], "numberoftypes" => &
+        ["magic_count_types",], "page $1" => & ["img_page",], "page=$1" => &
+        ["img_page",], "pagebanner" => & ["pagebanner",], "pages" => &
+        ["pagesincategory_pages",], "pagesinnamespace:" => & ["pagesinnamespace",],
+        "pagesinns:" => & ["pagesinnamespace",], "pagesusingpendingchanges" => &
+        ["pagesusingpendingchanges",], "path" => & ["url_path",], "phonos" => &
+        ["phonos",], "pos" => & ["pos",], "pretty" => & ["timef-pretty",], "primary" => &
+        ["primary",], "query" => & ["url_query",], "r" => & ["rawsuffix",], "raw:" => &
+        ["raw",], "replace" => & ["replace",], "right" => & ["img_right",], "rpos" => &
+        ["rpos",], "safesubst" => & ["safesubst",], "start=$1" => &
+        ["timedmedia_starttime",], "sub" => & ["img_sub", "sub",], "subcats" => &
+        ["pagesincategory_subcats",], "subst" => & ["subst",], "sup" => &
+        ["img_super",], "super" => & ["img_super",], "switchcountry" => &
+        ["switchcountry",], "switchlanguage" => & ["switchlanguage",], "text-bottom" => &
+        ["img_text_bottom",], "text-top" => & ["img_text_top",], "thumb" => &
+        ["img_thumbnail",], "thumb=$1" => & ["img_manualthumb",], "thumbnail" => &
+        ["img_thumbnail",], "thumbnail=$1" => & ["img_manualthumb",], "thumbtime=$1" => &
+        ["timedmedia_thumbtime",], "time" => & ["timef-time",], "top" => & ["img_top",],
+        "translatablepage" => & ["translatablepage",], "translation" => &
+        ["translation",], "upright" => & ["img_upright",], "upright $1" => &
+        ["img_upright",], "upright=$1" => & ["img_upright",], "urldecode" => &
+        ["urldecode",], "useliquidthreads" => & ["useliquidthreads",], "usertestwiki" =>
+        & ["usertestwiki",], "wiki" => & ["url_wiki",], "wikifunctionlabel" => &
+        ["wikifunctionlabel",], "wikifunctionlabeldesc" => & ["wikifunctionlabeldesc",]
+    },
     function_hooks: phf::phf_map! {
         "anchorencode" => "anchorencode", "assessment" => "assessment", "babel" =>
         "babel", "basepagename" => "basepagename", "basepagenamee" => "basepagenamee",

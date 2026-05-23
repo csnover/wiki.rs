@@ -5,7 +5,10 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
 
 type MagicWords<'a> = HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>;
 
@@ -31,6 +34,26 @@ fn main() -> Result<(), DisplayError> {
         .into_iter()
         .map(|word| (word.name, word.aliases))
         .collect::<HashMap<_, _>>();
+
+    let extra_words = {
+        let mut map = BTreeMap::<_, Vec<&str>>::new();
+        let extra_words = magic_words.iter().filter(|(word, _)| {
+            !query.double_underscores.contains(*word)
+                && !query.function_hooks.contains(*word)
+                && !query.variables.contains(*word)
+                && *word != "redirect"
+        });
+        for (word, aliases) in extra_words {
+            for alias in aliases {
+                let words = map.entry(alias.to_lowercase()).or_default();
+                words.push(word);
+            }
+        }
+        map.into_iter().map(|(alias, keys)| {
+            let keys = keys.into_iter().map(|key| key.to_lowercase());
+            quote!(#alias => &[#(#keys),*])
+        })
+    };
 
     // At some point, MW had no restriction at all on what these magic words
     // looked like, so some wikis actually used double fullwidth low lines
@@ -83,6 +106,9 @@ fn main() -> Result<(), DisplayError> {
             extension_tags: phf::phf_set! {
                 #(#extension_tags),*
             },
+            extra_words: phf::phf_map! {
+                #(#extra_words),*
+            },
             function_hooks: phf::phf_map! {
                 #(#function_hooks),*
             },
@@ -118,17 +144,19 @@ fn main() -> Result<(), DisplayError> {
 
 /// Converts a list of registered keywords into a map of aliases to those
 /// keywords.
-fn aliases_iter<'a, I, F>(
+fn aliases_iter<'a, F, I, T>(
     magic_words: &'a MagicWords<'_>,
     items: I,
     transform: &F,
 ) -> impl Iterator<Item = TokenStream>
 where
     F: for<'b> Fn(&'b Cow<'b, str>) -> &'b str,
-    I: IntoIterator<Item = Cow<'a, str>>,
+    I: IntoIterator<Item = T>,
+    T: AsRef<str>,
 {
     items.into_iter().flat_map(move |key| {
-        let aliases = magic_words.get(&key).map(Vec::as_slice).unwrap_or_default();
+        let key = key.as_ref();
+        let aliases = magic_words.get(key).map(Vec::as_slice).unwrap_or_default();
         let key = key.to_lowercase();
         aliases.iter().map(move |alias| {
             // TODO: Technically, some magic words are case-sensitive and other

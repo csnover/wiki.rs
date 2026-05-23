@@ -65,11 +65,10 @@ where
         // TODO: Actually evaluate the target (which requires making this helper
         // capable of evaluating wikitext, which is annoying).
         #[rustfmt::skip]
-        if let [Spanned { span, node: Token::Text }] = target {
-            let title = Title::new(self.config, &self.source[span.into_range()], None);
-            if title.is_local_category() {
-                return Ok(());
-            }
+        if let [Spanned { span, node: Token::Text }] = target
+            && let Ok(title) = Title::new(self.config, &self.source[span.into_range()], None)
+            && title.is_local_category() {
+            return Ok(());
         };
 
         visit_link(self, span, target, content, trail)

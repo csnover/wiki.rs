@@ -78,8 +78,13 @@ impl<'a> StackFrame<'a> {
 
     /// Clones a stack frame to use with different source text.
     pub fn clone_with_source(&'a self, source: FileMap<'a>) -> StackFrame<'a> {
-        let name =
-            Title::from_parts(self.name.namespace(), self.name.key(), Some(&source), None).unwrap();
+        let name = Title::from_parts_unchecked(
+            self.name.namespace(),
+            self.name.key(),
+            Some(&source),
+            None,
+        )
+        .unwrap();
         Self {
             arguments: self.arguments.clone(),
             children: <_>::default(),

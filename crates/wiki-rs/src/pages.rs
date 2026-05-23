@@ -54,6 +54,9 @@ pub(crate) enum Error {
     /// A templating engine error.
     #[error(transparent)]
     Template(#[from] sailfish::RenderError),
+    /// An title error.
+    #[error(transparent)]
+    Title(#[from] libwikitext_common::title::Error),
     /// A non-utf-8 header could not be converted to a string.
     #[error(transparent)]
     ToStr(#[from] axum::http::header::ToStrError),
@@ -74,6 +77,7 @@ impl IntoResponse for Error {
             Error::RenderTx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::RenderRx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
             Error::Pool(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Error::Title(error) => (StatusCode::BAD_REQUEST, format!("{error}")),
             Error::ToStr(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
         }
         .into_response()
@@ -139,7 +143,7 @@ pub(crate) async fn article(
         title: &'a str,
     }
 
-    let title = Title::new(state.database.config(), &name, None);
+    let title = Title::new(state.database.config(), &name, None)?;
     let article = state.database.get(&title)?;
 
     let redirect = redirect.as_deref() != Some("no");
@@ -147,7 +151,7 @@ pub(crate) async fn article(
         // Of course, the recorded redirect target is missing any fragment-part
         // so it is necessary to parse the article to actually get that.
         let target = call_renderer(&state, renderer::Command::Redirect { article })?;
-        let target = Title::new(state.database.config(), &target.content, None);
+        let target = Title::new(state.database.config(), &target.content, None)?;
         let query = format!("from={}", title.partial_url());
         let url = make_url(
             &state.base_uri,
@@ -468,7 +472,7 @@ pub(crate) async fn search(
     if page == 0
         && let Some(result) = single_result(&results)
     {
-        let target = Title::new(state.database.config(), result, None);
+        let target = Title::new(state.database.config(), result, None)?;
         let url = make_url(
             &state.base_uri,
             None,
@@ -534,7 +538,7 @@ pub(crate) async fn source(
     Path(name): Path<String>,
     Query(SourceQuery { mode, include }): Query<SourceQuery>,
 ) -> Result<impl IntoResponse, Error> {
-    let title = Title::new(state.database.config(), &name, None);
+    let title = Title::new(state.database.config(), &name, None)?;
     let article = state.database.get(&title).map_err(Error::Database)?;
 
     match mode {

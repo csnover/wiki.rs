@@ -285,6 +285,8 @@ mod cond {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
+        const DEFAULT: &str = "default";
+
         let lhs = arguments.eval(state, 0)?.map_or("".into(), decode_trim);
         let mut found = false;
         let mut consequent = None;
@@ -306,7 +308,7 @@ mod cond {
 
             // Default value can either be a bare final parameter or it
             // can be `#default = value`
-            if rhs == "#default" && is_kv {
+            if magic_matches(state, DEFAULT, &rhs) && is_kv {
                 consequent = Some(arg);
             }
 
@@ -350,7 +352,8 @@ mod ext {
     ) -> Result {
         if let (Some(name), Some(body)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
             let name = strip::kill(&name);
-            let name = name.trim_ascii().to_ascii_lowercase();
+            // Extension tags may contain non-ASCII characters
+            let name = name.trim_ascii().to_lowercase();
             match extension_tags::render_extension_tag(
                 state,
                 arguments.sp,
@@ -498,7 +501,9 @@ mod page {
     ) -> Result {
         if let Some(page_size) = get_article(state, arguments)?.map(|article| article.body().len())
         {
-            let no_separators = arguments.eval(state, 1)?.map(trim).as_deref() == Some("R");
+            let no_separators = arguments
+                .eval(state, 1)?
+                .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
             write!(out, "{}", format_number(page_size as f64, no_separators))?;
         }
         Ok(())
@@ -517,10 +522,12 @@ mod page {
         //  is not protected, the actual expiry time if it is protected, and the
         //  empty string if it doesn't exist.”
         let exists = arguments.eval(state, 1)?.map(trim).is_none_or(|page_name| {
-            state
-                .statics
-                .db
-                .contains(&Title::new(state.statics.db.config(), &page_name, None))
+            let Ok(title) = Title::new(state.statics.db.config(), &page_name, None) else {
+                // If creating the title fails then it falls back to the current
+                // page, which of course exists
+                return true;
+            };
+            state.statics.db.contains(&title)
         });
         if exists {
             write!(out, "infinity")?;
@@ -774,7 +781,9 @@ mod site {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let no_separators = arguments.eval(state, 0)?.map(trim).as_deref() == Some("R");
+        let no_separators = arguments
+            .eval(state, 0)?
+            .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
         write!(
             out,
             "{}",
@@ -790,7 +799,9 @@ mod site {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if !arguments.is_empty() {
-            let no_separators = arguments.eval(state, 1)?.map(trim).as_deref() == Some("R");
+            let no_separators = arguments
+                .eval(state, 1)?
+                .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
             write!(out, "{}", format_number(1.0, no_separators))?;
         }
 
@@ -879,15 +890,12 @@ mod string {
             type Err = anyhow::Error;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                if s.eq_ignore_ascii_case("R") {
-                    Ok(Self::REVERSE)
-                } else if s.eq_ignore_ascii_case("NOSEP") {
-                    Ok(Self::NO_SEPARATORS)
-                } else if s.eq_ignore_ascii_case("LOSSLESS") {
-                    Ok(Self::LOSSLESS)
-                } else {
-                    Err(anyhow::anyhow!("unknown flag '{s}'"))
-                }
+                Ok(match s {
+                    RAW_SUFFIX => Self::REVERSE,
+                    NO_SEPARATORS => Self::NO_SEPARATORS,
+                    LOSSLESS => Self::LOSSLESS,
+                    _ => return Err(anyhow::anyhow!("unknown flag '{s}'")),
+                })
             }
         }
 
@@ -929,8 +937,10 @@ mod string {
             let flags = {
                 let mut flags = Flags::empty();
                 for index in 1..=2 {
-                    if let Some(flag) = arguments.eval(state, index)?.map(trim) {
-                        match Flags::from_str(&flag) {
+                    if let Some(flag) = arguments.eval(state, index)?.and_then(|arg| {
+                        magic_flag(state, &[LOSSLESS, NO_SEPARATORS, RAW_SUFFIX], &arg)
+                    }) {
+                        match Flags::from_str(flag) {
                             Ok(flag) => flags |= flag,
                             Err(err) => log::warn!("#formatnum: {err}"),
                         }
@@ -958,17 +968,16 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(which) = arguments.eval(state, 0)?.map(trim) {
-            let config = state.statics.db.config();
             // TODO: This is supposed to check for /lang first,
             // then fall back to non-lang.
             let title = Title::new(
-                config,
-                &format!("{}{}", which.to_ascii_uppercase(), which),
-                Namespace::find_by_id(config, Namespace::MEDIAWIKI),
+                state.statics.db.config(),
+                &libphp_rs::ucfirst(&which),
+                Some(Namespace::MEDIAWIKI),
             );
 
-            let message = match state.statics.db.get(&title) {
-                Ok(article) => {
+            let message = match title.ok().map(|title| state.statics.db.get(&title)) {
+                Some(Ok(article)) => {
                     // TODO: Is this supposed to follow redirects?
                     // TODO: This should probably identify the frame by the
                     // title instead of anonymous text.
@@ -981,11 +990,13 @@ mod string {
                     .into_owned()
                     .into()
                 }
-                Err(DatabaseError::NotFound) => format_message(state.messages, [which], |key| {
-                    let index = key.parse::<usize>().unwrap();
-                    arguments.eval(state, index)
-                })?,
-                Err(err) => return Err(err)?,
+                None | Some(Err(DatabaseError::NotFound)) => {
+                    format_message(state.messages, [which], |key| {
+                        let index = key.parse::<usize>().unwrap();
+                        arguments.eval(state, index)
+                    })?
+                }
+                Some(Err(err)) => return Err(err)?,
             };
             write!(out, "{message}")?;
         }
@@ -1190,8 +1201,29 @@ mod string {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
+        const URL_PATH: &str = "url_path";
+        const URL_WIKI: &str = "url_wiki";
+
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            write!(out, "{}", super::url_encode(&strip::kill(&value)))?;
+            let value = strip::kill(&value);
+            match arguments
+                .eval(state, 1)?
+                .and_then(|arg| magic_flag(state, &[URL_PATH, URL_WIKI], &arg))
+            {
+                Some(URL_PATH) => {
+                    write!(out, "{}", libphp_rs::raw_url_encode(&value))?;
+                }
+                Some(URL_WIKI) => {
+                    write!(
+                        out,
+                        "{}",
+                        libwikitext_common::url_encode(&strtr(&value, &[(" ", "_")]))
+                    )?;
+                }
+                _ => {
+                    write!(out, "{}", libphp_rs::url_encode(&value))?;
+                }
+            }
         }
         Ok(())
     }
@@ -1322,7 +1354,7 @@ mod time {
             let local = arguments
                 .eval(state, 3)?
                 .map(trim)
-                .is_some_and(|local| local.trim_ascii() == "local");
+                .is_some_and(|local| !local.trim_ascii().is_empty());
 
             // 'Template:Date' sends garbage values to `#time` without an
             // `#iferror` guard to capture the errors.
@@ -1393,20 +1425,7 @@ mod title {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let query = arguments.eval(state, 1)?.map(trim);
-            let title = Title::new(state.statics.db.config(), &value, None);
-            let url = make_url(
-                &state.statics.base_uri,
-                state.statics.base_uri.scheme_str().or(Some("")),
-                format_args!("{}/{}", state.statics.paths.article, title.partial_url()),
-                query.as_deref(),
-                title.fragment(),
-            );
-            write!(out, "{url}")?;
-        }
-
-        Ok(())
+        url_impl(out, state, arguments, |uri| uri.scheme_str().or(Some("")))
     }
 
     /// `{{filepath: title [| 'nowiki'/size [| size/'nowiki']] }}`
@@ -1427,20 +1446,7 @@ mod title {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let query = arguments.eval(state, 1)?.map(trim);
-            let title = Title::new(state.statics.db.config(), &value, None);
-            let url = make_url(
-                &state.statics.base_uri,
-                Some(""),
-                format_args!("{}/{}", state.statics.paths.article, title.partial_url()),
-                query.as_deref(),
-                title.fragment(),
-            );
-            write!(out, "{url}")?;
-        }
-
-        Ok(())
+        url_impl(out, state, arguments, |_| Some(""))
     }
 
     /// `{{#ifexist: title | consequent (exists) | alternate }}`
@@ -1451,10 +1457,10 @@ mod title {
     ) -> Result {
         // log::trace!("#ifexist: '{value:?}'");
         let exists = arguments.eval(state, 0)?.map(trim).is_some_and(|value| {
-            state
-                .statics
-                .db
-                .contains(&Title::new(state.statics.db.config(), &value, None))
+            let Ok(title) = Title::new(state.statics.db.config(), &value, None) else {
+                return false;
+            };
+            state.statics.db.contains(&title)
         });
         if let Some(value) = arguments.eval(state, 1 + usize::from(!exists))?.map(trim) {
             write!(out, "{value}")?;
@@ -1469,20 +1475,7 @@ mod title {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let title = Title::new(state.statics.db.config(), &value, None);
-            let query = arguments.eval(state, 1)?.map(trim);
-            let url = make_url(
-                &state.statics.base_uri,
-                None,
-                format_args!("{}/{}", state.statics.paths.article, title.partial_url()),
-                query.as_deref(),
-                title.fragment(),
-            );
-            write!(out, "{url}")?;
-        }
-
-        Ok(())
+        url_impl(out, state, arguments, |_| None)
     }
 
     /// `{{NAMESPACE[:title] }}`
@@ -1533,7 +1526,10 @@ mod title {
         F: FnOnce(&'a Namespace, &Configuration) -> Option<&'a Namespace>,
     {
         let ns = if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            Title::new(state.statics.db.config(), &value, None).namespace()
+            let Ok(title) = Title::new(state.statics.db.config(), &value, None) else {
+                return Ok(());
+            };
+            title.namespace()
         } else {
             state.globals.title.namespace()
         };
@@ -1609,6 +1605,31 @@ mod title {
             arguments.eval(state, 0)?,
             arguments.eval(state, 1)?
         );
+        Ok(())
+    }
+
+    /// Common implementation for all URL generation functions.
+    #[inline]
+    fn url_impl(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+        scheme: impl FnOnce(&http::Uri) -> Option<&str>,
+    ) -> Result {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim)
+            && let Ok(title) = Title::new(state.statics.db.config(), &value, None)
+        {
+            let query = arguments.eval(state, 1)?.map(trim);
+            let url = make_url(
+                &state.statics.base_uri,
+                scheme(&state.statics.base_uri),
+                format_args!("{}/{}", state.statics.paths.article, title.partial_url()),
+                query.as_deref(),
+                title.fragment(),
+            );
+            write!(out, "{url}")?;
+        }
+
         Ok(())
     }
 }
@@ -1741,6 +1762,13 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "talkspacee" => title::talk_space,
 };
 
+/// Flag for lossless number formatting.
+const LOSSLESS: &str = "lossless";
+/// Flag for number output without delimiters.
+const NO_SEPARATORS: &str = "nocommafysuffix";
+/// Flag for raw number output.
+const RAW_SUFFIX: &str = "rawsuffix";
+
 /// Renders a parser function.
 pub fn call_parser_fn(
     out: &mut String,
@@ -1790,17 +1818,6 @@ pub fn call_parser_fn(
     }
 }
 
-/// Converts a `Result<T, E>` into a `Result<T, String>` to ignore errors like
-/// it’s 1995.
-fn on_error_resume_next<T, E: fmt::Display>(value: Result<T, E>) -> Result<T, String> {
-    value.map_err(|err| {
-        format!(
-            r#"<span class="error">{}</span>"#,
-            html_escape::encode_text(&err.to_string())
-        )
-    })
-}
-
 /// Decodes HTML entities and trims ASCII whitespace from the value.
 fn decode_trim(value: Cow<'_, str>) -> Cow<'_, str> {
     trim(value.map(decode_html))
@@ -1814,10 +1831,10 @@ fn get_article(
 ) -> Result<Option<Arc<Article>>> {
     Ok(if let Some(title) = arguments.eval(state, 0)?.map(trim) {
         let title = Title::new(state.statics.db.config(), &title, None);
-        match state.statics.db.get(&title) {
-            Ok(article) => Some(article),
-            Err(DatabaseError::NotFound) => None,
-            Err(err) => return Err(err.into()),
+        match title.ok().map(|title| state.statics.db.get(&title)) {
+            Some(Ok(article)) => Some(article),
+            None | Some(Err(DatabaseError::NotFound)) => None,
+            Some(Err(err)) => return Err(err.into()),
         }
     } else {
         state
@@ -1825,6 +1842,54 @@ fn get_article(
             .db
             .contains(&state.globals.title)
             .then(|| Arc::clone(&state.globals.article))
+    })
+}
+
+/// Returns a function that tries to match the given `alias` to any of the
+/// canonical representations given in `any_of`. Returns the matched canonical
+/// representation, or `None` if the given `alias` did not match.
+fn magic_flag(
+    state: &State<'_, '_, '_>,
+    any_of: &[&'static str],
+    alias: &str,
+) -> Option<&'static str> {
+    let alias = alias.trim_ascii().to_lowercase();
+    state
+        .statics
+        .db
+        .config()
+        .extra_words
+        .get(&alias)
+        .and_then(|canonical| {
+            any_of
+                .iter()
+                .find(|candidate| canonical.contains(candidate))
+                .copied()
+        })
+}
+
+/// Returns a function that tries to convert the given `alias` to a canonical
+/// representation, returning `true` if any of the possible representations is
+/// `flag`.
+fn magic_matches(state: &State<'_, '_, '_>, flag: &'static str, alias: &str) -> bool {
+    let alias = alias.trim_ascii().to_lowercase();
+    state
+        .statics
+        .db
+        .config()
+        .extra_words
+        .get(&alias)
+        .is_some_and(|canonical| canonical.contains(&flag))
+}
+
+/// Converts a `Result<T, E>` into a `Result<T, String>` to ignore errors like
+/// it’s 1995.
+fn on_error_resume_next<T, E: fmt::Display>(value: Result<T, E>) -> Result<T, String> {
+    value.map_err(|err| {
+        format!(
+            r#"<span class="error">{}</span>"#,
+            html_escape::encode_text(&err.to_string())
+        )
     })
 }
 

@@ -319,17 +319,26 @@ impl<'config> MockDatabase<'config> {
     }
 
     /// Inserts an `article` to the database.
+    ///
+    /// # Panics
+    ///
+    /// * `article` has an invalid title
     pub fn insert(&mut self, article: Article) {
         let title = Title::new(self.config, article.title(), None)
+            .expect("valid title")
             .key()
             .to_owned();
         self.articles.insert(title.clone(), Arc::new(article));
     }
 
     /// Removes an `article` with the given title from the database.
+    ///
+    /// # Panics
+    ///
+    /// * `title` is an invalid title
     pub fn remove(&mut self, title: &str) {
         let title = Title::new(self.config, title, None);
-        self.articles.remove(title.key());
+        self.articles.remove(title.expect("valid title").key());
     }
 }
 

@@ -118,7 +118,7 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
         // log::trace!("mw.expandTemplate({frame_id:?}, {title:?}, {args:?})");
 
         let title_str = title.to_str()?;
-        if !Title::is_valid(self.db().config(), title_str) {
+        if Title::new(self.db().config(), title_str, None).is_err() {
             return Err(anyhow::anyhow!(r#"expandTemplate: invalid title "{title_str}""#).into());
         }
 
@@ -247,8 +247,10 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
     ) -> Result<Value<'gc>, VmError<'gc>> {
         let db = self.db();
         let title = title.to_str()?;
-        let title_obj = Title::new(db.config(), title, None);
-        let Ok(article) = db.get(&title_obj) else {
+        let Some(article) = Title::new(db.config(), title, None)
+            .ok()
+            .and_then(|title| db.get(&title).ok())
+        else {
             return Err(anyhow::anyhow!(
                 "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
             ))?;
@@ -282,13 +284,9 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
         }
 
         let db = self.db();
-        let title = Title::new(
-            db.config(),
-            name.to_str()?,
-            Namespace::find_by_id(db.config(), Namespace::MODULE),
-        );
+        let title = Title::new(db.config(), name.to_str()?, Some(Namespace::MODULE));
 
-        if let Ok(article) = db.get(&title)
+        if let Some(article) = title.ok().and_then(|title| db.get(&title).ok())
             && article.model() == "Scribunto"
         {
             Closure::load_with_env(
@@ -334,7 +332,7 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
                 self.db().config(),
                 title.into_string(ctx).unwrap().to_str()?,
                 None,
-            )
+            )?
         } else {
             sp.name(frame_id)?
         };

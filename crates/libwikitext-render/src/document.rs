@@ -469,11 +469,10 @@ impl Surrogate<Error> for Document {
         trail: Option<Spanned<&str>>,
     ) -> Result {
         let target = sp.eval(state, target)?.map(title_decode);
-        if !Title::is_valid(state.statics.db.config(), &target) {
-            return self.adopt_text(state, sp, span, &sp.source[span.into_range()]);
-        }
         let target = state.globals.title.join(&target);
-        let title = Title::new(state.statics.db.config(), &target, None);
+        let Ok(title) = Title::new(state.statics.db.config(), &target, None) else {
+            return self.adopt_text(state, sp, span, &sp.source[span.into_range()]);
+        };
         self.text_style_emitter.push(<_>::default());
         let force_link = target.starts_with(':');
         if !force_link && title.is_local_category() {

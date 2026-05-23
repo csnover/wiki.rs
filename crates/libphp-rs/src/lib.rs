@@ -954,6 +954,23 @@ pub fn intval(n: &str, radix: Option<u32>) -> Result<(i64, &str), core::num::Par
     i64::from_str_radix(&n[..end], radix).map(|value| (value, &n[end..]))
 }
 
+/// Encodes the `input` similar to
+/// [`rawurlencode`](https://www.php.net/rawurlencode).
+#[inline]
+#[must_use]
+pub fn raw_url_encode(input: &str) -> percent_encoding::PercentEncode<'_> {
+    raw_url_encode_bytes(input.as_bytes())
+}
+
+/// Encodes the `input` similar to
+/// [`rawurlencode`](https://www.php.net/rawurlencode).
+#[inline]
+#[must_use]
+pub fn raw_url_encode_bytes(input: &[u8]) -> percent_encoding::PercentEncode<'_> {
+    const ALPHABET: percent_encoding::AsciiSet = URL_ENCODE_ALPHABET.add(b' ').remove(b'~');
+    percent_encoding::percent_encode(input, &ALPHABET)
+}
+
 /// Finds and replaces substrings in the input like [`strtr`](https://php.net/strtr).
 /// To avoid extra temporary allocation, `replacements` should be ordered from
 /// longest to shortest match.
@@ -1039,6 +1056,82 @@ pub fn strval(n: f64) -> String {
         }
     }
 }
+
+/// Uppercases the first letter of the given `text` if it is ASCII, similar to
+/// [`ucfirst`](https://www.php.net/ucfirst).
+#[inline]
+#[must_use]
+pub fn ucfirst(text: &str) -> Cow<'_, str> {
+    let mut iter = text.chars();
+    if let Some(first) = iter.next()
+        && first.to_ascii_uppercase() != first
+    {
+        Cow::Owned(format!("{}{}", first.to_ascii_uppercase(), iter.as_str()))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+/// Encodes the `input` similar to [`urlencode`](https://www.php.net/urlencode).
+#[inline]
+#[must_use]
+pub fn url_encode(input: &str) -> Cow<'_, str> {
+    url_encode_alphabet(input, &URL_ENCODE_ALPHABET)
+}
+
+/// Encodes the `input` similar to [`urlencode`](https://www.php.net/urlencode)
+/// using a custom alphabet.
+#[inline]
+#[must_use]
+pub fn url_encode_alphabet<'a>(
+    input: &'a str,
+    alphabet: &'static percent_encoding::AsciiSet,
+) -> Cow<'a, str> {
+    url_encode_bytes_alphabet(input.as_bytes(), alphabet)
+}
+
+/// Encodes the `input` similar to [`urlencode`](https://www.php.net/urlencode).
+#[inline]
+#[must_use]
+pub fn url_encode_bytes(input: &[u8]) -> Cow<'_, str> {
+    url_encode_bytes_alphabet(input, &URL_ENCODE_ALPHABET)
+}
+
+/// Encodes the `input` similar to [`urlencode`](https://www.php.net/urlencode),
+/// using a custom alphabet.
+#[must_use]
+pub fn url_encode_bytes_alphabet<'a>(
+    input: &'a [u8],
+    alphabet: &'static percent_encoding::AsciiSet,
+) -> Cow<'a, str> {
+    let mut flushed = 0;
+    let mut out = String::new();
+    for space in memchr::memchr_iter(b' ', input) {
+        out.extend(percent_encoding::percent_encode(
+            &input[flushed..space],
+            alphabet,
+        ));
+        out.push('+');
+        flushed = space + " ".len();
+    }
+    if flushed == 0 {
+        Cow::from(percent_encoding::percent_encode(input, alphabet))
+    } else {
+        out.extend(percent_encoding::percent_encode(
+            &input[flushed..],
+            alphabet,
+        ));
+        Cow::Owned(out)
+    }
+}
+
+/// The alphabet of characters to percent-encode when encoding URLs used by PHP
+/// `urlencode`.
+pub const URL_ENCODE_ALPHABET: percent_encoding::AsciiSet = percent_encoding::NON_ALPHANUMERIC
+    .remove(b' ')
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.');
 
 #[cfg(test)]
 mod tests {

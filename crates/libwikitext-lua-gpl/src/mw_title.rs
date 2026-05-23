@@ -139,9 +139,12 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
     ) -> Result<Value<'gc>, VmError<'gc>> {
         log::trace!("mw.title.getContent({full_text:?})");
         let title = Title::new(self.db().config(), full_text.to_str()?, None);
-        Ok(self.db().get(&title).map_or(Value::Nil, |article| {
-            Value::String(ctx.intern(article.body().as_bytes()))
-        }))
+        Ok(title
+            .ok()
+            .and_then(|title| self.db().get(&title).ok())
+            .map_or(Value::Nil, |article| {
+                Value::String(ctx.intern(article.body().as_bytes()))
+            }))
     }
 
     /// Gets the ‘expensive’ data for an article.
@@ -152,8 +155,9 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
     ) -> Result<Table<'gc>, VmError<'gc>> {
         // log::trace!("getExpensiveData({text:?})");
         let db = self.db();
-        let title = Title::new(db.config(), text.to_str()?, None);
-        let article = db.get(&title).ok();
+        let article = Title::new(db.config(), text.to_str()?, None)
+            .ok()
+            .and_then(|title| db.get(&title).ok());
         let article = article.as_deref();
 
         Ok(table! {
@@ -175,18 +179,18 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         ctx: Context<'gc>,
         text: VmString<'_>,
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        let title = Title::new(self.db().config(), text.to_str()?, None);
-        Ok(
-            if [Namespace::FILE, Namespace::MEDIA].contains(&title.namespace().id) {
-                table! {
-                    using ctx;
-                    exists = false
-                }
-                .into()
-            } else {
-                false.into()
-            },
-        )
+        let is_file = Title::new(self.db().config(), text.to_str()?, None)
+            .is_ok_and(|title| matches!(title.namespace().id, Namespace::FILE | Namespace::MEDIA));
+
+        Ok(if is_file {
+            table! {
+                using ctx;
+                exists = false
+            }
+            .into()
+        } else {
+            false.into()
+        })
     }
 
     /// Creates a URL for an article with the given title text and optional
@@ -233,15 +237,20 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
             _ => return Err("invalid 'which' argument".into_value(ctx).into()),
         };
 
-        let title = Title::new(self.db().config(), text.to_str()?, None);
-        let url = make_url(
-            &base_uri,
-            proto,
-            title.partial_url(),
-            query.as_deref(),
-            title.fragment(),
-        );
-        Ok(url.into_value(ctx))
+        Ok(
+            if let Ok(title) = Title::new(self.db().config(), text.to_str()?, None) {
+                make_url(
+                    &base_uri,
+                    proto,
+                    title.partial_url(),
+                    query.as_deref(),
+                    title.fragment(),
+                )
+                .into_value(ctx)
+            } else {
+                Value::Nil
+            },
+        )
     }
 
     /// Makes a new title object for an article with the given title text,
@@ -258,12 +267,17 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
     ) -> Result<Value<'gc>, VmError<'gc>> {
         // log::trace!("mw.title.makeTitle({ns:?}, {text:?}, {fragment:?}, {interwiki:?})");
 
-        let ns = namespace_from_value(self.db().config(), ctx, ns)?;
+        let db = self.db();
+        let config = db.config();
+        let ns = namespace_from_value(config, ctx, ns)?;
         let text = text.to_str()?;
         let fragment = fragment.map(VmString::to_str).transpose()?;
         let interwiki = interwiki.map(VmString::to_str).transpose()?;
-        let title = Title::from_parts(ns, text, fragment, interwiki)?;
-        make_title_table(ctx, self.current_title(ctx), &title)
+        if let Ok(title) = Title::from_parts(config, ns, text, fragment, interwiki) {
+            make_title_table(ctx, self.current_title(ctx), &title)
+        } else {
+            Ok(Value::Nil)
+        }
     }
 
     /// Makes a new Lua title object for an article.
@@ -293,9 +307,11 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         let default_ns = default_ns
             .map(|ns| namespace_from_value(config, ctx, ns))
             .transpose()?;
-        let title = Title::new(config, text, default_ns);
-
-        make_title_table(ctx, self.current_title(ctx), &title)
+        if let Ok(title) = Title::new(config, text, default_ns.map(|ns| ns.id)) {
+            make_title_table(ctx, self.current_title(ctx), &title)
+        } else {
+            Ok(Value::Nil)
+        }
     }
 
     /// Returns the protection levels of the article with the given title text?
@@ -342,10 +358,11 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         // that breaks basically every module since they blindly expect to get
         // a table.
         let db = self.db();
-        if let Ok(target) = db.get(&Title::new(db.config(), text.to_str()?, None))
+        if let Ok(title) = Title::new(db.config(), text.to_str()?, None)
+            && let Ok(target) = db.get(&title)
             && let Some(target) = &target.redirect()
+            && let Ok(title) = Title::new(db.config(), target, None)
         {
-            let title = Title::new(db.config(), target, None);
             make_title_table(ctx, self.current_title(ctx), &title)
         } else {
             Ok(Value::Nil)

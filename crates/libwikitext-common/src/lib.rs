@@ -40,8 +40,7 @@ pub fn anchor_encode(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
             ],
         ),
         AnchorEncodeMode::Legacy => {
-            Cow::from(percent_encoding::utf8_percent_encode(id, &PHP_ALPHABET))
-                .map(|id| strtr(id, &[("%3A", ":"), ("%20", "_"), ("%", ".")]))
+            libphp_rs::url_encode(id).map(|id| strtr(id, &[("%3A", ":"), ("+", "_"), ("%", ".")]))
         }
     }
 }
@@ -495,11 +494,20 @@ pub fn url_decode(input: &str) -> Cow<'_, str> {
     percent_encoding::percent_decode_str(input).decode_utf8_lossy()
 }
 
+/// Percent-encodes a URL part using the MediaWiki rules.
+///
+/// This is equivalent to `wfUrlencode`.
+#[inline]
+#[must_use]
+pub fn url_encode(input: &str) -> Cow<'_, str> {
+    libphp_rs::url_encode_alphabet(input, &WM_ALPHABET)
+}
+
 /// Percent-encodes a URL part.
 #[inline]
 #[must_use]
-pub fn url_encode(input: &str) -> percent_encoding::PercentEncode<'_> {
-    percent_encoding::utf8_percent_encode(input, &ALPHABET)
+pub fn url_encode_bytes(input: &[u8]) -> Cow<'_, str> {
+    libphp_rs::url_encode_bytes_alphabet(input, &WM_ALPHABET)
 }
 
 /// Percent-encodes a URL part following the MediaWiki rules for sanitized URLs,
@@ -527,18 +535,11 @@ pub fn url_encode_sanitized(input: &str) -> Cow<'_, str> {
     }
 }
 
-/// Percent-encodes a URL part.
-#[inline]
-#[must_use]
-pub fn url_encode_bytes(input: &[u8]) -> percent_encoding::PercentEncode<'_> {
-    percent_encoding::percent_encode(input, &ALPHABET)
-}
-
 /// The alphabet of characters to percent-encode when encoding URLs.
 ///
 /// This is a combination of “all non-alphanumeric characters except `-_.`” from
 /// PHP’s `urlencode`, and then MediaWiki also excludes `!$()*,/:;@~`.
-const ALPHABET: percent_encoding::AsciiSet = PHP_ALPHABET
+const WM_ALPHABET: percent_encoding::AsciiSet = libphp_rs::URL_ENCODE_ALPHABET
     .remove(b'!')
     .remove(b'$')
     .remove(b'(')
@@ -550,13 +551,6 @@ const ALPHABET: percent_encoding::AsciiSet = PHP_ALPHABET
     .remove(b';')
     .remove(b'@')
     .remove(b'~');
-
-/// The alphabet of characters to percent-encode when encoding URLs used by PHP
-/// `urlencode`.
-const PHP_ALPHABET: percent_encoding::AsciiSet = percent_encoding::NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.');
 
 #[cfg(test)]
 mod tests {

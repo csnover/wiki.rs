@@ -41,6 +41,11 @@ pub struct ConfigurationSource {
     /// Tag names of registered extension tags, lowercased, by alias.
     pub extension_tags: Set<&'static str>,
 
+    /// Registered magic words used for flags and other miscellany, lowercased,
+    /// by alias. Because the same alias can be used for different things in
+    /// different places, the result of a map here is a list of possibilities.
+    pub extra_words: Map<&'static str, &'static [&'static str]>,
+
     /// Registered function hooks, lowercased, by alias.
     pub function_hooks: Map<&'static str, &'static str>,
 

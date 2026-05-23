@@ -432,7 +432,7 @@ pub fn render_article(
     };
 
     let sp = StackFrame::new(
-        Title::new(statics.db.config(), article.title(), None),
+        Title::new(statics.db.config(), article.title(), None)?,
         FileMap::new(article.body()),
     );
 
@@ -472,13 +472,13 @@ pub fn render_string(
     );
 
     let mut sp = StackFrame::new(
-        Title::new(statics.db.config(), page_name, None),
+        Title::new(statics.db.config(), page_name, None)?,
         FileMap::new(source),
     );
     let sp = if let Some(args) = args {
         let source = core::mem::replace(&mut sp.source, FileMap::new(args));
         sp.chain(
-            Title::new(statics.db.config(), "(include-eval)", None),
+            Title::new(statics.db.config(), "(include-eval)", None)?,
             source,
             &kvs,
         )?
@@ -720,6 +720,10 @@ pub enum Error {
     /// An error occurred parsing or formatting a date.
     #[error(transparent)]
     Time(#[from] libphp_rs::DateTimeError),
+
+    /// An error occurred parsing a [`Title`].
+    #[error(transparent)]
+    Title(#[from] libwikitext_common::title::Error),
 }
 
 /// Page rendering strategy.
@@ -943,7 +947,7 @@ struct ArticleState {
 impl ArticleState {
     /// Creates a new article processing state for the given `article`.
     fn new(config: &Configuration, article: Arc<Article>) -> Self {
-        let title = Title::new(config, article.title(), None);
+        let title = Title::new(config, article.title(), None).expect("valid title");
         Self {
             article,
             categories: <_>::default(),
@@ -975,7 +979,7 @@ pub fn resolve_redirects<Db: DatabaseProvider>(
     for _ in 0..2 {
         if let Some(target) = article.redirect() {
             // log::trace!("Redirection #{} to {target}", attempt + 1);
-            article = db.get(&Title::new(db.config(), target, None))?;
+            article = db.get(&Title::new(db.config(), target, None)?)?;
         } else {
             break;
         }

@@ -6,6 +6,29 @@ use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use std::borrow::Cow;
 
+/// A title parsing error.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The title contains illegal characters.
+    #[error("bad characters in title")]
+    BadChars,
+    /// The title is empty inside, much like myself.
+    #[error("empty title")]
+    Empty,
+    /// An error occurred writing to an internal buffer.
+    #[error(transparent)]
+    Fmt(#[from] core::fmt::Error),
+    /// The title is too long.
+    #[error("title is too long")]
+    Length,
+    /// The title contains relative path traversal segments.
+    #[error("relative path traversal segments in title")]
+    Path,
+    /// The title contains a signature insertion sequence.
+    #[error("signature insertion sequence in title")]
+    Signature,
+}
+
 /// The title casing strategy for a namespace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NamespaceCase {
@@ -238,33 +261,102 @@ impl Title {
     ///
     /// # Errors
     ///
-    /// * A write to the internal buffer fails
+    /// * the parts are invalid
+    /// * writing to the internal buffer fails
     ///
     /// # Panics
     ///
     /// * `title.len() > u16::MAX`
     pub fn from_parts(
+        config: &Configuration,
         namespace: &'static Namespace,
         title: &str,
         fragment: Option<&str>,
         interwiki: Option<&str>,
-    ) -> Result<Self, core::fmt::Error> {
+    ) -> Result<Self, Error> {
         let interwiki = interwiki.map(normalize);
         let title = normalize(title);
         let fragment = fragment.map(normalize);
-        Self::new_normalized(namespace, &title, fragment.as_deref(), interwiki.as_deref())
+        Self::new_normalized(
+            config,
+            namespace,
+            &title,
+            fragment.as_deref(),
+            interwiki.as_deref(),
+        )
     }
 
-    /// Creates a new [`Title`] from a title string and optional default
-    /// namespace.
+    /// Creates a title from a known namespace plus text parts which are already
+    /// normalised, without checking if the parts are valid.
     ///
-    /// In MediaWiki, this is like `newFromText`.
+    /// # Errors
+    ///
+    /// * writing to the internal buffer fails
     ///
     /// # Panics
     ///
-    /// * [`Self::from_parts`] returns an error
-    #[must_use]
-    pub fn new(config: &Configuration, text: &str, default_ns: Option<&'static Namespace>) -> Self {
+    /// * `title.len() > u16::MAX`
+    pub fn from_parts_unchecked(
+        namespace: &'static Namespace,
+        title: &str,
+        fragment: Option<&str>,
+        interwiki: Option<&str>,
+    ) -> Result<Self, Error> {
+        let mut text = String::with_capacity(title.len());
+
+        let iw_delimiter = interwiki
+            .map(|interwiki| {
+                let iw_delimiter = interwiki.len();
+                write!(text, "{interwiki}:")?;
+                Ok::<_, core::fmt::Error>(u16::try_from(iw_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        let ns_delimiter = (!namespace.name.is_empty())
+            .then(|| {
+                let ns_delimiter = text.len() + namespace.name.len();
+                write!(text, "{}:", namespace.name)?;
+                Ok::<_, core::fmt::Error>(u16::try_from(ns_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        if namespace.case == NamespaceCase::FirstLetter
+            && let Some(first) = title.chars().next()
+            && first.is_lowercase()
+        {
+            let rest = &title[first.len_utf8()..];
+            write!(text, "{}{rest}", first.to_uppercase())?;
+        } else {
+            text += title;
+        }
+
+        let fragment_delimiter = fragment
+            .map(|fragment| {
+                let fragment_delimiter = text.len();
+                write!(text, "#{fragment}")?;
+                Ok::<_, core::fmt::Error>(u16::try_from(fragment_delimiter).unwrap())
+            })
+            .transpose()?;
+
+        Ok(Self {
+            fragment_delimiter,
+            iw_delimiter,
+            namespace,
+            ns_delimiter,
+            text,
+        })
+    }
+
+    /// Creates a new [`Title`] from a title string and optional default
+    /// namespace. Returns `None` if the title is not valid.
+    ///
+    /// In MediaWiki, this is like `newFromText`.
+    ///
+    /// # Errors
+    ///
+    /// * `text` is not a valid title string
+    /// * writing to the internal buffer fails
+    pub fn new(config: &Configuration, text: &str, default_ns: Option<i32>) -> Result<Self, Error> {
         let text = normalize(text);
 
         // Namespaced & interwiki titles that start with ':' are given special
@@ -302,15 +394,21 @@ impl Title {
             } else if empty_start {
                 Namespace::main(config)
             } else {
-                default_ns.unwrap_or_else(|| Namespace::main(config))
+                default_ns
+                    .and_then(|id| Namespace::find_by_id(config, id))
+                    .unwrap_or_else(|| Namespace::main(config))
             }
         });
+
+        if text.is_empty() {
+            return Err(Error::Empty);
+        }
 
         let (text, fragment) = text
             .split_once('#')
             .map_or((text, None), |(text, frag)| (text.trim_end(), Some(frag)));
 
-        Self::new_normalized(ns, text, fragment, iw).unwrap()
+        Self::new_normalized(config, ns, text, fragment, iw)
     }
 
     /// Creates a title from a known namespace plus text parts which are already
@@ -318,60 +416,32 @@ impl Title {
     ///
     /// # Errors
     ///
-    /// * A write to the internal buffer fails
+    /// * the given parts are not valid
+    /// * writing to the internal buffer fails
     ///
     /// # Panics
     ///
     /// * `title.len() > u16::MAX`
     fn new_normalized(
+        config: &Configuration,
         namespace: &'static Namespace,
         title: &str,
         fragment: Option<&str>,
         interwiki: Option<&str>,
-    ) -> Result<Self, core::fmt::Error> {
-        let mut text = String::with_capacity(title.len());
-
-        let iw_delimiter = interwiki
-            .map(|interwiki| {
-                let iw_delimiter = interwiki.len();
-                write!(text, "{interwiki}:")?;
-                Ok(u16::try_from(iw_delimiter).unwrap())
-            })
-            .transpose()?;
-
-        let ns_delimiter = (!namespace.name.is_empty())
-            .then(|| {
-                let ns_delimiter = text.len() + namespace.name.len();
-                write!(text, "{}:", namespace.name)?;
-                Ok(u16::try_from(ns_delimiter).unwrap())
-            })
-            .transpose()?;
-
-        if namespace.case == NamespaceCase::FirstLetter
-            && let Some(first) = title.chars().next()
-            && first.is_lowercase()
-        {
-            let rest = &title[first.len_utf8()..];
-            write!(text, "{}{rest}", first.to_uppercase())?;
+    ) -> Result<Self, Error> {
+        if !is_valid(config, title) || title.starts_with(':') {
+            Err(Error::BadChars)
+        } else if path_like(title) {
+            Err(Error::Path)
+        } else if title.contains("~~~") {
+            Err(Error::Signature)
+        } else if title.len() > max_namespace_len(namespace) {
+            Err(Error::Length)
+        } else if title.is_empty() && interwiki.is_none() && namespace.id != Namespace::MAIN {
+            Err(Error::Empty)
         } else {
-            text += title;
+            Self::from_parts_unchecked(namespace, title, fragment, interwiki)
         }
-
-        let fragment_delimiter = fragment
-            .map(|fragment| {
-                let fragment_delimiter = text.len();
-                write!(text, "#{fragment}")?;
-                Ok(u16::try_from(fragment_delimiter).unwrap())
-            })
-            .transpose()?;
-
-        Ok(Self {
-            fragment_delimiter,
-            iw_delimiter,
-            namespace,
-            ns_delimiter,
-            text,
-        })
     }
 
     /// The parent path of the page.
@@ -396,7 +466,7 @@ impl Title {
     #[inline]
     #[must_use]
     pub fn base_uri(&self) -> Cow<'_, str> {
-        to_uri(self.base_text())
+        Self::url_encode(self.base_text())
     }
 
     /// The page fragment.
@@ -435,7 +505,7 @@ impl Title {
     #[inline]
     #[must_use]
     pub fn full_url(&self) -> Cow<'_, str> {
-        to_uri(self.full_text())
+        Self::url_encode(self.full_text())
     }
 
     /// The title interwiki identifier.
@@ -461,47 +531,6 @@ impl Title {
     #[must_use]
     pub fn is_local_file(&self) -> bool {
         self.interwiki().is_none() && self.namespace.id == Namespace::FILE
-    }
-
-    /// Returns true if all the bytes in the given string are valid for use in
-    /// a title.
-    #[must_use]
-    pub fn is_valid(config: &Configuration, maybe_title: &str) -> bool {
-        #[inline]
-        fn is_html_entity(bytes: &[u8]) -> bool {
-            bytes[0] == b'&'
-                && bytes[1..]
-                    .iter()
-                    .position(|b| *b == b';')
-                    .is_some_and(|end| {
-                        bytes[1..end]
-                            .iter()
-                            .all(|b| b.is_ascii_alphanumeric() || *b >= 0x80)
-                    })
-        }
-
-        #[inline]
-        fn is_percent_encoding(bytes: &[u8]) -> bool {
-            bytes[0] == b'%'
-                && bytes
-                    .get(1..2)
-                    .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_hexdigit))
-        }
-
-        let bytes = maybe_title.as_bytes();
-        for pos in 0..maybe_title.len() {
-            if bytes[pos] == b'#' {
-                // Anything goes after the fragment part, but it cannot be only
-                // a fragment
-                return pos != 0;
-            } else if !config.valid_title_bytes.contains(bytes[pos])
-                || is_percent_encoding(&bytes[pos..])
-                || is_html_entity(&bytes[pos..])
-            {
-                return false;
-            }
-        }
-        !maybe_title.is_empty()
     }
 
     /// Converts a page-relative title name to an absolute title name using the
@@ -567,7 +596,7 @@ impl Title {
     #[inline]
     #[must_use]
     pub fn partial_url(&self) -> Cow<'_, str> {
-        to_uri(self.key())
+        Self::url_encode(self.key())
     }
 
     /// The prefixed text of the title.
@@ -592,7 +621,7 @@ impl Title {
     #[inline]
     #[must_use]
     pub fn prefixed_url(&self) -> Cow<'_, str> {
-        to_uri(self.prefixed_text())
+        Self::url_encode(self.prefixed_text())
     }
 
     /// The root path of the page.
@@ -617,7 +646,7 @@ impl Title {
     #[inline]
     #[must_use]
     pub fn root_url(&self) -> Cow<'_, str> {
-        to_uri(self.root_text())
+        Self::url_encode(self.root_text())
     }
 
     /// Gets the subject title for this page, or `None` if this page’s namespace
@@ -626,7 +655,7 @@ impl Title {
         if self.namespace.is_talk() {
             self.namespace
                 .subject(config)
-                .and_then(|ns| Self::from_parts(ns, self.text(), None, None).ok())
+                .and_then(|ns| Self::from_parts_unchecked(ns, self.text(), None, None).ok())
                 .map(Cow::Owned)
         } else {
             Some(Cow::Borrowed(self))
@@ -655,7 +684,7 @@ impl Title {
     #[inline]
     #[must_use]
     pub fn subpage_url(&self) -> Cow<'_, str> {
-        to_uri(self.subpage_text())
+        Self::url_encode(self.subpage_text())
     }
 
     /// Gets the talk title for this page, or `None` if this page’s namespace
@@ -666,7 +695,7 @@ impl Title {
         } else {
             self.namespace
                 .talk(config)
-                .and_then(|ns| Self::from_parts(ns, self.text(), None, None).ok())
+                .and_then(|ns| Self::from_parts_unchecked(ns, self.text(), None, None).ok())
                 .map(Cow::Owned)
         }
     }
@@ -697,8 +726,67 @@ impl Title {
     #[inline]
     #[must_use]
     pub fn text_url(&self) -> Cow<'_, str> {
-        to_uri(self.text())
+        Self::url_encode(self.text())
     }
+
+    /// Encodes `text` as a URI component.
+    #[inline]
+    pub fn url_encode(text: &str) -> Cow<'_, str> {
+        strtr(text, &[(" ", "_")]).map(url_encode)
+    }
+}
+
+/// Returns true if all the bytes in the given `key` are valid for use in a
+/// title.
+#[must_use]
+fn is_valid(config: &Configuration, key: &str) -> bool {
+    #[inline]
+    fn is_html_entity(bytes: &[u8]) -> bool {
+        bytes[0] == b'&'
+            && bytes[1..]
+                .iter()
+                .position(|b| *b == b';')
+                .is_some_and(|end| {
+                    bytes[1..end]
+                        .iter()
+                        .all(|b| b.is_ascii_alphanumeric() || *b >= 0x80)
+                })
+    }
+
+    #[inline]
+    fn is_percent_encoding(bytes: &[u8]) -> bool {
+        bytes[0] == b'%'
+            && bytes
+                .get(1..2)
+                .is_some_and(|bytes| bytes.iter().all(u8::is_ascii_hexdigit))
+    }
+
+    let bytes = key.as_bytes();
+    for pos in 0..key.len() {
+        if !config.valid_title_bytes.contains(bytes[pos])
+            || is_percent_encoding(&bytes[pos..])
+            || is_html_entity(&bytes[pos..])
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// Returns the maximum length of a title for a namespace.
+#[inline]
+fn max_namespace_len(ns: &Namespace) -> usize {
+    if ns.id == Namespace::SPECIAL {
+        512
+    } else {
+        255
+    }
+}
+
+/// Returns `true` if `text` contains any upward path traversal parts.
+#[inline]
+fn path_like(text: &str) -> bool {
+    text.split('/').any(|part| matches!(part, "." | ".."))
 }
 
 impl core::fmt::Display for Title {
@@ -737,13 +825,11 @@ pub fn normalize_fragment(text: &str) -> Cow<'_, str> {
 /// text.
 #[inline]
 fn spacelike(c: char) -> bool {
-    c == '_' || c.is_whitespace()
-}
-
-/// Encodes text as a URI component.
-#[inline]
-fn to_uri(text: &str) -> Cow<'_, str> {
-    strtr(text, &[(" ", "_")]).map(|text| url_encode(text).into())
+    matches!(
+        c,
+        '_' | ' ' | '\u{00A0}' | '\u{1680}' | '\u{180E}' | '\u{2000}'
+            ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+    )
 }
 
 /// Returns true if the character `c` is trimmable in title text.

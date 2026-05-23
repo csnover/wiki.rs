@@ -90,11 +90,14 @@ pub(super) fn call_module(
         return Err(Error::MissingFunctionName);
     };
 
-    let callee = Title::new(
-        state.statics.db.config(),
-        &callee,
-        Namespace::find_by_id(state.statics.db.config(), Namespace::MODULE),
-    );
+    let callee = match Title::new(state.statics.db.config(), &callee, Some(Namespace::MODULE)) {
+        Ok(callee) => callee,
+        Err(err) => {
+            log::warn!("could not load module {callee}: {err}");
+            sp.backtrace();
+            return Ok(());
+        }
+    };
 
     let code = match state.statics.db.get(&callee) {
         Ok(code) => resolve_redirects(&state.statics.db, code)?,
@@ -331,6 +334,9 @@ fn split_target<'tt>(
     target: &'tt [Spanned<Token>],
     arguments: &'tt [Spanned<Argument>],
 ) -> Result<Target<'tt>, Error> {
+    const SUBST: &str = "subst";
+    const SAFESUBST: &str = "safesubst";
+
     let mut callee = String::new();
     let mut rest = target.iter();
     let mut has_colon = false;
@@ -378,12 +384,13 @@ fn split_target<'tt>(
             // `{{subst:foo}}` | `{{bar}}`                  | `{{bar}}`
             // `{{subst:foo}}` | `{{{{{|subst:}}}bar}}`     | content of bar
             // `{{subst:foo}}` | `{{{{{|safesubst:}}}bar}}` | content of bar
-            let trimmed = callee.trim_ascii();
-            if trimmed.eq_ignore_ascii_case("subst") {
+            let config = state.statics.db.config();
+            let magic = config.extra_words.get(&callee.trim_ascii().to_lowercase());
+            if magic.is_some_and(|candidates| candidates.contains(&SUBST)) {
                 // Since wiki.rs is never in save mode, subst will always just
                 // emit the original text
                 return Ok(Target::Text);
-            } else if trimmed.eq_ignore_ascii_case("safesubst") {
+            } else if magic.is_some_and(|candidates| candidates.contains(&SAFESUBST)) {
                 callee.clear();
 
                 if let Some((lhs, rest)) = rhs.split_once(':') {
@@ -445,13 +452,11 @@ fn split_target<'tt>(
             };
             callee += &sp.eval(state, rest)?;
             let callee = sp.name.join(&callee);
-            let callee = callee.trim_ascii();
-            if Title::is_valid(state.statics.db.config(), callee) {
-                let callee = Title::new(
-                    state.statics.db.config(),
-                    callee,
-                    Namespace::find_by_id(state.statics.db.config(), Namespace::TEMPLATE),
-                );
+            if let Ok(callee) = Title::new(
+                state.statics.db.config(),
+                &callee,
+                Some(Namespace::TEMPLATE),
+            ) {
                 let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
                 Target::Template { callee, arguments }
             } else {
@@ -480,7 +485,7 @@ pub(crate) fn call_template(
         return Ok(None);
     };
 
-    let resolved_title = Title::new(state.statics.db.config(), template.title(), None);
+    let resolved_title = Title::new(state.statics.db.config(), template.title(), None)?;
     let resolved_key = resolved_title.key();
     let wrapper_key = TACKY_TEMPLATES.contains(resolved_key).then(|| {
         resolved_key
@@ -503,7 +508,7 @@ pub(crate) fn call_template(
     // The 'Module:Arguments' wrapper argument requires that redirects are
     // using the final name, not a redirect alias
     let sp = sp.chain(
-        Title::new(state.statics.db.config(), template.title(), None),
+        Title::new(state.statics.db.config(), template.title(), None)?,
         FileMap::new(template.body()),
         arguments,
     )?;
@@ -664,21 +669,17 @@ impl Surrogate<Error> for DbPrefetch {
         // the downside that you might click on a dead link.
         // TODO: Add a utility to rebuild the index so that binary search is
         // possible.
-        if let [
-            Spanned {
-                node: Token::Text,
-                span,
-            },
-        ] = target
-        {
-            let target = title_decode(&sp.source[span.into_range()]);
-            self.links
-                .insert(Title::new(state.statics.db.config(), &target, None));
-        }
+        #[rustfmt::skip]
+        if let [ Spanned { node: Token::Text, span } ] = target
+            && let target = title_decode(&sp.source[span.into_range()])
+            && let Ok(title) = Title::new(state.statics.db.config(), &target, None) {
+            self.links.insert(title);
+        };
 
         for argument in content {
             self.adopt_tokens(state, sp, &argument.content)?;
         }
+
         Ok(())
     }
 
@@ -801,13 +802,15 @@ impl Surrogate<Error> for DbPrefetch {
                 self.templates.insert(callee);
             }
             Target::ParserFn { callee, arguments } => {
-                if callee == "#invoke" {
-                    let target = arguments[0].eval(state, sp)?;
-                    self.templates.insert(Title::new(
+                if callee == "invoke"
+                    && let Ok(target) = arguments[0].eval(state, sp)
+                    && let Ok(title) = Title::new(
                         state.statics.db.config(),
                         target.trim_ascii(),
-                        Namespace::find_by_id(state.statics.db.config(), Namespace::MODULE),
-                    ));
+                        Some(Namespace::MODULE),
+                    )
+                {
+                    self.templates.insert(title);
                 }
             }
             Target::Text => {

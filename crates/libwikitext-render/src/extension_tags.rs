@@ -373,15 +373,10 @@ fn gallery(
         };
 
         let target = percent_encoding::percent_decode_str(target).decode_utf8_lossy();
-        if !Title::is_valid(state.statics.db.config(), &target) {
+        let Ok(title) = Title::new(state.statics.db.config(), &target, Some(Namespace::FILE))
+        else {
             continue;
-        }
-
-        let title = Title::new(
-            state.statics.db.config(),
-            &target,
-            Namespace::find_by_id(state.statics.db.config(), Namespace::FILE),
-        );
+        };
 
         let args = preprocess_frame(state, arguments.sp, rest, ExpandMode::Normal)?;
         let sp = arguments.sp.clone_with_source(FileMap::new(&args));
@@ -437,7 +432,7 @@ fn indicator(
             };
 
             let target = match sp.eval(state, target) {
-                Ok(target) => Title::new(state.statics.db.config(), &target, None),
+                Ok(target) => Title::new(state.statics.db.config(), &target, None).ok()?,
                 Err(err) => return Some(Err(err)),
             };
 
@@ -1115,11 +1110,9 @@ fn timeline(
                 ),
                 TextSpan::Link { target, text } => (
                     text,
-                    Some(LinkKind::Internal(Title::new(
-                        state.statics.db.config(),
-                        target,
-                        None,
-                    ))),
+                    Title::new(state.statics.db.config(), target, None)
+                        .ok()
+                        .map(LinkKind::Internal),
                 ),
                 TextSpan::Text(text) => (
                     text,
@@ -1166,12 +1159,9 @@ impl Styles {
             return Ok(());
         }
 
-        let title = Title::new(
-            db.config(),
-            src,
-            Namespace::find_by_id(db.config(), Namespace::TEMPLATE),
-        );
-        if let Ok(css) = db.get(&title) {
+        if let Ok(title) = Title::new(db.config(), src, Some(Namespace::TEMPLATE))
+            && let Ok(css) = db.get(&title)
+        {
             if let Some(wrapper) = wrapper {
                 writeln!(self.text, "{wrapper} {{ {} }}", &css.body())?;
             } else {

@@ -888,6 +888,8 @@ name = "libphp-rs"
 version = "1.0.0"
 dependencies = [
  "log",
+ "memchr",
+ "percent-encoding",
  "thiserror 2.0.18",
  "time",
  "timelib-rs",

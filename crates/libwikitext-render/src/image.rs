@@ -135,11 +135,9 @@ pub(super) fn media_options<'s>(
                 }) {
                     Some(LinkKind::External(value, tags::ExternalLinkKind::Text))
                 } else {
-                    Some(LinkKind::Internal(Title::new(
-                        state.statics.db.config(),
-                        &value,
-                        None,
-                    )))
+                    Title::new(state.statics.db.config(), &value, None)
+                        .ok()
+                        .map(LinkKind::Internal)
                 };
             } else if name == "alt" {
                 // “If there is a space character between alt and the equals

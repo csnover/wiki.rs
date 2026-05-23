@@ -126,18 +126,13 @@ fn expand_template(
 
     with_sp(&frame_id, sp, |sp| {
         let config = state.statics.db.config();
+        let Ok(title) = Title::new(config, &title, Some(Namespace::TEMPLATE)) else {
+            return Err(anyhow::anyhow!(
+                r#"expandTemplate: invalid title "{title}""#
+            ))?;
+        };
         let mut result = String::new();
-        call_template(
-            &mut result,
-            state,
-            sp,
-            &Title::new(
-                config,
-                &title,
-                Namespace::find_by_id(config, Namespace::TEMPLATE),
-            ),
-            &arguments,
-        )?;
+        call_template(&mut result, state, sp, &title, &arguments)?;
         Ok(state
             .statics
             .vm

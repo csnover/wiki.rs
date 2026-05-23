@@ -10,6 +10,8 @@ workspace = true
 
 [dependencies]
 log.workspace = true
+memchr.workspace = true
+percent-encoding.workspace = true
 thiserror.workspace = true
 time.workspace = true
 timelib-rs.workspace = true
