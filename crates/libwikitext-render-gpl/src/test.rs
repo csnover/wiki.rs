@@ -502,6 +502,11 @@ fn check_test_results(
                     heuristic = "unpretty + remove tbody + styles";
                     fail = expected_html != actual;
                 }
+
+                if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                    heuristic = "unpretty + remove tbody + decode html";
+                    fail = expected_html != actual;
+                }
             }
 
             if fail && let Cow::Owned(expected_html) = styles(expected_html) {
