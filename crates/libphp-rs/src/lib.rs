@@ -982,7 +982,7 @@ pub fn strtr<'a>(input: &'a str, replacements: &[(&str, &str)]) -> Cow<'a, str> 
         Cow::Borrowed(replacements)
     } else {
         let mut replacements = Vec::from(replacements);
-        replacements.sort_by(|(a, _), (b, _)| b.len().cmp(&a.len()));
+        replacements.sort_by_key(|(needle, _)| core::cmp::Reverse(needle.len()));
         Cow::Owned(replacements)
     };
 

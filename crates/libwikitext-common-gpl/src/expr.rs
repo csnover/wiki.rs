@@ -137,12 +137,10 @@ pub fn do_expression(expr: &str) -> Result<Option<f64>, Error> {
 
             match op {
                 // constant
-                Token::Exponent => {
-                    if expecting == Kind::Operand {
-                        operands.push(1.0_f64.exp());
-                        expecting = Kind::Operator;
-                        continue;
-                    }
+                Token::Exponent if expecting == Kind::Operand => {
+                    operands.push(1.0_f64.exp());
+                    expecting = Kind::Operator;
+                    continue;
                 }
                 Token::Pi => {
                     if expecting != Kind::Operand {

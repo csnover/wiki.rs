@@ -142,25 +142,19 @@ fn auto_number_format(
     let mut spec = format.parse::<Specifier>()?;
     let max = min.abs().max(max.abs());
     match spec.kind {
-        Kind::Default => {
-            if spec.precision.is_none() {
-                // TODO: case 's' or 'r' without precision are supposed to do
-                // different things but they got smooshed together by the
-                // parser and maybe this matters!!!
-                spec.precision = Some(precision_prefix(step, max));
-            }
+        Kind::Default if spec.precision.is_none() => {
+            // TODO: case 's' or 'r' without precision are supposed to do
+            // different things but they got smooshed together by the
+            // parser and maybe this matters!!!
+            spec.precision = Some(precision_prefix(step, max));
         }
-        Kind::Exponent | Kind::General => {
-            if spec.precision.is_none() {
-                let e = u8::from(spec.kind == Kind::Exponent);
-                spec.precision = Some(precision_round(step, max) - e);
-            }
+        Kind::Exponent | Kind::General if spec.precision.is_none() => {
+            let e = u8::from(spec.kind == Kind::Exponent);
+            spec.precision = Some(precision_round(step, max) - e);
         }
-        Kind::Fixed => {
-            if spec.precision.is_none() {
-                let p = u8::from(spec.suffix == Some("%")) * 2;
-                spec.precision = Some(precision_fixed(step).saturating_sub(p));
-            }
+        Kind::Fixed if spec.precision.is_none() => {
+            let p = u8::from(spec.suffix == Some("%")) * 2;
+            spec.precision = Some(precision_fixed(step).saturating_sub(p));
         }
         _ => {}
     }
