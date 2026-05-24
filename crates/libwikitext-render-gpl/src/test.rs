@@ -582,9 +582,16 @@ fn check_test_results(
             fail = true;
         }
 
-        if meta.cats.is_some() {
-            log::warn!(target: target, "TODO: Compare categories");
-        } else if options.contains("cat") {
+        if let Some(cats) = &meta.cats {
+            for missing in cats.iter().filter(|cat| {
+                !result
+                    .categories
+                    .contains(&strtr(cat.category, &[("_", " ")]))
+            }) {
+                log::log!(target: target, log_level, "Missing expected category {:?}", missing.category);
+                fail = true;
+            }
+        } else if options.contains("cat") && !result.categories.is_empty() {
             log::log!(target: target, log_level, "Expected categories");
             fail = true;
         }

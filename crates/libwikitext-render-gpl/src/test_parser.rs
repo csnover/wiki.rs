@@ -126,7 +126,7 @@ pub(super) struct Metadata<'input> {
 #[derive(Debug)]
 pub(super) struct MetadataCategory<'input> {
     /// The category part.
-    pub _category: &'input str,
+    pub category: &'input str,
     /// The sort part.
     pub _sort: &'input str,
 }
@@ -394,7 +394,7 @@ peg::parser! {grammar testfile() for str {
 
   rule metadata_cat() -> MetadataCategory<'input>
   = "cat=" category:$([^' ']*) " "+ "sort=" sort:rest_of_line()
-  { MetadataCategory { _category: category, _sort: sort } }
+  { MetadataCategory { category, _sort: sort } }
 
   // `metadata_cat` rule should come first since it is two keys
   rule metadata_kv() -> MetadataPart<'input>

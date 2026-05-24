@@ -17,7 +17,9 @@ use core::fmt::Write as _;
 use either::Either;
 use libmisc::CowExt as _;
 use libwikitext_common::{
-    AnchorEncodeMode, anchor_encode, decode_html, normalize_attr, title::Title, title_decode,
+    AnchorEncodeMode, anchor_encode, decode_html, format_message, normalize_attr,
+    title::{Namespace, Title},
+    title_decode,
 };
 use libwikitext_parse::{
     AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
@@ -188,13 +190,6 @@ impl Document {
         Ok(())
     }
 
-    /// A hacky side-channel to dump the category whitespace in response to a
-    /// Wikitext category link.
-    // TODO: Less hacky?
-    pub(crate) fn category(&mut self) {
-        self.next.clear();
-    }
-
     /// Finalises the document and returns the resulting output.
     pub(crate) fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
         self.text_style_emitter
@@ -289,12 +284,29 @@ impl Surrogate<Error> for Document {
 
     fn adopt_behavior_switch(
         &mut self,
-        _state: &mut State<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
         name: &str,
     ) -> Result {
-        log::warn!("TODO: BehaviorSwitch __{name}__");
+        match name {
+            "hiddencat" if state.globals.title.namespace().id == Namespace::CATEGORY => {
+                // TODO: This is supposed to ignore if a message is "-", but
+                // `format_message` filters those away.
+                let title = format_message(state.messages, ["hidden-category-category"], |_| {
+                    Ok::<_, Error>(None)
+                })?;
+                let title = Title::from_parts(
+                    state.statics.db.config(),
+                    state.globals.title.namespace(),
+                    &title,
+                    None,
+                    None,
+                )?;
+                state.globals.categories.insert(&title);
+            }
+            _ => log::warn!("TODO: BehaviorSwitch __{name}__"),
+        }
         Ok(())
     }
 
@@ -476,8 +488,13 @@ impl Surrogate<Error> for Document {
         self.text_style_emitter.push(<_>::default());
         let force_link = target.starts_with(':');
         if !force_link && title.is_local_category() {
-            state.globals.categories.insert(title.key().to_owned());
-            self.category();
+            // Normally the corresponding content-part is supposed to be used as
+            // a sort key. However, since this implementation does not have any
+            // category pages, and the sort key does not change the sort order
+            // of the category list at the end of the page, the content-part of
+            // a category is simply ignored.
+            state.globals.categories.insert(&title);
+            self.next.clear();
             if let Some(trail) = trail {
                 self.adopt_generated(state, sp, None, &trail)?;
             }

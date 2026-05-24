@@ -2,7 +2,7 @@
 
 use core::fmt::{self, Write as _};
 use http::Uri;
-use libwikitext_common::make_url;
+use libwikitext_common::{make_url, title::Title};
 use libwikitext_parse::HeadingLevel;
 use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 
@@ -11,6 +11,11 @@ use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 pub struct Categories(BTreeSet<String>);
 
 impl Categories {
+    /// Returns true if the given `category` exists in this set of categories.
+    pub fn contains(&self, category: &str) -> bool {
+        self.0.contains(category)
+    }
+
     /// Emits the categories as an HTML list of links.
     pub fn fmt<W: fmt::Write + ?Sized>(
         &self,
@@ -21,8 +26,8 @@ impl Categories {
         if !self.0.is_empty() {
             f.write_str(r#"<ul class="wiki-rs-categories">"#)?;
             for category in &self.0 {
-                let target = category.trim_start_matches(':');
-                let name = target.trim_start_matches("Category:");
+                let name = html_escape::encode_text(category);
+                let target = Title::url_encode(category);
                 let url = make_url(
                     base_uri,
                     None,
@@ -38,8 +43,18 @@ impl Categories {
     }
 
     /// Adds a category to the set.
-    pub(super) fn insert(&mut self, value: String) {
-        self.0.insert(value);
+    pub(super) fn insert(&mut self, value: &Title) {
+        self.0.insert(value.text().to_owned());
+    }
+
+    /// Returns true if there are no categories.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the number of categories.
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 }
 
