@@ -805,11 +805,40 @@ impl core::ops::Sub<Duration> for DateTime {
 ///
 /// * `n` does not start with a number
 pub fn floatval(n: &str) -> Result<(f64, &str), core::num::ParseFloatError> {
-    let end = n
-        .as_bytes()
-        .iter()
-        .position(|b| !b.is_ascii_digit() && !matches!(b, b'.' | b'e' | b'E' | b'+' | b'-'))
-        .unwrap_or(n.len());
+    #[inline]
+    fn is_ascii_digit_or_sign(b: Option<u8>) -> bool {
+        b.is_some_and(|b| matches!(b, b'-' | b'+') || b.is_ascii_digit())
+    }
+
+    let mut seen_e = None;
+    let mut seen_dec = false;
+    let mut is_numeric = |pos: usize, b: u8, next: Option<u8>| {
+        // TODO: Really this requires two-token look-ahead since it could be
+        // e±<invalid> but this is not important enough to waste much time on
+        if matches!(b, b'e' | b'E') && seen_e.is_none() && is_ascii_digit_or_sign(next) {
+            seen_dec = true;
+            seen_e = Some(pos);
+            true
+        } else if b == b'.' && !seen_dec {
+            seen_dec = true;
+            true
+        } else if matches!(b, b'+' | b'-') {
+            pos == 0 || seen_e.is_some_and(|e| pos == e + 1)
+        } else {
+            b.is_ascii_digit()
+        }
+    };
+
+    let mut end = 0;
+    let bytes = n.as_bytes();
+    while end != bytes.len() {
+        if is_numeric(end, bytes[end], bytes.get(end + 1).copied()) {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+
     n[..end].parse().map(|value| (value, &n[end..]))
 }
 
@@ -935,23 +964,73 @@ pub fn fuzzy_cmp(lhs: &str, rhs: &str) -> bool {
 /// Parses a string as a number similar to [`intval`](https://php.net/intval)
 /// but returning an error if there is no number instead of returning 0.
 ///
+/// The default for a `None` `radix` is 10. To detect a base from a string
+/// prefix, use `Some(0)`.
+///
 /// # Errors
 ///
 /// * `n` does not start with a number
 pub fn intval(n: &str, radix: Option<u32>) -> Result<(i64, &str), core::num::ParseIntError> {
-    let end = n
-        .as_bytes()
-        .iter()
-        .position(|b| !b.is_ascii_digit() && *b != b'-')
-        .unwrap_or(n.len());
-    let radix = radix.unwrap_or_else(|| {
-        if n.starts_with("0x") || n.starts_with("0X") {
-            16
+    const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+
+    #[inline]
+    fn is_ascii_digit_or_pos(b: Option<u8>) -> bool {
+        b.is_some_and(|b| b == b'+' || b.is_ascii_digit())
+    }
+
+    let (n, radix) = if radix.is_none() {
+        (n, 10)
+    } else if let Some(radix) = radix
+        && radix != 0
+    {
+        (n, radix)
+    } else if let Some(n) = n.strip_prefix('0') {
+        if let Some(n) = n.strip_prefix(['x', 'X']) {
+            (n, 16)
+        } else if let Some(n) = n.strip_prefix(['b', 'B']) {
+            (n, 2)
         } else {
-            10
+            (n, 8)
         }
-    });
-    i64::from_str_radix(&n[..end], radix).map(|value| (value, &n[end..]))
+    } else {
+        (n, 10)
+    };
+
+    let mut seen_e = None;
+    let mut is_numeric = |pos: usize, b: u8, next: Option<u8>| {
+        if radix == 10
+            && matches!(b, b'e' | b'E')
+            && seen_e.is_none()
+            && is_ascii_digit_or_pos(next)
+        {
+            seen_e = Some(pos);
+            true
+        } else if matches!(b, b'-' | b'+') {
+            pos == 0
+        } else {
+            ALPHABET[..radix as usize].contains(&b.to_ascii_lowercase())
+        }
+    };
+
+    let mut end = 0;
+    let bytes = n.as_bytes();
+    while end != bytes.len() {
+        if is_numeric(end, bytes[end], bytes.get(end + 1).copied()) {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+
+    if let Some(e) = seen_e {
+        // Rust `from_str_radix` does not support this notation
+        let lhs = n[..e].parse::<i64>()?;
+        let rhs = n[e + 1..end].parse::<u32>()?;
+        Ok(lhs * 10_i64.pow(rhs))
+    } else {
+        i64::from_str_radix(&n[..end], radix)
+    }
+    .map(|value| (value, &n[end..]))
 }
 
 /// Encodes the `input` similar to
@@ -1160,7 +1239,30 @@ mod tests {
     #[test]
     fn test_floatval() {
         assert_eq!(floatval("122.34343The"), Ok((122.34343, "The")));
+        assert_eq!(floatval("-122.34343The"), Ok((-122.34343, "The")));
+        assert_eq!(floatval("-122-"), Ok((-122.0, "-")));
+        assert_eq!(floatval("-122ee"), Ok((-122.0, "ee")));
         assert_eq!(floatval("1,200"), Ok((1.0, ",200")));
+        assert_eq!(floatval("-1,200"), Ok((-1.0, ",200")));
+    }
+
+    #[test]
+    fn test_intval() {
+        assert_eq!(intval("122.34343The", None), Ok((122, ".34343The")));
+        assert_eq!(intval("0x9,200", Some(0)), Ok((9, ",200")));
+        assert_eq!(intval("0X9+200", Some(0)), Ok((9, "+200")));
+        assert_eq!(intval("0b112", Some(0)), Ok((3, "2")));
+        assert_eq!(intval("0B10", Some(0)), Ok((2, "")));
+        assert_eq!(intval("077", Some(0)), Ok((63, "")));
+        assert_eq!(intval("077", None), Ok((77, "")));
+        assert_eq!(intval("1,200", None), Ok((1, ",200")));
+        assert_eq!(intval("9e,200", None), Ok((9, "e,200")));
+        assert_eq!(intval("-1,200", None), Ok((-1, ",200")));
+        assert_eq!(intval("-1-,200", None), Ok((-1, "-,200")));
+        assert_eq!(intval("1e5e1", None), Ok((100_000, "e1")));
+        assert_eq!(intval("-1e5e1", None), Ok((-100_000, "e1")));
+        assert_eq!(intval("-1e5-e1", None), Ok((-100_000, "-e1")));
+        assert_eq!(intval("keklol", Some(21)), Ok((9134, "lol")));
     }
 
     #[test]
