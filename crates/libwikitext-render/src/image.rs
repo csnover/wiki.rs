@@ -86,6 +86,8 @@ pub(super) struct Options<'a> {
     clippy::too_many_lines,
     reason = "not enough value in splitting this into smaller units"
 )]
+// TODO: This needs to use `config.extra_words` instead of hard coding the
+// keywords.
 pub(super) fn media_options<'s>(
     state: &mut State<'_, '_, '_>,
     sp: &'s StackFrame<'_>,
@@ -409,7 +411,8 @@ fn alignment(
 }
 
 /// Returns `true` if the string appears to be an absolute URL.
-// TODO: This is a hack for the test suite.
+// TODO: This is a hack for the test suite. At the least it should be using
+// `config.protocols`.
 #[inline]
 fn is_absolute_url(str: &str) -> bool {
     str.starts_with("http://") || str.starts_with("https://")
