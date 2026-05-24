@@ -355,8 +355,18 @@ fn check_skips(
     if let Some(reason) = options.get::<&str>("wiki-rs-skip") {
         log::info!(target: target, "Skipping {name}: {reason}");
         true
+    } else if options.contains("comment") {
+        // This is some parser variant used only for revision comments
+        log::warn!(target: target, "TODO {name}: comment not implemented");
+        true
+    } else if options.contains("preload") {
+        log::warn!(target: target, "TODO {name}: preload not implemented");
+        true
     } else if options.get("styletag") == Some(true) {
         log::warn!(target: target, "TODO {name}: styletag not implemented");
+        true
+    } else if config.get("wgAllowDisplayTitle") == Some(false) {
+        log::warn!(target: target, "TODO {name}: disable {{{{DISPLAYTITLE}}}} not implemented");
         true
     } else if config.get("wgRawHtml") == Some(true) || options.get("wgrawhtml") == Some(true) {
         log::warn!(target: target, "TODO {name}: raw html not implemented");
