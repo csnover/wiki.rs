@@ -339,7 +339,7 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
         }
     }
 
-    let passes = total - fails;
+    let passes = total - fails - skips;
     assert!(
         fails == 0,
         "{passes} passed; {fails} failed; {skips} ignored"
