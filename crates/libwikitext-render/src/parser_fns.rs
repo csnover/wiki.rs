@@ -15,7 +15,7 @@ use super::{
     surrogate::Surrogate as _,
     template::call_module,
 };
-use ::time::UtcDateTime;
+use ::time::{Month, UtcDateTime};
 use core::{
     fmt::{self, Write as _},
     iter,
@@ -35,6 +35,7 @@ use libwikitext_common::{
 };
 use libwikitext_common_gpl::expr;
 use libwikitext_parse::{FileMap, Span, strip};
+use locale_rs::Locale;
 use regex::Regex;
 use std::{
     borrow::Cow,
@@ -1291,6 +1292,72 @@ mod time {
         Ok(())
     }
 
+    /// `{{#formatdate:date[| format] }}`
+    pub fn format_date(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        #[derive(Clone, Copy)]
+        enum Year {
+            None,
+            Dmy(i16),
+            Iso(i16),
+            Mdy(i16),
+            Ymd(i16),
+        }
+
+        impl core::fmt::Display for Year {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                struct NamedYear(i16);
+                impl core::fmt::Display for NamedYear {
+                    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                        if self.0 <= 0 {
+                            write!(f, "{} BC", self.0.abs() + 1)
+                        } else {
+                            write!(f, "{}", self.0)
+                        }
+                    }
+                }
+                match *self {
+                    Self::None => Ok(()),
+                    Self::Dmy(y) => write!(f, " {}", NamedYear(y)),
+                    Self::Iso(y) => write!(f, "{y:00$}-", 4 + usize::from(y < 0)),
+                    Self::Mdy(y) => write!(f, ", {}", NamedYear(y)),
+                    Self::Ymd(y) => write!(f, "{}, ", NamedYear(y)),
+                }
+            }
+        }
+
+        if let Some(date) = arguments.eval(state, 0)?.map(trim) {
+            // TODO: Use global locale.
+            let locale = &Locale::en;
+            if let Ok((y, m, d)) = simple_date::date(&date, locale) {
+                let m = u8::from(m);
+                let m_named = locale.months_wide()[usize::from(m - 1)];
+                let y_iso = y.map_or(Year::None, Year::Iso);
+                let iso = format_args!("{y_iso}{m:02}-{d:02}");
+
+                write!(out, r#"<span class="mw-formatted-date" title="{iso}">"#)?;
+
+                match arguments.eval(state, 1)?.map(trim).as_deref() {
+                    Some("dmy") => write!(out, "{d} {m_named}{}", y.map_or(Year::None, Year::Dmy))?,
+                    Some("mdy" | "default") => {
+                        write!(out, "{m_named} {d}{}", y.map_or(Year::None, Year::Mdy))?;
+                    }
+                    Some("ymd") => write!(out, "{}{m_named} {d}", y.map_or(Year::None, Year::Ymd))?,
+                    Some("ISO 8601") => write!(out, "{iso}")?,
+                    _ => write!(out, "{date}")?,
+                }
+                write!(out, "</span>")?;
+            } else {
+                write!(out, "{date}")?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// `{{LOCALHOUR}}` or `{{CURRENTHOUR}}`
     pub fn hour(
         out: &mut String,
@@ -1412,6 +1479,76 @@ mod time {
         write!(out, "{}", state.statics.base_time.year())?;
         Ok(())
     }
+
+    // MediaWiki used some incoherent algorithm for formatting dates that tried
+    // running every possible regular expression against the input and then the
+    // replaced text, with some extra remappings for some reason, in order to
+    // generate the output. But because the input is restricted to ISO 8601 or
+    // named months, there is only ambiguity year vs day for years 1-31, and
+    // otherwise the grammar is extremely simple.
+    peg::parser! {grammar simple_date(locale: &Locale) for str {
+        pub rule date() -> (Option<i16>, Month, u8)
+        = y:iso_year() "-" m:iso_month() "-" d:iso_day() { (Some(y), m, d) }
+        / md:month_day() y:(year_space() y:year() { y })? { (y, md.0, md.1) }
+        / y:(y:year() year_space() { y })? md:month_day() { (y, md.0, md.1) }
+
+        rule month_day() -> (Month, u8)
+        = m:month() space() d:day() { (m, d) }
+        / d:day() space() m:month() { (m, d) }
+
+        rule month() -> Month
+        = #{|input, pos| {
+            let months = locale
+                .months_wide()
+                .iter()
+                .chain(locale.months_abbreviated())
+                .enumerate();
+
+            for (n, month) in months {
+                let input = input.get(pos..pos + month.len());
+                if input.is_some_and(|input| {
+                    input.to_lowercase() == month.to_lowercase()
+                }) {
+                    #[expect(clippy::cast_possible_truncation, reason = "guaranteed range")]
+                    return peg::RuleResult::Matched(
+                        pos + month.len(),
+                        Month::January.nth_next(n as u8 % 12)
+                    );
+                }
+            }
+            peg::RuleResult::Failed
+        }}
+
+        rule year() -> i16
+        = y:$(digit()*<1,4>) sign:(space() ['B'|'b'] ['C'|'c'])?
+        { y.parse::<i16>().unwrap() - i16::from(sign.is_some()) }
+
+        rule iso_year() -> i16
+        = y:$("-"? digit()*<4,4>)
+        { y.parse().unwrap() }
+
+        rule iso_month() -> Month
+        = m:$("1" ['0'..='2'] / "0" ['1'..='9'])
+        { Month::December.nth_next(m.parse().unwrap()) }
+
+        rule iso_day() -> u8
+        = d:$("3" ['0'|'1'] / ['1'|'2'] ['0'..='9'] / "0" ['1'..='9'])
+        { d.parse().unwrap() }
+
+        rule day() -> u8
+        = d:$("3" ['0'|'1'] / ['1'|'2'] ['0'..='9'] / "0"? ['1'..='9'])
+        { d.parse().unwrap() }
+
+        rule year_space()
+        = " "* "," " "*
+        / " "+
+
+        rule space()
+        = [' '|'_']
+
+        rule digit()
+        = ['0'..='9']
+    }}
 }
 
 mod title {
@@ -1723,6 +1860,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "currenttimestamp" => time::timestamp,
     "currentweek" => time::week,
     "currentyear" => time::year,
+    "formatdate" => time::format_date,
     "localday" => time::day,
     "localday2" => time::day_lz,
     "localdayname" => time::day_name,

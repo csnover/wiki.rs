@@ -1035,11 +1035,13 @@ dependencies = [
  "libwikitext-lua-gpl",
  "libwikitext-parse",
  "libwikitext-parse-gpl",
+ "locale-rs",
  "log",
  "math-core",
  "memchr",
  "numerals",
  "peeknth",
+ "peg",
  "percent-encoding",
  "phf",
  "piccolo",
@@ -1091,6 +1093,16 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "locale-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea2cfee607f8da7f0d2ddf751886befbb1a21f37feb706c34753b2edc579dcce"
+dependencies = [
+ "phf",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "lock_api"

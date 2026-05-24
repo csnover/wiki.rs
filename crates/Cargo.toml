@@ -98,6 +98,7 @@ libwikitext-parse = { path = "libwikitext-parse" }
 libwikitext-parse-gpl = { path = "libwikitext-parse-gpl" }
 libwikitext-render = { path = "libwikitext-render" }
 libwikitext-render-gpl = { path = "libwikitext-render-gpl" }
+locale-rs = { version = "0.3", features = ["datetime"] }
 log = "0.4"
 math-core = "0.6"
 memchr = "2.7"
