@@ -359,6 +359,10 @@ fn check_skips(
         // This is some parser variant used only for revision comments
         log::warn!(target: target, "TODO {name}: comment not implemented");
         true
+    } else if options.contains("msg") {
+        // This is some parser variant used only for interface messages
+        log::warn!(target: target, "TODO {name}: msg not implemented");
+        true
     } else if options.contains("preload") {
         log::warn!(target: target, "TODO {name}: preload not implemented");
         true
