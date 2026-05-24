@@ -305,16 +305,19 @@ pub struct MockDatabase<'config> {
     articles: HashMap<String, Arc<Article>>,
     /// The mock configuration.
     config: &'config Configuration,
+    /// The mock configuration name.
+    name: &'config str,
 }
 
 impl<'config> MockDatabase<'config> {
     /// Creates a new database using the given `config`.
     #[inline]
     #[must_use]
-    pub fn new(config: &'config Configuration) -> Self {
+    pub fn new(name: &'config str, config: &'config Configuration) -> Self {
         Self {
             articles: <_>::default(),
             config,
+            name,
         }
     }
 
@@ -371,8 +374,8 @@ impl DatabaseProvider for MockDatabase<'_> {
     }
 
     #[inline]
-    fn name(&self) -> &'static str {
-        "Mock"
+    fn name(&self) -> &str {
+        self.name
     }
 
     #[inline]

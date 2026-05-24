@@ -272,7 +272,7 @@ fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
     let tests = Testfile::parse(&code).unwrap();
     let file_map = FileMap::new(&code);
 
-    let mut db = MockDatabase::new(&CONFIG);
+    let mut db = MockDatabase::new("MediaWiki", &CONFIG);
 
     let (mut total, mut fails, mut skips) = (0, 0, 0);
 

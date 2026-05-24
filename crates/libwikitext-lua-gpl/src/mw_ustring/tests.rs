@@ -17,7 +17,7 @@ use std::{
 const BASE_DIR: &str = "./src/mw_ustring/tests";
 
 fn run_lua_code(name: &str, code: &[u8]) -> Result<(), ExternError> {
-    let db = MockDatabase::new(&CONFIG);
+    let db = MockDatabase::new("Mock", &CONFIG);
     let mut lua = new_vm_core()?;
     init::<_, MockFrame>(&mut lua, &db)?;
 

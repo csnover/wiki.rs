@@ -1047,9 +1047,6 @@ parsoid={ "modes": ["wt2html","wt2wt"], "normalizePhp": true }
 !! html/*
 <p>MediaWiki
 </p>
-!! html/wiki.rs
-<p>Mock
-</p>
 !! end
 
 !! test
