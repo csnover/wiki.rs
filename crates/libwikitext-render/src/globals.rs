@@ -30,7 +30,7 @@ impl Categories {
                     None,
                     None,
                 );
-                write!(f, r#"<li><a href="{url}">{name}</a></li>"#,)?;
+                write!(f, r#"<li><a href="{url}">{name}</a></li>"#)?;
             }
             f.write_str("</ul>")?;
         }

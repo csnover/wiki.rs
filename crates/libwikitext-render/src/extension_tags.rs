@@ -840,7 +840,7 @@ fn r#ref(
     let group = arguments
         .get(state, "group")?
         .as_deref()
-        .map_or(<_>::default(), ToString::to_string);
+        .map_or(<_>::default(), str::to_owned);
 
     if let Some(follow) = arguments.get(state, "follow")? {
         state.globals.references.append_named(
@@ -927,7 +927,7 @@ fn references(
     let group = arguments
         .get(state, "group")?
         .as_deref()
-        .map_or(<_>::default(), ToString::to_string);
+        .map_or(<_>::default(), str::to_owned);
 
     // TODO: For multiple references to the same name, there should be backrefs
     // to all of them, not just the first one.
