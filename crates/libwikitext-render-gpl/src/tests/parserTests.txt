@@ -12872,6 +12872,11 @@ Play a bit with r67090 and T5158
 <div style="width:50%&#160;!important">&#160;</div>
 <div style="width:50%&#160;!important">&#160;</div>
 <div style="border : solid;">&#160;</div>
+!! html/wiki.rs
+<div style="--mw-output-width:50% !important;"> </div>
+<div style="--mw-output-width:50% !important;"> </div>
+<div style="--mw-output-width:50% !important;"> </div>
+<div style="--mw-output-border:solid;"> </div>
 !! html/parsoid
 <div style="width:50% !important" data-parsoid='{"stx":"html"}'><span typeof="mw:Entity" data-parsoid='{"srcContent":" "}'> </span></div>
 <div style="width:50% !important" data-parsoid='{"stx":"html","a":{"style":"width:50% !important"},"sa":{"style":"width:50%&amp;nbsp;!important"}}'><span typeof="mw:Entity" data-parsoid='{"srcContent":" "}'> </span></div>
@@ -14725,6 +14730,13 @@ parsoid=wt2wt
 
 hiho
 !! html/parsoid
+!! html/wiki.rs # This output matches the PHP parser, except includes `<tr></tr>` in the output and does not insert a newline before the table
+
+
+
+
+hiho<table>
+<tr></tr></table>
 !! end
 
 !! test
@@ -14739,6 +14751,13 @@ parsoid=wt2wt
 
 hiho
 !! html/parsoid
+!! html/wiki.rs # This output matches the PHP parser, except includes `<tr></tr>` in the output and does not insert a newline before the table
+
+
+ 
+
+hiho<table>
+<tr></tr></table>
 !! end
 
 !!test
@@ -17675,6 +17694,8 @@ parsoid={
 
 !! test
 Extension tag with embedded html
+!! options
+wiki-rs-skip=[[applies only to parsoid]]
 !! wikitext
 <embedtag>Content with a [[broken link]].</embedtag>
 !! html/parsoid
@@ -17686,6 +17707,7 @@ Extension tag with embedded html
 Extension tag with td-like wikitext
 !! options
 parsoid=wt2html,wt2wt
+wiki-rs-skip=[[applies only to parsoid]]
 !! wikitext
 <embedtag>
 {{1x|
