@@ -67,6 +67,7 @@ impl<'b> FromValue<'b> for &'b [Value<'b>] {
 }
 
 /// A test file.
+#[derive(Debug)]
 pub(super) struct Testfile<'input> {
     /// The chunks of a test file.
     pub(super) chunks: Vec<Chunk<'input>>,
@@ -80,6 +81,7 @@ impl<'a> Testfile<'a> {
 }
 
 /// A test file chunk.
+#[derive(Debug)]
 pub(super) enum Chunk<'input> {
     /// An article chunk.
     Article {
