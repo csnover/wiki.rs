@@ -2494,7 +2494,7 @@ Link with double quotes in title part (literal) and alternate part (interpreted)
 
 <p><a rel="mw:WikiLink" href="./''Pentecoste''" title="''Pentecoste''" data-parsoid='{"stx":"piped","a":{"href":"./&apos;&apos;Pentecoste&apos;&apos;"},"sa":{"href":"&apos;&apos;Pentecoste&apos;&apos;"}}'><i>Pentecoste</i></a></p>
 !! html/wiki.rs
-<p><a href="/wiki/File:Denys_Savchenko_%27%27Pentecoste%27%27.jpg?action=edit&amp;redlink=1" class="new" title="File:Denys Savchenko ‘‘Pentecoste’’.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Denys%20Savchenko%20%27%27Pentecoste%27%27.jpg"></a>
+<p><a href="/wiki/File:Denys_Savchenko_%27%27Pentecoste%27%27.jpg?action=edit&amp;redlink=1" class="new" title="File:Denys Savchenko ‘‘Pentecoste’’.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Denys_Savchenko_%27%27Pentecoste%27%27.jpg"></a>
 </p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’">‘‘Pentecoste’’</a>
 </p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’">Pentecoste</a>
 </p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’"><i>Pentecoste</i></a>
@@ -13856,6 +13856,19 @@ parsoid=wt2html,wt2wt
 <tr>
 <td>bar</td></tr>
 </tbody></table>
+!! html/wiki.rs # This output matches the PHP parser
+<ul><li>a</li>
+<li class="mw-empty-elt"></li>
+<li class="mw-empty-elt"></li>
+<li>b</li></ul>
+<table>
+<tr>
+<td>foo
+</td></tr>
+
+<tr>
+<td>bar
+</td></tr></table>
 !! end
 
 !! test
@@ -14409,8 +14422,6 @@ parsoid=wt2html
 hi<table></table>ho<table></table>
 !! html/parsoid
 <p data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true}'>hi</p><table data-parsoid='{"stx":"html"}'></table><p data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true}'>ho</p><table data-parsoid='{"stx":"html"}'></table>
-!! html/wiki.rs # Let the browser do the fostering
-<table>hi</table><table>ho</table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14433,11 +14444,6 @@ parsoid=wt2html,wt2wt
 <table data-parsoid='{"stx":"html"}'>
 <tbody><tr data-parsoid='{"stx":"html"}'><td data-parsoid='{"stx":"html"}'> a
 </td></tr></tbody></table>
-!! html/wiki.rs # Let the browser do the fostering
-<table>
-<tr> || ||
-<td> a
-</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14449,8 +14455,8 @@ parsoid=wt2html,wt2wt
 {{1x|<table>foo<tr><td>bar</td></tr></table>}}
 !! html/parsoid
 <p about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;table>foo&lt;tr>&lt;td>bar&lt;/td>&lt;/tr>&lt;/table>"}},"i":0}}]}'>foo</p><table about="#mwt1" data-parsoid='{"stx":"html"}'><tbody><tr><td>bar</td></tr></tbody></table>
-!! html/wiki.rs # Let the browser do the fostering
-<table>foo<tr><td>bar</td></tr></table>
+!! html/wiki.rs
+foo<table><tr><td>bar</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14464,8 +14470,8 @@ parsoid=wt2wt,wt2html
 foo<table><tbody><tr><td>bar</td></tr></tbody></table>
 !! html/parsoid
 <p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE_html","pi":[[{"k":"1"}]]}' data-mw='{"parts":["&lt;table>",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"foo&lt;tr>&lt;td>bar&lt;/td>&lt;/tr>"}},"i":0}},"&lt;/table>"]}'>foo</p><table about="#mwt2" data-parsoid='{"stx":"html"}'><tbody><tr><td>bar</td></tr></tbody></table>
-!! html/wiki.rs # Let the browser do the fostering
-<table>foo<tr><td>bar</td></tr></table>
+!! html/wiki.rs
+foo<table><tr><td>bar</td></tr></table>
 !! end
 
 !! test
@@ -14483,8 +14489,8 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
-!! html/wiki.rs # Let the browser do the fostering
-<table><div>foo</div><tr><td>bar</td></tr></table>
+!! html/wiki.rs
+<div>foo</div><table><tr><td>bar</td></tr></table>
 !! end
 
 !! test
@@ -14504,6 +14510,8 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
+!! html/wiki.rs
+<div><p>foo</p></div><table><tr><td>bar</td></tr></table>
 !! end
 
 !! test
@@ -14523,8 +14531,8 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
-!! html/wiki.rs # Let the browser do the fostering
-<table><div><p>foo</p></div><tr><td>bar</td></tr></table>
+!! html/wiki.rs
+<div><p>foo</p></div><table><tr><td>bar</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14538,8 +14546,6 @@ parsoid=wt2wt,wt2html
 foo<table><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table>
 !! html/parsoid
 <p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE_html","pi":[[{"k":"1"}]]}' data-mw='{"parts":["&lt;table>&lt;tr>&lt;td>&lt;div>&lt;p>",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"foo&lt;/p>&lt;/div>&lt;/td>foo"}},"i":0}},"&lt;/tr>&lt;/table>"]}'>foo</p><table about="#mwt2" data-parsoid='{"stx":"html"}'><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table>
-!! html/wiki.rs # Let the browser do the fostering
-<table><tr><td><div><p>foo</p></div></td>foo</tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14553,10 +14559,6 @@ parsoid=wt2wt,wt2html
 foo<table><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table><p>ok</p>
 !! html/parsoid
 <p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE_html","pi":[[{"k":"1"}]]}' data-mw='{"parts":["&lt;table>&lt;tr>&lt;td>&lt;div>&lt;p>",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"foo&lt;/p>&lt;/div>&lt;/td>foo&lt;/tr>&lt;/table>"}},"i":0}}]}'>foo</p><table about="#mwt2" data-parsoid='{"stx":"html"}'><tbody><tr><td><div><p>foo</p></div></td></tr></tbody></table><p data-parsoid='{"stx":"html"}'>ok</p>
-!! html/wiki.rs
-foo<table>
-<tr>
-<td><div><p>foo</p></div></td></tr></table><p>ok</p>
 !! end
 
 !! test
@@ -14574,10 +14576,9 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
-!! html/wiki.rs # Let the browser do the fostering
+!! html/wiki.rs
 <p>foo</p><table><tr>
-<td>bar</td>
-</tr></table>
+<td>bar</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
