@@ -24,6 +24,16 @@ pub struct MagicLinks {
     pub rfc: bool,
 }
 
+/// Special pages configuration.
+#[derive(Debug)]
+pub struct SpecialPages {
+    /// Special page alias, lowercased, to “real” name.
+    pub aliases: phf::Map<&'static str, &'static str>,
+    /// The “real” name for a special page to its canonical representation for
+    /// this wiki.
+    pub canonical: phf::Map<&'static str, &'static str>,
+}
+
 /// Site specific configuration of a wiki.
 ///
 /// This is generated using the program `fetch_mediawiki_configuration`.
@@ -73,6 +83,9 @@ pub struct ConfigurationSource {
 
     /// Magic words that can be used for redirects, lowercased.
     pub redirect_magic_words: Set<&'static str>,
+
+    /// Registered special pages.
+    pub special_pages: SpecialPages,
 
     /// The list of allowable bytes in an article title, in a format suitable
     /// for interpolation into a PHP PCRE character set pattern.

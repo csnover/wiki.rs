@@ -1685,6 +1685,55 @@ mod title {
         Ok(())
     }
 
+    /// `{{SPECIAL[:title] }}` or `{{SPECIALE[:title] }}`
+    pub fn special(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(title) = arguments.eval(state, 0)?.map(trim) {
+            let config = state.statics.db.config();
+            let (page, sub) = title
+                .find('/')
+                .map_or((title.as_ref(), ""), |sub_at| title.split_at(sub_at));
+            let real_page = config
+                .special_pages
+                .aliases
+                .get(&page.to_lowercase())
+                .copied()
+                .unwrap_or(page);
+            let canonical = config
+                .special_pages
+                .canonical
+                .get(real_page)
+                .copied()
+                .unwrap_or_else(|| {
+                    // TODO: Not sure what to do about this, other than to preregister
+                    // all the ‘known’ special pages, since there seems to be no API
+                    // to learn which special pages are actually existing.
+                    if real_page.to_lowercase() == "badtitle" {
+                        "Badtitle"
+                    } else {
+                        real_page
+                    }
+                });
+
+            let title = Title::new(
+                config,
+                &format!("{canonical}{sub}"),
+                Some(Namespace::SPECIAL),
+            )
+            .unwrap_or_else(|_| Title::new(config, "Badtitle", Some(Namespace::SPECIAL)).unwrap());
+            let as_uri = arguments.callee.ends_with('e');
+            if as_uri {
+                write!(out, "{}", title.prefixed_url())?;
+            } else {
+                write!(out, "{}", title.prefixed_text())?;
+            }
+        }
+        Ok(())
+    }
+
     /// `{{SUBJECTSPACE[:title] }}` or `{{ARTICLESPACE[:title] }}`
     pub fn subject_space(
         out: &mut String,
@@ -1894,6 +1943,8 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "namespacenumber" => title::namespace,
     "ns" => title::namespace_by_name_or_id,
     "nse" => title::namespace_by_name_or_id,
+    "special" => title::special,
+    "speciale" => title::special,
     "subjectspace" => title::subject_space,
     "subjectspacee" => title::subject_space,
     "talkspace" => title::talk_space,

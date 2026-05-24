@@ -5,7 +5,7 @@
 //! acquired by querying the MediaWiki API for a given MediaWiki installation.
 
 use libwikitext_common::{
-    config::{Configuration, ConfigurationSource, MagicLinks},
+    config::{Configuration, ConfigurationSource, MagicLinks, SpecialPages},
     title::{Namespace, NamespaceCase::FirstLetter},
 };
 use std::sync::LazyLock;
@@ -1085,6 +1085,231 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     },
     redirect_magic_words: phf::phf_set! {
         "#redirect"
+    },
+    special_pages: SpecialPages {
+        aliases: phf::phf_map! {
+            "abusefilter" => "AbuseFilter", "abuselog" => "AbuseLog", "accountrecovery"
+            => "AccountRecovery", "accountsecurity" => "OATHManage", "activeusers" =>
+            "Activeusers", "allevents" => "AllEvents", "allmessages" => "Allmessages",
+            "allmyfiles" => "AllMyUploads", "allmyuploads" => "AllMyUploads", "allpages"
+            => "Allpages", "ancientpages" => "Ancientpages", "apifeatureusage" =>
+            "ApiFeatureUsage", "apihelp" => "ApiHelp", "apisandbox" => "ApiSandbox",
+            "authenticationpopupsuccess" => "AuthenticationPopupSuccess", "autoblocklist"
+            => "AutoblockList", "automatictranslation" => "AutomaticTranslation",
+            "bannerloader" => "BannerLoader", "bannerrandom" => "BannerRandom",
+            "betafeatures" => "BetaFeatures", "blankpage" => "Blankpage", "block" =>
+            "Block", "blockedexternaldomains" => "BlockedExternalDomains", "blockip" =>
+            "Block", "blocklist" => "BlockList", "blockuser" => "Block", "book" =>
+            "Book", "booksources" => "Booksources", "botpasswords" => "BotPasswords",
+            "brokenlinks" => "Wantedpages", "brokenredirects" => "BrokenRedirects", "ca"
+            => "CentralAuth", "canceleventregistration" => "CancelEventRegistration",
+            "captcha" => "Captcha", "categories" => "Categories", "categorytree" =>
+            "CategoryTree", "centralauth" => "CentralAuth", "centralautologin" =>
+            "CentralAutoLogin", "centrallogin" => "CentralLogin", "changecontentmodel" =>
+            "ChangeContentModel", "changecredentials" => "ChangeCredentials",
+            "changeemail" => "ChangeEmail", "changepassword" => "ChangePassword",
+            "checkuser" => "CheckUser", "checkuserlog" => "CheckUserLog", "cite" =>
+            "CiteThisPage", "citethispage" => "CiteThisPage", "claimmentee" =>
+            "ClaimMentee", "collab_pad" => "CollabPad", "collabpad" => "CollabPad",
+            "collection" => "Book", "communityconfig" => "CommunityConfiguration",
+            "communityconfiguration" => "CommunityConfiguration", "comparepages" =>
+            "ComparePages", "confirmemail" => "Confirmemail", "contact" => "Contact",
+            "contenttranslation" => "ContentTranslation", "contribs" => "Contributions",
+            "contribute" => "Contribute", "contributions" => "Contributions",
+            "createaccount" => "CreateAccount", "createlocalaccount" =>
+            "CreateLocalAccount", "createmassmessagelist" => "CreateMassMessageList",
+            "cx" => "ContentTranslation", "deadendpages" => "Deadendpages", "delete" =>
+            "DeletePage", "deletedcontribs" => "DeletedContributions",
+            "deletedcontributions" => "DeletedContributions", "deleteeventregistration"
+            => "DeleteEventRegistration", "deletepage" => "DeletePage", "diff" => "Diff",
+            "disableglobalblock" => "GlobalBlockStatus", "disableoathforuser" =>
+            "DisableOATHForUser", "disambiguationpagelinks" => "DisambiguationPageLinks",
+            "disambiguationpages" => "DisambiguationPages", "discussiontoolsdebug" =>
+            "DiscussionToolsDebug", "displaynotificationsconfiguration" =>
+            "DisplayNotificationsConfiguration", "doubleredirects" => "DoubleRedirects",
+            "downloadaspdf" => "DownloadAsPdf", "edit" => "EditPage", "edit_checks" =>
+            "EditChecks", "editchecks" => "EditChecks", "editeventregistration" =>
+            "EditEventRegistration", "editgrowthconfig" => "EditGrowthConfig",
+            "editmassmessagelist" => "EditMassMessageList", "editpage" => "EditPage",
+            "editrecovery" => "EditRecovery", "edittags" => "EditTags", "editwatchlist"
+            => "EditWatchlist", "editwikisets" => "WikiSets", "electronpdf" =>
+            "DownloadAsPdf", "email" => "Emailuser", "emailuser" => "Emailuser",
+            "enableeventregistration" => "EnableEventRegistration", "enrollasmentor" =>
+            "EnrollAsMentor", "entityusage" => "EntityUsage", "entityusagedata" =>
+            "EntityUsage", "eventdetails" => "EventDetails", "expandtemplates" =>
+            "ExpandTemplates", "export" => "Export", "externalguidance" =>
+            "ExternalGuidance", "feeditem" => "FeedItem", "fewestrevisions" =>
+            "Fewestrevisions", "fileduplicatesearch" => "FileDuplicateSearch", "filelist"
+            => "Listfiles", "filepath" => "Filepath", "findcomment" => "FindComment",
+            "gadgets" => "Gadgets", "gadgetusage" => "GadgetUsage",
+            "generateinvitationlist" => "GenerateInvitationList", "globalaccount" =>
+            "CentralAuth", "globalblock" => "GlobalBlock", "globalblocklist" =>
+            "GlobalBlockList", "globalblockstatus" => "GlobalBlockStatus",
+            "globalblockwhitelist" => "GlobalBlockStatus", "globalcontribs" =>
+            "GlobalContributions", "globalcontributions" => "GlobalContributions",
+            "globalgroupmembership" => "GlobalGroupMembership", "globalgrouppermissions"
+            => "GlobalGroupPermissions", "globaljsonlinks" => "GlobalJsonLinks",
+            "globallywantedfiles" => "GloballyWantedFiles", "globalpreferences" =>
+            "GlobalPreferences", "globalrenameprogress" => "GlobalRenameProgress",
+            "globalrenamequeue" => "GlobalRenameQueue", "globalrenamerequest" =>
+            "GlobalRenameRequest", "globalrenameuser" => "GlobalRenameUser",
+            "globalunblock" => "RemoveGlobalBlock", "globalusage" => "GlobalUsage",
+            "globaluserrights" => "GlobalGroupMembership", "globalusers" =>
+            "GlobalUsers", "globalvanishrequest" => "GlobalVanishRequest", "gotocomment"
+            => "GoToComment", "gotointerwiki" => "GoToInterwiki", "hidebanners" =>
+            "HideBanners", "hieroglyphs" => "Hieroglyphs", "history" => "History",
+            "homepage" => "Homepage", "imagelist" => "Listfiles", "impact" => "Impact",
+            "import" => "Import", "info" => "PageInfo", "interwiki" => "Interwiki",
+            "invalidateemail" => "Invalidateemail", "investigate" => "Investigate",
+            "investigateblock" => "InvestigateBlock", "invitationlist" =>
+            "InvitationList", "ipblocklist" => "BlockList", "ipcontribs" =>
+            "IPContributions", "ipcontributions" => "IPContributions", "ipinfo" =>
+            "IPInfo", "linkaccounts" => "LinkAccounts", "linksearch" => "LinkSearch",
+            "linterrors" => "LintErrors", "linttemplateerrors" => "LintTemplateErrors",
+            "listadmins" => "Listadmins", "listautoblocks" => "AutoblockList",
+            "listblocks" => "BlockList", "listbots" => "Listbots", "listduplicatedfiles"
+            => "ListDuplicatedFiles", "listfileduplicates" => "ListDuplicatedFiles",
+            "listfiles" => "Listfiles", "listglobalblocks" => "GlobalBlockList",
+            "listgrants" => "Listgrants", "listgrouprights" => "Listgrouprights",
+            "listredirects" => "Listredirects", "listusers" => "Listusers", "lockdb" =>
+            "Lockdb", "log" => "Log", "login" => "Userlogin", "logout" => "Userlogout",
+            "logs" => "Log", "lonelypages" => "Lonelypages", "longpages" => "Longpages",
+            "makebot" => "Userrights", "makesysop" => "Userrights",
+            "manage_two-factor_authentication" => "OATHManage", "managementors" =>
+            "ManageMentors", "manageshorturls" => "ManageShortUrls", "map" => "Map",
+            "massglobalblock" => "MassGlobalBlock", "massmessage" => "MassMessage",
+            "mathshowimage" => "MathShowImage", "mathstatus" => "MathStatus",
+            "mathwikibase" => "MathWikibase", "mediastatistics" => "MediaStatistics",
+            "mediastats" => "MediaStatistics", "mentordashboard" => "MentorDashboard",
+            "mergeaccount" => "MergeAccount", "mergehistory" => "MergeHistory",
+            "mimesearch" => "MIMEsearch", "mint" => "AutomaticTranslation", "mobilediff"
+            => "MobileDiff", "mobilelanguages" => "MobileLanguages", "mobileoptions" =>
+            "MobileOptions", "mostcategories" => "Mostcategories", "mostfiles" =>
+            "Mostimages", "mostgloballylinkedfiles" => "MostGloballyLinkedFiles",
+            "mostimages" => "Mostimages", "mostinterwikis" => "Mostinterwikis",
+            "mostlinked" => "Mostlinked", "mostlinkedcategories" =>
+            "Mostlinkedcategories", "mostlinkedfiles" => "Mostimages", "mostlinkedpages"
+            => "Mostlinked", "mostlinkedtemplates" => "Mostlinkedtemplates",
+            "mostrevisions" => "Mostrevisions", "mosttranscludedpages" =>
+            "Mostlinkedtemplates", "mostusedcategories" => "Mostlinkedcategories",
+            "mostusedtemplates" => "Mostlinkedtemplates", "movepage" => "Movepage",
+            "multiglobalblock" => "MassGlobalBlock", "multilock" => "MultiLock", "mute"
+            => "Mute", "muteuser" => "Mute", "mwoauth" => "OAuth", "mycontribs" =>
+            "Mycontributions", "mycontributions" => "Mycontributions", "myevents" =>
+            "MyEvents", "myfiles" => "Myuploads", "myinvitationlists" =>
+            "MyInvitationLists", "mylanguage" => "MyLanguage", "mylog" => "Mylog",
+            "mypage" => "Mypage", "mytalk" => "Mytalk", "myuploads" => "Myuploads",
+            "namespaceinfo" => "NamespaceInfo", "nearby" => "Nearby", "newcomertasksinfo"
+            => "NewcomerTasksInfo", "newfiles" => "Newimages", "newimages" =>
+            "Newimages", "newpages" => "Newpages", "newpagesfeed" => "NewPagesFeed",
+            "newsection" => "NewSection", "notifications" => "Notifications",
+            "notificationsmarkread" => "NotificationsMarkRead", "nuke" => "Nuke", "oath"
+            => "OATHManage", "oath_manage" => "OATHManage", "oathauth" => "OATHManage",
+            "oathmanage" => "OATHManage", "oauth" => "OAuth", "oauthconsumerregistration"
+            => "OAuthConsumerRegistration", "oauthgrants" => "OAuthManageMyGrants",
+            "oauthlistconsumers" => "OAuthListConsumers", "oauthmanageconsumers" =>
+            "OAuthManageConsumers", "oauthmanagemygrants" => "OAuthManageMyGrants",
+            "oauthregistration" => "OAuthConsumerRegistration", "oldreviewedpages" =>
+            "PendingChanges", "oresmodels" => "ORESModels", "orphanedpages" =>
+            "Lonelypages", "orphanedtimedtext" => "OrphanedTimedText", "pageassessments"
+            => "PageAssessments", "pagedata" => "PageData", "pagehistory" =>
+            "PageHistory", "pageinfo" => "PageInfo", "pagesbyprop" => "PagesWithProp",
+            "pageswithbadges" => "PagesWithBadges", "pageswithprop" => "PagesWithProp",
+            "passwordpolicies" => "PasswordPolicies", "passwordreset" => "PasswordReset",
+            "pendingchanges" => "PendingChanges", "permalink" => "PermanentLink",
+            "permanentlink" => "PermanentLink", "personal_dashboard" =>
+            "PersonalDashboard", "personaldashboard" => "PersonalDashboard",
+            "preferences" => "Preferences", "prefixindex" => "Prefixindex", "protect" =>
+            "ProtectPage", "protectedpages" => "Protectedpages", "protectedtitles" =>
+            "Protectedtitles", "protectpage" => "ProtectPage", "providesubmittedtext" =>
+            "TwoColConflictProvideSubmittedText", "purge" => "Purge", "qrcode" =>
+            "QrCode", "querybadges" => "PagesWithBadges", "quitmentorship" =>
+            "QuitMentorship", "random" => "Randompage", "randomincategory" =>
+            "RandomInCategory", "randompage" => "Randompage", "randomredirect" =>
+            "Randomredirect", "randomrootpage" => "Randomrootpage", "readinglists" =>
+            "ReadingLists", "recentchanges" => "Recentchanges", "recentchangeslinked" =>
+            "Recentchangeslinked", "recordimpression" => "RecordImpression",
+            "recover2faforuser" => "Recover2FAForUser", "redirect" => "Redirect",
+            "registerforevent" => "RegisterForEvent", "relatedchanges" =>
+            "Recentchangeslinked", "removecredentials" => "RemoveCredentials",
+            "removeglobalblock" => "RemoveGlobalBlock", "renameuser" => "Renameuser",
+            "resetpass" => "ChangePassword", "resetpassword" => "ChangePassword",
+            "resettokens" => "ResetTokens", "restsandbox" => "RestSandbox",
+            "revisiondelete" => "Revisiondelete", "revisionreview" => "RevisionReview",
+            "runjobs" => "RunJobs", "search" => "Search", "securepoll" => "SecurePoll",
+            "securepolllog" => "SecurePollLog", "shortpages" => "Shortpages",
+            "sitematrix" => "SiteMatrix", "specialpages" => "Specialpages", "stablepages"
+            => "StablePages", "statistics" => "Statistics", "stats" => "Statistics",
+            "suggestedinvestigations" => "SuggestedInvestigations", "tags" => "Tags",
+            "talkpage" => "TalkPage", "template_discovery" => "TemplateDiscovery",
+            "templatediscovery" => "TemplateDiscovery", "templatesandbox" =>
+            "TemplateSandbox", "templatesearch" => "TemplateDiscovery", "thanks" =>
+            "Thanks", "timedmediahandler" => "TranscodeStatistics", "topicsubscriptions"
+            => "TopicSubscriptions", "trackingcategories" => "TrackingCategories",
+            "transcode_statistics" => "TranscodeStatistics", "two-factor_authentication"
+            => "OATHManage", "unblock" => "Unblock", "uncategorizedcategories" =>
+            "Uncategorizedcategories", "uncategorizedfiles" => "Uncategorizedimages",
+            "uncategorizedimages" => "Uncategorizedimages", "uncategorizedpages" =>
+            "Uncategorizedpages", "uncategorizedtemplates" => "Uncategorizedtemplates",
+            "unconnectedpages" => "UnconnectedPages", "undelete" => "Undelete",
+            "unlinkaccounts" => "UnlinkAccounts", "unlockdb" => "Unlockdb",
+            "unusedcategories" => "Unusedcategories", "unusedfiles" => "Unusedimages",
+            "unusedimages" => "Unusedimages", "unusedtemplates" => "Unusedtemplates",
+            "unwatchedpages" => "Unwatchedpages", "upload" => "Upload", "uploads" =>
+            "Uploads", "uploadstash" => "UploadStash", "urlredirector" =>
+            "UrlRedirector", "urlshortener" => "UrlShortener", "usergrouprights" =>
+            "Listgrouprights", "userlist" => "Listusers", "userlogin" => "Userlogin",
+            "userlogout" => "Userlogout", "userrights" => "Userrights", "users" =>
+            "Listusers", "validationstatistics" => "ValidationStatistics",
+            "verifyoathforuser" => "VerifyOATHForUser", "version" => "Version",
+            "versions" => "Version", "wantedcategories" => "Wantedcategories",
+            "wantedfiles" => "Wantedfiles", "wantedpages" => "Wantedpages",
+            "wantedtemplates" => "Wantedtemplates", "watchlist" => "Watchlist",
+            "watchlistlabels" => "WatchlistLabels", "welcomesurvey" => "WelcomeSurvey",
+            "whatlinkshere" => "Whatlinkshere", "wikimediadebug" => "WikimediaDebug",
+            "wikimediawikis" => "SiteMatrix", "wikisets" => "WikiSets",
+            "withoutconnection" => "UnconnectedPages", "withoutinterwiki" =>
+            "Withoutinterwiki", "withoutsitelinks" => "UnconnectedPages"
+        },
+        canonical: phf::phf_map! {
+            "Activeusers" => "ActiveUsers", "Allmessages" => "AllMessages", "Allpages" =>
+            "AllPages", "Ancientpages" => "AncientPages", "Blankpage" => "BlankPage",
+            "Booksources" => "BookSources", "Confirmemail" => "ConfirmEmail",
+            "Deadendpages" => "DeadendPages", "Emailuser" => "EmailUser",
+            "Fewestrevisions" => "FewestRevisions", "Filepath" => "FilePath",
+            "GlobalBlockStatus" => "GlobalBlockWhitelist", "GlobalGroupMembership" =>
+            "GlobalUserRights", "Invalidateemail" => "InvalidateEmail", "Listadmins" =>
+            "ListAdmins", "Listbots" => "ListBots", "Listfiles" => "ListFiles",
+            "Listgrants" => "ListGrants", "Listgrouprights" => "ListGroupRights",
+            "Listredirects" => "ListRedirects", "Listusers" => "ListUsers", "Lockdb" =>
+            "LockDB", "Lonelypages" => "LonelyPages", "Longpages" => "LongPages",
+            "MIMEsearch" => "MIMESearch", "Mostcategories" => "MostCategories",
+            "Mostimages" => "MostLinkedFiles", "Mostinterwikis" => "MostInterwikis",
+            "Mostlinked" => "MostLinkedPages", "Mostlinkedcategories" =>
+            "MostLinkedCategories", "Mostlinkedtemplates" => "MostTranscludedPages",
+            "Mostrevisions" => "MostRevisions", "Movepage" => "MovePage",
+            "Mycontributions" => "MyContributions", "Mylog" => "MyLog", "Mypage" =>
+            "MyPage", "Mytalk" => "MyTalk", "Myuploads" => "MyUploads", "Newimages" =>
+            "NewFiles", "Newpages" => "NewPages", "OATHManage" => "AccountSecurity",
+            "Prefixindex" => "PrefixIndex", "Protectedpages" => "ProtectedPages",
+            "Protectedtitles" => "ProtectedTitles", "Randompage" => "Random",
+            "Randomredirect" => "RandomRedirect", "Randomrootpage" => "RandomRootpage",
+            "Recentchanges" => "RecentChanges", "Recentchangeslinked" =>
+            "RecentChangesLinked", "RemoveGlobalBlock" => "GlobalUnblock", "Renameuser"
+            => "RenameUser", "Revisiondelete" => "RevisionDelete", "Shortpages" =>
+            "ShortPages", "Specialpages" => "SpecialPages", "TranscodeStatistics" =>
+            "Transcode_statistics", "TwoColConflictProvideSubmittedText" =>
+            "ProvideSubmittedText", "Uncategorizedcategories" =>
+            "UncategorizedCategories", "Uncategorizedimages" => "UncategorizedFiles",
+            "Uncategorizedpages" => "UncategorizedPages", "Uncategorizedtemplates" =>
+            "UncategorizedTemplates", "Unlockdb" => "UnlockDB", "Unusedcategories" =>
+            "UnusedCategories", "Unusedimages" => "UnusedFiles", "Unusedtemplates" =>
+            "UnusedTemplates", "Unwatchedpages" => "UnwatchedPages", "Userlogin" =>
+            "UserLogin", "Userlogout" => "UserLogout", "Userrights" => "UserRights",
+            "Wantedcategories" => "WantedCategories", "Wantedfiles" => "WantedFiles",
+            "Wantedpages" => "WantedPages", "Wantedtemplates" => "WantedTemplates",
+            "Whatlinkshere" => "WhatLinksHere", "Withoutinterwiki" => "WithoutInterwiki"
+        },
     },
     valid_title_bytes: " %!\"$&'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+",
     variables: phf::phf_map! {

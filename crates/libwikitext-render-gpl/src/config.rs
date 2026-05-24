@@ -1,5 +1,5 @@
 use libwikitext_common::{
-    config::{Configuration, ConfigurationSource, MagicLinks},
+    config::{Configuration, ConfigurationSource, MagicLinks, SpecialPages},
     title::{Namespace, NamespaceCase::FirstLetter},
 };
 use std::sync::LazyLock;
@@ -383,6 +383,33 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     },
     redirect_magic_words: phf::phf_set! {
         "#redirect",
+    },
+    special_pages: SpecialPages {
+        aliases: phf::phf_map! {
+            "booksources" => "Booksources",
+            "contributions" => "Contributions",
+            "filepath" => "Filepath",
+            "prefixindex" => "Prefixindex",
+            "mylanguage" => "MyLanguage",
+            "recentchanges" => "Recentchanges",
+            "random" => "Randompage",
+            "randompage" => "Randompage",
+            "search" => "Search",
+            "upload" => "Upload",
+            "version" => "Version",
+        },
+        canonical: phf::phf_map! {
+            "Booksources" => "BookSources",
+            "Contributions" => "Contributions",
+            "Filepath" => "FilePath",
+            "Prefixindex" => "PrefixIndex",
+            "MyLanguage" => "MyLanguage",
+            "Recentchanges" => "RecentChanges",
+            "Randompage" => "Random",
+            "Search" => "Search",
+            "Upload" => "Upload",
+            "Version" => "Version",
+        },
     },
     valid_title_bytes: " %!\"$&'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+",
     variables: phf::phf_map! {

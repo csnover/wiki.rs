@@ -94,6 +94,31 @@ fn main() -> Result<(), DisplayError> {
 
     let redirects = redirects_iter(&magic_words);
 
+    // These aliases are case-insensitive, but that does not stop them from
+    // being duplicated in the source configuration, so it is necessary to
+    // collect in order to deduplicate. As a free bonus this also makes the
+    // output sorted in a way which is satisfying for anyone with OCD
+    let (mut special_pages_aliases, mut special_pages_canonical) =
+        (BTreeMap::new(), BTreeMap::new());
+    for page in &query.special_page_aliases {
+        let v = page.real_name.as_ref();
+        if let Some(alias) = page.aliases.first()
+            && alias != v
+        {
+            special_pages_canonical.insert(v, alias.as_ref());
+        }
+        for alias in &page.aliases {
+            let k = alias.to_lowercase();
+            special_pages_aliases.insert(k, v);
+        }
+    }
+    let special_pages_aliases = special_pages_aliases
+        .into_iter()
+        .map(|(k, v)| quote!(#k => #v));
+    let special_pages_canonical = special_pages_canonical
+        .into_iter()
+        .map(|(k, v)| quote!(#k => #v));
+
     let variables = aliases_iter(&magic_words, query.variables, &trim_variable);
 
     let file: syn::File = syn::parse_quote! {
@@ -129,6 +154,14 @@ fn main() -> Result<(), DisplayError> {
             },
             redirect_magic_words: phf::phf_set! {
                 #(#redirects),*
+            },
+            special_pages: SpecialPages {
+                aliases: phf::phf_map! {
+                    #(#special_pages_aliases),*
+                },
+                canonical: phf::phf_map! {
+                    #(#special_pages_canonical),*
+                },
             },
             valid_title_bytes: #legal_title_chars,
             variables: phf::phf_map! {
@@ -183,6 +216,7 @@ fn fetch(prefix: &str) -> Result<String, ureq::Error> {
         "|namespaces",
         "|namespacealiases",
         "|protocols",
+        "|specialpagealiases",
         "|variables",
     );
 
@@ -371,6 +405,14 @@ mod api {
     }
 
     #[derive(serde::Deserialize)]
+    pub(super) struct SpecialPageAlias<'a> {
+        #[serde(borrow, rename = "realname")]
+        pub real_name: Cow<'a, str>,
+        #[serde(borrow)]
+        pub aliases: Vec<Cow<'a, str>>,
+    }
+
+    #[derive(serde::Deserialize)]
     pub(super) struct Query<'a> {
         #[serde(borrow, rename = "doubleunderscores")]
         pub double_underscores: BTreeSet<Cow<'a, str>>,
@@ -390,6 +432,8 @@ mod api {
         pub namespace_aliases: NamespaceAliases<'a>,
         #[serde(borrow)]
         pub protocols: BTreeSet<Cow<'a, str>>,
+        #[serde(borrow, rename = "specialpagealiases")]
+        pub special_page_aliases: Vec<SpecialPageAlias<'a>>,
         #[serde(borrow)]
         pub variables: BTreeSet<Cow<'a, str>>,
     }
