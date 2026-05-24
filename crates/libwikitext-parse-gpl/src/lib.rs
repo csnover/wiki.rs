@@ -7,7 +7,7 @@ mod tests;
 use core::cell::Cell;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
-use libwikitext_common::config::Configuration;
+use libwikitext_common::{config::Configuration, regex_switch};
 use libwikitext_parse::{Argument, Error, Output, STOP_CHAR, Spanned};
 use regex::{Captures, Regex};
 use std::borrow::Cow;
@@ -267,19 +267,6 @@ struct Globals {
     has_onlyinclude: Cell<bool>,
     /// If true, parse the document in include mode.
     including: bool,
-}
-
-/// Converts a list of protocols into a regular expression alternates
-/// subexpression.
-fn regex_switch<'a>(protocols: impl Iterator<Item = &'a str>) -> String {
-    let mut out = String::new();
-    for proto in protocols {
-        if !out.is_empty() {
-            out.push('|');
-        }
-        out += &regex::escape(proto);
-    }
-    out
 }
 
 /// Inclusion control tags.
