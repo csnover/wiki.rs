@@ -13,6 +13,7 @@
 )]
 use super::*;
 use core::ops::Range;
+use libmisc::to_ascii_lower;
 use std::collections::{BTreeMap, HashMap};
 
 /// Expands variables in the input text.
@@ -40,7 +41,7 @@ pub(super) fn expand(input: &str) -> Result<(String, Vec<(usize, isize)>)> {
                 len
             }
             grammar::Chunk::Define(len, Define { key, value }) => {
-                defines.insert(key.to_ascii_lowercase(), value);
+                defines.insert(to_ascii_lower(key), value);
                 deltas.push((expanded.len(), -isize::try_from(len).unwrap()));
                 len
             }
@@ -51,7 +52,7 @@ pub(super) fn expand(input: &str) -> Result<(String, Vec<(usize, isize)>)> {
 }
 
 /// A collection of defined variables.
-type Defines<'input> = HashMap<String, &'input str>;
+type Defines<'input> = HashMap<Cow<'input, str>, &'input str>;
 
 /// A defined variable.
 #[derive(Debug)]
@@ -99,13 +100,13 @@ pub(super) type BarId<'input> = &'input str;
 /// This is a `BTreeMap` simply because `HashMap` has randomness which causes
 /// iteration order to be inconsistent, which causes outputs to be different,
 /// which breaks tests.
-type Bars<'input> = BTreeMap<String, Bar<'input>>;
+type Bars<'input> = BTreeMap<Cow<'input, str>, Bar<'input>>;
 
 /// A map from timeline series set ID to index range.
-type BarSets = HashMap<String, Range<usize>>;
+type BarSets<'input> = HashMap<Cow<'input, str>, Range<usize>>;
 
 /// A collection of colours.
-type Colors<'input> = HashMap<String, ColorValue>;
+type Colors<'input> = HashMap<Cow<'input, str>, ColorValue>;
 
 /// A collection of legend entries.
 type Legends<'input> = Vec<(ColorValue, Vec<TextSpan<'input>>)>;
@@ -134,7 +135,7 @@ pub(super) struct Timeline<'input> {
     /// Accumulated timeline segments.
     pub bar_layer: Vec<Plot<'input>>,
     /// Timeline series sets.
-    pub bar_sets: BarSets,
+    pub bar_sets: BarSets<'input>,
     /// Timeline series…es.
     pub bars: Bars<'input>,
     /// Canvas colour.
@@ -266,7 +267,7 @@ impl<'input> Timeline<'input> {
     /// Adds new colour definitions.
     fn update_colors(&mut self, colors: Vec<Color<'input>>) {
         for color in colors {
-            let id = color.id.to_ascii_lowercase();
+            let id = to_ascii_lower(color.id);
             if let Some(legend) = color.legend {
                 self.legends.push((color.value, legend));
             }
@@ -303,7 +304,7 @@ impl<'input> Timeline<'input> {
                 match &plot.bar {
                     Some(PlotDataTarget::Bar(id)) => {
                         self.bars.insert(
-                            id.to_ascii_lowercase(),
+                            to_ascii_lower(id),
                             Bar {
                                 index,
                                 label: vec![TextSpan::Text(id)],
@@ -325,15 +326,11 @@ impl<'input> Timeline<'input> {
         for plot in data {
             match plot.bar {
                 Some(PlotDataTarget::Bar(id)) => {
-                    index = self.bars[&id.to_ascii_lowercase()].index;
+                    index = self.bars[&to_ascii_lower(id)].index;
                     bar_set = None;
                 }
                 Some(PlotDataTarget::BarSet(BarsetId::Id(id))) => {
-                    let range = self
-                        .bar_sets
-                        .get(&id.to_ascii_lowercase())
-                        .cloned()
-                        .unwrap();
+                    let range = self.bar_sets.get(&to_ascii_lower(id)).cloned().unwrap();
                     index = range.start;
                     bar_set = Some(range);
                 }
@@ -550,11 +547,11 @@ pub(super) enum BarData<'input> {
     BarSet(BarId<'input>),
 }
 
-impl BarData<'_> {
+impl<'input> BarData<'input> {
     /// Gets the map key for the bar data.
-    fn key(&self) -> String {
+    fn key(&self) -> Cow<'input, str> {
         match self {
-            Self::Bar { id, .. } | Self::BarSet(id) => id.to_ascii_lowercase(),
+            Self::Bar { id, .. } | Self::BarSet(id) => to_ascii_lower(id),
         }
     }
 }
@@ -876,7 +873,7 @@ fn replace_idents(
             // actually commented out. To handle this, just emit the idents
             // as-is and let the next stage fail to parse.
             *out += &input[flushed..at];
-            if let Some(value) = defines.get(&key.to_lowercase()) {
+            if let Some(value) = defines.get(&to_ascii_lower(key)) {
                 let old_len = key.len() + "$".len();
                 let new_len = value.len();
                 deltas.push((out.len(), new_len.checked_signed_diff(old_len).unwrap()));

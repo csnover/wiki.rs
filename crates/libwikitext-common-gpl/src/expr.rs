@@ -14,6 +14,7 @@ use core::{
     f64::consts::{E, PI},
     num::ParseFloatError,
 };
+use libmisc::to_ascii_lower;
 use libphp_rs::strtr;
 use std::borrow::Cow;
 
@@ -129,7 +130,7 @@ pub fn do_expression(expr: &str) -> Result<Option<f64>, Error> {
             }
 
             let word = &expr[pos..=end];
-            if let Some(word_op) = words(&word.to_ascii_lowercase()) {
+            if let Some(word_op) = words(&to_ascii_lower(word)) {
                 op = word_op;
             } else {
                 return Err(Error::UnknownToken(pos, word.to_owned().into()));

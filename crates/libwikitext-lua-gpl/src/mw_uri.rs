@@ -14,8 +14,7 @@ use core::{
 };
 use gc_arena::Rootable;
 use libwikitext_common::{AnchorEncodeMode, anchor_encode, db::DatabaseProvider};
-use libwikitext_parse::{helpers::TextContent, visit::Visitor as _};
-use libwikitext_parse_gpl::Parser;
+use libwikitext_parse::{Parser, helpers::TextContent, visit::Visitor as _};
 
 /// The URI support library.
 #[derive(gc_arena::Collect)]
@@ -48,7 +47,7 @@ impl<'config, Db: DatabaseProvider + 'static> UriLibrary<'config, Db> {
         let parser = Ref::filter_map(self.parser.borrow(), Option::as_ref)
             .map_err(|_| "missing parser".into_value(ctx))?;
         let s = {
-            let root = parser.parse_no_expansion(s)?;
+            let root = parser.parse(s)?;
             let mut extractor = TextContent::new(parser.config(), s, String::new());
             let _ = extractor.visit_output(&root);
             extractor.finish()

@@ -926,6 +926,7 @@ name = "libwikitext-common-gpl"
 version = "1.0.0"
 dependencies = [
  "arrayvec",
+ "libmisc",
  "libphp-rs",
  "thiserror 2.0.18",
 ]
@@ -972,7 +973,6 @@ dependencies = [
  "libwikitext-data",
  "libwikitext-lua",
  "libwikitext-parse",
- "libwikitext-parse-gpl",
  "log",
  "piccolo",
  "piccolo-util",
@@ -987,12 +987,19 @@ dependencies = [
 name = "libwikitext-parse"
 version = "1.0.0"
 dependencies = [
+ "bitflags",
  "either",
+ "html-escape",
+ "libmisc",
+ "libphp-rs",
  "libwikitext-common",
+ "log",
  "memchr",
  "peg",
  "phf",
+ "regex",
  "thiserror 2.0.18",
+ "unicode-general-category",
 ]
 
 [[package]]
@@ -1034,7 +1041,6 @@ dependencies = [
  "libwikitext-lua",
  "libwikitext-lua-gpl",
  "libwikitext-parse",
- "libwikitext-parse-gpl",
  "locale-rs",
  "log",
  "math-core",
@@ -1065,6 +1071,7 @@ version = "1.0.0"
 dependencies = [
  "env_logger",
  "http",
+ "libmisc",
  "libphp-rs",
  "libwikitext-common",
  "libwikitext-data",

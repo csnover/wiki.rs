@@ -312,7 +312,7 @@ impl ExtensionTag<'_, '_, '_> {
         state
             .statics
             .parser
-            .parse(&sp.source, self.sp.parent.is_some())
+            .parse(&sp.source)
             .map(|tree| (sp, tree))
             .map_err(Into::into)
     }
@@ -1326,7 +1326,7 @@ fn eval_string(
 ) -> Result<String> {
     let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
     let sp = sp.clone_with_source(FileMap::new(&source));
-    let root = state.statics.parser.parse_no_expansion(&sp.source)?;
+    let root = state.statics.parser.parse(&sp.source)?;
     let mut out = Document::new(!unstrip);
     out.adopt_output(state, &sp, &root)?;
     Ok(out.finish(state))

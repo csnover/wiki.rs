@@ -2,7 +2,7 @@
 
 use super::{config::Configuration, decode_html, url_encode};
 use core::fmt::Write as _;
-use libmisc::CowExt as _;
+use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
 use std::borrow::Cow;
 
@@ -286,7 +286,13 @@ impl Title {
         fragment: Option<&str>,
         interwiki: Option<&str>,
     ) -> Result<Self, Error> {
-        let mut text = String::with_capacity(title.len());
+        let mut text = String::with_capacity(
+            namespace.name.len()
+                + ":".len()
+                + title.len()
+                + fragment.map_or(0, |s| s.len() + "#".len())
+                + interwiki.map_or(0, |s| s.len() + ":".len()),
+        );
 
         let iw_delimiter = interwiki
             .map(|interwiki| {
@@ -361,7 +367,7 @@ impl Title {
             if let Some(ns) = Namespace::find_by_name(config, lhs) {
                 text = rhs;
                 (Some(ns), None)
-            } else if config.interwiki_map.contains_key(&lhs.to_ascii_lowercase()) {
+            } else if config.interwiki_map.contains_key(&to_ascii_lower(lhs)) {
                 text = rhs;
                 (None, Some(lhs))
             } else {
@@ -525,7 +531,7 @@ impl Title {
             return Cow::Borrowed(partial);
         }
 
-        let (target, fragment) = if let Some(p) = partial.rfind('#') {
+        let (target, fragment) = if let Some(p) = partial.find('#') {
             partial.split_at(p)
         } else {
             (partial, "")

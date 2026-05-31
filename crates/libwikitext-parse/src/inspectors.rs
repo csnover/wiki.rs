@@ -1,7 +1,7 @@
 //! Helpers for improved debug formatting of token trees.
 
 use super::{
-    AnnoAttribute, Argument, InclusionMode, LangFlags, LangVariant, TextStyle, Token,
+    AnnoAttribute, Argument, InclusionMode, LangFlags, LangVariant, MagicLink, TextStyle, Token,
     codemap::{FileMap, Spanned},
 };
 use core::fmt::{self, Write as _};
@@ -166,7 +166,7 @@ impl fmt::Debug for LangVariantInspector<'_> {
             LangVariant::OneWay { from, lang, to } => f
                 .debug_struct("LangVariant::OneWay")
                 .field("from", &VInspector::<TokenInspector<'_>>(self.0, from))
-                .field("lang", &TokenInspector(self.0, lang))
+                .field("lang", &&self.0[lang.into_range()])
                 .field("to", &VInspector::<TokenInspector<'_>>(self.0, to))
                 .finish(),
             LangVariant::Text { text } => f
@@ -175,7 +175,7 @@ impl fmt::Debug for LangVariantInspector<'_> {
                 .finish(),
             LangVariant::TwoWay { lang, text } => f
                 .debug_struct("LangVariant::TwoWay")
-                .field("lang", &TokenInspector(self.0, lang))
+                .field("lang", &&self.0[lang.into_range()])
                 .field("text", &VInspector::<TokenInspector<'_>>(self.0, text))
                 .finish(),
         }
@@ -197,13 +197,9 @@ impl fmt::Debug for TokenInspector<'_> {
     #[expect(clippy::too_many_lines, reason = "this is just a big switch")]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.1.node {
-            Token::Autolink { target, content } => f
-                .debug_struct(&span_name("Autolink", self.0, self.1))
-                .field("target", &VInspector::<TokenInspector<'_>>(self.0, target))
-                .field(
-                    "content",
-                    &VInspector::<TokenInspector<'_>>(self.0, content),
-                )
+            Token::Autolink(target) => f
+                .debug_tuple(&span_name("Autolink", self.0, self.1))
+                .field(&VInspector::<TokenInspector<'_>>(self.0, target))
                 .finish(),
             Token::BehaviorSwitch { name } => f
                 .debug_tuple(&span_name("BehaviorSwitch", self.0, self.1))
@@ -234,7 +230,7 @@ impl fmt::Debug for TokenInspector<'_> {
                 .debug_struct(&span_name("EndTag", self.0, self.1))
                 .field("name", &&self.0[name.into_range()])
                 .finish(),
-            Token::Entity { value } => f
+            Token::Entity(value) => f
                 .debug_tuple(&span_name("Entity", self.0, self.1))
                 .field(value)
                 .finish(),
@@ -271,29 +267,26 @@ impl fmt::Debug for TokenInspector<'_> {
                     &VInspector::<TokenInspector<'_>>(self.0, content),
                 )
                 .finish(),
-            Token::HorizontalRule { line_content } => f
+            Token::HorizontalRule => f
                 .debug_struct(&span_name("HorizontalRule", self.0, self.1))
-                .field("line_content", line_content)
                 .finish(),
-            Token::LangVariant {
-                flags: meta,
-                variants,
-                raw,
-            } => f
+            Token::InlineListItem => f
+                .debug_struct(&span_name("InlineListItem", self.0, self.1))
+                .finish(),
+            Token::LangVariant { flags, variants } => f
                 .debug_struct(&span_name("LangVariant", self.0, self.1))
-                .field(
-                    "meta",
-                    &meta.as_ref().map(|meta| LangFlagsInspector(self.0, meta)),
-                )
+                .field("flags", &LangFlagsInspector(self.0, flags))
                 .field(
                     "variants",
-                    &VInspector::<LangVariantInspector<'_>>(self.0, variants),
+                    &variants
+                        .iter()
+                        .map(|variant| LangVariantInspector(self.0, variant)),
                 )
-                .field("raw", raw)
                 .finish(),
             Token::Link {
-                target,
                 content,
+                prefix,
+                target,
                 trail,
             } => f
                 .debug_struct(&span_name("Link", self.0, self.1))
@@ -302,6 +295,7 @@ impl fmt::Debug for TokenInspector<'_> {
                     "content",
                     &VInspector::<ArgumentInspector<'_>>(self.0, content),
                 )
+                .field("prefix", &prefix.map(|prefix| &self.0[prefix.into_range()]))
                 .field("trail", &trail.map(|trail| &self.0[trail.into_range()]))
                 .finish(),
             Token::ListItem { bullets, content } => f
@@ -312,6 +306,23 @@ impl fmt::Debug for TokenInspector<'_> {
                     &VInspector::<TokenInspector<'_>>(self.0, content),
                 )
                 .finish(),
+            Token::MagicLink(magic) => match magic {
+                MagicLink::Isbn(isbn) => f
+                    .debug_struct(&span_name("MagicLink::Isbn", self.0, self.1))
+                    .field("isbn", &isbn)
+                    .field("(raw)", &&self.0[self.1.span.into_range()])
+                    .finish(),
+                MagicLink::Pmid(pmid) => f
+                    .debug_struct(&span_name("MagicLink::Pmid", self.0, self.1))
+                    .field("pmid", &pmid)
+                    .field("(raw)", &&self.0[self.1.span.into_range()])
+                    .finish(),
+                MagicLink::Rfc(rfc) => f
+                    .debug_struct(&span_name("MagicLink::Rfc", self.0, self.1))
+                    .field("rfc", &rfc)
+                    .field("(raw)", &&self.0[self.1.span.into_range()])
+                    .finish(),
+            },
             Token::NewLine => f.write_str("\\n"),
             Token::Parameter { name, default } => f
                 .debug_struct(&span_name("Parameter", self.0, self.1))
@@ -321,6 +332,13 @@ impl fmt::Debug for TokenInspector<'_> {
                     &default
                         .as_deref()
                         .map(|default| VInspector::<TokenInspector<'_>>(self.0, default)),
+                )
+                .finish(),
+            Token::Preformatted { content } => f
+                .debug_struct(&span_name("Preformatted", self.0, self.1))
+                .field(
+                    "content",
+                    &VInspector::<TokenInspector<'_>>(self.0, content),
                 )
                 .finish(),
             Token::Redirect { link } => f

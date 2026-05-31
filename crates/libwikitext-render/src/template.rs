@@ -451,7 +451,7 @@ fn split_target<'tt>(
                 callee += first;
             };
             callee += &sp.eval(state, rest)?;
-            let callee = sp.name.join(&callee);
+            let callee = sp.name.join(callee.trim_ascii());
             if let Ok(callee) = Title::new(
                 state.statics.db.config(),
                 &callee,
@@ -519,7 +519,11 @@ pub(crate) fn call_template(
         let cached = cache
             .write()?
             .get_or_insert_fallible(template.revision_id(), || {
-                state.statics.parser.parse(&sp.source, true).map(Arc::new)
+                state
+                    .statics
+                    .parser
+                    .preprocess(&sp.source, true)
+                    .map(Arc::new)
             })?
             .as_deref()
             .map(Arc::clone);
@@ -536,7 +540,7 @@ pub(crate) fn call_template(
     if let Some(root) = cached_root {
         expansion.adopt_output(state, &sp, &root)?;
     } else {
-        let root = state.statics.parser.parse(&sp.source, true)?;
+        let root = state.statics.parser.preprocess(&sp.source, true)?;
         expansion.adopt_output(state, &sp, &root)?;
     }
 
@@ -636,7 +640,6 @@ impl Surrogate<Error> for DbPrefetch {
         _sp: &StackFrame<'_>,
         _span: Span,
         _target: &[Spanned<Token>],
-        _content: &[Spanned<Token>],
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -658,6 +661,7 @@ impl Surrogate<Error> for DbPrefetch {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
+        _prefix: Option<Spanned<&str>>,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,
@@ -703,6 +707,7 @@ impl Surrogate<Error> for DbPrefetch {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
+        _prefix: Option<Spanned<&str>>,
         _target: &[Spanned<Token>],
         _content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,

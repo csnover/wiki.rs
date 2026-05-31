@@ -14,7 +14,7 @@ use libwikitext_parse::{FileMap, inspect};
 use libwikitext_parse_gpl::Parser;
 use libwikitext_render::{
     LoadMode, OutputMode, Paths, PluginExtensionTag, PluginFnArgs, PluginParserFn, PluginResult,
-    PluginState, PluginTagArgs, RenderOutput, Statics, render_article,
+    PluginState, PluginTagArgs, RenderOutput, Statics, preprocess_article, render_article,
 };
 use regex::{Regex, RegexBuilder};
 use serde_json_borrow::Value;
@@ -37,6 +37,7 @@ test_from_file! {
     comments => "comments",
     definition_lists => "definitionLists",
     // dom_normalizer_tests => "domNormalizerTests",
+    empty => "empty",
     encap_parser_tests => "encapParserTests",
     ext_links => "extLinks",
     headings => "headings",
@@ -428,6 +429,38 @@ fn load_articles(base_time: DateTime, db: &mut MockDatabase<'_>, chunks: &[Chunk
     }
 }
 
+fn print_debug(
+    target: &str,
+    statics: &mut Statics<'_>,
+    article: &Arc<Article>,
+    show_pp_ast: bool,
+    show_pp: bool,
+    show_ast: bool,
+) {
+    let pp_ast = show_pp_ast.then(|| statics.parser.preprocess(article.body(), false));
+
+    let pp = (show_pp || show_ast)
+        .then(|| preprocess_article(statics, &MESSAGES, article, LoadMode::Module, false));
+
+    let ast = if show_ast && let Some(Ok(pp)) = &pp {
+        Some((pp, statics.parser.parse(pp)))
+    } else {
+        None
+    };
+
+    if let Some(Ok(pp_ast)) = pp_ast {
+        log::info!(target: target, "PP AST: {:?}", inspect(&FileMap::new(article.body()), &pp_ast.root));
+    }
+
+    if let Some(Ok(pp)) = &pp {
+        log::info!(target: target, "PP:\n{pp}");
+    }
+
+    if let Some((pp, Ok(ast))) = ast {
+        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(pp), &ast.root));
+    }
+}
+
 fn any_of(choices: &[&str]) -> impl FnOnce(&[Value<'_>]) -> bool {
     |values| {
         values
@@ -515,9 +548,12 @@ fn check_test_results(
                 if fail && let Cow::Owned(expected_html) = styles(&expected_html) {
                     heuristic = "unpretty + remove tbody + styles";
                     fail = expected_html != actual;
-                }
 
-                if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                    if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                        heuristic = "unpretty + remove tbody + styles + decode html";
+                        fail = expected_html != actual;
+                    }
+                } else if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
                     heuristic = "unpretty + remove tbody + decode html";
                     fail = expected_html != actual;
                 }
@@ -716,29 +752,36 @@ fn render_test(
         })
         .build();
 
-    if std::env::var("WIKI_RS_SHOW_AST").is_ok_and(|v| v == "1")
-        && let Ok(ast) = statics.parser.parse(wikitext, false)
-    {
-        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(wikitext), &ast.root));
-    }
+    let article = Arc::new(article);
 
-    let result = render_article(
+    let before_pp_ast = wants_pp_ast(target);
+    let before_pp = wants_pp(target);
+    let before_ast = wants_ast(target);
+
+    print_debug(
+        target,
         &mut statics,
-        &MESSAGES,
-        &Arc::new(article),
-        LoadMode::Module,
-        false,
+        &article,
+        before_pp_ast,
+        before_pp,
+        before_ast,
     );
+
+    let result = render_article(&mut statics, &MESSAGES, &article, LoadMode::Module, false);
 
     if let Err(err) = &result {
         log::log!(target: target, log_level, "Render failed: {err}");
     }
 
-    if result.is_err()
-        && !std::env::var("WIKI_RS_SHOW_AST").is_ok_and(|v| v == "1")
-        && let Ok(ast) = statics.parser.parse(wikitext, false)
-    {
-        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(wikitext), &ast.root));
+    if result.is_err() {
+        print_debug(
+            target,
+            &mut statics,
+            &article,
+            !before_pp_ast,
+            !before_pp,
+            !before_ast,
+        );
     }
 
     if insert_page {
@@ -805,6 +848,18 @@ fn unwrap_heading(html: &str) -> Cow<'_, str> {
             .unwrap()
     });
     RE_PHP_HEADING.replace_all(html, "$1")
+}
+
+fn wants_ast(target: &str) -> bool {
+    std::env::var("WIKI_RS_SHOW_AST").is_ok_and(|v| v == "1" || target.contains(&v))
+}
+
+fn wants_pp(target: &str) -> bool {
+    std::env::var("WIKI_RS_SHOW_PP").is_ok_and(|v| v == "1" || target.contains(&v))
+}
+
+fn wants_pp_ast(target: &str) -> bool {
+    std::env::var("WIKI_RS_SHOW_PP_AST").is_ok_and(|v| v == "1" || target.contains(&v))
 }
 
 macro_rules! test_from_file {

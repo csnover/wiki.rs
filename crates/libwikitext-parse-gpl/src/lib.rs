@@ -5,12 +5,9 @@ mod grammar;
 mod tests;
 
 use core::cell::Cell;
-use libmisc::CowExt as _;
-use libphp_rs::strtr;
 use libwikitext_common::{config::Configuration, regex_switch};
 use libwikitext_parse::{Argument, Error, Output, STOP_CHAR, Spanned};
-use regex::{Captures, Regex};
-use std::borrow::Cow;
+use regex::Regex;
 
 /// A Wikitext parser.
 #[derive(Clone, Debug)]
@@ -144,116 +141,6 @@ impl<'a> Parser<'a> {
                 ..Default::default()
             },
         )
-    }
-}
-
-/// Escapes the world, marauding, questioning what the hell kind of text format
-/// requires this kind of absolute madness in order to work.
-///
-/// Equivalent to `wfEscapeWikiText`, which is different from
-/// `Sanitizer::safeEncodeAttribute`.
-///
-/// # Panics
-///
-/// * `config.escape_pattern` does not capture expected values
-#[must_use]
-pub fn escape_all<'a>(config: &Configuration, text: &'a str) -> Cow<'a, str> {
-    const BOUNDARY_CHAR: phf::Map<char, &str> = phf::phf_map! {
-        '\t' => "&#9;",
-        '\n' => "&#10;",
-        '\r' => "&#13;",
-        '_' => "&#95;",
-        '~' => "&#126;",
-    };
-
-    const FIRST_CHAR: phf::Map<char, &str> = phf::phf_map! {
-        ' ' => "&#32;",
-        '!' => "&#33;",
-        '#' => "&#35;",
-        '*' => "&#42;",
-        '+' => "&#43;",
-        '-' => "&#45;",
-        ':' => "&#58;",
-    };
-
-    // TODO: This should be reconfigured to run in a single pass by creating a
-    // very sad regular expression.
-    const REPLS: &[(&str, &str)] = &[
-        ("\n----", "\n&#45;---"),
-        ("\r----", "\r&#45;---"),
-        ("~~~", "~~&#126;"),
-        ("://", "&#58;//"),
-        ("＿", "&#xFF3F;"), // 3 bytes in UTF-8
-        ("\n\t", "\n&#9;"),
-        ("\r\t", "\r&#9;"),
-        ("\n\n", "\n&#10;"),
-        ("\n\r", "\n&#13;"),
-        ("\r\r", "\r&#13;"),
-        ("\n ", "\n&#32;"),
-        ("\r ", "\r&#32;"),
-        ("\n!", "\n&#33;"),
-        ("\r!", "\r&#33;"),
-        ("\n#", "\n&#35;"),
-        ("\r#", "\r&#35;"),
-        ("\n*", "\n&#42;"),
-        ("\r*", "\r&#42;"),
-        ("\n:", "\n&#58;"),
-        ("\r:", "\r&#58;"),
-        ("\r\n", "&#13;\n"),
-        ("!!", "&#33;!"),
-        ("__", "_&#95;"),
-        ("\"", "&#34;"),
-        ("&", "&#38;"),
-        ("'", "&#39;"),
-        (";", "&#59;"),
-        ("<", "&#60;"),
-        ("=", "&#61;"),
-        (">", "&#62;"),
-        ("[", "&#91;"),
-        ("]", "&#93;"),
-        ("{", "&#123;"),
-        ("|", "&#124;"),
-        ("}", "&#125;"),
-    ];
-
-    const PATTERN_REPLS: phf::Map<&str, &str> = phf::phf_map! {
-        "\t" => "&#9;",
-        "\n" => "&#10;",
-        "\x0c" => "&#12;",
-        "\r" => "&#13;",
-        " " => "&#32;",
-        ":" => "&#58;",
-    };
-
-    let mut text = strtr(text, REPLS);
-
-    if let Some(first) = text.chars().next()
-        && let Some(repl) = FIRST_CHAR.get(&first).or_else(|| BOUNDARY_CHAR.get(&first))
-    {
-        text.to_mut().replace_range(..first.len_utf8(), repl);
-    }
-
-    if let Some((index, last)) = text.char_indices().last()
-        && let Some(repl) = BOUNDARY_CHAR.get(&last)
-    {
-        text.to_mut().replace_range(index.., repl);
-    }
-
-    if let Some(extras) = &config.escape_pattern {
-        text.map(|text| {
-            extras.replace_all(text, |capture: &Captures<'_>| {
-                let terminator = capture
-                    .get(1)
-                    .or_else(|| capture.get(2))
-                    .expect("at least one capture group");
-                let repl = PATTERN_REPLS.get(terminator.as_str()).expect("replacement");
-                let prefix = capture.get_match();
-                let prefix = &prefix.as_str()[..terminator.start() - prefix.start()];
-                format!("{prefix}{repl}")
-            })
-        })
-    } else {
-        text
     }
 }
 

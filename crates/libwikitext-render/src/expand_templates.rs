@@ -9,9 +9,10 @@ use super::{
 };
 use core::{fmt::Write as _, ops::Range};
 use either::Either;
+use libmisc::to_ascii_lower;
 use libwikitext_parse::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
-    Spanned, TextStyle, Token,
+    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, MagicLink,
+    Output, Span, Spanned, TextStyle, Token,
 };
 
 /// Template expansion mode.
@@ -120,7 +121,6 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         sp: &StackFrame<'_>,
         span: Span,
         _target: &[Spanned<Token>],
-        _content: &[Spanned<Token>],
     ) -> Result {
         self.out.write_str(&sp.source[span.into_range()])?;
         Ok(())
@@ -210,7 +210,7 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
-        let name = name.to_ascii_lowercase();
+        let name = to_ascii_lower(name);
         match extension_tags::render_extension_tag(
             state,
             sp,
@@ -278,7 +278,6 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        _line_content: bool,
     ) -> Result {
         self.out.write_str(&sp.source[span.into_range()])?;
         Ok(())
@@ -290,9 +289,8 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        _flags: Option<&LangFlags>,
-        _variants: &[Spanned<LangVariant>],
-        _raw: bool,
+        _flags: &LangFlags,
+        _variants: &[LangVariant],
     ) -> Result {
         // TODO: It is extremely unclear what these tokens are supposed to do
         // given that they do not seem to do anything at all on MW and just emit
@@ -307,6 +305,7 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
+        _prefix: Option<Spanned<&str>>,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,
@@ -335,6 +334,18 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
             .rsplit_once(|c: char| !c.is_ascii_whitespace())
             .map_or(suffix, |(_, suffix)| suffix);
         self.out.write_str(suffix)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn adopt_magic_link(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _magic: &MagicLink,
+    ) -> Result {
+        self.out.write_str(&sp.source[span.into_range()])?;
         Ok(())
     }
 
@@ -394,6 +405,7 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
+        _prefix: Option<Spanned<&str>>,
         _target: &[Spanned<Token>],
         _content: &[Spanned<Argument>],
         _trail: Option<Spanned<&str>>,

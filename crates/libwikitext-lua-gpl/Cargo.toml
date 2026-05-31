@@ -21,7 +21,6 @@ libwikitext-common-gpl.workspace = true
 libwikitext-data.workspace = true
 libwikitext-lua.workspace = true
 libwikitext-parse.workspace = true
-libwikitext-parse-gpl.workspace = true
 log.workspace = true
 piccolo.workspace = true
 piccolo-util.workspace = true

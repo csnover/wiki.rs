@@ -19,9 +19,11 @@
 
 use super::{Globals, INCLUDE_TAGS, Parser};
 use core::{cell::Cell, iter};
+use libmisc::to_ascii_lower;
 use libwikitext_parse::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, MARKER_PREFIX,
-    MARKER_SUFFIX, STOP_CHAR, Span, Spanned, TextStyle, TextStylePosition, Token, VOID_TAGS,
+    AnnoAttribute, Argument, CommonLangFlags, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+    MARKER_PREFIX, MARKER_SUFFIX, STOP_CHAR, Span, Spanned, TextStyle, TextStylePosition, Token,
+    VOID_TAGS,
 };
 use peg::RuleResult;
 use std::{collections::HashSet, rc::Rc};
@@ -330,8 +332,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     rule hr(ctx: &Context) -> Spanned<Token>
     = spanned(<
       "----" "-"*
-      line_content:(&sol(ctx) { false } / { true })
-      { Token::HorizontalRule { line_content } }
+      { Token::HorizontalRule }
     >)
 
     ///////////
@@ -351,11 +352,12 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     / t:hacky_dl_uses(ctx) { vec![t] }
     / t:li(ctx) { vec![t] }
 
-    /// An unordered or ordered list item.
+    /// An unordered, ordered, or definition list detail item.
     ///
     /// ```wikitext
     /// * Unordered
     /// # Ordered
+    /// : Detail
     /// ```
     rule li(ctx: &Context) -> Spanned<Token>
     = spanned(<
@@ -363,7 +365,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       content:inlineline(ctx)?
       // `inline_breaks` matches template terminator
       &(eolf() / inline_breaks(ctx))
-      { Token::ListItem { bullets: bullets.span, content: content.unwrap_or(vec![]) } }
+      { Token::ListItem {
+          bullets: bullets.span,
+          content: content.unwrap_or(vec![]),
+      } }
     >)
 
     /// An indented table.
@@ -388,11 +393,11 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     >)
     { t }
 
-    /// A list of definition list items.
+    /// A single line list of definition list items.
     ///
     /// ```wikitext
-    /// ; Term : Detail
-    /// : Detail
+    /// ; Term
+    /// ; Term : Detail : Detail : Detail
     /// ```
     rule dtdd(ctx: &Context) -> Vec<Spanned<Token>>
     = bullets:spanned(<(!(";" !list_char()) list_char())* ";" {}>)
@@ -412,11 +417,13 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                 (bullets.replace(next_k), v)
             })
             .chain(iter::once_with(|| (bullets.get(), last_content)))
-            .map(|(bullets, content)| {
+            .enumerate()
+            .map(|(index, (bullets, content))| {
                 let start = bullets.span.start;
                 let end = content.span.end;
                 Spanned::new(Token::ListItem {
-                    bullets: bullets.span, content: content.node
+                    bullets: bullets.span,
+                    content: content.node,
                 }, start, end)
             })
             .collect()
@@ -799,7 +806,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     / &"<" t:angle_bracket_markup(ctx) { t }
     / &"{" t:template_param_or_template(ctx) { t }
     / &"-{" t:lang_variant_or_tpl(ctx) { t }
-    / t:spanned(<$("[[" &"[")+ { Token::Text }>) { vec![t] }
+    / t:spanned(<("[[" &"[")+ { Token::Text }>) { vec![t] }
     / &"[" t:(wikilink(ctx) / t:extlink(ctx) { vec![t] }) { t }
     / &"'" t:quote() { t }
 
@@ -865,7 +872,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
 
           let is_void = ctx.tag_kind == Some(TagKind::Html) && contains_ignore_case(&VOID_TAGS, &name);
 
-          // Support </br>
+          // TODO: Why is this not for all void tags?
           if name.eq_ignore_ascii_case("br") && is_close {
               is_close = false;
           }
@@ -1320,7 +1327,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         } else {
             match mode {
                 InclusionMode::IncludeOnly => {
-                    if is_end && mode == InclusionMode::IncludeOnly {
+                    if is_end {
                         // Compatibility with the legacy parser
                         RuleResult::Matched(pos, vec![t.map_node(|_| {
                             Token::Text
@@ -1671,10 +1678,11 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     ///
     /// Precedence: template parameters win over templates. See
     /// http://www.mediawiki.org/wiki/Preprocessor_ABNF#Ideal_precedence
-    /// 4:    {{{{·}}}}    →     {·{{{·}}}·}
-    /// 5:   {{{{{·}}}}}   →    {{·{{{·}}}·}}
-    /// 6:  {{{{{{·}}}}}}  →   {{{·{{{·}}}·}}}
-    /// 7: {{{{{{{·}}}}}}} → {·{{{·{{{·}}}·}}}·}
+    /// 4:     {{{{·}}}}     →      {·{{{·}}}·}
+    /// 5:    {{{{{·}}}}}    →     {{·{{{·}}}·}}
+    /// 6:   {{{{{{·}}}}}}   →    {{{·{{{·}}}·}}}
+    /// 7:  {{{{{{{·}}}}}}}  →  {·{{{·{{{·}}}·}}}·}
+    /// 8: {{{{{{{{·}}}}}}}} → {{·{{{·{{{·}}}·}}}·}}
     /// This is only if close has > 3 braces; otherwise we just match open
     /// and close as we find them.
     rule template_param_or_template(ctx: &Context) -> Vec<Spanned<Token>>
@@ -1986,14 +1994,13 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     rule lang_variant_preproc(ctx: &Context) -> Spanned<Token>
     = spanned(<
       "-{"
-      f:lang_variant_preproc_flags(ctx)
-      variants:lang_variant_preproc_variants(ctx, f.1)
+      flags:lang_variant_preproc_flags(ctx)
+      variants:lang_variant_preproc_variants(ctx, flags.as_ref().is_none_or(LangFlags::is_raw))
       inline_breaks(ctx)
       "}-"
       {
-          let (flags, raw) = f;
-          if state.config.language_conversion_enabled {
-              Token::LangVariant { flags, variants, raw }
+          if let Some(flags) = flags {
+              Token::LangVariant { flags, variants }
           } else {
               Token::Text
           }
@@ -2007,21 +2014,12 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// -{ flag1 ; flag2 | ... }-
     ///    ^^^^^^^^^^^^^
     /// ```
-    rule lang_variant_preproc_flags(ctx: &Context) -> (Option<LangFlags>, bool)
+    rule lang_variant_preproc_flags(ctx: &Context) -> Option<LangFlags>
     = &assert(state.config.language_conversion_enabled, "lang converter enabled")
       t:opt_lang_variant_flags(ctx)
-      {
-          let raw = if let LangFlags::Common(flags) = &t {
-              flags.contains(&'R') || flags.contains(&'N')
-          } else {
-              // In Parsoid, this checked if variants was set, but there
-              // are only two possibilities!
-              true
-          };
-          (Some(t), raw)
-      }
+      { Some(t) }
     / &assert(!state.config.language_conversion_enabled, "lang converter disabled")
-      { (None, true) }
+      { None }
 
     /// Processed language conversion flags.
     ///
@@ -2056,7 +2054,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
         // Parse flags (this logic is from core/languages/ConverterRule.php
         // in the parseFlags() function)
         if flags.is_empty() {
-            flags.insert(LangFlags::DOLLAR_S);
+            flags.insert('S');
         } else if flags.contains(&'R') {
             flags.retain(|f| *f == 'R');
         } else if flags.contains(&'N') {
@@ -2067,15 +2065,53 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
             flags.insert('H');
         } else if flags.contains(&'H') {
             flags.retain(|f| matches!(f, 'T' | 'D'));
-            flags.insert(LangFlags::DOLLAR_PLUS);
+            flags.insert('+');
             flags.insert('H');
         } else {
             if flags.contains(&'A') {
-                flags.insert(LangFlags::DOLLAR_PLUS);
-                flags.insert(LangFlags::DOLLAR_S);
+                flags.insert('+');
+                flags.insert('S');
             }
             if flags.contains(&'D') {
-                flags.remove(&LangFlags::DOLLAR_S);
+                flags.remove(&'S');
+            }
+        }
+
+        let f = flags;
+        let mut flags = CommonLangFlags::empty();
+
+        let mut unknown_flag = false;
+        let flag_count = f.len();
+        for item in f {
+            match item {
+                'A' => {
+                    flags |= CommonLangFlags::ADD | CommonLangFlags::SHOW;
+                }
+                'D' => {
+                    flags -= CommonLangFlags::SHOW;
+                }
+                'H' => {
+                    flags &= CommonLangFlags::TITLE | CommonLangFlags::DESCRIBE;
+                    flags |= CommonLangFlags::HOLD_IT_IN | CommonLangFlags::ADD;
+                }
+                'N' => {
+                    flags = CommonLangFlags::NAME;
+                }
+                'R' => {
+                    flags = CommonLangFlags::RAW;
+                }
+                'T' => {
+                    flags |= CommonLangFlags::TITLE;
+                    if flag_count == 1 {
+                        flags |= CommonLangFlags::HOLD_IT_IN;
+                    }
+                }
+                '-' => {
+                    flags = CommonLangFlags::REMOVE;
+                }
+                _ => {
+                    unknown_flag = true;
+                }
             }
         }
         LangFlags::Common(flags)
@@ -2125,10 +2161,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// -{ flag1 ; flag2 | from => variant : to ; }-
     ///                    ^^^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule lang_variant_preproc_variants(ctx: &Context, raw: bool) -> Vec<Spanned<LangVariant>>
+    rule lang_variant_preproc_variants(ctx: &Context, raw: bool) -> Vec<LangVariant>
     = &assert(raw, "raw")
-      t:spanned(<text:lang_variant_text(ctx) { LangVariant::Text { text } }>)
-      { vec![t] }
+      text:lang_variant_text(ctx)
+      { vec![LangVariant::Text { text }] }
     / &assert(!raw, "not raw")
       t:lang_variant_option_list(ctx)
       { t }
@@ -2143,7 +2179,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// -{ flag1 ; flag2 | from => variant : to ; }-
     ///                    ^^^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule lang_variant_option_list(ctx: &Context) -> Vec<Spanned<LangVariant>>
+    rule lang_variant_option_list(ctx: &Context) -> Vec<LangVariant>
     = o:lang_variant_option(ctx)
       rest:(";" t:lang_variant_option(ctx) { t })*
       tr:(";" t:spanned(<$(bogus_lang_variant_option(ctx))>) { t })*
@@ -2152,7 +2188,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
           // drop all this bogus stuff on the ground
           let tr = tr.last().and_then(|text| {
               (!text.contains(|c: char| !c.is_whitespace())).then(|| {
-                  text.map_node(|_| LangVariant::Empty)
+                  LangVariant::Empty
               })
           });
 
@@ -2161,8 +2197,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
               .chain(tr.into_iter())
               .collect()
       }
-    / t:spanned(<text:lang_variant_text(ctx) { LangVariant::Text { text } }>)
-      { vec![t] }
+    / text:lang_variant_text(ctx)
+    { vec![LangVariant::Text { text }] }
 
     /// A language conversion options list variant.
     ///
@@ -2172,7 +2208,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// -{ flag1 ; flag2 | from => variant : to ; }-
     ///                    ^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule lang_variant_option(ctx: &Context) -> Spanned<LangVariant>
+    rule lang_variant_option(ctx: &Context) -> LangVariant
     = lang_variant_two_way(ctx)
     / lang_variant_one_way(ctx)
 
@@ -2182,16 +2218,14 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// -{ flag | variant1 : text1 ; variant2 : text2 ; }-
     ///           ^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^
     /// ```
-    rule lang_variant_two_way(ctx: &Context) -> Spanned<LangVariant>
-    = spanned(<
-      space_or_newline()*
+    rule lang_variant_two_way(ctx: &Context) -> LangVariant
+    = space_or_newline()*
       lang:lang_variant_name(ctx)
       space_or_newline()*
       ":"
       space_or_newline()*
       text:lang_variant_nowiki(ctx, false)
-      { LangVariant::TwoWay { lang, text } }
-    >)
+      { LangVariant::TwoWay { lang: lang.span, text } }
 
     /// A language conversion options list one-way variant.
     ///
@@ -2199,9 +2233,8 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     /// -{ flag1 ; flag2 | from => variant : to ; }-
     ///                    ^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule lang_variant_one_way(ctx: &Context) -> Spanned<LangVariant>
-    = spanned(<
-      space_or_newline()*
+    rule lang_variant_one_way(ctx: &Context) -> LangVariant
+    = space_or_newline()*
       from:lang_variant_nowiki(ctx, true)
       "=>"
       space_or_newline()*
@@ -2210,8 +2243,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
       ":"
       space_or_newline()*
       to:lang_variant_nowiki(ctx, false)
-      { LangVariant::OneWay { from, lang: Box::new(lang), to } }
-    >)
+      { LangVariant::OneWay { from, lang: lang.span, to } }
 
     /// A language conversion language variant.
     ///
@@ -2341,6 +2373,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
           let pipe_trick = bare_pipe && content.is_empty();
           if !pipe_trick && let Some(target) = target {
               Token::Link {
+                  prefix: None,
                   target,
                   content,
                   trail,
@@ -2808,10 +2841,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                 pos
             };
 
-            RuleResult::Matched(end, Token::Autolink {
-                target: path,
-                content: vec![],
-            })
+            RuleResult::Matched(end, Token::Autolink(path))
         }}
         { t }
     >)
@@ -2874,14 +2904,11 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
             } else {
                 format!("//www.ncbi.nlm.nih.gov/pubmed/{identifier}?dopt=Abstract")
             };
-            Token::Autolink {
-                target: vec![Spanned::new(
-                    Token::Generated(target),
-                    content.span.start,
-                    content.span.end
-                )],
-                content: vec![content.map_node(|_| Token::Text)]
-            }
+            Token::Autolink(vec![Spanned::new(
+                Token::Generated(target),
+                content.span.start,
+                content.span.end
+            )])
         }
     >)
 
@@ -2923,13 +2950,10 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
                 (isbn.len() == 13 && matches!(&isbn[0..3], "978"|"979"))
             {
                 let target = format!("Special:BookSources/{isbn}");
-                Ok(Token::Autolink {
-                    target: vec![Spanned {
+                Ok(Token::Autolink(vec![Spanned {
                         node: Token::Generated(target),
                         span: content.span,
-                    }],
-                    content: vec![content.map_node(|_| Token::Text)]
-                })
+                    }]))
             } else {
                 Err("valid isbn code")
             }
@@ -3144,7 +3168,7 @@ peg::parser! { pub(super) grammar wikitext(state: &Parser<'_>, globals: &Globals
     = spanned(<s:raw_htmlentity()
     {
         if let Some(value) = s {
-            Token::Entity { value }
+            Token::Entity(value)
         } else {
             Token::Text
         }
@@ -3291,6 +3315,7 @@ fn inline_breaks(state: &Parser<'_>, input: &str, pos: usize, ctx: &Context) -> 
                     //       ^
                     || ctx.linkdesc
                     // TODO: What are these pipe–square-bracket productions?
+                    // Pipe trick?
                     // `{| ... d |[link??? |] || d2 |}`
                     //           ^         ^  ^     ^
                     || (ctx.table && matches!(iter.next(), Some('[' | ']' | '|' | '}')))
@@ -3918,7 +3943,7 @@ static HTML5_TAGS: phf::Set<&str> = phf::phf_set! {
 #[inline]
 fn contains_ignore_case(candidates: &phf::Set<&str>, value: &str) -> bool {
     // TODO: Use a case-insensitive hashable type instead of allocating.
-    candidates.contains(&value.to_ascii_lowercase())
+    candidates.contains(&to_ascii_lower(value))
 }
 
 /// Returns true if any `candidates` case-insensitively match `value`.
@@ -3935,5 +3960,5 @@ fn resolve_alias_ignore_case<'a>(
     alias: &str,
 ) -> Option<&'a str> {
     // TODO: Use a case-insensitive hashable type instead of allocating.
-    candidates.get(&alias.to_ascii_lowercase()).copied()
+    candidates.get(&to_ascii_lower(alias)).copied()
 }

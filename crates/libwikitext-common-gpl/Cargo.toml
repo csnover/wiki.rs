@@ -10,5 +10,6 @@ workspace = true
 
 [dependencies]
 arrayvec.workspace = true
+libmisc.workspace = true
 libphp-rs.workspace = true
 thiserror.workspace = true

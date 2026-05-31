@@ -184,135 +184,6 @@ pub(super) trait Sink {
     fn text(&mut self, text: &str);
 }
 
-/// Chomps all the whitespace after a heading. Nom nom nom nom nom.
-#[derive(Debug)]
-pub(super) struct AfterHeadingChomper<S: Sink> {
-    /// Chomper hungers? Oog!
-    hungry: HungerLevel,
-    /// The next sink.
-    next: S,
-}
-
-impl<S: Sink> AfterHeadingChomper<S> {
-    /// Creates a new `AfterHeadingChomper`.
-    #[inline]
-    pub fn new(next: S) -> Self {
-        Self {
-            hungry: <_>::default(),
-            next,
-        }
-    }
-}
-
-chainable!(AfterHeadingChomper);
-
-impl<S: Sink> Sink for AfterHeadingChomper<S> {
-    #[inline]
-    fn comment_end(&mut self) {
-        self.hungry = HungerLevel::Low;
-        self.next.comment_end();
-    }
-
-    #[inline]
-    fn comment_start(&mut self) {
-        self.hungry = HungerLevel::Low;
-        self.next.comment_start();
-    }
-
-    #[inline]
-    fn entity(&mut self, value: char, raw: &str) {
-        self.hungry = HungerLevel::Low;
-        self.next.entity(value, raw);
-    }
-
-    #[inline]
-    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
-        self.next.finish(state)
-    }
-
-    #[inline]
-    fn new_line(&mut self) {
-        if self.hungry != HungerLevel::High {
-            self.next.new_line();
-            if self.hungry == HungerLevel::Medium {
-                self.hungry = HungerLevel::High;
-            }
-        }
-    }
-
-    #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        self.hungry = HungerLevel::Low;
-        self.next.raw_html_block(html);
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        self.hungry = HungerLevel::Low;
-        self.next.raw_html_inline(html);
-    }
-
-    #[inline]
-    fn tag_attribute_end(&mut self, name: &str) {
-        self.next.tag_attribute_end(name);
-    }
-
-    #[inline]
-    fn tag_attribute_start(&mut self, name: &str) {
-        self.next.tag_attribute_start(name);
-    }
-
-    #[inline]
-    fn tag_end(&mut self, name: &str) {
-        if HeadingLevel::TAGS.contains(&name) {
-            self.hungry = HungerLevel::Medium;
-        } else {
-            self.hungry = HungerLevel::Low;
-        }
-        self.next.tag_end(name);
-    }
-
-    #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
-    }
-
-    #[inline]
-    fn tag_start(&mut self, name: &str) {
-        self.hungry = HungerLevel::Low;
-        self.next.tag_start(name);
-    }
-
-    #[inline]
-    fn tag_start_end(&mut self, name: &str) {
-        self.next.tag_start_end(name);
-    }
-
-    fn text(&mut self, text: &str) {
-        if self.hungry == HungerLevel::Low {
-            self.next.text(text);
-        } else {
-            let text = text.trim_ascii_start();
-            if !text.is_empty() {
-                self.next.text(text);
-                self.hungry = HungerLevel::Low;
-            }
-        }
-    }
-}
-
-/// How hungry is the chomper?
-#[derive(Debug, Default, Eq, PartialEq)]
-enum HungerLevel {
-    /// Not very hungry. Allows all the things.
-    #[default]
-    Low,
-    /// Medium hungry. Allows one newline to pass.
-    Medium,
-    /// Hungriest hungry. Consumes all whitespace.
-    High,
-}
-
 /// Final accumulator for HTML.
 ///
 /// This sink assumes that previous stages will have done all the necessary
@@ -333,16 +204,6 @@ impl Accumulator {
     #[inline]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Emits the value separator for an attribute, if needed.
-    fn writing(&mut self) {
-        if let Some(has_value) = &mut self.in_attr
-            && !*has_value
-        {
-            self.inner.push_str(r#"=""#);
-            *has_value = true;
-        }
     }
 }
 
@@ -376,18 +237,15 @@ impl Markable for Accumulator {
 impl Sink for Accumulator {
     #[inline]
     fn comment_end(&mut self) {
-        self.writing();
         self.inner.push_str("-->");
     }
 
     #[inline]
     fn comment_start(&mut self) {
-        self.writing();
         self.inner.push_str("<!--");
     }
 
     fn entity(&mut self, value: char, raw: &str) {
-        self.writing();
         if matches!(value, '<' | '>' | '&') || (self.in_attr.is_some() && value == '"') {
             self.inner.push_str(raw);
         } else {
@@ -402,12 +260,10 @@ impl Sink for Accumulator {
 
     #[inline]
     fn new_line(&mut self) {
-        self.writing();
         self.inner.push('\n');
     }
 
     fn raw_html_block(&mut self, html: &str) {
-        self.writing();
         if self.in_attr.is_some() {
             self.inner.push_str(&strtr(html, &[("\"", "&quot;")]));
         } else {
@@ -422,22 +278,20 @@ impl Sink for Accumulator {
 
     #[inline]
     fn tag_attribute_end(&mut self, _: &str) {
-        let has_value = self.in_attr.take().expect("balanced attribute");
-        if has_value {
-            self.inner.push('"');
-        }
+        self.inner.push('"');
     }
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
         self.inner.push(' ');
         self.inner.push_str(name);
-        self.in_attr = Some(false);
+        // MediaWiki always emits double-quoted attributes, even if there is
+        // no value, and since this is exposed in CSS, it matters
+        self.inner.push_str(r#"=""#);
     }
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        self.writing();
         self.inner.push_str("</");
         self.inner.push_str(name);
         self.inner.push_str(">");
@@ -448,23 +302,328 @@ impl Sink for Accumulator {
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
-        self.writing();
         self.inner.push('<');
         self.inner.push_str(name);
     }
 
     #[inline]
     fn tag_start_end(&mut self, _: &str) {
-        self.writing();
         self.inner.push('>');
     }
 
     #[inline]
     fn text(&mut self, text: &str) {
-        self.writing();
         self.inner.push_str(text);
     }
 }
+
+/// Deduplicates and filters invalid HTML attributes using the last-wins rule.
+#[derive(Debug)]
+pub(super) struct AttributeFilter<S: Sink + Markable> {
+    /// The list of allowed attribute names for the currently processing tag.
+    allowed: &'static [&'static phf::Set<&'static str>],
+    /// The start position of the value of the currently processing attribute.
+    current: Option<Mark>,
+    /// The value ranges of emitted attributes for the currently processing
+    /// element.
+    emitted: HashMap<String, (Mark, Mark)>,
+    /// If true, filtering an invalid attribute.
+    filtering: bool,
+    /// The output.
+    next: S,
+}
+
+chainable!(AttributeFilter);
+
+impl<S: Sink + Markable> AttributeFilter<S> {
+    /// Creates a new `TableEmitter` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            allowed: <_>::default(),
+            current: <_>::default(),
+            emitted: <_>::default(),
+            filtering: <_>::default(),
+            next,
+        }
+    }
+
+    /// Returns true if the given attribute `name` is allowed.
+    fn is_allowed(&self, name: &str) -> bool {
+        if self.allowed.iter().any(|allowed| allowed.contains(name)) {
+            true
+        } else {
+            // Technically, these are supposed to be only allowed for things
+            // which allow the common attributes, but HTML5 does not care, and
+            // maybe our own data attributes want to go somewhere unexpected, so
+            // it does not matter
+            if let Some(suffix) = name.strip_prefix("data-") {
+                !suffix.starts_with("mw")
+                    && !suffix.starts_with("ooui")
+                    && !suffix.starts_with("parsoid")
+            } else if let Some(suffix) = name.strip_prefix("xmlns:") {
+                !suffix.is_empty()
+            } else {
+                false
+            }
+        }
+    }
+}
+
+impl<S: Sink + Markable> Sink for AttributeFilter<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        if !self.filtering {
+            self.next.comment_end();
+        }
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        if !self.filtering {
+            self.next.comment_start();
+        }
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        if !self.filtering {
+            self.next.entity(value, raw);
+        }
+    }
+
+    #[inline]
+    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
+        for (a, b) in self.emitted.into_values() {
+            self.next.free_mark(a);
+            self.next.free_mark(b);
+        }
+        self.next.finish(state)
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        if !self.filtering {
+            self.next.new_line();
+        }
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        if !self.filtering {
+            self.next.raw_html_block(html);
+        }
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        if !self.filtering {
+            self.next.raw_html_inline(html);
+        }
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        if !self.filtering {
+            self.next.tag_attribute_end(name);
+            let range = (self.current.take().unwrap(), self.next.mark());
+            let last = self.emitted.insert(name.into(), range);
+            if let Some((start, end)) = last {
+                self.next.with_marks([&start, &end], |[start, end], out| {
+                    if let (Some(start), Some(end)) = (start, end) {
+                        out.replace_range(start..end, "");
+                    }
+                });
+                self.next.free_mark(start);
+                self.next.free_mark(end);
+            }
+        }
+        self.filtering = false;
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        if self.is_allowed(name) {
+            debug_assert!(self.current.is_none());
+            self.current = Some(self.next.mark());
+            self.next.tag_attribute_start(name);
+        } else {
+            self.filtering = true;
+        }
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.allowed = <_>::default();
+        self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.next.tag_end_unbalanced(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        debug_assert!(self.emitted.is_empty() && self.current.is_none());
+        self.allowed = ALLOWED_ATTRS.get(name).copied().unwrap_or_default();
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        for (_, (a, b)) in self.emitted.drain() {
+            self.next.free_mark(a);
+            self.next.free_mark(b);
+        }
+        self.next.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        if !self.filtering {
+            self.next.text(text);
+        }
+    }
+}
+
+/// The allowed list of attributes for the given tags.
+static ALLOWED_ATTRS: phf::Map<&str, &[&phf::Set<&str>]> = phf::phf_map! {
+    "a" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "href", "rel", "rev" }
+    ],
+    "audio" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "controls", "height", "preload", "width" }
+    ],
+    "abbr" | "aside" | "b" | "bdi" | "bdo" | "big" | "center" | "cite" | "code"
+    | "dd" | "dfn" | "dl" | "dt" | "em" | "figcaption" | "figure" | "i" | "kbd"
+    | "mark" | "rb" | "rp" | "rt" | "rtc" | "ruby" | "s" | "samp" | "small"
+    | "span" | "strike" | "strong" | "sub" | "sup" | "tbody" | "tfoot"
+    | "thead" | "tt" | "u" | "var" | "wbr"
+    => &[
+        &COMMON_ATTRS
+    ],
+    "blockquote" | "q" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "cite" }
+    ],
+    "br" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "clear" }
+    ],
+    "caption" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "align" }
+    ],
+    "col" | "colgroup" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "span" }
+    ],
+    "data" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "value" }
+    ],
+    "font" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "color", "face", "size" }
+    ],
+    "hr" | "pre" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "width" }
+    ],
+    "img" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "alt", "height", "src", "srcset", "width" }
+    ],
+    "ins" | "del" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "cite", "datetime" }
+    ],
+    "li" => &[
+        &COMMON_ATTRS, &phf::phf_set! { "type", "value" }
+    ],
+    "link" => &[
+        &phf::phf_set! { "href", "itemprop", "title" }
+    ],
+    "math" => &[
+        &phf::phf_set! { "class", "id", "style", "title" }
+    ],
+    "meta" => &[
+        &phf::phf_set! { "content", "itemprop" }
+    ],
+    "ol" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "reversed", "start", "type" }
+    ],
+    "ul" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "type" }
+    ],
+    "source" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "src", "type" }
+    ],
+    "table" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! {
+            "align", "bgcolor", "border", "cellpadding", "cellspacing", "frame",
+            "rules", "summary", "width"
+        }
+    ],
+    "td" | "th" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! {
+            "abbr", "align", "axis", "bgcolor", "colspan", "headers", "height",
+            "nowrap", "rowspan", "scope", "valign", "width"
+        }
+    ],
+    "tr" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "align", "bgcolor", "valign" }
+    ],
+    "time" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "datetime" }
+    ],
+    "track" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "kind", "label", "src", "srclang", "type" }
+    ],
+    "video" => &[
+        &COMMON_ATTRS,
+        &phf::phf_set! { "controls", "height", "poster", "preload", "width" }
+    ],
+};
+
+/// Common attributes allowed on most tags.
+static COMMON_ATTRS: phf::Set<&str> = phf::phf_set! {
+    "about",
+    "aria-describedby",
+    "aria-flowto",
+    "aria-hidden",
+    "aria-label",
+    "aria-labelledby",
+    "aria-level",
+    "aria-owns",
+    "class",
+    "datatype",
+    "dir",
+    "id",
+    "itemid",
+    "itemprop",
+    "itemref",
+    "itemscope",
+    "itemtype",
+    "lang",
+    "property",
+    "resource",
+    "role",
+    "style",
+    "tabindex",
+    "title",
+    "typeof",
+};
 
 /// Implements the leading whitespace trimming rule for category links:
 ///
@@ -622,14 +781,6 @@ impl<S: Sink> DomTree<S> {
         }
     }
 
-    /// Returns `true` if the emitter is currently inside any table.
-    pub fn in_table(&self) -> bool {
-        self.stack
-            .iter()
-            .rev()
-            .any(|e| matches!(e, Node::Tag(name) if name == "table"))
-    }
-
     /// Tries closing all tags up to and including the nearest `name`. Returns
     /// `true` if some elements were closed.
     fn try_close(&mut self, name: &str) -> bool {
@@ -764,8 +915,11 @@ impl<S: Sink> Sink for DomTree<S> {
 
         if close_tags {
             while let Some(e) = self.stack.pop_if(|e| !e.can_parent(name)) {
+                let skip_newline = matches!(e.tag_name(), Some("td" | "th")) && name == "tr";
                 e.close(&mut self.next);
-                self.next.new_line();
+                if !skip_newline {
+                    self.next.new_line();
+                }
             }
         }
 
@@ -1585,115 +1739,101 @@ static NEVER_TAG: phf::Set<&str> = phf::phf_set! {
 /// List emitter.
 #[derive(Debug, Default)]
 pub(super) struct ListEmitter {
+    /// Whether the last open definition list item was a term item.
+    in_dt: bool,
     /// The stack of currently open list items.
     stack: Vec<ListKind>,
 }
-
 impl ListEmitter {
-    /// Emits HTML to match the new state given by `bullets`.
-    pub fn emit<S: Sink + ?Sized>(&mut self, next: &mut S, bullets: &str) {
-        let bullets = bullets.as_bytes();
-
-        let last = self.stack.len();
-
-        // There are three possible states here:
-        //
-        // 1. transition between dt and dd (new list item)
-        // 2. no changes (new list item)
-        // 3. more bullets (new list inside last list item)
-        // 4. fewer bullets (new list item outside last list)
-        let common_end = self
-            .stack
-            .iter()
-            .zip(bullets.iter())
-            .take_while(|(lhs, rhs)| lhs.same_parent(ListKind::from(**rhs)))
-            .count();
-
-        for item in self.stack.drain(common_end..).rev() {
-            Self::end(next, item, true);
-        }
-
-        if common_end != 0 && common_end == self.stack.len() && common_end == bullets.len() {
-            // Here we are either transitioning dl/dt or li/li
-            let old = &mut self.stack[common_end - 1];
-            let new = ListKind::from(bullets[common_end - 1]);
-            Self::end(next, *old, false);
-            next.new_line();
-            Self::start(next, new, false);
-            *old = new;
-        }
-
-        if last != 0 && bullets.len() > common_end {
-            next.new_line();
-        }
-
-        for item in bullets[common_end..].iter().copied().map(ListKind::from) {
-            Self::start(next, item, true);
-            self.stack.push(item);
-        }
+    /// Returns the length of the least common denominator of `self` and
+    /// `bullets`.
+    pub fn common(&self, bullets: &str) -> usize {
+        Self::count_common(&self.stack, bullets.as_bytes(), |lhs, rhs| lhs == rhs)
     }
 
-    /// Emits HTML for the end of this kind of list item.
-    fn end<S: Sink + ?Sized>(next: &mut S, item: ListKind, end_of_list: bool) {
-        match item {
-            ListKind::Detail | ListKind::Term => {
-                next.tag_end(item.tag_name());
-                if end_of_list {
-                    next.tag_end("dl");
-                }
+    /// Counts the least common denominator of `a` and `b` using a comparator
+    /// `f`.
+    fn count_common<F: Fn(ListKind, ListKind) -> bool>(a: &[ListKind], b: &[u8], f: F) -> usize {
+        a.iter()
+            .zip(b)
+            .take_while(|(lhs, rhs)| f(**lhs, ListKind::from(**rhs)))
+            .count()
+    }
+
+    /// Emits the difference between `self` and `bullets` that are not new
+    /// bullets.
+    pub fn emit_common<S: Sink + ?Sized>(&mut self, next: &mut S, bullets: &str) -> usize {
+        let common_end = self.common(bullets);
+        let old_len = self.stack.len();
+
+        for item in self.stack.drain(common_end..).rev() {
+            item.item(&mut self.in_dt, false).end(next, true);
+        }
+
+        let bullets = bullets.as_bytes();
+        if common_end != 0 {
+            let item = ListKind::from(bullets[common_end - 1]);
+            if bullets.len() == common_end {
+                // Transition between `<li>` and `<li>`, or `<dd>` to `<dt>`
+                self.next_item(next, item);
             }
-            ListKind::Ordered | ListKind::Unordered => {
-                next.tag_end("li");
-                if end_of_list {
-                    next.tag_end(item.tag_name());
-                }
+            if self.in_dt && item == ListKind::Detail {
+                // Transition out of a `<dt>` and into a `<dd>`
+                self.next_item(next, ListKind::Detail);
             }
         }
+
+        if old_len != 0 && bullets.len() > common_end {
+            next.new_line();
+        }
+
+        common_end
+    }
+
+    /// Emits a list item transition at the same depth as the previous list
+    /// item.
+    pub fn emit_last<S: Sink + ?Sized>(&mut self, next: &mut S, bullets: &str) {
+        let item = ListKind::from(bullets.as_bytes()[bullets.len() - 1]);
+        self.next_item(next, item);
     }
 
     /// Emits HTML to finish any incomplete list.
     pub fn finish<S: Sink + ?Sized>(&mut self, next: &mut S) {
         for item in self.stack.drain(..).rev() {
-            Self::end(next, item, true);
+            item.item(&mut self.in_dt, false).end(next, true);
         }
     }
 
-    /// Returns `true` if there are no list items in the stack.
-    pub fn is_empty(&self) -> bool {
-        self.stack.is_empty()
+    /// Emits the next list item with the kind `item` to `next`.
+    fn next_item<S: Sink + ?Sized>(&mut self, next: &mut S, item: ListKind) {
+        item.item(&mut self.in_dt, true).end(next, false);
+        next.new_line();
+        item.start(next, false);
     }
 
-    /// Emits HTML for the start of this kind of list item.
-    fn start<S: Sink + ?Sized>(next: &mut S, item: ListKind, start_of_list: bool) {
-        match item {
-            ListKind::Detail | ListKind::Term => {
-                if start_of_list {
-                    next.tag_start_full("dl");
-                }
-                next.tag_start_full(item.tag_name());
-            }
-            ListKind::Ordered | ListKind::Unordered => {
-                if start_of_list {
-                    next.tag_start_full(item.tag_name());
-                }
-                next.tag_start_full("li");
-            }
+    /// Pushes a list `item` to the stack and emits the associated HTML to
+    /// `next`.
+    pub fn push<S: Sink + ?Sized>(&mut self, next: &mut S, item: u8) {
+        let mut item = ListKind::from(item);
+        item.start(next, true);
+        if item == ListKind::Term {
+            self.in_dt = true;
+            item = ListKind::Detail;
         }
+        self.stack.push(item);
     }
 
-    /// Returns the tag name of the list item on the top of the stack, or
-    /// `None` if there are no current list items.
-    pub fn tag_name(&self) -> Option<&str> {
-        self.stack.last().map(|kind| match kind {
-            ListKind::Ordered | ListKind::Unordered => "li",
-            ListKind::Term => "dt",
-            ListKind::Detail => "dd",
-        })
+    /// Returns true if `bullets` has all the same list item parents as `self`
+    /// (`ol` to `ol`, `ul` to `ul`, `dt` or `dd` to `dl`).
+    pub fn same(&mut self, bullets: &str) -> bool {
+        let end = Self::count_common(&self.stack, bullets.as_bytes(), ListKind::same_parent);
+        end != 0 && end == self.stack.len() && end == bullets.len()
     }
 }
 
 /// A list kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
 pub(super) enum ListKind {
     /// Definition list detail.
     ///
@@ -1703,40 +1843,88 @@ pub(super) enum ListKind {
     /// : Definition detail
     /// ^^^^^^^^^^^^^^^^^^^
     /// ```
-    Detail,
+    Detail = b':',
     /// Ordered list.
     ///
     /// ```wikitext
     /// # Ordered list
     /// ```
-    Ordered,
+    Ordered = b'#',
     /// Definition list term.
     ///
     /// ```wikitext
     /// ; Definition term
     /// ```
-    Term,
+    Term = b';',
     /// Unordered list.
     ///
     /// ```wikitext
     /// * Unordered list
     /// ```
-    Unordered,
+    Unordered = b'*',
 }
 
 impl ListKind {
     /// Returns true if `self` is a definition list item.
     #[inline]
     fn is_definition_list(self) -> bool {
-        matches!(self, ListKind::Term | ListKind::Detail)
+        matches!(self, Self::Term | Self::Detail)
     }
 
     /// Returns true if `self` has the same parent element as `other`.
     #[inline]
     fn same_parent(self, other: Self) -> bool {
         match self {
-            ListKind::Ordered | ListKind::Unordered => self == other,
-            ListKind::Term | ListKind::Detail => other.is_definition_list(),
+            Self::Ordered | Self::Unordered => self == other,
+            Self::Term | Self::Detail => other.is_definition_list(),
+        }
+    }
+
+    /// Emits HTML for the end of this kind of list item.
+    fn end<S: Sink + ?Sized>(self, next: &mut S, end_of_list: bool) {
+        match self {
+            Self::Detail | Self::Term => {
+                next.tag_end(self.tag_name());
+                if end_of_list {
+                    next.tag_end("dl");
+                }
+            }
+            Self::Ordered | Self::Unordered => {
+                next.tag_end("li");
+                if end_of_list {
+                    next.tag_end(self.tag_name());
+                }
+            }
+        }
+    }
+
+    fn item(self, in_dt: &mut bool, reset: bool) -> Self {
+        if self.is_definition_list() {
+            if core::mem::replace(in_dt, reset && self == Self::Term) {
+                Self::Term
+            } else {
+                Self::Detail
+            }
+        } else {
+            self
+        }
+    }
+
+    /// Emits HTML for the start of this kind of list item.
+    fn start<S: Sink + ?Sized>(self, next: &mut S, start_of_list: bool) {
+        match self {
+            Self::Detail | Self::Term => {
+                if start_of_list {
+                    next.tag_start_full("dl");
+                }
+                next.tag_start_full(self.tag_name());
+            }
+            Self::Ordered | Self::Unordered => {
+                if start_of_list {
+                    next.tag_start_full(self.tag_name());
+                }
+                next.tag_start_full("li");
+            }
         }
     }
 
@@ -2679,7 +2867,7 @@ impl<S: Sink> PrettyText<S> {
     fn is_break(prev: char, next: Option<char>) -> bool {
         use unicode_general_category::{
             GeneralCategory::{
-                DashPunctuation, InitialPunctuation, OpenPunctuation, OtherPunctuation,
+                DashPunctuation, InitialPunctuation, MathSymbol, OpenPunctuation, OtherPunctuation,
             },
             get_general_category,
         };
@@ -2688,7 +2876,7 @@ impl<S: Sink> PrettyText<S> {
                 get_general_category(prev),
                 DashPunctuation | OpenPunctuation | InitialPunctuation
             ) && !next.is_some_and(char::is_whitespace))
-            || (matches!(get_general_category(prev), OtherPunctuation)
+            || (matches!(get_general_category(prev), MathSymbol | OtherPunctuation)
                 && next.is_some_and(char::is_alphabetic))
     }
 
@@ -2921,6 +3109,210 @@ impl<S: Sink> Sink for PrettyText<S> {
 
         if flushed != text.len() {
             self.next.text(&text[flushed..]);
+        }
+    }
+}
+
+/// Emits Wikitext tables as HTML.
+#[derive(Debug)]
+pub(super) struct TableEmitter<S: Sink + Markable> {
+    /// The output.
+    next: S,
+    /// The stack of currently open Wikitext tables.
+    stack: Vec<TableState>,
+}
+
+chainable!(TableEmitter);
+
+impl<S: Sink + Markable> TableEmitter<S> {
+    /// Creates a new `TableEmitter` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            next,
+            stack: <_>::default(),
+        }
+    }
+
+    /// Transitions the current table from a start state to an in-content state.
+    #[inline]
+    fn content(&mut self) {
+        if let Some(last @ TableState::Start) = self.stack.last_mut() {
+            *last = TableState::Content;
+        }
+    }
+
+    /// Transitions the current table to an in-data state.
+    pub fn data(&mut self) {
+        if let Some(last) = self.stack.last_mut() {
+            let last = core::mem::replace(last, TableState::Data);
+            if let TableState::Row(start, end) = last {
+                self.next.free_mark(start);
+                self.next.free_mark(end.unwrap());
+            }
+        }
+    }
+
+    /// Finishes the current table.
+    #[inline]
+    pub fn end(&mut self) {
+        if let Some(last) = self.stack.pop() {
+            last.finish(&mut self.next);
+        }
+    }
+
+    /// Returns true if there are no open Wikitext tables.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.stack.is_empty()
+    }
+
+    /// Transitions the current table to an in-row state.
+    pub fn row_start(&mut self) {
+        if let Some(last) = self.stack.last_mut() {
+            // Table rows that never saw any table data are supposed to pretend
+            // like they never existed in the first place
+            let last = core::mem::replace(last, TableState::Row(self.next.mark(), None));
+            if matches!(last, TableState::Row(..)) {
+                last.finish(&mut self.next);
+            }
+        }
+    }
+
+    /// Transitions the current table to an in-row state.
+    pub fn row_end(&mut self) {
+        if let Some(TableState::Row(_, end)) = self.stack.last_mut() {
+            debug_assert!(end.is_none());
+            *end = Some(self.next.mark());
+        }
+    }
+
+    /// Signals that the next table element is the start of a Wikitext table.
+    #[inline]
+    pub fn start(&mut self) {
+        self.stack.push(TableState::Start);
+    }
+}
+
+impl<S: Sink + Markable> Sink for TableEmitter<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.content();
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
+        for table in self.stack.into_iter().rev() {
+            table.finish(&mut self.next);
+        }
+        self.next.finish(state)
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.content();
+        self.next.new_line();
+    }
+
+    #[inline]
+    fn raw_html_block(&mut self, html: &str) {
+        self.content();
+        self.next.raw_html_block(html);
+    }
+
+    #[inline]
+    fn raw_html_inline(&mut self, html: &str) {
+        self.content();
+        self.next.raw_html_inline(html);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.next.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.content();
+        self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_end_unbalanced(&mut self, name: &str) {
+        self.content();
+        self.next.tag_end_unbalanced(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.content();
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.next.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.content();
+        self.next.text(text);
+    }
+}
+
+/// Wikitext table parsing state.
+#[derive(Debug)]
+enum TableState {
+    /// Seen only a table start.
+    Start,
+    /// Seen any non-table content, including whitespace.
+    Content,
+    /// Seen a table row, but not data.
+    Row(Mark, Option<Mark>),
+    /// Seen a table data/header cell.
+    Data,
+}
+
+impl TableState {
+    /// Emits HTML to finish any incomplete table.
+    fn finish<S: Sink + Markable + ?Sized>(self, next: &mut S) {
+        // Confusingly, if a table started and then got no row, it is supposed
+        // to emit a full empty row, but if it got a row, and nothing else,
+        // then that is supposed to be *not* emitted. Normal.
+        match self {
+            Self::Content | Self::Start => {
+                next.tag_start_full("tr");
+                next.tag_start_full("td");
+                next.tag_end("td");
+                next.tag_end("tr");
+            }
+            Self::Row(start, end) => {
+                let end = end.unwrap();
+                next.with_marks([&start, &end], |[start, end], out| {
+                    if let (Some(start), Some(end)) = (start, end) {
+                        out.replace_range(start..end, "");
+                    }
+                });
+                next.free_mark(start);
+                next.free_mark(end);
+            }
+            Self::Data => {}
         }
     }
 }
@@ -3260,6 +3652,7 @@ macro_rules! chainable {
 }
 
 use chainable;
+use std::collections::HashMap;
 
 #[cfg(test)]
 mod tests {

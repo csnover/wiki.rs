@@ -26,7 +26,6 @@ libwikitext-common-gpl.workspace = true
 libwikitext-lua.workspace = true
 libwikitext-lua-gpl.workspace = true
 libwikitext-parse.workspace = true
-libwikitext-parse-gpl.workspace = true
 locale-rs.workspace = true
 log.workspace = true
 math-core.workspace = true

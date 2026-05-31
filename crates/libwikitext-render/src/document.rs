@@ -3,19 +3,18 @@
 use super::{
     Error, Result, State, StripMarker,
     emitters::{
-        Accumulator, AfterHeadingChomper, CategoryTrim, Chain as _, DomTree, EmptyTagger,
-        GrafEmitter, ListEmitter, OutlineEmitter, PrettyText, Sink, TableFoster, TemplateTagger,
+        Accumulator, AttributeFilter, CategoryTrim, Chain as _, DomTree, EmptyTagger, GrafEmitter,
+        ListEmitter, OutlineEmitter, PrettyText, Sink, TableEmitter, TableFoster, TemplateTagger,
         TextStyleEmitter,
     },
     extension_tags,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags::{self, PHRASING_TAGS},
-    trim::Trim,
 };
 use core::fmt::Write as _;
 use either::Either;
-use libmisc::CowExt as _;
+use libmisc::{CowExt as _, to_ascii_lower};
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode, decode_html, format_message, normalize_attr,
     title::{Namespace, Title},
@@ -28,11 +27,13 @@ use libwikitext_parse::{
 use std::borrow::Cow;
 
 /// The chain of render nodes used to render the document.
-type RendererChain = CategoryTrim<
-    DomTree<
-        AfterHeadingChomper<
-            GrafEmitter<
-                TableFoster<OutlineEmitter<PrettyText<TemplateTagger<EmptyTagger<Accumulator>>>>>,
+type RendererChain = TableEmitter<
+    AttributeFilter<
+        CategoryTrim<
+            OutlineEmitter<
+                DomTree<
+                    TableFoster<GrafEmitter<TemplateTagger<EmptyTagger<PrettyText<Accumulator>>>>>,
+                >,
             >,
         >,
     >,
@@ -49,11 +50,9 @@ pub(crate) struct Document {
     /// The output sink.
     next: RendererChain,
     /// The stack of open HTML elements.
-    stack: Vec<Node>,
+    list_stack: Vec<ListEmitter>,
     /// The [`TextStyle`] emitter.
     text_style_emitter: Vec<TextStyleEmitter>,
-    /// The number of open Wikitext tables.
-    wikitext_table_count: usize,
 }
 
 impl Document {
@@ -62,14 +61,13 @@ impl Document {
         Self {
             fragment,
             in_include: <_>::default(),
-            next: CategoryTrim::new(DomTree::new(AfterHeadingChomper::new(GrafEmitter::new(
-                TableFoster::new(OutlineEmitter::new(PrettyText::new(TemplateTagger::new(
-                    EmptyTagger::new(Accumulator::new()),
+            next: TableEmitter::new(AttributeFilter::new(CategoryTrim::new(
+                OutlineEmitter::new(DomTree::new(TableFoster::new(GrafEmitter::new(
+                    TemplateTagger::new(EmptyTagger::new(PrettyText::new(Accumulator::new()))),
                 )))),
-            )))),
-            stack: <_>::default(),
+            ))),
+            list_stack: <_>::default(),
             text_style_emitter: vec![TextStyleEmitter::default()],
-            wikitext_table_count: <_>::default(),
         }
     }
 
@@ -86,8 +84,7 @@ impl Document {
         #[rustfmt::skip]
         if let [Spanned { span, node: Token::Text }] = name.unwrap_or(value)
         {
-            // TODO: Use non-allocating to_lowercase
-            let name = sp.source[span.into_range()].trim_ascii().to_ascii_lowercase();
+            let name = to_ascii_lower(sp.source[span.into_range()].trim_ascii());
             self.next.tag_attribute_start(&name);
             if is_kv {
                 self.attribute_value(state, sp, &name, value)?;
@@ -122,10 +119,10 @@ impl Document {
         name: &str,
         value: &[Spanned<Token>],
     ) -> Result {
-        let name = name.to_ascii_lowercase();
+        let name = to_ascii_lower(name);
         // TODO: Probably *all* the values should be going through
         // StripMarkers::unstrip?
-        let value = match name.as_str() {
+        let value = match name.as_ref() {
             "class" => {
                 // TODO: Look for the mw-collapse classes and dump appropriate
                 // form hooks into the HTML to allow arbitrary collapsing
@@ -197,27 +194,11 @@ impl Document {
             .unwrap()
             .finish(&mut self.next);
 
-        for rest in self.stack.drain(..).rev() {
-            rest.close(&mut self.next);
+        for mut rest in self.list_stack.into_iter().rev() {
+            rest.finish(&mut self.next);
         }
 
         self.next.finish(state)
-    }
-
-    /// Returns true if the document is currently processing any table.
-    ///
-    /// The way that Wikitext and HTML tables interact is, like everything about
-    /// Wikitext, cursed. In MediaWiki, `<table>` cannot start a Wikitext table,
-    /// but a bare `</table>` *will* terminate the table. So there are three
-    /// possible states, requiring two variables (this function, and
-    /// `wikitext_table_count`):
-    ///
-    /// * Not in Wikitext table: Emit raw text
-    /// * In Wikitext table but not HTML table: Emit content
-    /// * In both Wikitext table and HTML table: Emit table element
-    #[inline]
-    fn in_table(&self) -> bool {
-        self.next.next().in_table()
     }
 
     /// Writes the contents of a strip marker to the output.
@@ -226,12 +207,16 @@ impl Document {
             StripMarker::NoWiki(text) => {
                 // The mere presence of a strip marker needs to cause the
                 // GrafEmitter to decide that there is content, even if the
-                // marker is actually empty.
-                // TODO: The mere presence of *any* tag needs to cause
-                // GrafEmitter to decide that there is content, even if the
-                // tag is not actually participating in the DOM at all because
-                // it is mismatched.
-                self.next.next_mut().next_mut().next_mut().force_content();
+                // marker is actually empty, because the spec defines this
+                // code as running before strip markers are unstripped
+                self.next
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .next_mut()
+                    .force_content();
                 self.next.text(&decode_html(text));
             }
             StripMarker::Inline(text) => {
@@ -273,13 +258,8 @@ impl Surrogate<Error> for Document {
         sp: &StackFrame<'_>,
         _span: Span,
         target: &[Spanned<Token>],
-        content: &[Spanned<Token>],
     ) -> Result {
-        // TODO: Autolink inside another link = plain text
-        // autourl have empty content, other magic links have generated
-        // content
-        let content = if content.is_empty() { target } else { content };
-        tags::render_external_link(self, state, sp, target, content, true)
+        tags::render_external_link(self, state, sp, target, target, true)
     }
 
     fn adopt_behavior_switch(
@@ -356,8 +336,7 @@ impl Surrogate<Error> for Document {
         _span: Span,
         name: &str,
     ) -> Result {
-        // TODO: Use non-allocating to_lowercase
-        self.next.tag_end(&name.to_ascii_lowercase());
+        self.next.tag_end(&to_ascii_lower(name));
         Ok(())
     }
 
@@ -381,7 +360,7 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
-        let name = name.to_ascii_lowercase();
+        let name = to_ascii_lower(name);
         match extension_tags::render_extension_tag(
             state,
             sp,
@@ -438,8 +417,7 @@ impl Surrogate<Error> for Document {
         content: &[Spanned<Token>],
     ) -> Result {
         self.next.tag_start_full(level.tag_name());
-        // TODO: Trim can be handled later in a separate handler?
-        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
+        self.adopt_tokens(state, sp, content)?;
         self.next.tag_end(level.tag_name());
         Ok(())
     }
@@ -449,7 +427,6 @@ impl Surrogate<Error> for Document {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _line_content: bool,
     ) -> Result {
         self.next.tag_start_full("hr");
         Ok(())
@@ -460,9 +437,8 @@ impl Surrogate<Error> for Document {
         _state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        _flags: Option<&LangFlags>,
-        _variants: &[Spanned<LangVariant>],
-        _raw: bool,
+        _flags: &LangFlags,
+        _variants: &[LangVariant],
     ) -> Result {
         // TODO: It is extremely unclear what these tokens are supposed to do
         // given that they do not seem to do anything at all on MW and just emit
@@ -476,6 +452,7 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
+        prefix: Option<Spanned<&str>>,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
@@ -494,11 +471,17 @@ impl Surrogate<Error> for Document {
             // of the category list at the end of the page, the content-part of
             // a category is simply ignored.
             state.globals.categories.insert(&title);
-            self.next.clear();
+            self.next.next_mut().next_mut().clear();
+            if let Some(prefix) = prefix {
+                self.adopt_generated(state, sp, None, &prefix)?;
+            }
             if let Some(trail) = trail {
                 self.adopt_generated(state, sp, None, &trail)?;
             }
         } else if !force_link && title.is_local_file() {
+            if let Some(prefix) = prefix {
+                self.adopt_generated(state, sp, None, &prefix)?;
+            }
             super::image::render_media(self, state, sp, title, content)?;
             if let Some(trail) = trail {
                 self.adopt_generated(state, sp, None, &trail)?;
@@ -509,12 +492,25 @@ impl Surrogate<Error> for Document {
                 state,
                 sp,
                 &target,
+                prefix.map(|v| v.as_ref()),
                 content,
                 trail.map(|v| v.as_ref()),
                 title,
             )?;
         }
         self.text_style_emitter.pop();
+        Ok(())
+    }
+
+    fn adopt_inline_list_item(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+    ) -> Result {
+        // An inline list item that gets to be adopted by the document is one
+        // which did not ultimately have any associated term
+        self.next.text(&sp.source[span.into_range()]);
         Ok(())
     }
 
@@ -526,36 +522,71 @@ impl Surrogate<Error> for Document {
         bullets: &str,
         content: &[Spanned<Token>],
     ) -> Result {
-        if let Some(Node::List(list)) = self.stack.last_mut() {
-            list.emit(&mut self.next, bullets);
+        fn split_term_once(
+            content: &[Spanned<Token>],
+        ) -> (&[Spanned<Token>], Option<&[Spanned<Token>]>) {
+            let term = content
+                .iter()
+                .position(|t| matches!(t.node, Token::InlineListItem));
+            term.map_or((content, None), |pos| {
+                (&content[..pos], Some(&content[pos + 1..]))
+            })
+        }
+
+        let mut content = if let Some((last, content)) = content.split_last()
+            && matches!(last.node, Token::NewLine)
+        {
+            content
         } else {
-            let mut list = ListEmitter::default();
-            list.emit(&mut self.next, bullets);
-            self.stack.push(Node::List(list));
-        }
+            content
+        };
 
-        let list_index = self.stack.len() - 1;
-        Trim::new(self, sp).adopt_tokens(state, sp, content)?;
+        let mut list = self.list_stack.pop().unwrap_or_default();
 
-        // It is possible that content “inside” a list item actually contains
-        // terminator tags for items outside of the list item which implicitly
-        // end the list item. This happens in
-        // 'Template:Sidebar with collapsible lists'. When this occurs, the
-        // list will have been terminated already, so trying to close more
-        // elements here will corrupt the tree.
-        if self.stack.len() > list_index && matches!(self.stack[list_index], Node::List(_)) {
-            for e in self.stack.drain(list_index + 1..).rev() {
-                self.next.tag_end(e.tag_name().unwrap());
+        if list.same(bullets) {
+            list.emit_last(&mut self.next, bullets);
+            if bullets.as_bytes()[bullets.len() - 1] == b';' {
+                let (term, detail) = split_term_once(content);
+                if let Some(detail) = detail {
+                    self.adopt_tokens(state, sp, term)?;
+                    list.emit_last(&mut self.next, ":");
+                    content = detail;
+                }
             }
-
-            // The parser removes the newlines between list items in order to
-            // make it easier to disambiguate the list-terminating newline.
-            // Since the list item must have ended at a newline, finish the line
-            // now.
-            // self.next.new_line();
+        } else {
+            let common_end = list.emit_common(&mut self.next, bullets);
+            for item in &bullets.as_bytes()[common_end..] {
+                list.push(&mut self.next, *item);
+                if *item == b';' {
+                    let (term, detail) = split_term_once(content);
+                    if let Some(detail) = detail {
+                        self.adopt_tokens(state, sp, term)?;
+                        list.emit_last(&mut self.next, ":");
+                        content = detail;
+                    }
+                }
+            }
         }
 
+        self.adopt_tokens(state, sp, content)?;
+
+        self.text_style_emitter
+            .last_mut()
+            .unwrap()
+            .finish(&mut self.next);
+
+        self.list_stack.push(list);
         Ok(())
+    }
+
+    fn adopt_magic_link(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _magic: &libwikitext_parse::MagicLink,
+    ) -> Result {
+        todo!()
     }
 
     fn adopt_new_line(
@@ -568,9 +599,8 @@ impl Surrogate<Error> for Document {
             .last_mut()
             .unwrap()
             .finish(&mut self.next);
-        if let Some(Node::List(list)) = self.stack.last_mut() {
+        if let Some(mut list) = self.list_stack.pop() {
             list.finish(&mut self.next);
-            self.stack.pop();
         }
         self.next.new_line();
         Ok(())
@@ -612,11 +642,25 @@ impl Surrogate<Error> for Document {
         Ok(())
     }
 
+    fn adopt_preformatted(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        content: &[Spanned<Token>],
+    ) -> Result {
+        self.next.tag_start_full("pre");
+        self.adopt_tokens(state, sp, content)?;
+        self.next.tag_end("pre");
+        Ok(())
+    }
+
     fn adopt_redirect(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
+        prefix: Option<Spanned<&str>>,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
@@ -626,7 +670,7 @@ impl Surrogate<Error> for Document {
         self.next.text("redirectText");
         self.next.tag_attribute_end("class");
         self.next.tag_start_end("p");
-        self.adopt_link(state, sp, span, target, content, trail)?;
+        self.adopt_link(state, sp, span, prefix, target, content, trail)?;
         self.next.tag_end("p");
         Ok(())
     }
@@ -663,8 +707,7 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Argument>],
         _self_closing: bool,
     ) -> Result {
-        // TODO: Use non-allocating `to_lowercase`
-        let name = name.to_ascii_lowercase();
+        let name = to_ascii_lower(name);
         self.next.tag_start(&name);
         for attr in attributes {
             self.attribute(state, sp, attr)?;
@@ -695,10 +738,10 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if self.wikitext_table_count != 0 {
-            self.adopt_start_tag(state, sp, span, "caption", attributes, false)?;
-        } else if !self.in_table() {
+        if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
+        } else {
+            self.adopt_start_tag(state, sp, span, "caption", attributes, false)?;
         }
         Ok(())
     }
@@ -710,11 +753,12 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if self.wikitext_table_count == 0 {
+        if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
-        } else if self.in_table() {
+        } else {
+            self.next.data();
             // This relies on DOM error correction later in the chain to make
-            // sure there is a <tr>
+            // sure the appropriate elements exist in the appropriate places
             self.adopt_start_tag(state, sp, span, "td", attributes, false)?;
         }
         Ok(())
@@ -726,16 +770,11 @@ impl Surrogate<Error> for Document {
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
-        if self.wikitext_table_count == 0 {
+        if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
         } else {
-            self.wikitext_table_count -= 1;
-            if self.in_table() {
-                self.next.tag_end("table");
-                self.stack
-                    .pop_if(|node| matches!(node, Node::Tag(name) if name == "table"))
-                    .expect("table hack balance");
-            }
+            self.next.end();
+            self.next.tag_end("table");
         }
         Ok(())
     }
@@ -747,11 +786,12 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if self.wikitext_table_count == 0 {
+        if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
-        } else if self.in_table() {
+        } else {
+            self.next.data();
             // This relies on DOM error correction later in the chain to make
-            // sure there is a <tr>
+            // sure the appropriate elements exist in the appropriate places
             self.adopt_start_tag(state, sp, span, "th", attributes, false)?;
         }
         Ok(())
@@ -764,10 +804,14 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        if self.wikitext_table_count == 0 {
+        if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
-        } else if self.in_table() {
+        } else {
+            self.next.row_start();
+            // This relies on DOM error correction later in the chain to make
+            // sure the appropriate elements exist in the appropriate places
             self.adopt_start_tag(state, sp, span, "tr", attributes, false)?;
+            self.next.row_end();
         }
         Ok(())
     }
@@ -779,11 +823,9 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Argument>],
     ) -> Result {
-        self.wikitext_table_count += 1;
-        // TODO: This is for the table indent hack. Document really needs to
-        // integrate with the DomTree balancing stack to work properly :-(((
-        self.stack.push(Node::Tag("table".into()));
-        self.adopt_start_tag(state, sp, span, "table", attributes, false)
+        self.adopt_start_tag(state, sp, span, "table", attributes, false)?;
+        self.next.start();
+        Ok(())
     }
 
     fn adopt_template(
@@ -857,8 +899,6 @@ pub(super) enum Attribute {
 pub(super) enum Node {
     /// An HTML attribute.
     Attribute(Attribute),
-    /// A run of Wikitext list items.
-    List(ListEmitter),
     /// An HTML tag.
     Tag(Cow<'static, str>),
 }
@@ -882,17 +922,21 @@ impl Node {
                     true
                 } else if parent == "p" || PHRASING_TAGS.contains(parent) {
                     PHRASING_TAGS.contains(tag)
-                } else if parent == "li" && tag == "li" {
-                    false
+                } else if matches!(tag, "dt" | "dd") {
+                    // Technically it is supposed to be only allowed in
+                    // `<dl>` or `<dl><div>` but Wikitext is not compliant and
+                    // only cares about these tags not being themselves
+                    matches!(parent.as_ref(), "div" | "dl")
+                } else if tag == "li" {
+                    // Technically `<li>` is supposed to be only parented by
+                    // `<menu>` `<ol>` `<ul>` but Wikitext is not compliant and
+                    // only cares about these tags not being themselves. (There
+                    // are unit tests that explicitly allow `<dd><li>`.)
+                    tag != parent
                 } else {
                     // `parent` must be an unrestricted block element
                     true
                 }
-            }
-            Node::List(list) => {
-                // TODO: Ordered/Unordered have tag_names of ol/ul but they are
-                // actually <li>s
-                !list.is_empty()
             }
             Node::Attribute(_) => unreachable!(),
         }
@@ -906,9 +950,6 @@ impl Node {
                 debug_assert!(!VOID_TAGS.contains(&name));
                 next.tag_end(&name);
             }
-            Node::List(mut list) => {
-                list.finish(next);
-            }
         }
     }
 
@@ -917,7 +958,6 @@ impl Node {
         match self {
             Node::Attribute(_) => None,
             Node::Tag(name) => Some(name),
-            Node::List(list) => list.tag_name(),
         }
     }
 }

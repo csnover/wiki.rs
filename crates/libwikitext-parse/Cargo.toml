@@ -9,9 +9,16 @@ version.workspace = true
 workspace = true
 
 [dependencies]
+bitflags.workspace = true
 either.workspace = true
+html-escape.workspace = true
+libmisc.workspace = true
+libphp-rs.workspace = true
 libwikitext-common.workspace = true
+log.workspace = true
 memchr.workspace = true
 peg.workspace = true
 phf.workspace = true
+regex.workspace = true
 thiserror.workspace = true
+unicode-general-category.workspace = true

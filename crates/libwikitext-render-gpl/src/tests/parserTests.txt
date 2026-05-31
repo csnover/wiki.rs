@@ -4501,6 +4501,9 @@ parsoid=wt2html
 !! html/php
 <p>{{a<b>|foo|a=b|a = b}}
 </b></p>
+!! html/wiki.rs
+<p>{{a<b>|foo|a=b|a = b}}</b>
+</p>
 !! html/parsoid
 <p>{{a<b data-parsoid='{"stx":"html","autoInsertedEnd":true}'>|<span about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"foo"}},"i":0}}]}'>foo</span>|<span about="#mwt3" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"a"}},"i":0}}]}'>a</span>=<span about="#mwt4" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"b"}},"i":0}}]}'>b</span>|a = b}}</b></p>
 !! end
@@ -12918,6 +12921,9 @@ T5158: Test for French spaces in attributes
 !! html/php
 <p><br style="clear : both ;" />
 </p>
+!! html/wiki.rs
+<p><br style="--mw-output-clear:both ;">
+</p>
 !! end
 
 # This test relies on the fact that image captions are processed
@@ -13899,6 +13905,13 @@ parsoid=wt2html,html2wt
 </tr>
 </tbody>
 </table>
+!! html/wiki.rs # This output matches the PHP parser
+<ul><li>a</li>
+<li class="mw-empty-elt"></li>
+<li>b</li></ul>
+<table>
+<tr>
+<td>foo</td></tr></table>
 !! end
 
 !! test
@@ -14731,7 +14744,7 @@ parsoid=wt2wt
 
 hiho
 !! html/parsoid
-!! html/wiki.rs # This output matches the PHP parser, except includes `<tr></tr>` in the output and does not insert a newline before the table
+!! html/his output matches the PHP parser, except includes `<tr></tr>` in the output and does not insert a newline before the table
 
 
 

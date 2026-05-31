@@ -12,7 +12,6 @@ mod stack;
 mod surrogate;
 mod tags;
 mod template;
-mod trim;
 
 use core::{fmt, time::Duration};
 use document::Document;
@@ -26,8 +25,9 @@ use libwikitext_common::{
     lru_limiter::ByMemoryUsage,
     title::Title,
 };
-use libwikitext_parse::{FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, inspect, strip};
-use libwikitext_parse_gpl::Parser;
+use libwikitext_parse::{
+    FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, Parser, inspect, strip,
+};
 pub use parser_fns::{PluginFnArgs, PluginParserFn};
 use piccolo::Lua;
 use schnellru::LruMap;
@@ -103,6 +103,37 @@ pub struct RenderOutput {
     pub outline: globals::Outline,
     /// Extra CSS required for correct article styling.
     pub styles: String,
+}
+
+/// Preprocesses the given article, discarding intermediate state.
+///
+/// This is really useful only for debugging since the intermediate state
+/// contains the data for things like strip markers which are required to fully
+/// render the result Wikitext.
+///
+/// # Errors
+///
+/// * Rendering fails
+pub fn preprocess_article(
+    statics: &mut Statics<'_>,
+    messages: &serde_json_borrow::Value<'_>,
+    article: &Arc<Article>,
+    load_mode: LoadMode,
+    redirect: bool,
+) -> Result<String> {
+    let article = Arc::clone(article);
+    let article = if redirect {
+        resolve_redirects(&statics.db, article)?
+    } else {
+        article
+    };
+
+    let sp = StackFrame::new(
+        Title::new(statics.db.config(), article.title(), None)?,
+        FileMap::new(article.body()),
+    );
+
+    render_preprocess(statics, messages, &article, &sp, load_mode).map(|(_, source)| source)
 }
 
 /// Main renderer entrypoint for articles.
@@ -187,10 +218,10 @@ pub fn render_string(
             let mut content = if mode == EvalPp::Pre {
                 source
             } else if mode == EvalPp::PreTree {
-                let root = state.statics.parser.parse(&source, false)?;
+                let root = state.statics.parser.parse(&source)?;
                 format!("{:#?}", inspect(&FileMap::new(&source), &root.root))
             } else {
-                let root = state.statics.parser.parse(&sp.source, false)?;
+                let root = state.statics.parser.preprocess(&sp.source, false)?;
                 format!("{:#?}", inspect(&sp.source, &root.root))
             };
 
@@ -223,7 +254,7 @@ fn render(
     let (mut state, source) = render_preprocess(statics, messages, article, sp, load_mode)?;
 
     let sp = sp.clone_with_source(FileMap::new(&source));
-    let root = state.statics.parser.parse_no_expansion(&sp.source)?;
+    let root = state.statics.parser.parse(&sp.source)?;
 
     let mut prefetcher = DbPrefetch::default();
     prefetcher.adopt_output(&mut state, &sp, &root)?;
@@ -278,7 +309,7 @@ fn render_preprocess<'a, 'b, 'c>(
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
 ) -> Result<(State<'a, 'b, 'c>, String)> {
-    let root = statics.parser.parse(&sp.source, false)?;
+    let root = statics.parser.preprocess(&sp.source, false)?;
 
     lua::reset_vm(&mut statics.vm, messages, &sp.name, statics.base_time)?;
 
@@ -307,7 +338,7 @@ fn preprocess_frame(
     mode: ExpandMode,
 ) -> Result<String> {
     let sp = sp.clone_with_source(FileMap::new(text));
-    let root = state.statics.parser.parse(&sp.source, false)?;
+    let root = state.statics.parser.preprocess(&sp.source, false)?;
     let mut out = String::new();
     let mut preprocessor = ExpandTemplates::new(&mut out, mode);
     preprocessor.adopt_output(state, &sp, &root)?;

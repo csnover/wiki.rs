@@ -20,7 +20,10 @@ use super::{
     parser::Timeline,
 };
 use core::ops::Deref;
-use libmisc::svg::{NS_SVG, ValueDisplay, n};
+use libmisc::{
+    svg::{NS_SVG, ValueDisplay, n},
+    to_ascii_lower,
+};
 use minidom::{Element, ElementBuilder};
 
 /// Renders a timeline into an SVG element.
@@ -309,7 +312,7 @@ where
     fn color(&self, id: ColorId<'_>) -> Result<ColorValue> {
         self.timeline
             .colors
-            .get(&id.to_ascii_lowercase())
+            .get(&to_ascii_lower(id))
             .copied()
             .or_else(|| {
                 PREDEFINED_COLORS

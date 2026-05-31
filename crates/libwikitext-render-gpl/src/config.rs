@@ -178,7 +178,12 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "zh" => "http://zh.wikipedia.org/wiki/$1",
     },
     language: "en",
+    language_bcp47: phf::phf_map! {},
+    language_code: phf::phf_map! {},
     language_conversion_enabled: true,
+    language_conversions: phf::phf_map! {},
+    language_names: &[],
+    link_prefix: "",
     link_trail: "/^([a-z]+)(.*)$/",
     magic_links: MagicLinks {
         isbn: true,

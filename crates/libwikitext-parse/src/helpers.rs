@@ -1,7 +1,7 @@
 //! Wikitext parser helpers.
 
 use super::{
-    Argument, Configuration, InclusionMode, Span, Spanned, Token,
+    Argument, Configuration, InclusionMode, MagicLink, Span, Spanned, Token,
     visit::{Visitor, visit_link},
 };
 use core::fmt;
@@ -58,6 +58,7 @@ where
     fn visit_link(
         &mut self,
         span: Span,
+        prefix: Option<&'tt str>,
         target: &'tt [Spanned<Token>],
         content: &'tt [Spanned<Argument>],
         trail: Option<&'tt str>,
@@ -71,7 +72,11 @@ where
             return Ok(());
         };
 
-        visit_link(self, span, target, content, trail)
+        visit_link(self, span, prefix, target, content, trail)
+    }
+
+    fn visit_magic_link(&mut self, span: Span, _magic: &MagicLink) -> Result<(), fmt::Error> {
+        self.content.write_str(&self.source()[span.into_range()])
     }
 
     fn visit_new_line(&mut self, _span: Span) -> fmt::Result {

@@ -1,7 +1,7 @@
 //! An implementation of [`HeapUsageCalculator`] that calculates the in-memory
 //! size of a token tree.
 
-use super::{Argument, LangFlags, LangVariant, Output, Spanned, Token, visit::Visitor};
+use super::{Argument, LangFlags, LangVariant, MagicLink, Output, Spanned, Token, visit::Visitor};
 use core::convert::Infallible;
 use libwikitext_common::lru_limiter::HeapUsageCalculator;
 use std::collections::HashSet;
@@ -32,9 +32,9 @@ impl OutputSizeCalculator {
     }
 
     /// Calculates the size of the passed slice of language variants.
-    fn visit_lang_variants(&mut self, variants: &[Spanned<LangVariant>]) -> Result<(), Infallible> {
+    fn visit_lang_variants(&mut self, variants: &[LangVariant]) -> Result<(), Infallible> {
         for variant in variants {
-            match &variant.node {
+            match variant {
                 LangVariant::Text { text } => {
                     self.size += vec_size(text);
                     self.visit_tokens(text)?;
@@ -42,12 +42,10 @@ impl OutputSizeCalculator {
                 LangVariant::OneWay { from, lang, to } => {
                     self.size += vec_size(from) + size_of_val(lang) + vec_size(to);
                     self.visit_tokens(from)?;
-                    self.visit_token(lang)?;
                     self.visit_tokens(to)?;
                 }
                 LangVariant::TwoWay { lang, text } => {
                     self.size += size_of_val(lang) + vec_size(text);
-                    self.visit_token(lang)?;
                     self.visit_tokens(text)?;
                 }
                 LangVariant::Empty => {}
@@ -69,30 +67,26 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
 
     fn visit_token(&mut self, token: &'tt Spanned<Token>) -> Result<(), Infallible> {
         match &token.node {
-            Token::Autolink { target, content } | Token::ExternalLink { target, content } => {
+            Token::Autolink(content)
+            | Token::Heading { content, .. }
+            | Token::ListItem { content, .. }
+            | Token::Preformatted { content } => {
+                self.size += vec_size(content);
+                self.visit_tokens(content)?;
+            }
+            Token::ExternalLink { target, content } => {
                 self.size += vec_size(target) + vec_size(content);
                 self.visit_tokens(target)?;
                 self.visit_tokens(content)?;
             }
-            Token::Generated(text) => {
+            Token::Generated(text) | Token::MagicLink(MagicLink::Isbn(text)) => {
                 self.size += text.capacity();
-            }
-            Token::Heading { content, .. } | Token::ListItem { content, .. } => {
-                self.size += vec_size(content);
-                self.visit_tokens(content)?;
             }
             Token::LangVariant {
                 flags, variants, ..
             } => {
-                if let Some(flags) = flags {
-                    match flags {
-                        LangFlags::Combined(hash_set) => {
-                            self.size += hash_set_size(hash_set);
-                        }
-                        LangFlags::Common(hash_set) => {
-                            self.size += hash_set_size(hash_set);
-                        }
-                    }
+                if let LangFlags::Combined(hash_set) = flags {
+                    self.size += hash_set_size(hash_set);
                 }
                 self.size += vec_size(variants);
                 self.visit_lang_variants(variants)?;
@@ -140,7 +134,9 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             | Token::EndInclude(_)
             | Token::EndTag { .. }
             | Token::Entity { .. }
-            | Token::HorizontalRule { .. }
+            | Token::HorizontalRule
+            | Token::InlineListItem
+            | Token::MagicLink(_)
             | Token::NewLine
             | Token::StartInclude(_)
             | Token::StripMarker(_)

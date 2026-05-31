@@ -1143,9 +1143,10 @@ pub fn strval(n: f64) -> String {
 pub fn ucfirst(text: &str) -> Cow<'_, str> {
     let mut iter = text.chars();
     if let Some(first) = iter.next()
-        && first.to_ascii_uppercase() != first
+        && let upper = first.to_ascii_uppercase()
+        && upper != first
     {
-        Cow::Owned(format!("{}{}", first.to_ascii_uppercase(), iter.as_str()))
+        Cow::Owned(format!("{upper}{}", iter.as_str()))
     } else {
         Cow::Borrowed(text)
     }

@@ -29,7 +29,7 @@ use libwikitext_common::{
     config::Configuration,
     db::{Article, DatabaseProvider as _, Error as DatabaseError},
     decode_html, format_date_mediawiki, format_message, format_number, format_raw_message,
-    make_url, parse_formatted_number,
+    lang_to_bcp47, make_url, parse_formatted_number,
     title::{Namespace, Title},
     url_encode,
 };
@@ -124,7 +124,7 @@ impl PluginFnArgs<'_, '_, '_> {
             return Ok(None);
         };
         let sp = self.0.sp.clone_with_source(FileMap::new(&source));
-        let root = state.0.statics.parser.parse_no_expansion(&sp.source)?;
+        let root = state.0.statics.parser.parse(&sp.source)?;
         let mut out = Document::new(fragment);
         out.adopt_output(state.0, &sp, &root)?;
         Ok(Some(out.finish(state.0).into()))
@@ -485,7 +485,7 @@ mod page {
         write!(
             out,
             "{}",
-            libwikitext_parse_gpl::escape_all(state.statics.db.config(), &part)
+            libwikitext_parse::escape_all(state.statics.db.config(), &part)
         )?;
         Ok(())
     }
@@ -569,7 +569,7 @@ mod page {
             } else {
                 title.key().into()
             };
-            write!(out, "{}", libwikitext_parse_gpl::escape_all(config, &part))?;
+            write!(out, "{}", libwikitext_parse::escape_all(config, &part))?;
         }
         Ok(())
     }
@@ -864,6 +864,41 @@ mod string {
             )?;
         }
 
+        Ok(())
+    }
+
+    /// `{{#bcp47[: code] }}`
+    pub fn bcp_47(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        // TODO: Apparently there are two different contexts for this function,
+        // where if it is used inside of a `interface_message` call it will be
+        // using the user language, but otherwise it is using the content
+        // language.
+        let code = arguments
+            .eval(state, 0)?
+            .map(trim)
+            .unwrap_or(Cow::Borrowed(state.statics.db.config().language));
+        write!(out, "{}", lang_to_bcp47(&code))?;
+        Ok(())
+    }
+
+    /// `{{#dir}}`
+    pub fn dir(
+        _: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        const BCP_47: &str = "language_option_bcp47";
+        if let Some(_code) = arguments.eval(state, 0)?.map(trim) {
+            // If not, then ISO 639-3 or ISO 639-1?
+            let _is_bcp_47 = arguments
+                .eval(state, 1)?
+                .is_some_and(|arg| magic_matches(state, BCP_47, &arg));
+            log::warn!("TODO: #dir");
+        }
         Ok(())
     }
 
@@ -1330,9 +1365,9 @@ mod time {
         }
 
         if let Some(date) = arguments.eval(state, 0)?.map(trim) {
-            // TODO: Use global locale.
-            let locale = &Locale::en;
-            if let Ok((y, m, d)) = simple_date::date(&date, locale) {
+            let locale =
+                Locale::from_flexible(state.statics.db.config().language).unwrap_or(Locale::en);
+            if let Ok((y, m, d)) = simple_date::date(&date, &locale) {
                 let m = u8::from(m);
                 let m_named = locale.months_wide()[usize::from(m - 1)];
                 let y_iso = y.map_or(Year::None, Year::Iso);
@@ -1882,6 +1917,8 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "userlanguage" => site::content_language,
 
     "anchorencode" => string::anchor_encode,
+    "bcp47" => string::bcp_47,
+    "dir" => string::dir,
     "formatnum" => string::format_number,
     "int" => string::interface_message,
     "lc" => string::lc,

@@ -2,8 +2,8 @@
 
 use super::{State, stack::StackFrame};
 use libwikitext_parse::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
-    Spanned, TextStyle, Token,
+    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, MagicLink,
+    Output, Span, Spanned, TextStyle, Token,
 };
 
 /// A trait for implementing token tree walkers.
@@ -25,9 +25,8 @@ pub(crate) trait Surrogate<E> {
         sp: &StackFrame<'_>,
         span: Span,
         target: &[Spanned<Token>],
-        content: &[Spanned<Token>],
     ) -> Result<(), E> {
-        adopt_autolink(self, state, sp, span, target, content)
+        adopt_autolink(self, state, sp, span, target)
     }
 
     /// Visits a [`Token::BehaviorSwitch`].
@@ -162,7 +161,17 @@ pub(crate) trait Surrogate<E> {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _line_content: bool,
+    ) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// Visits a [`Token::InlineListItem`].
+    #[inline]
+    fn adopt_inline_list_item(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
     ) -> Result<(), E> {
         Ok(())
     }
@@ -174,25 +183,26 @@ pub(crate) trait Surrogate<E> {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        flags: Option<&LangFlags>,
-        variants: &[Spanned<LangVariant>],
-        raw: bool,
+        flags: &LangFlags,
+        variants: &[LangVariant],
     ) -> Result<(), E> {
-        adopt_lang_variant(self, state, sp, span, flags, variants, raw)
+        adopt_lang_variant(self, state, sp, span, flags, variants)
     }
 
     /// Visits a [`Token::Link`].
     #[inline]
+    #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
     fn adopt_link(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
+        prefix: Option<Spanned<&str>>,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
     ) -> Result<(), E> {
-        adopt_link(self, state, sp, span, target, content, trail)
+        adopt_link(self, state, sp, span, prefix, target, content, trail)
     }
 
     /// Visits a [`Token::ListItem`].
@@ -206,6 +216,18 @@ pub(crate) trait Surrogate<E> {
         content: &[Spanned<Token>],
     ) -> Result<(), E> {
         adopt_list_item(self, state, sp, span, bullets, content)
+    }
+
+    /// Visits a [`Token::MagicLink`].
+    #[inline]
+    fn adopt_magic_link(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+        _magic: &MagicLink,
+    ) -> Result<(), E> {
+        Ok(())
     }
 
     /// Visits a [`Token::NewLine`].
@@ -243,18 +265,32 @@ pub(crate) trait Surrogate<E> {
         Ok(())
     }
 
+    /// Visits a [`Token::Preformatted`].
+    #[inline]
+    fn adopt_preformatted(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        content: &[Spanned<Token>],
+    ) -> Result<(), E> {
+        adopt_preformatted(self, state, sp, span, content)
+    }
+
     /// Visits a [`Token::Redirect`].
     #[inline]
+    #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
     fn adopt_redirect(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
+        prefix: Option<Spanned<&str>>,
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         trail: Option<Spanned<&str>>,
     ) -> Result<(), E> {
-        adopt_redirect(self, state, sp, span, target, content, trail)
+        adopt_redirect(self, state, sp, span, prefix, target, content, trail)
     }
 
     /// Visits a [`Token::StartAnnotation`].
@@ -447,19 +483,12 @@ pub fn adopt_autolink<V, E>(
     sp: &StackFrame<'_>,
     _span: Span,
     target: &[Spanned<Token>],
-    content: &[Spanned<Token>],
 ) -> Result<(), E>
 where
     V: Surrogate<E> + ?Sized,
 {
-    if content.is_empty() {
-        for token in target {
-            surrogate.adopt_token(state, sp, token)?;
-        }
-    } else {
-        for token in content {
-            surrogate.adopt_token(state, sp, token)?;
-        }
+    for token in target {
+        surrogate.adopt_token(state, sp, token)?;
     }
     Ok(())
 }
@@ -508,15 +537,14 @@ pub fn adopt_lang_variant<V, E>(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
-    _flags: Option<&LangFlags>,
-    variants: &[Spanned<LangVariant>],
-    _raw: bool,
+    _flags: &LangFlags,
+    variants: &[LangVariant],
 ) -> Result<(), E>
 where
     V: Surrogate<E> + ?Sized,
 {
     for variant in variants {
-        if let LangVariant::Text { text } = &variant.node {
+        if let LangVariant::Text { text } = variant {
             surrogate.adopt_tokens(state, sp, text)?;
         }
     }
@@ -525,11 +553,13 @@ where
 
 /// Default implementation of [`Surrogate::adopt_link`].
 #[inline]
+#[expect(clippy::too_many_arguments, reason = "this is how many there are")]
 pub fn adopt_link<V, E>(
     surrogate: &mut V,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
+    prefix: Option<Spanned<&str>>,
     _target: &[Spanned<Token>],
     content: &[Spanned<Argument>],
     trail: Option<Spanned<&str>>,
@@ -537,6 +567,10 @@ pub fn adopt_link<V, E>(
 where
     V: Surrogate<E> + ?Sized,
 {
+    if let Some(prefix) = prefix {
+        surrogate.adopt_text(state, sp, prefix.span, prefix.node)?;
+    }
+
     for token in content {
         surrogate.adopt_tokens(state, sp, &token.content)?;
     }
@@ -578,13 +612,30 @@ where
     surrogate.adopt_tokens(state, sp, &output.root)
 }
 
+/// Default implementation of [`Surrogate::adopt_preformatted`].
+#[inline]
+pub fn adopt_preformatted<V, E>(
+    surrogate: &mut V,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    _span: Span,
+    content: &[Spanned<Token>],
+) -> Result<(), E>
+where
+    V: Surrogate<E> + ?Sized,
+{
+    surrogate.adopt_tokens(state, sp, content)
+}
+
 /// Default implementation of [`Surrogate::adopt_redirect`].
 #[inline]
+#[expect(clippy::too_many_arguments, reason = "this is how many there are")]
 pub fn adopt_redirect<V, E>(
     surrogate: &mut V,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     span: Span,
+    prefix: Option<Spanned<&str>>,
     target: &[Spanned<Token>],
     content: &[Spanned<Argument>],
     trail: Option<Spanned<&str>>,
@@ -592,7 +643,7 @@ pub fn adopt_redirect<V, E>(
 where
     V: Surrogate<E> + ?Sized,
 {
-    adopt_link(surrogate, state, sp, span, target, content, trail)
+    adopt_link(surrogate, state, sp, span, prefix, target, content, trail)
 }
 
 /// Default implementation of [`Surrogate::adopt_token`].
@@ -607,9 +658,7 @@ where
     V: Surrogate<E> + ?Sized,
 {
     match &token.node {
-        Token::Autolink { target, content } => {
-            surrogate.adopt_autolink(state, sp, token.span, target, content)
-        }
+        Token::Autolink(target) => surrogate.adopt_autolink(state, sp, token.span, target),
         Token::BehaviorSwitch { name } => {
             surrogate.adopt_behavior_switch(state, sp, token.span, name)
         }
@@ -633,7 +682,7 @@ where
         Token::EndTag { name } => {
             surrogate.adopt_end_tag(state, sp, token.span, &sp.source[name.into_range()])
         }
-        Token::Entity { value } => surrogate.adopt_entity(state, sp, token.span, *value),
+        Token::Entity(value) => surrogate.adopt_entity(state, sp, token.span, *value),
         Token::Extension {
             name,
             attributes,
@@ -653,15 +702,13 @@ where
         Token::Heading { level, content } => {
             surrogate.adopt_heading(state, sp, token.span, *level, content)
         }
-        Token::HorizontalRule { line_content } => {
-            surrogate.adopt_horizontal_rule(state, sp, token.span, *line_content)
+        Token::HorizontalRule => surrogate.adopt_horizontal_rule(state, sp, token.span),
+        Token::InlineListItem => surrogate.adopt_inline_list_item(state, sp, token.span),
+        Token::LangVariant { flags, variants } => {
+            surrogate.adopt_lang_variant(state, sp, token.span, flags, variants)
         }
-        Token::LangVariant {
-            flags,
-            variants,
-            raw,
-        } => surrogate.adopt_lang_variant(state, sp, token.span, flags.as_ref(), variants, *raw),
         Token::Link {
+            prefix,
             target,
             content,
             trail,
@@ -669,6 +716,10 @@ where
             state,
             sp,
             token.span,
+            prefix.map(|prefix| Spanned {
+                node: &sp.source[prefix.into_range()],
+                span: prefix,
+            }),
             target,
             content,
             trail.map(|trail| Spanned {
@@ -683,15 +734,20 @@ where
             &sp.source[bullets.into_range()],
             content,
         ),
+        Token::MagicLink(magic) => surrogate.adopt_magic_link(state, sp, token.span, magic),
         Token::NewLine => surrogate.adopt_new_line(state, sp, token.span),
         Token::Parameter { name, default } => {
             surrogate.adopt_parameter(state, sp, token.span, name, default.as_deref())
+        }
+        Token::Preformatted { content } => {
+            surrogate.adopt_preformatted(state, sp, token.span, content)
         }
         Token::Redirect { link } => {
             let Spanned {
                 node:
                     Token::Link {
                         target,
+                        prefix,
                         content,
                         trail,
                     },
@@ -704,6 +760,10 @@ where
                 state,
                 sp,
                 token.span,
+                prefix.map(|prefix| Spanned {
+                    node: &sp.source[prefix.into_range()],
+                    span: prefix,
+                }),
                 target,
                 content,
                 trail.map(|trail| Spanned {

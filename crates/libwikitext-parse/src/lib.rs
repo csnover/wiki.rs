@@ -2,6 +2,7 @@
 
 pub mod builder;
 mod codemap;
+mod grammar;
 pub mod helpers;
 mod inspectors;
 pub mod lru_limiter;
@@ -9,10 +10,168 @@ pub mod strip;
 pub mod visit;
 
 pub use codemap::{FileMap, Span, Spanned};
+use core::cell::Cell;
 pub use inspectors::{inspect, inspect_one};
-use libwikitext_common::config::Configuration;
+use libmisc::CowExt as _;
+use libphp_rs::strtr;
+use libwikitext_common::{
+    DEPRECATED_LANGUAGE_CODES, config::Configuration, lang_to_bcp47, regex_switch,
+};
 pub use peg::str::LineCol;
-use std::collections::HashSet;
+use regex::{Captures, Regex};
+use std::{borrow::Cow, collections::HashSet};
+
+/// A Wikitext parser.
+#[derive(Clone, Debug)]
+pub struct Parser<'config> {
+    /// The prefix search for [behavior switches][1].
+    ///
+    /// [1]: libwikitext_common::config::ConfigurationSource::behavior_switch_words
+    bs: Regex,
+    /// The configuration for the parser.
+    config: &'config Configuration,
+    /// The prefix search for [language conversion variants][1].
+    ///
+    /// [1]: libwikitext_common::config::ConfigurationSource::language_conversions
+    lang: Regex,
+    /// The prefix search for [redirects][1].
+    ///
+    /// [1]: libwikitext_common::config::ConfigurationSource::redirect_magic_words
+    redirect: Regex,
+    /// The prefix search for [URI schemes][1].
+    ///
+    /// [1]: libwikitext_common::config::ConfigurationSource::protocols
+    url_scheme: Regex,
+}
+
+impl<'config> Parser<'config> {
+    /// Creates a new `Parser` with the given `config`.
+    ///
+    /// # Panics
+    ///
+    /// * if prefix search regular expressions fail to build
+    pub fn new(config: &'config Configuration) -> Self {
+        let bs = Regex::new(&format!(
+            "^(?i:{})",
+            regex_switch(config.behavior_switch_words.keys())
+        ))
+        .unwrap();
+
+        // Collecting into a hash set for value deduplication, which ends up
+        // being convenient for having only a single set to check for adding
+        // deprecated codes
+        let mut lang = config
+            .language_conversions
+            .keys()
+            .copied()
+            .map(Cow::Borrowed)
+            .chain(
+                config
+                    .language_conversions
+                    .keys()
+                    .copied()
+                    .map(lang_to_bcp47),
+            )
+            .collect::<HashSet<_>>();
+        for (&k, &v) in &DEPRECATED_LANGUAGE_CODES {
+            if lang.contains(v) {
+                lang.insert(Cow::Borrowed(k));
+            }
+        }
+
+        let lang = Regex::new(&format!("^(?:{})", regex_switch(lang.iter()))).unwrap();
+        let redirect = Regex::new(&format!(
+            "^(?i:{})",
+            regex_switch(config.redirect_magic_words.iter())
+        ))
+        .unwrap();
+        let url_scheme =
+            Regex::new(&format!("^(?i:{})", regex_switch(config.protocols.iter()))).unwrap();
+
+        Self {
+            bs,
+            config,
+            lang,
+            redirect,
+            url_scheme,
+        }
+    }
+
+    /// Returns the parser configuration.
+    #[must_use]
+    pub fn config(&self) -> &Configuration {
+        self.config
+    }
+
+    /// Parses a template argument list, for debugging purposes.
+    ///
+    /// # Errors
+    ///
+    /// * `source` cannot be parsed as an argument list
+    pub fn debug_parse_args(&self, args: &str) -> Result<Vec<Spanned<Argument>>, Error> {
+        grammar::wikitext::debug_template_args(args, self, &<_>::default())
+    }
+
+    /// Parses preprocessed Wikitext from `source` into a Wikitext token tree.
+    ///
+    /// # Errors
+    ///
+    /// * `source` cannot be parsed as Wikitext
+    pub fn parse(&self, source: &str) -> Result<Output, Error> {
+        let options = <_>::default();
+        grammar::wikitext::start(source, self, &options).map(|root| Output {
+            has_onlyinclude: options.has_onlyinclude.get(),
+            root,
+        })
+    }
+
+    /// Parses a `<gallery>` media item.
+    ///
+    /// # Errors
+    ///
+    /// * `source` cannot be parsed as a `<gallery>` media item
+    pub fn parse_gallery_media(&self, options: &str) -> Result<Vec<Spanned<Argument>>, Error> {
+        grammar::wikitext::gallery_image_options(options, self, &<_>::default())
+    }
+
+    /// Parses a single redirect and returns its target.
+    ///
+    /// # Errors
+    ///
+    /// * `source` cannot be parsed as a Wikitext redirect
+    pub fn parse_redirect<'s>(&self, source: &'s str) -> Result<&'s str, Error> {
+        grammar::wikitext::single_redirect(source, self, &<_>::default())
+    }
+
+    /// Parses Wikitext from `source` into a preprocessor token tree.
+    ///
+    /// # Errors
+    ///
+    /// * `source` cannot be parsed as Wikitext
+    pub fn preprocess(&self, source: &str, including: bool) -> Result<Output, Error> {
+        let options = PreprocessorOptions {
+            has_onlyinclude: Cell::new(false),
+            including,
+        };
+
+        grammar::wikitext::preprocess(source, self, &options).map(|root| Output {
+            has_onlyinclude: options.has_onlyinclude.get(),
+            root,
+        })
+    }
+}
+
+/// Options for the preprocessor.
+#[derive(Debug, Default)]
+struct PreprocessorOptions {
+    /// An `<onlyinclude>` tag was discovered somewhere in the input.
+    /// This information needs to be passed out so the tree walker knows to
+    /// skip everything by default, instead of needing to do a tree pre-scan or
+    /// buffer everything Just In Case.
+    has_onlyinclude: Cell<bool>,
+    /// If true, parse the document in include mode.
+    including: bool,
+}
 
 /// A parser error.
 pub type Error = peg::error::ParseError<LineCol>;
@@ -30,7 +189,7 @@ pub type Error = peg::error::ParseError<LineCol>;
 /// <tag name="value">
 ///      ^^^^^^^^^^^^
 /// ```
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Argument {
     /// The argument body.
     ///
@@ -104,14 +263,59 @@ pub enum LangFlags {
     /// should be considered for conversion.
     Combined(HashSet<Span>),
     /// The language markup contained a set of common flags.
-    Common(HashSet<char>),
+    Common(CommonLangFlags),
 }
 
 impl LangFlags {
-    /// Special "$+" flag.
-    pub const DOLLAR_PLUS: char = '\x02';
-    /// Special "$S" flag.
-    pub const DOLLAR_S: char = '\x01';
+    /// Returns true if the associated rules should be interpreted as raw text.
+    #[must_use]
+    pub fn is_raw(&self) -> bool {
+        match self {
+            Self::Combined(_) => true,
+            Self::Common(flags) => flags.intersects(CommonLangFlags::RAW | CommonLangFlags::NAME),
+        }
+    }
+}
+
+impl Default for LangFlags {
+    fn default() -> Self {
+        LangFlags::Common(CommonLangFlags::SHOW)
+    }
+}
+
+bitflags::bitflags! {
+    /// Common language conversion flags.
+    ///
+    /// Arbitrary combinations of flags can be used even though there are only a
+    /// few things that make sense to do in combination; flags exposed in the
+    /// API are converted into secret flags using what is effectively a very
+    /// small state machine for flags.
+    ///
+    /// This entire feature is absolutely demented and no one should have ever
+    /// written it, let alone allowed this code to pass code review. And now it
+    /// is part of one of the most used document formats. Great!
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct CommonLangFlags: u8 {
+        /// Add a translation term for the source document and print the
+        /// translated value for the current display language immediately.
+        const AAAAH       = Self::ADD.bits() | Self::SHOW.bits();
+        /// Add a page title override for a given language.
+        const TITLE       = 1 << 0;
+        /// Print the text in the tag without translation.
+        const RAW         = 1 << 1;
+        /// Print a debugging view of the rule.
+        const DESCRIBE    = 1 << 2;
+        /// Remove a term from the dictionary.
+        const REMOVE      = 1 << 3;
+        /// Display nothing. (Sorry, what else would 'H' stand for?)
+        const HOLD_IT_IN  = 1 << 4;
+        /// Print the localised name of the language of a language code.
+        const NAME        = 1 << 5;
+        /// Adds a term to the dictionary.
+        const ADD         = 1 << 6;
+        /// Print the translated value.
+        const SHOW        = 1 << 7;
+    }
 }
 
 /// A language conversion variant.
@@ -131,26 +335,46 @@ pub enum LangVariant {
     /// Disabled word conversion.
     Empty,
     /// A one-way conversion.
+    ///
+    /// A one-way conversion translates a phrase from the source Wikitext to a
+    /// specific target language.
     OneWay {
-        /// The source language.
+        /// The source text.
         from: Vec<Spanned<Token>>,
-        /// The source language.
-        lang: Box<Spanned<Token>>,
         /// The target language.
+        lang: Span,
+        /// The replacement text.
         to: Vec<Spanned<Token>>,
     },
-    /// Disabled language conversion.
+    /// A tag containing raw text which should be excluded from conversion.
     Text {
-        /// The source text.
+        /// The raw text.
         text: Vec<Spanned<Token>>,
     },
-    /// A bidirectional conversion.
+    /// A two-way conversion.
+    ///
+    /// A two-way conversion defines a phrase in a given language. By combining
+    /// several [`Self::TwoWay`] in a single [`Token::LangVariant`], a
+    /// dictionary of translations is created. An instance of a defined phrase
+    /// in a Wikitext document with the given source language will be replaced
+    /// by an associated phrase in the viewer’s target language.
     TwoWay {
-        /// The target language.
-        lang: Spanned<Token>,
-        /// The text in the target language.
+        /// The language.
+        lang: Span,
+        /// The text.
         text: Vec<Spanned<Token>>,
     },
+}
+
+/// A parsed magic link.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MagicLink {
+    /// An ISBN identifier.
+    Isbn(String),
+    /// A PubMed identifier.
+    Pmid(u64),
+    /// An RFC identifier.
+    Rfc(u64),
 }
 
 /// The parser output.
@@ -168,12 +392,7 @@ pub struct Output {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
     /// Plain text which can be turned into a link.
-    Autolink {
-        /// The link content.
-        content: Vec<Spanned<Token>>,
-        /// The link target.
-        target: Vec<Spanned<Token>>,
-    },
+    Autolink(Vec<Spanned<Token>>),
     /// A behavior switch.
     BehaviorSwitch {
         /// The switch name, excluding `__` markers.
@@ -199,10 +418,7 @@ pub enum Token {
         name: Span,
     },
     /// A decoded HTML entity.
-    Entity {
-        /// The decoded entity value.
-        value: char,
-    },
+    Entity(char),
     /// An extension tag.
     Extension {
         /// The tag attributes.
@@ -229,25 +445,23 @@ pub enum Token {
         level: HeadingLevel,
     },
     /// A horizontal rule.
-    HorizontalRule {
-        /// If true, additional content followed the horizontal rule on the same
-        /// line.
-        line_content: bool,
-    },
+    HorizontalRule,
+    /// An inline definition detail.
+    InlineListItem,
     /// A language conversion markup.
     LangVariant {
         /// Metadata for the conversion.
-        flags: Option<LangFlags>,
-        /// Whether the content should be emitted as plain text.
-        raw: bool,
+        flags: LangFlags,
         /// Variants for the conversion.
-        variants: Vec<Spanned<LangVariant>>,
+        variants: Vec<LangVariant>,
     },
     /// An internal link.
     Link {
         /// The text content of the link. If this `Vec` is empty, a processed
         /// version of the target title should be used.
         content: Vec<Spanned<Argument>>,
+        /// The link prefix to be prefixed to content.
+        prefix: Option<Span>,
         /// The target of the link.
         target: Vec<Spanned<Token>>,
         /// The link trail to be appended to content.
@@ -260,6 +474,8 @@ pub enum Token {
         /// The content of the item.
         content: Vec<Spanned<Token>>,
     },
+    /// Semi-structured plain text that can be turned into a link.
+    MagicLink(MagicLink),
     /// A context-sensitive "\n".
     NewLine,
     /// A template parameter.
@@ -268,6 +484,11 @@ pub enum Token {
         default: Option<Vec<Spanned<Token>>>,
         /// The parameter name.
         name: Vec<Spanned<Token>>,
+    },
+    /// A preformatted line.
+    Preformatted {
+        /// The content of the line.
+        content: Vec<Spanned<Token>>,
     },
     /// A redirect block.
     Redirect {
@@ -420,16 +641,128 @@ pub enum TextStyle {
 }
 
 /// The positional attributes of a bold text style. Used for decomposition when
-/// balancing quotes.
+/// balancing quotes. The numeric value is the position priority, with higher
+/// numbers being the higher priority when decaying bold to italic to balance an
+/// unbalanced line of text styles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TextStylePosition {
     /// Any other position.
-    Normal,
+    Normal = 2,
     /// The text style is immediately after a space followed by a single
     /// non-space character.
-    Orphan,
+    Orphan = 3,
     /// The text style is immediately after a space.
-    Space,
+    Space = 1,
+}
+
+/// Escapes the world, marauding, questioning what the hell kind of text format
+/// requires this kind of absolute madness in order to work.
+///
+/// Equivalent to `wfEscapeWikiText`, which is different from
+/// `Sanitizer::safeEncodeAttribute`.
+///
+/// # Panics
+///
+/// * `config.escape_pattern` does not capture expected values
+#[must_use]
+pub fn escape_all<'a>(config: &Configuration, text: &'a str) -> Cow<'a, str> {
+    const BOUNDARY_CHAR: phf::Map<char, &str> = phf::phf_map! {
+        '\t' => "&#9;",
+        '\n' => "&#10;",
+        '\r' => "&#13;",
+        '_' => "&#95;",
+        '~' => "&#126;",
+    };
+
+    const FIRST_CHAR: phf::Map<char, &str> = phf::phf_map! {
+        ' ' => "&#32;",
+        '!' => "&#33;",
+        '#' => "&#35;",
+        '*' => "&#42;",
+        '+' => "&#43;",
+        '-' => "&#45;",
+        ':' => "&#58;",
+    };
+
+    // TODO: This should be reconfigured to run in a single pass by creating a
+    // very sad regular expression.
+    const REPLS: &[(&str, &str)] = &[
+        ("\n----", "\n&#45;---"),
+        ("\r----", "\r&#45;---"),
+        ("~~~", "~~&#126;"),
+        ("://", "&#58;//"),
+        ("＿", "&#xFF3F;"), // 3 bytes in UTF-8
+        ("\n\t", "\n&#9;"),
+        ("\r\t", "\r&#9;"),
+        ("\n\n", "\n&#10;"),
+        ("\n\r", "\n&#13;"),
+        ("\r\r", "\r&#13;"),
+        ("\n ", "\n&#32;"),
+        ("\r ", "\r&#32;"),
+        ("\n!", "\n&#33;"),
+        ("\r!", "\r&#33;"),
+        ("\n#", "\n&#35;"),
+        ("\r#", "\r&#35;"),
+        ("\n*", "\n&#42;"),
+        ("\r*", "\r&#42;"),
+        ("\n:", "\n&#58;"),
+        ("\r:", "\r&#58;"),
+        ("\r\n", "&#13;\n"),
+        ("!!", "&#33;!"),
+        ("__", "_&#95;"),
+        ("\"", "&#34;"),
+        ("&", "&#38;"),
+        ("'", "&#39;"),
+        (";", "&#59;"),
+        ("<", "&#60;"),
+        ("=", "&#61;"),
+        (">", "&#62;"),
+        ("[", "&#91;"),
+        ("]", "&#93;"),
+        ("{", "&#123;"),
+        ("|", "&#124;"),
+        ("}", "&#125;"),
+    ];
+
+    const PATTERN_REPLS: phf::Map<&str, &str> = phf::phf_map! {
+        "\t" => "&#9;",
+        "\n" => "&#10;",
+        "\x0c" => "&#12;",
+        "\r" => "&#13;",
+        " " => "&#32;",
+        ":" => "&#58;",
+    };
+
+    let mut text = strtr(text, REPLS);
+
+    if let Some(first) = text.chars().next()
+        && let Some(repl) = FIRST_CHAR.get(&first).or_else(|| BOUNDARY_CHAR.get(&first))
+    {
+        text.to_mut().replace_range(..first.len_utf8(), repl);
+    }
+
+    if let Some((index, last)) = text.char_indices().last()
+        && let Some(repl) = BOUNDARY_CHAR.get(&last)
+    {
+        text.to_mut().replace_range(index.., repl);
+    }
+
+    if let Some(extras) = &config.escape_pattern {
+        text.map(|text| {
+            extras.replace_all(text, |capture: &Captures<'_>| {
+                let terminator = capture
+                    .get(1)
+                    .or_else(|| capture.get(2))
+                    .expect("at least one capture group");
+                let repl = PATTERN_REPLS.get(terminator.as_str()).expect("replacement");
+                let prefix = capture.get_match();
+                let prefix = &prefix.as_str()[..terminator.start() - prefix.start()];
+                format!("{prefix}{repl}")
+            })
+        })
+    } else {
+        text
+    }
 }
 
 /// The strip marker prefix.

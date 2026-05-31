@@ -120,3 +120,33 @@ where
     }
 }
 // SPDX-SnippetEnd
+
+/// Lowercases ASCII in the given `text`.
+#[must_use]
+pub fn to_ascii_lower(input: &str) -> Cow<'_, str> {
+    for index in 0..input.len() {
+        if input.as_bytes()[index].is_ascii_uppercase() {
+            return Cow::Owned(format!(
+                "{}{}",
+                &input[..index],
+                input[index..].to_ascii_lowercase()
+            ));
+        }
+    }
+    Cow::Borrowed(input)
+}
+
+/// Uppercases ASCII in the given `text`.
+#[must_use]
+pub fn to_ascii_upper(input: &str) -> Cow<'_, str> {
+    for index in 0..input.len() {
+        if input.as_bytes()[index].is_ascii_lowercase() {
+            return Cow::Owned(format!(
+                "{}{}",
+                &input[..index],
+                input[index..].to_ascii_uppercase()
+            ));
+        }
+    }
+    Cow::Borrowed(input)
+}

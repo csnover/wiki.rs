@@ -1,8 +1,8 @@
 //! Helper trait for implementing token tree visitors.
 
 use super::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
-    Spanned, TextStyle, Token,
+    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, MagicLink,
+    Output, Span, Spanned, TextStyle, Token,
 };
 
 /// A trait for visiting the tokens of a token tree.
@@ -16,13 +16,8 @@ pub trait Visitor<'tt, E> {
 
     /// Visits a [`Token::Autolink`].
     #[inline]
-    fn visit_autolink(
-        &mut self,
-        span: Span,
-        target: &'tt [Spanned<Token>],
-        content: &'tt [Spanned<Token>],
-    ) -> Result<(), E> {
-        visit_autolink(self, span, target, content)
+    fn visit_autolink(&mut self, span: Span, target: &'tt [Spanned<Token>]) -> Result<(), E> {
+        visit_autolink(self, span, target)
     }
 
     /// Visits a [`Token::BehaviorSwitch`].
@@ -103,7 +98,13 @@ pub trait Visitor<'tt, E> {
 
     /// Visits a [`Token::HorizontalRule`].
     #[inline]
-    fn visit_horizontal_rule(&mut self, _span: Span, _line_content: bool) -> Result<(), E> {
+    fn visit_horizontal_rule(&mut self, _span: Span) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// Visits a [`Token::InlineListItem`].
+    #[inline]
+    fn visit_inline_list_item(&mut self, _span: Span) -> Result<(), E> {
         Ok(())
     }
 
@@ -112,11 +113,10 @@ pub trait Visitor<'tt, E> {
     fn visit_lang_variant(
         &mut self,
         span: Span,
-        flags: Option<&'tt LangFlags>,
-        variants: &'tt [Spanned<LangVariant>],
-        raw: bool,
+        flags: &'tt LangFlags,
+        variants: &'tt [LangVariant],
     ) -> Result<(), E> {
-        visit_lang_variant(self, span, flags, variants, raw)
+        visit_lang_variant(self, span, flags, variants)
     }
 
     /// Visits a [`Token::Link`].
@@ -124,11 +124,12 @@ pub trait Visitor<'tt, E> {
     fn visit_link(
         &mut self,
         span: Span,
+        prefix: Option<&'tt str>,
         target: &'tt [Spanned<Token>],
         content: &'tt [Spanned<Argument>],
         trail: Option<&'tt str>,
     ) -> Result<(), E> {
-        visit_link(self, span, target, content, trail)
+        visit_link(self, span, prefix, target, content, trail)
     }
 
     /// Visits a [`Token::ListItem`].
@@ -140,6 +141,12 @@ pub trait Visitor<'tt, E> {
         content: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         visit_list_item(self, span, bullets, content)
+    }
+
+    /// Visits a [`Token::MagicLink`].
+    #[inline]
+    fn visit_magic_link(&mut self, _span: Span, _magic: &MagicLink) -> Result<(), E> {
+        Ok(())
     }
 
     /// Visits a [`Token::NewLine`].
@@ -165,16 +172,23 @@ pub trait Visitor<'tt, E> {
         Ok(())
     }
 
+    /// Visits a [`Token::Preformatted`].
+    #[inline]
+    fn visit_preformatted(&mut self, span: Span, content: &'tt [Spanned<Token>]) -> Result<(), E> {
+        visit_preformatted(self, span, content)
+    }
+
     /// Visits a [`Token::Redirect`].
     #[inline]
     fn visit_redirect(
         &mut self,
         span: Span,
+        prefix: Option<&'tt str>,
         target: &'tt [Spanned<Token>],
         content: &'tt [Spanned<Argument>],
         trail: Option<&'tt str>,
     ) -> Result<(), E> {
-        visit_redirect(self, span, target, content, trail)
+        visit_redirect(self, span, prefix, target, content, trail)
     }
 
     /// Visits a [`Token::StartAnnotation`].
@@ -314,19 +328,12 @@ pub fn visit_autolink<'tt, V, E>(
     visitor: &mut V,
     _span: Span,
     target: &'tt [Spanned<Token>],
-    content: &'tt [Spanned<Token>],
 ) -> Result<(), E>
 where
     V: Visitor<'tt, E> + ?Sized,
 {
-    if content.is_empty() {
-        for token in target {
-            visitor.visit_token(token)?;
-        }
-    } else {
-        for token in content {
-            visitor.visit_token(token)?;
-        }
+    for token in target {
+        visitor.visit_token(token)?;
     }
     Ok(())
 }
@@ -381,15 +388,14 @@ where
 pub fn visit_lang_variant<'tt, V, E>(
     visitor: &mut V,
     _span: Span,
-    _flags: Option<&'tt LangFlags>,
-    variants: &'tt [Spanned<LangVariant>],
-    _raw: bool,
+    _flags: &'tt LangFlags,
+    variants: &'tt [LangVariant],
 ) -> Result<(), E>
 where
     V: Visitor<'tt, E> + ?Sized,
 {
     for variant in variants {
-        if let LangVariant::Text { text } = &variant.node {
+        if let LangVariant::Text { text } = variant {
             visitor.visit_tokens(text)?;
         }
     }
@@ -405,6 +411,7 @@ where
 pub fn visit_link<'tt, V, E>(
     visitor: &mut V,
     _span: Span,
+    prefix: Option<&'tt str>,
     target: &'tt [Spanned<Token>],
     content: &'tt [Spanned<Argument>],
     trail: Option<&'tt str>,
@@ -412,6 +419,10 @@ pub fn visit_link<'tt, V, E>(
 where
     V: Visitor<'tt, E> + ?Sized,
 {
+    if let Some(prefix) = prefix {
+        visitor.visit_text(prefix)?;
+    }
+
     if content.is_empty() {
         visitor.visit_tokens(target)?;
     } else {
@@ -458,6 +469,23 @@ where
     visitor.visit_tokens(&output.root)
 }
 
+/// Default implementation of [`Visitor::visit_preformatted`].
+///
+/// # Errors
+///
+/// * A call to `visitor` returns an error
+#[inline]
+pub fn visit_preformatted<'tt, V, E>(
+    visitor: &mut V,
+    _span: Span,
+    content: &'tt [Spanned<Token>],
+) -> Result<(), E>
+where
+    V: Visitor<'tt, E> + ?Sized,
+{
+    visitor.visit_tokens(content)
+}
+
 /// Default implementation of [`Visitor::visit_redirect`].
 ///
 /// # Errors
@@ -467,6 +495,7 @@ where
 pub fn visit_redirect<'tt, V, E>(
     visitor: &mut V,
     span: Span,
+    prefix: Option<&'tt str>,
     target: &'tt [Spanned<Token>],
     content: &'tt [Spanned<Argument>],
     trail: Option<&'tt str>,
@@ -474,7 +503,7 @@ pub fn visit_redirect<'tt, V, E>(
 where
     V: Visitor<'tt, E> + ?Sized,
 {
-    visit_link(visitor, span, target, content, trail)
+    visit_link(visitor, span, prefix, target, content, trail)
 }
 
 /// Default implementation of [`Visitor::visit_token`].
@@ -488,7 +517,7 @@ where
     V: Visitor<'tt, E> + ?Sized,
 {
     match &token.node {
-        Token::Autolink { target, content } => visitor.visit_autolink(token.span, target, content),
+        Token::Autolink(target) => visitor.visit_autolink(token.span, target),
         Token::BehaviorSwitch { name } => visitor.visit_behavior_switch(token.span, name),
         Token::Comment { content, unclosed } => visitor.visit_comment(
             token.span,
@@ -506,7 +535,7 @@ where
         Token::EndTag { name } => {
             visitor.visit_end_tag(token.span, &visitor.source()[name.into_range()])
         }
-        Token::Entity { value } => visitor.visit_entity(token.span, *value),
+        Token::Entity(value) => visitor.visit_entity(token.span, *value),
         Token::Extension {
             name,
             attributes,
@@ -522,20 +551,19 @@ where
         }
         Token::Generated(text) => visitor.visit_generated(token.span, text),
         Token::Heading { level, content } => visitor.visit_heading(token.span, *level, content),
-        Token::HorizontalRule { line_content } => {
-            visitor.visit_horizontal_rule(token.span, *line_content)
+        Token::HorizontalRule => visitor.visit_horizontal_rule(token.span),
+        Token::InlineListItem => visitor.visit_inline_list_item(token.span),
+        Token::LangVariant { flags, variants } => {
+            visitor.visit_lang_variant(token.span, flags, variants)
         }
-        Token::LangVariant {
-            flags,
-            variants,
-            raw,
-        } => visitor.visit_lang_variant(token.span, flags.as_ref(), variants, *raw),
         Token::Link {
             target,
             content,
+            prefix,
             trail,
         } => visitor.visit_link(
             token.span,
+            prefix.map(|prefix| &visitor.source()[prefix.into_range()]),
             target,
             content,
             trail.map(|trail| &visitor.source()[trail.into_range()]),
@@ -543,16 +571,19 @@ where
         Token::ListItem { bullets, content } => {
             visitor.visit_list_item(token.span, &visitor.source()[bullets.into_range()], content)
         }
+        Token::MagicLink(magic) => visitor.visit_magic_link(token.span, magic),
         Token::NewLine => visitor.visit_new_line(token.span),
         Token::Parameter { name, default } => {
             visitor.visit_parameter(token.span, name, default.as_deref())
         }
+        Token::Preformatted { content } => visitor.visit_preformatted(token.span, content),
         Token::Redirect { link } => {
             let Spanned {
                 node:
                     Token::Link {
                         target,
                         content,
+                        prefix,
                         trail,
                     },
                 ..
@@ -562,6 +593,7 @@ where
             };
             visitor.visit_redirect(
                 token.span,
+                prefix.map(|prefix| &visitor.source()[prefix.into_range()]),
                 target,
                 content,
                 trail.map(|trail| &visitor.source()[trail.into_range()]),

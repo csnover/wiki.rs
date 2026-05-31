@@ -5,11 +5,11 @@ pub mod db;
 pub mod lru_limiter;
 pub mod title;
 
-use core::fmt::Write as _;
+use core::{fmt::Write as _, iter};
 use html_escape::NAMED_ENTITIES;
 use http::Uri;
-use libmisc::CowExt as _;
-use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval};
+use libmisc::{CowExt as _, to_ascii_lower, to_ascii_upper};
+use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval, ucfirst};
 use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 
@@ -40,7 +40,10 @@ pub fn anchor_encode(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
             ],
         ),
         AnchorEncodeMode::Legacy => {
-            libphp_rs::url_encode(id).map(|id| strtr(id, &[("%3A", ":"), ("+", "_"), ("%", ".")]))
+            const ALPHABET: percent_encoding::AsciiSet =
+                libphp_rs::URL_ENCODE_ALPHABET.remove(b':');
+            Cow::from(percent_encoding::utf8_percent_encode(id, &ALPHABET))
+                .map(|id| strtr(id, &[(" ", "_"), ("%", ".")]))
         }
     }
 }
@@ -316,6 +319,74 @@ where
     })
 }
 
+/// Converts a MediaWiki language code to its corresponding BCP-47 code.
+#[must_use]
+pub fn lang_to_bcp47(code: &str) -> Cow<'_, str> {
+    const NON_STANDARD: phf::Map<&str, &str> = phf::phf_map! {
+        "cbk-zam" => "cbk",
+        "de-formal" => "de-x-formal",
+        "eml" => "egl",
+        "en-rtl" => "en-x-rtl",
+        "es-formal" => "es-x-formal",
+        "hu-formal" => "hu-x-formal",
+        "map-bms" => "jv-x-bms",
+        "mo" => "ro-Cyrl-MD",
+        "nrm" => "nrf",
+        "nl-informal" => "nl-x-informal",
+        "roa-tara" => "nap-x-tara",
+        "simple" => "en-simple",
+        "sr-ec" => "sr-Cyrl",
+        "sr-el" => "sr-Latn",
+        "crh-ro" => "crh-Latn-RO",
+        "kk-cn" => "kk-Arab-CN",
+        "kk-tr" => "kk-Latn-TR",
+        "zh-cn" => "zh-Hans-CN",
+        "zh-sg" => "zh-Hans-SG",
+        "zh-my" => "zh-Hans-MY",
+        "zh-tw" => "zh-Hant-TW",
+        "zh-hk" => "zh-Hant-HK",
+        "zh-mo" => "zh-Hant-MO",
+    };
+
+    let code = DEPRECATED_LANGUAGE_CODES
+        .get(&to_ascii_lower(code))
+        .copied()
+        .unwrap_or(code);
+    let code = NON_STANDARD.get(code).copied().unwrap_or(code);
+    let mut out = String::new();
+    let mut flushed = 0;
+    let mut last = 0;
+    let mut after_x = false;
+    let iter = code
+        .match_indices('-')
+        .map(|(index, _)| index)
+        .chain(iter::once(code.len()));
+    for index in iter {
+        let text = &code[last..index];
+        let text = if !after_x && last != 0 && text.len() == 2 {
+            to_ascii_upper(text)
+        } else if !after_x && last != 0 && text.len() == 4 {
+            ucfirst(text)
+        } else {
+            to_ascii_lower(text)
+        };
+        after_x = text == "x";
+        last = index + 1;
+        if let Cow::Owned(text) = text {
+            out += &code[flushed..last];
+            out += &text;
+            flushed = last;
+        }
+    }
+
+    if flushed == 0 {
+        Cow::Borrowed(code)
+    } else {
+        out += &code[flushed..];
+        Cow::Owned(out)
+    }
+}
+
 /// Creates a URL for the given title using the given protocol, base URI, path,
 /// and query string.
 ///
@@ -534,6 +605,19 @@ pub fn url_encode_sanitized(input: &str) -> Cow<'_, str> {
         Cow::Owned(out)
     }
 }
+
+/// A map from deprecated MediaWiki language codes to their non-deprecated
+/// replacements.
+pub const DEPRECATED_LANGUAGE_CODES: phf::Map<&str, &str> = phf::phf_map! {
+    "als" => "gsw",
+    "bat-smg" => "sgs",
+    "be-x-old" => "be-tarask",
+    "fiu-vro" => "vro",
+    "roa-rup" => "rup",
+    "zh-classical" => "lzh",
+    "zh-min-nan" => "nan",
+    "zh-yue" => "yue",
+};
 
 /// The alphabet of characters to percent-encode when encoding URLs.
 ///

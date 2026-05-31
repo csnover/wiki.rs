@@ -3,11 +3,12 @@
 
 #![warn(clippy::pedantic, missing_docs, rust_2018_idioms)]
 
+use core::fmt;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
 };
 
 type MagicWords<'a> = HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>;
@@ -73,17 +74,53 @@ fn main() -> Result<(), DisplayError> {
         lang,
         lang_conversion,
         legal_title_chars,
+        link_prefix,
         link_trail,
         magic_links,
     } = query.general;
-
-    let api::MagicLinks { isbn, pmid, rfc } = magic_links;
 
     let interwiki_map = query.interwiki_map.into_iter().map(|v| {
         let k = v.prefix.to_ascii_lowercase();
         let v = &v.url;
         quote!(#k => #v)
     });
+
+    // Old language codes might map to the same BCP-47s. In an effort to avoid
+    // making everything else bad for this one edge case, just avoid emitting
+    // the same BCP-47 twice. To keep the indexes correct, dumping into a set
+    // seems easiest.
+    let mut emitted_bcp47 = HashSet::new();
+    let language_bcp47 = query
+        .languages
+        .iter()
+        .enumerate()
+        .filter_map(|(index, lang)| {
+            let bcp47 = &lang.bcp47;
+            let index = proc_macro2::Literal::usize_unsuffixed(index);
+            emitted_bcp47
+                .insert(bcp47)
+                .then(|| quote!(#bcp47 => #index))
+        });
+
+    let language_code = query.languages.iter().enumerate().map(|(index, lang)| {
+        let code = &lang.code;
+        let index = proc_macro2::Literal::usize_unsuffixed(index);
+        quote!(#code => #index)
+    });
+
+    let language_conversions = query.language_variants.into_values().flat_map(|variants| {
+        variants.into_iter().map(|(k, v)| {
+            let v = &v.fallbacks;
+            quote!(#k => &[ #(#v),* ])
+        })
+    });
+
+    let language_names = query.languages.iter().map(|lang| {
+        let name = &lang.name;
+        quote!(#name)
+    });
+
+    let api::MagicLinks { isbn, pmid, rfc } = magic_links;
 
     let namespaces = namespaces_iter(query.namespaces, &query.namespace_aliases);
 
@@ -141,7 +178,18 @@ fn main() -> Result<(), DisplayError> {
                 #(#interwiki_map),*
             },
             language: #lang,
+            language_bcp47: phf::phf_map! {
+                #(#language_bcp47),*
+            },
+            language_code: phf::phf_map! {
+                #(#language_code),*
+            },
             language_conversion_enabled: #lang_conversion,
+            language_conversions: phf::phf_map! {
+                #(#language_conversions),*
+            },
+            language_names: &[ #(#language_names),* ],
+            link_prefix: #link_prefix,
             link_trail: #link_trail,
             magic_links: MagicLinks {
                 isbn: #isbn,
@@ -212,6 +260,8 @@ fn fetch(prefix: &str) -> Result<String, ureq::Error> {
         "|functionhooks",
         "|general",
         "|interwikimap",
+        "|languages",
+        "|languagevariants",
         "|magicwords",
         "|namespaces",
         "|namespacealiases",
@@ -345,6 +395,8 @@ mod api {
         pub lang_conversion: bool,
         #[serde(borrow, rename = "legaltitlechars")]
         pub legal_title_chars: Cow<'a, str>,
+        #[serde(borrow, rename = "linkprefixcharset")]
+        pub link_prefix: Cow<'a, str>,
         #[serde(borrow, rename = "linktrail")]
         pub link_trail: Cow<'a, str>,
         #[serde(rename = "magiclinks")]
@@ -357,6 +409,22 @@ mod api {
         pub prefix: Cow<'a, str>,
         #[serde(borrow)]
         pub url: Cow<'a, str>,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub(super) struct Language<'a> {
+        #[serde(borrow)]
+        pub bcp47: Cow<'a, str>,
+        #[serde(borrow)]
+        pub code: Cow<'a, str>,
+        #[serde(borrow)]
+        pub name: Cow<'a, str>,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub(super) struct LanguageVariant<'a> {
+        #[serde(borrow)]
+        pub fallbacks: Vec<Cow<'a, str>>,
     }
 
     #[derive(serde::Deserialize)]
@@ -424,6 +492,10 @@ mod api {
         pub general: General<'a>,
         #[serde(borrow, rename = "interwikimap")]
         pub interwiki_map: Vec<Interwiki<'a>>,
+        #[serde(borrow)]
+        pub languages: Vec<Language<'a>>,
+        #[serde(borrow, rename = "languagevariants")]
+        pub language_variants: BTreeMap<Cow<'a, str>, BTreeMap<Cow<'a, str>, LanguageVariant<'a>>>,
         #[serde(borrow, rename = "magicwords")]
         pub magic_words: Vec<MagicWord<'a>>,
         #[serde(borrow)]
@@ -443,9 +515,9 @@ mod api {
 /// the [`Debug`](core::fmt::Debug) formatter is requested.
 struct DisplayError(Box<dyn std::error::Error>);
 
-impl core::fmt::Debug for DisplayError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        core::fmt::Display::fmt(&self.0, f)
+impl fmt::Debug for DisplayError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
     }
 }
 

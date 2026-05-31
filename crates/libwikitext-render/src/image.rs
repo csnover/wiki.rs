@@ -6,7 +6,7 @@ use super::{
     text_run,
 };
 use core::iter;
-use libmisc::CowExt as _;
+use libmisc::{CowExt as _, to_ascii_lower};
 use libwikitext_common::{db::DatabaseProvider as _, make_url, title::Title};
 use libwikitext_parse::{
     Argument, FileMap, Spanned, Token,
@@ -14,7 +14,7 @@ use libwikitext_parse::{
     helpers::TextContent,
     visit::Visitor as _,
 };
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::BTreeMap};
 
 /// The kind of media.
 #[derive(Clone, Copy, Debug, Default)]
@@ -46,7 +46,10 @@ pub(super) struct Options<'a> {
     /// Horizontal image alignment. One of 'left', 'right', 'center', or 'none'.
     pub(super) align: Option<Cow<'a, str>>,
     /// Arbitrary HTML attributes to apply to the HTML tag.
-    pub(super) attrs: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    ///
+    /// A `BTreeMap` is used instead of a `HashMap` for key stability across
+    /// runs.
+    pub(super) attrs: BTreeMap<Cow<'a, str>, Cow<'a, str>>,
     /// Render the image with a border??? (lol).
     border: Option<()>,
     /// The caption for the media. This will be rendered below the image in
@@ -97,7 +100,7 @@ pub(super) fn media_options<'s>(
 ) -> Result<Options<'s>> {
     options.kind = if let Some((_, ext)) = title.key().rsplit_once('.') {
         // TODO: Get from config. API has siprops "fileextensions".
-        match ext.to_ascii_lowercase().as_str() {
+        match to_ascii_lower(ext).as_ref() {
             "mid" | "ogg" | "oga" | "flac" | "opus" | "wav" | "mp3" | "midi" => MediaKind::Audio,
             "ogv" | "webm" | "mpg" | "mpeg" => MediaKind::Video,
             _ => MediaKind::Image,

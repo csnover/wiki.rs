@@ -50,11 +50,13 @@ pub(super) fn render_external_link<W: Surrogate<Error> + ?Sized>(
 }
 
 /// Renders an internal link.
+#[expect(clippy::too_many_arguments, reason = "this is how many there are")]
 pub(super) fn render_internal_link<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &str,
+    prefix: Option<&str>,
     content: &[Spanned<Argument>],
     trail: Option<&str>,
     title: Title,
@@ -90,6 +92,9 @@ pub(super) fn render_internal_link<W: Surrogate<Error> + ?Sized>(
         render_start_link(out, state, sp, &LinkKind::Internal(title))?;
     }
 
+    if let Some(prefix) = prefix {
+        out.adopt_generated(state, sp, None, prefix)?;
+    }
     if content.is_empty() {
         out.adopt_generated(
             state,

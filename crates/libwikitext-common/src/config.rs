@@ -9,7 +9,7 @@ use super::{regex_switch, title::Namespace};
 use core::fmt::Write as _;
 use fancy_regex::{Regex as FancyRegex, RegexBuilder as FancyRegexBuilder};
 use phf::{Map, Set};
-use regex::Regex;
+use regex::{Regex, bytes::Regex as BytesRegex};
 
 /// Enabled magic links.
 ///
@@ -65,8 +65,25 @@ pub struct ConfigurationSource {
     /// The default page language.
     pub language: &'static str,
 
+    /// A map from BCP-47 codes to indexes in the language name list.
+    pub language_bcp47: Map<&'static str, u16>,
+
+    /// A map from MediaWiki language codes to indexes in the language name list.
+    pub language_code: Map<&'static str, u16>,
+
     /// Whether language conversions are enabled.
     pub language_conversion_enabled: bool,
+
+    /// A map of registered language conversions, from a language code to a
+    /// list of fallback language codes.
+    pub language_conversions: Map<&'static str, &'static [&'static str]>,
+
+    /// A list of all the native language names.
+    pub language_names: &'static [&'static str],
+
+    /// A list of allowable characters that match link prefixes, in a format
+    /// suitable for interpolation into a PHP PCRE character set pattern.
+    pub link_prefix: &'static str,
 
     /// A regular expression that matches link trails, in the PHP PCRE pattern
     /// format.
@@ -101,6 +118,11 @@ pub struct Configuration {
     /// A set of compiled regular expressions that match for protocols and magic
     /// links for escaping literal strings containing these patterns.
     pub escape_pattern: Option<Regex>,
+    /// A compiled regular expression that matches link prefixes.
+    ///
+    /// This is basically outsourcing the parsing and creation of a sparse bit
+    /// map to the regex engine.
+    pub link_prefix_pattern: Option<BytesRegex>,
     /// A compiled regular expression that matches link trails.
     pub link_trail_pattern: FancyRegex,
     /// A copy of magic links, for stupid testing purposes, since the rest of
@@ -124,12 +146,20 @@ impl core::ops::Deref for Configuration {
 impl Configuration {
     /// Allocates and returns a new configuration based on the given site
     /// specific configuration.
+    ///
+    /// # Panics
+    ///
+    /// * `link_prefix` or `link_trail` cannot be parsed as a regular expression
     #[must_use]
     pub fn new(source: &'static ConfigurationSource) -> Self {
         let valid_title_bytes = char_class_to_bitmap(source.valid_title_bytes.bytes());
 
+        let link_prefix_pattern = (!source.link_prefix.is_empty())
+            .then(|| BytesRegex::new(&format!("[{}]+", source.link_prefix)).unwrap());
+
         Self {
             escape_pattern: build_escape_pattern(&source.protocols, source.magic_links),
+            link_prefix_pattern,
             link_trail_pattern: link_trail_regex(source.link_trail),
             #[cfg(test)]
             magic_links: source.magic_links,

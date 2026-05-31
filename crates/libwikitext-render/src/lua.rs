@@ -17,8 +17,7 @@ use libwikitext_common::{
     title::{Namespace, Title},
 };
 use libwikitext_lua::{HostCall, UnstripMode, WallTime, prelude::*};
-use libwikitext_parse::FileMap;
-use libwikitext_parse_gpl::Parser;
+use libwikitext_parse::{FileMap, Parser};
 use piccolo::{
     Executor, ExecutorMode, ExternError, Fuel, Function, Lua, StashedClosure, StashedString,
     StashedTable, StashedValue, TypeError, thread::BadExecutorMode,

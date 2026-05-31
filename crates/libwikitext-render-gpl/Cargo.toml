@@ -16,6 +16,7 @@ serde_json_borrow.workspace = true
 [dev-dependencies]
 env_logger.workspace = true
 http.workspace = true
+libmisc.workspace = true
 libphp-rs.workspace = true
 libwikitext-common.workspace = true
 libwikitext-data.workspace = true

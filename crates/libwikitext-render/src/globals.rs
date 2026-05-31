@@ -2,6 +2,7 @@
 
 use core::fmt::{self, Write as _};
 use http::Uri;
+use libmisc::to_ascii_lower;
 use libwikitext_common::{make_url, title::Title};
 use libwikitext_parse::HeadingLevel;
 use std::collections::{BTreeSet, HashMap, hash_map::Entry};
@@ -151,8 +152,8 @@ impl Outline {
         self.buffer.push_str(html);
 
         let id_pos = self.buffer.len();
-        let lower = id.to_ascii_lowercase();
-        let conflict = if let Some(mut suffix) = self.ids.get(&lower).copied() {
+        let lower = to_ascii_lower(id);
+        let conflict = if let Some(mut suffix) = self.ids.get(lower.as_ref()).copied() {
             let id = loop {
                 match self.ids.entry(format!("{lower}_{suffix}")) {
                     Entry::Occupied(_) => {
@@ -164,11 +165,11 @@ impl Outline {
                     }
                 }
             };
-            *self.ids.get_mut(&lower).unwrap() = suffix;
+            *self.ids.get_mut(lower.as_ref()).unwrap() = suffix;
             let _ = write!(self.buffer, "{id}");
             true
         } else {
-            self.ids.insert(lower, 2);
+            self.ids.insert(lower.into_owned(), 2);
             self.buffer.push_str(id);
             false
         };

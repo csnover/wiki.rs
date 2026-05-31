@@ -77,6 +77,9 @@ stack with the name `Variable`.
 
 For avoidance of confusion, sometimes `' '` is written out as “space character”.
 
+“ASCII whitespace” is the standard C locale
+`['\t'|'\n'|'\x0b'|'\x0c'|'\r'|' ']`.
+
 ---
 
 A conforming Wikitext processor must function as if the following sequence of
@@ -95,32 +98,47 @@ steps is run in order:
 1. [Tokenize the input](#tokenize-input);
 2. [Preprocess the input](#preprocess-input);
 3. Delete all [comment ranges](#comment-range) in the input;
-4. [Rewrite HTML tag attributes](#html-attributes);
-5. [Convert Wikitext tables to HTML](#tables);
-6. [Convert Wikitext horizontal rules to HTML](#horizontal-rules);
-7. [Remove double underscores](#double-underscores);
-8. [Convert Wikitext headings to HTML](#headings);
-9. [Convert Wikitext internal links to HTML links](#wikilinks);
-10. For each line `L` in the input ending in `'\n'`:
+4. <a name="escape-invalid-tags"></a>
+   HTML entity escape all `<` and `>` that are not part of an allowed HTML
+   tag[^allowedtags];
+5. [Rewrite HTML tag attributes](#html-attributes);
+6. [Convert Wikitext tables to HTML](#tables);
+7. [Convert Wikitext horizontal rules to HTML](#horizontal-rules);
+8. [Remove double underscores](#double-underscores);
+9. [Convert Wikitext headings to HTML](#headings);
+10. [Convert Wikitext internal links to HTML links](#wikilinks);
+11. For each line `L` in the input ending in `'\n'`:
 
     1. [Run text styles processing](#text-styles);
     2. If `L` is not the last line in the input, emit `'\n'`.
 
-11. [Convert Wikitext external links to HTML](#external-links);
-12. Delete all [cloaked link pseudo-strip markers](#external-link-cloaks);
-13. [Convert magic links to HTML](#magic-links);
-14. [Run the outline algorithm](#outlining);
-15. [Unstrip strip markers](#unstrip) with mode `general`;
-16. [Run the block level algorithm](#block-level-wikitext);
-17. [Run the language converter](#language-conversion);
-18. [Unstrip strip markers](#unstrip) with mode `nowiki`;
-19. [Unstrip strip markers](#unstrip) with mode `general`;
-20. [Parse into an HTML5 DOM];
-21. [Guard French quotation marks from word wrapping](#guard-quotes);
-22. [Run the p-wrapping algorithm](#p-wrapping);
-23. [Format elements](#format-elements).
+12. [Convert Wikitext external links to HTML](#external-links);
+13. Delete all [cloaked link pseudo-strip markers](#external-link-cloaks);
+14. [Convert magic links to HTML](#magic-links);
+15. [Run the outline algorithm](#outlining);
+16. [Unstrip strip markers](#unstrip) with mode `general`;
+17. [Run the block level algorithm](#block-level-wikitext);
+18. [Run the language converter](#language-conversion);
+19. [Unstrip strip markers](#unstrip) with mode `nowiki`;
+20. [Unstrip strip markers](#unstrip) with mode `general`[^gen2];
+21. [Parse into an HTML5 DOM];
+22. [Guard French quotation marks from word wrapping](#guard-quotes);
+23. [Run the p-wrapping algorithm](#p-wrapping);
+24. [Format elements](#format-elements).
 
 [Parse into an HTML5 DOM]: https://html.spec.whatwg.org/multipage/parsing.html
+
+[^allowedtags]: `["abbr"|"b"|"bdi"|"bdo"|"big"|"blockquote"|"br"|"caption"`
+  `|"center"|"cite"|"code"|"data"|"dd"|"del"|"dfn"|"div"|"dl"|"dt"|"em"|"font"`
+  `|"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"hr"|"i"|"ins"|"kbd"|"li"|"mark"|"ol"|"p"`
+  `|"pre"|"q"|"rb"|"rp"|"rt"|"rtc"|"ruby"|"s"|"samp"|"small"|"span"|"strike"`
+  `|"strong"|"sub"|"sup"|"table"|"td"|"th"|"time"|"tr"|"tt"|"u"|"ul"|"var"`
+  `|"wbr"]`
+
+[^gen2]: The rationale for this sequential unstripping was “inserted for
+  transparent tag hooks (now deprecated) but some extensions (notably `<poem>`)
+  rely on the extra `unstripGeneral()` after `unstripNoWiki()` so they can
+  modify the contents of `<nowiki>` tags.”
 
 ## Tokenize input
 
@@ -895,11 +913,13 @@ For each attribute of each HTML tag in the input:
 
 1. Let `TD History`, `TR History`, `Open TR History`, `TR Attributes`, and
    `Last Tag` be stacks;
-2. Let `Indent Level` be 0;
-3. Let `L` be each line of the input split on `'\n'`;
-4. If `L` contains only ASCII whitespace, emit the interpolation `"{{L}}\n"`;
+2. Let `Indent Level` be 0.
+
+For each line of the input `L` split on `'\n'`:
+
+1. If `L` contains only ASCII whitespace, emit the interpolation `"{{L}}\n"`;
    otherwise
-5. If `L` matches the regular expression `^(?::*)\s*\{\|`:
+2. If `L` matches the regular expression `^\s*(?::*)\s*\{\|`:
 
    1. Let `Rest` be the rest of `L` after `"{|"`;
    2. [Unstrip](#unstrip) all markers from `Rest`;
@@ -913,8 +933,9 @@ For each attribute of each HTML tag in the input:
 
    Otherwise;
 
-6. If `TD History` is empty, emit the interpolation `"{{L}}\n"`; otherwise
-7. If `L` starts with `"|}"`:
+3. If `TD History` is empty, emit the interpolation `"{{L}}\n"`; otherwise
+4. Trim ASCII whitespace from the start and end of `L`;
+5. If `L` starts with `"|}"`:
 
    1. Pop `TR Attributes`;
    2. Pop `Last Tag`;
@@ -937,7 +958,7 @@ For each attribute of each HTML tag in the input:
 
    Otherwise;
 
-8. If `L` starts with `|-`:
+6. If `L` starts with `|-`:
 
    1. Let `Rest` be the rest of the line after the regular expression `^\|-+`;
    2. Let `A` be the result of [parsing the attributes](#parse-attributes)
@@ -952,7 +973,7 @@ For each attribute of each HTML tag in the input:
 
    Otherwise;
 
-9. If `L` starts with `['|'|'!'|"|+"]`:
+7. If `L` starts with `['|'|'!'|"|+"]`:
 
    1. Let `Rest` be the rest of the line after the start token;
    2. If `L` starts with `'!'`, let `Rest` be the result of replacing all `"!!"`
@@ -988,32 +1009,45 @@ For each attribute of each HTML tag in the input:
          2. Trim ASCII whitespace from `D`;
          3. Emit the interpolation `"<{{Last Tag}}{{A}}>{{D}}\n"`.
 
-10. While `TD History` is not empty:
+Finally:
+
+1. While `TD History` is not empty:
 
     1. Pop `TD History`. If `true`, emit `"</td>\n"`;
     2. Pop `TR History`. If `true`, emit `"</tr>\n"`;
     3. Pop `Open TR History`. If not `true`, emit `"<tr><td></td></tr>\n"`.
     4. Emit `"</table>\n"`.
 
-11. Remove any trailing `'\n'` from the output;
-12. If the output is `"<table>\n<tr><td></td></tr>\n</table>"`, clear the
+2. Remove any trailing `'\n'` from the output;
+3. If the entire output is `"<table>\n<tr><td></td></tr>\n</table>"`, clear the
     output.
 
 ### Parse attributes
 
 1. Unstrip all strip markers from the input;
-2. Trim the input;
+2. Trim ASCII whitespace from the input;
 3. If the input is empty, return empty;
-4. Let `A` be the list of attribute pairs extracted from the input by the
-   regular expression
-   `(?<N>[:_\p{L}\p{N}][:_.\p{L}\p{N}-]*)(?:\s*=\s*(?:"(?<V1>[^"]*)(?:"|$)|'(?<V2>[^']*)(?:'|$)|(?<V3>[^\s>]*))?`;
-5. Let `N` be the ASCII lowercase conversion of capture group `N`;
-6. Let `V` be whichever capture group `[V1|V2|V3]` is not none;
-7. Replace each run of `['\t'|'\r'|'\n'|' ']` in `V` with a single space
-   character;
-8. Trim ASCII whitespace from `V`;
-9. Decode HTML entities in `V` using the MediaWiki rules;
-10. Return the list of attributes.
+4. Let `A` be a map.
+
+For each attribute pair extracted from the input by the regular expression
+   `(?<N>[^\s/>][^\s/>=]*)(?:\s*=\s*(?:"(?<V1>[^"]*)(?:"|$)|'(?<V2>[^']*)(?:'|$)|(?<V3>[^\s>]*))?`:
+
+1. Let `N` be the ASCII lowercase conversion of capture group `N`;
+2. If `N` matches the regular expression `^[:_\p{L}\p{N}][:_.\p{L}\p{N}-]*$`:
+
+   ※ The behaviour of matching the pair and then filtering the name is different
+     than matching the name in the attribute pair. If combined, the pair
+     expression may fail to match an invalid name, then improperly match parts
+     of the value.
+
+   1. Let `V` be whichever capture group `[V1|V2|V3]` is not none;
+   2. Replace each run of `['\t'|'\r'|'\n'|' ']` in `V` with a single space
+      character;
+   3. Trim ASCII whitespace from `V`;
+   4. Decode HTML entities in `V` using the special MediaWiki rules[^entity];
+   5. Insert `V` to `A` with key `K`.
+
+Finally, return `A`.
 
 ## Horizontal rules
 
@@ -1029,18 +1063,31 @@ For each sequence of characters that corresponds with a registered double
 
 ## Headings
 
-For each line ending in `'\n'` which begins with a sequence of 1 to 6 `'='`:
+Assert that the input contains no HTML comments.
 
-1. Let `N` be the number of `'='` in the sequence (from 1 to 6);
-2. Let `L` be the text of the line;
-3. Assert that the input contains no HTML comments;
-4. Trim ASCII whitespace from the end of `L`;
-5. If `L` ends with the same number of `'='` as the start of the line:
+For each `N` from 6 to 1:
 
-   1. Let `T` be the text after the start sequence and before the end sequence;
-   2. Trim `[' '|'\t']` from the start and end of `T`;
-   3. Replace the line with the interpolation
-      `"<h{{N}}">{{T}}"</h{{N}}">"`.
+1. Let `S` be 0;
+2. Let `H` be a sequence of `'='` characters repeated `N` times.
+
+While `S` is not the position of the end of the input:
+
+1. Let `TE` and `E` be the start and end positions of the next range of ASCII
+   whitespace ending with either one or more `'\n'` or the end of the input
+   after `S`;
+2. If `H` matches at `S`:
+
+   1. Let `TS` be `S + N`;
+   2. Subtract `N` from `TE`;
+   3. If `H` matches at `TE`:
+
+      1. Let `T` be the text in the range `TS..TE`;
+      2. Trim `[' '|'\t']` from the start and end of `T`;
+      3. Replace the range `S..E` with the interpolation
+         `"<h{{N}}>{{T}}</h{{N}}>`.
+      4. If `E` is not the position of the end of the input, emit `'\n'`.
+
+3. Let `S` equal `E`.
 
 ## Wikilinks
 
@@ -1051,12 +1098,13 @@ While `S` is not the position of the end of the input:
    if there is no next start token;
 3. If the configuration specifies a link prefix, let `LP` be the position of the
    start of the matching prefix, scanned backward from `S`;
-4. Let `TC` be the set of valid title characters from the configuration plus
-   the characters `['#'|'%']`;
-5. Let `A` be the position of the first character after the start token that is
-   not in `TC`;
-6. If the character sequence at `A` is not `['|'|"]]"]`, emit the range `S..E`
-   as text, let `E` equal `S`, and restart the loop; otherwise
+4. Let `TC` be the set of valid title bytes from the configuration plus the
+   bytes `[b'#'|b'%']`;
+5. Let `A` be the position of the first byte after the start token that is not
+   in `TC`;
+6. If `A` is not at a character boundary, or the character sequence at `A` is
+   not `['|'|"]]"]`, emit the range `S..E` as text, let `E` equal `S`, and
+   restart the loop; otherwise
 7. Let `Link` be the text in the range `S + 2..A`;
 8. If `Link` contains any [strip marker](#strip-marker), emit the range `S..E`
    as text, let `E` equal `S`, and restart the loop; otherwise
@@ -1307,7 +1355,7 @@ Emits an enumeration with variants:
    1. If `Input` matches:
 
       1. A registered URI scheme; then
-      2. An IPv4 address, IPv6 address, or character in the URL set[^urlset]; then
+      2. A fuzzy IP address[^fuzzyip] or character in the URL set[^urlset]; then
       3. Zero or more characters in the URL set[^urlset].
 
    Then emit `URL(Input)`, otherwise emit none.
@@ -1590,31 +1638,37 @@ True if:
 
 First:
 
-1. Let `N Italic`, `N Bold`, and `Decay Priority` be 0;
-2. Let `Decay Position` be none.
+1. Let `Input` be the input;
+2. Let `A` be 0;
+3. Let `N Italic`, `N Bold`, and `Decay Priority` be 0;
+4. Let `Decay Position` be none;
+5. Let `Styles` be a list.
 
-For each sequence `A` of two or more ASCII apostrophes:
+While `A` is not the position of the end of the input:
 
-1. Let `P` be the text before the sequence of apostrophes;
+1. Let `A` be the next position of a sequence of two or more `"'"` at or after
+   `A`, or exit this loop if there are no matching sequences;
 2. Let `N` be the number of apostrophes in the sequence;
-3. If `N` is greater than 5, append `N - 5` apostrophes to `P` and set `N` to 5;
+3. If `N` is above 5, let `A` be `A + N - 5` and let `N` be 5;
 4. If `N` is 5, increment `N Italic` and `N Bold` by 1; otherwise
-5. If `N` is 4, append one apostrophe to `P` and set `N` to 3;
+5. If `N` is 4, increment `A` by 1 and set `N` to 3;
 6. If `N` is 3:
 
    1. Increment `N Bold` by 1;
-   2. If last character in `P` is a space character and `Decay Priority` is less
-      than 1, set `Decay Position` to the position of `A` and `Decay Priority`
-      to 1; otherwise
-   3. If the penultimate character in `P` is a space character and
-      `Decay Priority` is less than 3, set `Decay Position` to the position of
-      `A` and `Decay Priority` to 3; otherwise
+   2. If the character at `A - 1` is a space character and `Decay Priority` is
+      less than 1, set `Decay Position` to the position of `A` and
+      `Decay Priority` to 1; otherwise
+   3. If the character at `A - 2` is a space character and `Decay Priority` is
+      less than 3, set `Decay Position` to the position of `A` and
+      `Decay Priority` to 3; otherwise
    4. If `Decay Priority` is less than 2, set `Decay Position` to the position
       of `A` and `Decay Priority` to 2.
 
    Otherwise;
 
-7. If `N` is 2, increment `N Italic` by 1.
+7. If `N` is 2, increment `N Italic` by 1;
+8. Push `(A, N)` to `Styles`;
+9. Let `A` be `A + N`.
 
 Next:
 
@@ -1622,9 +1676,10 @@ Next:
    insert one apostrophe at `Decay Position` and reduce the `N` of the style at
    `Decay Position` by 1;
 2. Let `S` be `None`;
-3. For each character sequence `P` and text style `N` from the previous loop:
+3. Let `LA` be 0;
+4. For each character position `A` and text style `N` in `Styles`:
 
-   1. Emit `P`;
+   1. Emit `Input[LA..A]`;
    2. If `N` is 5:
 
       1. If `S` is `I`, emit `"</i><b>"`, and set `S` to `B`; otherwise
@@ -1657,9 +1712,12 @@ Next:
       4. If `S` is `IB`, emit `"</b></i><b>"` and set `S` to `B`; otherwise
       5. If `S` is `None`, emit `"<i>"` and set `S` to `I`.
 
-4. If `S` is `B` or `IB`, emit `"</b>"`;
-5. If `S` is `I` or `IB` or `BI`, emit `"</i>"`;
-6. If `S` is `BI`, emit `"</b>"`.
+   5. Let `LA` equal `A + N`.
+
+5. Emit `Input[LA..]`;
+6. If `S` is `B` or `IB`, emit `"</b>"`;
+7. If `S` is `I` or `IB` or `BI`, emit `"</i>"`;
+8. If `S` is `BI`, emit `"</b>"`;
 
 ## External links
 
@@ -1668,37 +1726,38 @@ While `S` is not the position of the end of the input:
 1. Let `S` be the position of the character `'['`;
 2. Let `E` be the position of the next character `'['`, or the end of the input
    if there is no next character;
-3. Let `P` be `S + 1`;
-4. If the text at `P` is not a case-insensitive match for one of the supported
+3. Let `US` be `S + 1`;
+4. If the text at `US` is not a case-insensitive match for one of the configured
    URI schemes, emit the range `S..E`, let `S` equal `E`, and restart the loop;
    otherwise
-5. Let `H` be the position after the matching URI scheme;
-6. If the text at `H` is not an IPv4 address, IPv6 address, or character in the
+5. Advance `UE` to the position after the match;
+6. If the text at `UE` is not a fuzzy IP address[^fuzzyip] or character in the
    URL set[^urlset], emit the range `S..E`, let `S` equal `E`, and restart the
    loop; otherwise
-7. Let `HE` be the position after the IPv4 address, IPv6 address, or character
-   in the URL set[^urlset];
-8. Let `HE` be the position of the first character at or after `HE` in the URL
-   set[^urlset];
-9. Let `TS` be the position of the first character at or after `HE` that does
-   not match the regular expression `\p{Zs}`;
-10. Let `TE` be the position of the first character at or after `TS` that is not
-    in the character set `[']'|'\x00'..='\x08'|'\x0a'..='\x1f'|'\u{FFFD}']`;
+7. Advance `UE` to the position after the match;
+8. Match zero or more characters in the URL set[^urlset] and advance `UE` to
+   the position at the end of the match;
+9. Let `TS` be the position of the end of the regular expression match `\p{Zs}*`
+   starting at `UE`;
+10. Let `TE` be the position of the next character at or after `TS` that is one
+    of `[']'|'\x00'..='\x08'|'\x0a'..='\x1f'|'\u{FFFD}']`;
 11. If the character at `TE` is not `']'`, emit the range `S..E`, let `S` equal
     `E`, and restart the loop; otherwise
-12. Let `URL` be the text in the range `P..HE`;
-13. Let `Text` be the text in the range `TS..TE`;
-14. Let `Err` be the position of the first `"&lt;"` or `"&gt;"` in `URL`;
-15. If `Err` is not none:
+12. Let `Break` be the position of the first `"&lt;"` or `"&gt;"` in the range
+    `US..UE`[^ltgt];
+13. If `Break` is none:
 
-    1. Let `URL End` be the position at the end of `URL`;
-    2. Prefix `Text` with the concatenation of the text in the range
-       `Err..URL End` and a space character;
-    3. Truncate `URL` to end at the position `Err`.
+    1. Let `URL` be the text in the range `US..UE`;
+    2. Let `Text` be the text in the range `TS..TE`.
 
-16. Run the [maybe make external image algorithm](#maybe-external-image) on
+    Otherwise:
+
+    1. Let `URL` be the text in the range `TS..Break`;
+    2. Let `Text` be the interpolation `{{Input[Break..UE]}} {{Input[TS..TE]}}`.
+
+14. Run the [maybe make external image algorithm](#maybe-external-image) on
     `Text`;
-17. If `Text` is empty:
+15. If `Text` is empty:
 
     1. Let `Link Type` be `autonumber`;
     2. Increment the global counter `Link Ordinal` by 1;
@@ -1708,15 +1767,23 @@ While `S` is not the position of the end of the input:
 
     1. Let `Link Type` be `text`.
 
-18. If `URL` starts with a registered absolute URI scheme, and `Text` does not
-    contain `["-{"|"}-"]` let `Text` be the interpolation `"-{R|{{Text}}}-"`;
-19. Run the [URL cleaning algorithm](#url-cleaning) on `URL`;
-20. If the `URL` is not on the configurable whitelist of followable domains, let
+16. If `URL` starts with a registered absolute URI scheme, and `Text` does not
+    contain `["-{"|"}-"]` let `Text` be the interpolation
+    `"-{R|{{Text}}}-"`[^rawtext];
+17. Run the [URL cleaning algorithm](#url-cleaning) on `URL`;
+18. If the `URL` is not on the configurable whitelist of followable domains, let
     `Rel` be `"rel=\"nofollow\""`;
-21. Emit a hyperlink with `"href"` attribute value `URL`, `"class"` attribute
+19. Emit a hyperlink with `"href"` attribute value `URL`, `"class"` attribute
     of the interpolation `"external {{Link Type}}"`, attribute `Rel`, and body
     `Text`;
-22. Let `S` equal `E`.
+20. Let `S` equal `E`.
+
+[^ltgt]: These may be entities present in the original Wikitext or they may have
+  been created by a literal `'<'` or `'>'` being replaced in an
+  [earlier step](#escape-invalid-tags).
+
+[^rawtext]: This escape sequence prevents the language converter from performing
+  term replacement on the text.
 
 [^urlset]: The negative character set
   `[^']'|'['|'<'|'>'|'"'|'\x00'..='\x20'|'\x7F'|\p{Zs}|'\u{FFFD}']`.
@@ -1770,15 +1837,15 @@ Let `P` be 0. While `P` is not the position of the end of the input:
 3. Let `URL` be the text matching a word boundary followed by:
 
    1. A registered absolute URI scheme, captured as `Scheme`; then
-   2. An IPv4 address, IPv6 address, or character in the URL set[^urlset]; then
+   2. An fuzzy IP address[^fuzzyip], or character in the URL set[^urlset]; then
    3. Zero or more characters in the URL set[^urlset].
 
    If `URL` is not none:
 
    1. Let `Start` and `End` be the start and end positions of `URL`;
-   2. Let `Err` be the position of the first character or HTML entity in `URL`
-      that decodes to `['<'|'>'|'\u{00a0}']`;
-   3. If `Err` is not none, truncate `URL` at `Err`;
+   2. Let `Break` be the position of the first character or HTML entity in `URL`
+      that decodes to `['<'|'>'|'\u{00a0}']`[^ltgt];
+   3. If `Break` is not none, truncate `URL` at `Break`;
    4. Let `Trailing Punctuation` be `[','|';'|'\'|'.'|':'|'!'|'?']`;
    5. If `URL` does not contain `(`, add `)` to `Trailing Punctuation`;
    6. Trim `Trailing Puncuation` from the end of `URL`, excluding any `';'` that
@@ -1861,8 +1928,7 @@ Let `P` be 0. While `P` is not the position of the end of the input:
    On success:
 
    1. Let `Start` and `End` be the start and end positions of the match;
-   2. Let `ISBN` be the `ID`, with each run of magic spaces replaced with one
-      space character;
+   2. Let `ISBN` be the `ID`, with magic spaces replaced with a space character;
    3. Let `N` be `ISBN` where all `['-'|' ']` are removed and `'x'` is replaced
       with `'X'`;
    4. Let `URL` be the [partial URL](#title-glossary) of the title constructed
@@ -1878,8 +1944,7 @@ Let `P` be 0. While `P` is not the position of the end of the input:
 7. Let `End` be the position of the end of the input;
 8. Emit text in the range `P..End` and terminate here.
 
-[^magicspace]: A tab character, HTML entity corresponding to a non-break space,
-               or `\p{Zs}`.
+[^magicspace]: An HTML entity corresponding to a non-break space or `\p{Zs}`.
 
 ## Outlining
 
@@ -1993,15 +2058,18 @@ For each line ending in `'\n'`:
    2. For each character `I` in `Last Prefix` that is not in `Prefix`, in
       right to left order, emit the result of [closing the list](#close-list)
       for `I`;
-   3. If the length of `Prefix` is not greater than `Common Prefix Length` and
-      `Common Prefix Length` is not zero, emit the [next item](#next-item) for
-      the character `Prefix[Common Prefix Length - 1]`;
-   4. If `DT Open` is true and `Common Prefix Length` is not zero and the
-      character `Prefix[Common Prefix Length - 1]` is `':'`, emit the
-      [next item](#next-item) for `':'`;
-   5. If `Last Prefix` is not empty and the length of `Prefix` is greater than
+   3. If `Common Prefix Length` is not zero:
+
+      1. If the length of `Prefix` equals `Common Prefix Length`, emit the
+         [next item](#next-item) for the character at
+         `Prefix[Common Prefix Length - 1]`;
+      2. If `DT Open` is true and `Common Prefix Length` and the character at
+         `Prefix[Common Prefix Length - 1]` is `':'`, emit the
+         [next item](#next-item) for `':'`.
+
+   4. If `Last Prefix` is not empty and the length of `Prefix` is greater than
       `Common Prefix Length`, emit `'\n'`;
-   6. For each character `I` in `Prefix` starting at `Common Prefix Length`,
+   5. For each character `I` in `Prefix` starting at `Common Prefix Length`,
       from left to right:
 
       1. Emit the result of [opening the list](#open-list) for `I`;
@@ -2011,12 +2079,16 @@ For each line ending in `'\n'`:
             for `T`;
          2. If `P` is not none:
 
+            ※ This allows runs of `:` to be converted into multiple `<dd>`,
+              but only when the depth of the list is increasing, and should
+              probably be considered undefined behaviour.
+
             1. Let `T` be `T[P + 1..]`;
             2. Emit the ASCII whitespace trimmed `T[..P]`;
             3. Emit the [next item](#next-item) for `':'`.
 
-   7. If `Prefix` is empty and `Last Prefix` is not empty, emit `'\n'`;
-   8. Let `Last Prefix` equal `Prefix 2`.
+   6. If `Prefix` is empty and `Last Prefix` is not empty, emit `'\n'`;
+   7. Let `Last Prefix` equal `Prefix 2`.
 
 10. If `Prefix` is empty:
 
@@ -2058,7 +2130,7 @@ For each line ending in `'\n'`:
              1. Let `Pending P Tag` be empty;
              2. Emit the [closing paragraph](#close-paragraph);
              3. Emit `"<pre>"`;
-             4. Let `Last Paragarph` be `"pre"`.
+             4. Let `Last Paragraph` be `"pre"`.
 
           2. Remove the first character from `T`.
 
@@ -2206,7 +2278,7 @@ While `S` is not the position of the end of the input:
    3. For each attribute in `A` with the name `["alt"|"title"]`, if the value
       does not contain the character sequence `"://"`, replace the attribute
       value with the result of running
-      [language conversion](#language-conversion recursively on the attribute
+      [language conversion](#language-conversion) recursively on the attribute
       value;
    4. Emit the tag;
    5. Let `S` be the position after the tag.
@@ -2232,7 +2304,7 @@ While `S` is not the position of the end of the input:
 3. Assert that `I` starts with `"-{"`;
 4. Let `S` be the start position;
 5. Let `O` be empty;
-6. Let `P` be the next position of the character sequence `["-{"|"}-"];
+6. Let `P` be the next position of the character sequence `["-{"|"}-"]`;
 7. If `P` is none:
 
    1. Append the text in range `S..` to `O`;
@@ -2274,7 +2346,7 @@ While `S` is not the position of the end of the input:
 3. If the input contains `'|'`, let `F` and `Rules` be the left and right hand
    side of the input split at `'|'`, otherwise let `F` be empty and `Rules` be
    the input;
-4. For each `Flag` in `Flags` separated by `';'`:
+4. For each `Flag` in `F` separated by `';'`:
 
    1. Trim ASCII whitespace from the start and end of `Flag`;
    2. If `Flag` is one of `['A'|'T'|'R'|'D'|'-'|'H'|'N']` or a registered
@@ -2315,7 +2387,7 @@ While `S` is not the position of the end of the input:
 
 10. If `'R'` is not in `Flags` and `'N'` is not in `Flags`:
 
-    1. Replace `"=&gt;"` with `"=>"` in `Rules`;
+    1. Replace `"=&gt;"` with `"=>"` in `Rules`[^ltgt];
     2. Let `Bidir Table` and `Unidir Table` be the result of
        [running the rules parsing algorithm](#parse-rules) using `Rules`.
 
@@ -2380,9 +2452,9 @@ While `S` is not the position of the end of the input:
 4. While `S` is not the position of the end of the input:
 
    1. Let `P` be the position of the next `';'` which is not an HTML entity
-      terminator and which matches the regular expression
-      `;\s*(?:([^;]*?=>\s*)?{Vs}\s*:|$)`, or the position of the end of `Rules`
-      if there is no match;
+      terminator and which matches the interpolated regular expression
+      `;\s*(?:([^;]*?=>\s*)?{{Vs}}\s*:|$)`, or the position of the end of
+      `Rules` if there is no match;
    2. Let `Choice` be the text in the range `S..P`;
    3. Let `S` equal `P + 1`;
    4. If `Choice` does not contain `:`, restart from step 4; otherwise
@@ -2829,8 +2901,8 @@ If the input starts with `"../"` or `'/'`:
 3. If the URL has a host-part:
 
     1. Remove characters in the host-part that are ignored in IDNs per RFC 8264;
-    2. URL decode `['['|']']` in the host-part that correspond to an IPv6
-       address.
+    2. URL decode `['['|']']` in the host-part of `URL` that correspond to an
+       IPv6 address.
 
 </div>
 
@@ -2838,6 +2910,8 @@ If the input starts with `"../"` or `'/'`:
 
     1. Entities MUST end with `;`. (In HTML5, this is not required.)
     2. Non-standard entities `"&רלמ;"` and `"&رلم;"` decode to '\u{200f}'.
+
+[^fuzzyip]: A match of the regular expression `[0-9.]+|\[[0-9A-Fa-f:.]+\]`.
 
 [^ictag]: A pseudo-XML tag with a case-insensitive tag name
   `["includeonly"|"noinclude"|"onlyinclude"]`.

@@ -13,6 +13,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // SPDX-FileCopyright: 2011-07-20 Brion Vibber <brion@pobox.com>
 
+use libmisc::to_ascii_lower;
 use serde_json_borrow::{Map, Value};
 use std::{borrow::Cow, collections::HashMap};
 
@@ -460,7 +461,7 @@ peg::parser! {grammar testfile() for str {
   //   foo=bar,"baz quux",[[bat]]
   rule an_option() -> (Cow<'input, str>, Value<'input>)
   = k:option_name() v:option_value()?
-  { (k.to_ascii_lowercase().into(), v.unwrap_or_default()) }
+  { (to_ascii_lower(k), v.unwrap_or_default()) }
 
   rule option_name() -> &'input str
   = $([^' '|'\t'|'\n'|'='|'!']+)
