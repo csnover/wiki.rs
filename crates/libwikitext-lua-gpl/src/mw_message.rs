@@ -9,7 +9,7 @@
 
 use super::prelude::*;
 use core::cell::Cell;
-use libwikitext_common::{db::DatabaseProvider, format_message, format_raw_message};
+use libwikitext_common::{Messages, db::DatabaseProvider, format_message, format_raw_message};
 use std::borrow::Cow;
 
 /// The internationalisation support library.
@@ -17,7 +17,7 @@ use std::borrow::Cow;
 #[collect(require_static)]
 pub struct MessageLibrary<'dict> {
     /// A reference to the message dictionary for the requested locale.
-    messages: Cell<Option<&'dict serde_json_borrow::Value<'dict>>>,
+    messages: Cell<Option<&'dict Messages<'dict>>>,
 }
 
 impl<'dict> MessageLibrary<'dict> {
@@ -27,13 +27,13 @@ impl<'dict> MessageLibrary<'dict> {
     ///
     /// * The dictionary is not set
     #[inline]
-    fn messages(&self) -> &'dict serde_json_borrow::Value<'dict> {
+    fn messages(&self) -> &'dict Messages<'dict> {
         self.messages.get().unwrap()
     }
 
     /// Sets the message dictionary.
     #[inline]
-    pub fn set_messages(&self, messages: &'dict serde_json_borrow::Value<'dict>) {
+    pub fn set_messages(&self, messages: &'dict Messages<'dict>) {
         self.messages.set(Some(messages));
     }
 }
@@ -60,8 +60,7 @@ impl<'dict> MessageLibrary<'dict> {
             keys.iter().find_map(|(_, key)| {
                 key.into_string(ctx)
                     .and_then(|key| key.to_str().ok())
-                    .and_then(|key| self.messages().get(key.to_lowercase()))
-                    .and_then(|message| message.as_str())
+                    .and_then(|key| self.messages().get(key))
                     .map(str::as_bytes)
             })
         } else {

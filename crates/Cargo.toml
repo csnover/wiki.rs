@@ -83,7 +83,6 @@ gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "5a7534b883b703f23
 goldenfile = "1.9"
 html-escape = "0.2"
 htmlparser = "0.2"
-http = "1.0.0"
 indexmap = { version = "2.12", features = ["serde"] }
 libmisc = { path = "libmisc" }
 libphp-rs = { path = "libphp-rs" }

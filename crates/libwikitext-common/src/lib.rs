@@ -4,14 +4,40 @@ pub mod config;
 pub mod db;
 pub mod lru_limiter;
 pub mod title;
+pub mod url;
 
 use core::{fmt::Write as _, iter};
 use html_escape::NAMED_ENTITIES;
-use http::Uri;
 use libmisc::{CowExt as _, to_ascii_lower, to_ascii_upper};
 use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval, ucfirst};
 use regex::Regex;
-use std::{borrow::Cow, sync::LazyLock};
+use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
+
+/// An i18n message dictionary.
+#[derive(serde::Deserialize)]
+pub struct Messages<'a> {
+    /// Dictionary metadata.
+    #[serde(rename = "@metadata")]
+    _metadata: serde::de::IgnoredAny,
+    /// Dictionary messages.
+    #[serde(borrow, flatten)]
+    messages: HashMap<&'a str, Cow<'a, str>>,
+}
+
+impl<'a> Messages<'a> {
+    /// Returns a reference to the message with the corresponding key.
+    #[must_use]
+    pub fn get(&'a self, key: &str) -> Option<&'a str> {
+        self.messages.get(key).map(Cow::as_ref)
+    }
+
+    /// Merges `other` into `self`.
+    #[must_use]
+    pub fn merge(mut self, other: Self) -> Self {
+        self.messages.extend(other.messages);
+        self
+    }
+}
 
 /// An anchor encoding algorithm.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -221,7 +247,7 @@ pub fn format_date_mediawiki(
 ///
 /// * `callback` returns an error
 pub fn format_message<'o, 'n: 'o, F, I, R, E>(
-    messages: &'o serde_json_borrow::Value<'n>,
+    messages: &'o Messages<'n>,
     keys: I,
     callback: F,
 ) -> Result<Cow<'o, str>, E>
@@ -232,17 +258,15 @@ where
 {
     let mut last = R::default();
     for key in keys {
-        let lower = key.as_ref().to_lowercase();
         if let Some(message) = messages
-            .get(&lower)
-            .and_then(serde_json_borrow::Value::as_str)
+            .get(key.as_ref())
             .filter(|message| !matches!(*message, "" | "-"))
         {
             return format_raw_message(message, callback);
         // TODO: This is not in the default MW dictionary, it is in some other
         // dictionary from mediawiki-gadgets-ConvenientDiscussions, but that one
         // is lowercase. This is used by 'Template:Ambox'
-        } else if lower == "dot-separator" {
+        } else if key.as_ref() == "dot-separator" {
             return Ok(Cow::Borrowed("&nbsp;<b>·</b>&#32;"));
         }
         last = key;
@@ -401,26 +425,18 @@ pub fn lang_to_bcp47(code: &str) -> Cow<'_, str> {
 ///
 /// * A write to the output buffer fails
 pub fn make_url<P: core::fmt::Display>(
-    base_uri: &Uri,
+    base_uri: &url::Url,
     proto: Option<&str>,
     path: P,
     query: Option<&str>,
     fragment: Option<&str>,
 ) -> String {
-    // http::Uri confuses authority and path if a protocol-relative URI is used
-    let (authority, base_path) = if let Some(authority) = base_uri.authority() {
-        (authority.as_str(), base_uri.path())
-    } else if let Some(authority) = base_uri.path().strip_prefix("//") {
-        authority.split_once('/').unwrap_or((authority, ""))
-    } else {
-        ("localhost", base_uri.path())
-    };
-    // http::Uri will also give "/" instead of "" for e.g. "http://foo.example/"
-    let base_path = base_path.trim_start_matches('/');
+    let authority = base_uri.authority().unwrap_or("//localhost");
+    let base_path = base_uri.path().trim_start_matches('/');
 
     let mut url = String::new();
     if let Some(proto) = proto {
-        write!(url, "{proto}//{authority}").unwrap();
+        write!(url, "{proto}{authority}").unwrap();
     }
     if !base_path.is_empty() {
         write!(url, "/{base_path}").unwrap();

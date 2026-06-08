@@ -1846,7 +1846,7 @@ Let `P` be 0. While `P` is not the position of the end of the input:
    2. Let `Break` be the position of the first character or HTML entity in `URL`
       that decodes to `['<'|'>'|'\u{00a0}']`[^ltgt];
    3. If `Break` is not none, truncate `URL` at `Break`;
-   4. Let `Trailing Punctuation` be `[','|';'|'\'|'.'|':'|'!'|'?']`;
+   4. Let `Trailing Punctuation` be `[','|';'|'\\'|'.'|':'|'!'|'?']`;
    5. If `URL` does not contain `(`, add `)` to `Trailing Punctuation`;
    6. Trim `Trailing Puncuation` from the end of `URL`, excluding any `';'` that
       is the terminator for an HTML entity;
@@ -1883,7 +1883,7 @@ Let `P` be 0. While `P` is not the position of the end of the input:
       `"pubmedurl"` with argument `ID`;
    3. Emit text in the range `P..Start`;
    4. Emit a hyperlink with `"href"` attribute value `URL`, `"class"` attribute
-      `"mw-magiclink-rfc"`, and body the interpolation `"RFC {{ID}}"`;
+      `"external mw-magiclink-rfc"`, and body the interpolation `"RFC {{ID}}"`;
    5. Let `P` equal `End`.
 
    Otherwise;
@@ -1902,7 +1902,8 @@ Let `P` be 0. While `P` is not the position of the end of the input:
       `"rfcurl"` with argument `ID`;
    3. Emit text in the range `P..Start`;
    4. Emit a hyperlink with `href` attribute value `URL`, `"class"` attribute
-      `"mw-magiclink-pmid"`, and body the interpolation `"PMID {{ID}}"`;
+      `"external mw-magiclink-pmid"`, and body the interpolation
+      `"PMID {{ID}}"`;
    5. Let `P` equal `End`.
 
    Otherwise;

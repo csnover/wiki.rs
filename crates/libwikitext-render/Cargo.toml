@@ -17,7 +17,6 @@ either.workspace = true
 gc-arena.workspace = true
 html-escape.workspace = true
 htmlparser.workspace = true
-http.workspace = true
 indexmap.workspace = true
 libmisc.workspace = true
 libphp-rs.workspace = true

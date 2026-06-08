@@ -481,11 +481,12 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
             // creates a situation where it is very hard to decay this token.
             // Probably, this should do a contortion like `list` and emit
             // sequences of `<pre>`.
-            c:comment_tag()* " " r:inline()* e:line_eol()
+            !table() c:comment_tag()* " " r:inline()* e:line_eol()
             { c.into_iter().chain(r).chain(e) }
         )*
+        end:spanned(<eof() { Token::NewLine }>)?
         { Token::Preformatted {
-            content: reduce_tree(first.into_iter().chain(e).chain(rest.into_iter().flatten()))
+            content: reduce_tree(first.into_iter().chain(e).chain(rest.into_iter().flatten()).chain(end))
         } }
     >)
 
@@ -774,7 +775,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
                 || o.config.valid_title_bytes.contains(bytes[pos])
             )
         {
-            if input[pos..].starts_with(MARKER_PREFIX) {
+            if input.is_char_boundary(pos) && input[pos..].starts_with(MARKER_PREFIX) {
                 return RuleResult::Failed;
             }
 
@@ -932,7 +933,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
         "["
         target:external_link_target()
         unispace()*
-        content:(!external_link_term() t:inline_in_tag() { t })*
+        content:(!external_link_term() t:(wikilink() / inline_in_tag()) { t })*
         "]"
         { Token::ExternalLink { content: reduce_tree(content), target } }
       >)
@@ -996,7 +997,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule magic_auto_link() -> Spanned<Token>
     = spanned(<
         p:position!()
-        s:url_scheme()
+        s:(!"//" t:url_scheme() { t })
         h:(url_ipish() / magic_class(<")" {}>))
         rest:magic_class(<magic_class_bracket_term(p) {}>)*
         { Token::Autolink(reduce_tree([s, h].into_iter().chain(rest))) }
@@ -1004,7 +1005,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
 
     /// A valid character in an magic link URL.
     rule magic_class(term: rule<()>) -> Spanned<Token>
-    = !([','|';'|'\''|'.'|':'|'!'|'?']* url_term())
+    = !(([','|';'|'\\'|'.'|':'|'!'|'?'] / term())* url_term())
       t:inline_in_url()
       !assert(matches!(t.node, Token::Entity('<' | '>' | '\u{00a0}')), "&lt; &gt; or &nbsp;")
     { t }
@@ -1027,8 +1028,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule magic_pmid() -> Spanned<Token>
     = spanned(<
         &assert(o.config.magic_links.pmid, "PMID enabled")
-        "PMID" magic_space()+ id:$(digit()+)
-        { Token::MagicLink(MagicLink::Pmid(id.parse().unwrap())) }
+        "PMID" magic_space()+ id:spanned(<digit()+ {}>)
+        { Token::MagicLink(MagicLink::Pmid(id.span)) }
     >)
 
     /// A reference to an RFC.
@@ -1039,8 +1040,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule magic_rfc() -> Spanned<Token>
     = spanned(<
         &assert(o.config.magic_links.rfc, "RFC enabled")
-        "RFC" magic_space()+ id:$(digit()+)
-        { Token::MagicLink(MagicLink::Rfc(id.parse().unwrap())) }
+        "RFC" magic_space()+ id:spanned(<digit()+ {}>)
+        { Token::MagicLink(MagicLink::Rfc(id.span)) }
     >)
 
     /// A reference to an ISBN.
@@ -1103,7 +1104,13 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
 
     /// A terminator for any URL in Wikitext.
     rule url_term()
-    = unispace() / [']'|'['|'<'|'>'|'"'|'\x00'..='\x20'|'\u{fffd}']
+    = unispace()
+    / eof()
+      // In the original parser, text styles had already been converted to HTML
+      // before parsing an external link, so would be excluded due to being an
+      // HTML tag
+    / text_style()
+    / [']'|'['|'<'|'>'|'"'|'\x00'..='\x20'|'\u{fffd}']
 
     ///////////////
     // Templates //

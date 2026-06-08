@@ -1767,7 +1767,7 @@ impl ListEmitter {
         let old_len = self.stack.len();
 
         for item in self.stack.drain(common_end..).rev() {
-            item.item(&mut self.in_dt, false).end(next, true);
+            item.fixup(&mut self.in_dt, false).end(next, true);
         }
 
         let bullets = bullets.as_bytes();
@@ -1800,13 +1800,13 @@ impl ListEmitter {
     /// Emits HTML to finish any incomplete list.
     pub fn finish<S: Sink + ?Sized>(&mut self, next: &mut S) {
         for item in self.stack.drain(..).rev() {
-            item.item(&mut self.in_dt, false).end(next, true);
+            item.fixup(&mut self.in_dt, false).end(next, true);
         }
     }
 
     /// Emits the next list item with the kind `item` to `next`.
     fn next_item<S: Sink + ?Sized>(&mut self, next: &mut S, item: ListKind) {
-        item.item(&mut self.in_dt, true).end(next, false);
+        item.fixup(&mut self.in_dt, true).end(next, false);
         next.new_line();
         item.start(next, false);
     }
@@ -1865,21 +1865,6 @@ pub(super) enum ListKind {
 }
 
 impl ListKind {
-    /// Returns true if `self` is a definition list item.
-    #[inline]
-    fn is_definition_list(self) -> bool {
-        matches!(self, Self::Term | Self::Detail)
-    }
-
-    /// Returns true if `self` has the same parent element as `other`.
-    #[inline]
-    fn same_parent(self, other: Self) -> bool {
-        match self {
-            Self::Ordered | Self::Unordered => self == other,
-            Self::Term | Self::Detail => other.is_definition_list(),
-        }
-    }
-
     /// Emits HTML for the end of this kind of list item.
     fn end<S: Sink + ?Sized>(self, next: &mut S, end_of_list: bool) {
         match self {
@@ -1898,7 +1883,9 @@ impl ListKind {
         }
     }
 
-    fn item(self, in_dt: &mut bool, reset: bool) -> Self {
+    /// Applies cursed voodoo using `in_dt` to convert a definition list item
+    /// to the correct subtype.
+    fn fixup(self, in_dt: &mut bool, reset: bool) -> Self {
         if self.is_definition_list() {
             if core::mem::replace(in_dt, reset && self == Self::Term) {
                 Self::Term
@@ -1907,6 +1894,21 @@ impl ListKind {
             }
         } else {
             self
+        }
+    }
+
+    /// Returns true if `self` is a definition list item.
+    #[inline]
+    fn is_definition_list(self) -> bool {
+        matches!(self, Self::Term | Self::Detail)
+    }
+
+    /// Returns true if `self` has the same parent element as `other`.
+    #[inline]
+    fn same_parent(self, other: Self) -> bool {
+        match self {
+            Self::Ordered | Self::Unordered => self == other,
+            Self::Term | Self::Detail => other.is_definition_list(),
         }
     }
 
@@ -3071,9 +3073,8 @@ impl<S: Sink> Sink for PrettyText<S> {
                     c = '…';
                 }
                 // TODO: Mark the source for a retry later if `None` returns.
-                ' ' if self.in_code == 0
-                    && Self::is_french_space(self.prev_chars, peek_array(&mut chars))
-                        == Some(true) =>
+                ' ' if Self::is_french_space(self.prev_chars, peek_array(&mut chars))
+                    == Some(true) =>
                 {
                     flush(&mut self.next, &mut flushed, text, index, c);
                     self.next.text("\u{00a0}");

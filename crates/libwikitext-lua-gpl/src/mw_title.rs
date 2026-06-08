@@ -12,12 +12,12 @@ use core::{
     cell::{Cell, Ref, RefCell},
     fmt::Write as _,
 };
-use http::Uri;
 use libwikitext_common::{
     config::Configuration,
     db::{Article, DatabaseProvider},
     make_url,
     title::{Namespace, Title},
+    url::Url,
     url_encode, url_encode_bytes,
 };
 use piccolo::StashedTable;
@@ -28,7 +28,7 @@ use std::borrow::Cow;
 #[collect(require_static)]
 pub struct TitleLibrary<Db: DatabaseProvider> {
     /// The base URI to use when generating URLs to articles.
-    base_uri: RefCell<Option<Uri>>,
+    base_uri: RefCell<Option<Url>>,
     /// The article database.
     db: RefCell<Option<Db>>,
     /// The title of the current article being rendered.
@@ -52,7 +52,7 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
     ///
     /// * The database is not set
     #[inline]
-    fn base_uri(&self) -> Ref<'_, Uri> {
+    fn base_uri(&self) -> Ref<'_, Url> {
         Ref::map(self.base_uri.borrow(), |base_uri| {
             base_uri.as_ref().unwrap()
         })
@@ -80,7 +80,7 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
     }
 
     /// Sets static shared state required for the library to function.
-    pub fn set_shared(&self, base_uri: Uri, db: Db) {
+    pub fn set_shared(&self, base_uri: Url, db: Db) {
         *self.base_uri.borrow_mut() = Some(base_uri);
         *self.db.borrow_mut() = Some(db);
     }
@@ -228,11 +228,11 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
             b"fullUrl" => match proto.map(VmString::to_str).transpose()? {
                 proto @ Some("http" | "https") => proto,
                 Some("relative") => Some(""),
-                Some("canonical") => base_uri.scheme_str().or(Some("")),
+                Some("canonical") => base_uri.scheme().or(Some("")),
                 Some(_) => return Err("invalid 'proto' argument".into_value(ctx).into()),
                 None => None,
             },
-            b"canonicalUrl" => base_uri.scheme_str().or(Some("")),
+            b"canonicalUrl" => base_uri.scheme().or(Some("")),
             b"localUrl" => None,
             _ => return Err("invalid 'which' argument".into_value(ctx).into()),
         };

@@ -8,13 +8,14 @@ use super::{
 };
 use core::{ops::ControlFlow, pin::Pin};
 use gc_arena::Rootable;
-use http::Uri;
 use libmisc::CowExt as _;
 use libphp_rs::DateTime;
 use libphp_rs::strtr;
 use libwikitext_common::{
+    Messages,
     db::{Article, DatabaseProvider},
     title::{Namespace, Title},
+    url::Url,
 };
 use libwikitext_lua::{HostCall, UnstripMode, WallTime, prelude::*};
 use libwikitext_parse::{FileMap, Parser};
@@ -284,7 +285,7 @@ fn memory_exceeded(state: &mut State<'_, '_, '_>) -> bool {
 ///
 /// * VM initialisation fails
 pub(super) fn new_vm<'config>(
-    base_uri: &Uri,
+    base_uri: &Url,
     db: &Arc<dyn DatabaseProvider>,
     parser: &Parser<'config>,
 ) -> Result<Lua, ExternError> {
@@ -347,7 +348,7 @@ fn preprocess(
 /// Resets the Lua VM for the given `article`.
 pub(super) fn reset_vm(
     vm: &mut Lua,
-    messages: &serde_json_borrow::Value<'_>,
+    messages: &Messages<'_>,
     title: &Title,
     date: DateTime,
 ) -> Result<(), ExternError> {
@@ -355,12 +356,8 @@ pub(super) fn reset_vm(
     // violate.
     // SAFETY: The lifetime of these references are always at least as long as
     // the lifetime of the VM.
-    let messages = unsafe {
-        core::mem::transmute::<
-            &serde_json_borrow::Value<'_>,
-            &'static serde_json_borrow::Value<'static>,
-        >(messages)
-    };
+    let messages =
+        unsafe { core::mem::transmute::<&Messages<'_>, &'static Messages<'static>>(messages) };
 
     vm.try_enter(|ctx| {
         let mw_message = ctx.singleton::<Rootable![MessageLibrary]>();

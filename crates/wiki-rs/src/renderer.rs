@@ -1,9 +1,11 @@
 //! The renderer manager.
 
 use super::{Limits, db::Database};
-use axum::http::Uri;
 use libphp_rs::DateTime;
-use libwikitext_common::db::{Article, DatabaseProvider};
+use libwikitext_common::{
+    db::{Article, DatabaseProvider},
+    url::Url,
+};
 use libwikitext_data::MESSAGES;
 use libwikitext_render::{
     Error, EvalPp, LoadMode, Paths, RenderOutput, Statics, TemplateCache, make_template_cache,
@@ -56,7 +58,7 @@ pub type Out = Result<RenderOutput, Error>;
 /// Manager for renderer connections.
 pub(crate) struct Manager {
     /// The base URI to provide to spawned renderers.
-    base_uri: Uri,
+    base_uri: Url,
     /// The article database to provide to spawned renderers.
     database: Arc<crate::db::Database<'static>>,
     /// Time and memory limits.
@@ -67,7 +69,7 @@ pub(crate) struct Manager {
 
 impl Manager {
     /// Creates a new render manager.
-    pub fn new(base_uri: &Uri, database: &Arc<Database<'static>>, limits: Limits) -> Self {
+    pub fn new(base_uri: &Url, database: &Arc<Database<'static>>, limits: Limits) -> Self {
         Self {
             base_uri: base_uri.clone(),
             database: Arc::clone(database),

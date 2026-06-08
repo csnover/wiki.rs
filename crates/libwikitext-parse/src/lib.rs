@@ -372,9 +372,9 @@ pub enum MagicLink {
     /// An ISBN identifier.
     Isbn(String),
     /// A PubMed identifier.
-    Pmid(u64),
+    Pmid(Span),
     /// An RFC identifier.
-    Rfc(u64),
+    Rfc(Span),
 }
 
 /// The parser output.

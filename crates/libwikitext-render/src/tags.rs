@@ -1,17 +1,16 @@
 //! Plain HTML rendering functions.
 
 use super::{Error, Paths, Result, StackFrame, State, Surrogate};
-use http::Uri;
 use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode,
     db::DatabaseProvider as _,
     decode_html, make_url,
     title::{Namespace, Title},
+    url::Url,
     url_encode_sanitized,
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
-use serde_json_borrow::Value;
 use std::borrow::Cow;
 
 /// Renders an external web site link.
@@ -161,9 +160,7 @@ pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
                             let mut args = token![source, ["href" => &href]].to_vec();
                             if missing {
                                 args.push(token![source, Argument { "class" => "new" }]);
-                                if let Some(message) =
-                                    state.messages.get("red-link-title").and_then(Value::as_str)
-                                {
+                                if let Some(message) = state.messages.get("red-link-title") {
                                     args.push(token![source, Argument {
                                         "title" => message.replace("$1", title.key())
                                     }]);
@@ -202,7 +199,7 @@ pub(super) fn render_end_link<W: Surrogate<Error> + ?Sized>(
 /// Static option data for [`LinkKind::to_string`].
 pub(crate) struct LinkKindOptions<'a> {
     /// The base URI for an internal link.
-    pub base_uri: &'a Uri,
+    pub base_uri: &'a Url,
     /// The map of interwiki prefixes.
     pub interwiki_map: &'a phf::Map<&'static str, &'static str>,
     /// Link URI paths.
@@ -216,6 +213,10 @@ pub(super) enum ExternalLinkKind {
     Autonumber,
     /// An autolink.
     Free,
+    /// A PubMed magic link.
+    MagicPmid,
+    /// An RFC magic link.
+    MagicRfc,
     /// An explicit external link with text content.
     Text,
 }
@@ -227,6 +228,8 @@ impl ExternalLinkKind {
         match self {
             Self::Autonumber => "external autonumber",
             Self::Free => "external free",
+            Self::MagicPmid => "external mw-magiclink-pmid",
+            Self::MagicRfc => "external mw-magiclink-rfc",
             Self::Text => "external text",
         }
     }
@@ -241,18 +244,94 @@ pub(super) enum LinkKind<'a> {
     Internal(Title),
 }
 
+/// Cleans up a URL authority part according to the MediaWiki rules.
+fn clean_url(mut url: Url) -> Url {
+    fn valid_idn(c: char) -> bool {
+        pub const PRECIS_IGNORABLE: &[(char, char)] = &[
+            ('\u{00AD}', '\u{00AD}'),
+            ('\u{034F}', '\u{034F}'),
+            ('\u{061C}', '\u{061C}'),
+            ('\u{115F}', '\u{1160}'),
+            ('\u{17B4}', '\u{17B5}'),
+            ('\u{180B}', '\u{180D}'),
+            ('\u{180E}', '\u{180E}'),
+            ('\u{200B}', '\u{200F}'),
+            ('\u{202A}', '\u{202E}'),
+            ('\u{2060}', '\u{2064}'),
+            ('\u{2065}', '\u{2065}'),
+            ('\u{2066}', '\u{206F}'),
+            ('\u{3164}', '\u{3164}'),
+            ('\u{FE00}', '\u{FE0F}'),
+            ('\u{FEFF}', '\u{FEFF}'),
+            ('\u{FFA0}', '\u{FFA0}'),
+            ('\u{FFF0}', '\u{FFF8}'),
+            ('\u{1BCA0}', '\u{1BCA3}'),
+            ('\u{1D173}', '\u{1D17A}'),
+            ('\u{E0000}', '\u{E0000}'),
+            ('\u{E0001}', '\u{E0001}'),
+            ('\u{E0002}', '\u{E001F}'),
+            ('\u{E0020}', '\u{E007F}'),
+            ('\u{E0080}', '\u{E00FF}'),
+            ('\u{E0100}', '\u{E01EF}'),
+            ('\u{E01F0}', '\u{E0FFF}'),
+        ];
+        for (first, last) in PRECIS_IGNORABLE {
+            if c >= *first && c <= *last {
+                return false;
+            }
+        }
+        !c.is_whitespace()
+    }
+
+    const IPV6_START: &str = "//%5B";
+    const AUTH: &str = "//";
+    const IPV6_END: &str = "%5D";
+
+    if let Some(authority) = url.authority() {
+        let mut out = String::new();
+        let mut flushed = 0;
+        for (index, c) in authority.char_indices().filter(|(_, c)| !valid_idn(*c)) {
+            out += &authority[flushed..index];
+            flushed = index + c.len_utf8();
+        }
+        let mut authority = if flushed != 0 {
+            out += &authority[flushed..];
+            Cow::Owned(out)
+        } else {
+            Cow::Borrowed(authority)
+        };
+
+        // This is decoding the brackets in IPv6/IPvFuture hosts
+        if authority.starts_with(IPV6_START)
+            && let Some(end) = authority.find(IPV6_END)
+        {
+            let authority = authority.to_mut();
+            authority.replace_range(end..end + IPV6_END.len(), "]");
+            authority.replace_range(AUTH.len()..IPV6_START.len(), "[");
+        }
+
+        if let Cow::Owned(authority) = authority {
+            url.set_authority(&authority);
+        }
+    }
+
+    url
+}
+
 impl LinkKind<'_> {
     /// Converts the link to a URI-encoded string suitable for use in an HTML
     /// `href` attribute.
     pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
         match self {
             LinkKind::External(url, _) => {
-                let url = decode_html(url).map(url_encode_sanitized);
+                let url = Url::lax(&decode_html(url).map(url_encode_sanitized))
+                    .map(clean_url)
+                    .unwrap();
 
                 // TODO: Hack together some URL parsing good enough that there
                 // is an actual way to check that the origin is the same
                 if let Some(external) = options.paths.external
-                    && (!url.starts_with('/') || url.starts_with("//"))
+                    && url.is_absolute()
                 {
                     make_url(
                         options.base_uri,

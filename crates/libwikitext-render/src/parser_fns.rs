@@ -31,6 +31,7 @@ use libwikitext_common::{
     decode_html, format_date_mediawiki, format_message, format_number, format_raw_message,
     lang_to_bcp47, make_url, parse_formatted_number,
     title::{Namespace, Title},
+    url::Url,
     url_encode,
 };
 use libwikitext_common_gpl::expr;
@@ -1597,7 +1598,7 @@ mod title {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        url_impl(out, state, arguments, |uri| uri.scheme_str().or(Some("")))
+        url_impl(out, state, arguments, |uri| uri.scheme().or(Some("")))
     }
 
     /// `{{filepath: title [| 'nowiki'/size [| size/'nowiki']] }}`
@@ -1835,7 +1836,7 @@ mod title {
         out: &mut String,
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
-        scheme: impl FnOnce(&http::Uri) -> Option<&str>,
+        scheme: impl FnOnce(&Url) -> Option<&str>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim)
             && let Ok(title) = Title::new(state.statics.db.config(), &value, None)

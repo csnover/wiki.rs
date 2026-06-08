@@ -17,13 +17,14 @@ use core::{fmt, time::Duration};
 use document::Document;
 use expand_templates::{ExpandMode, ExpandTemplates};
 pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
-use http::Uri;
 use libphp_rs::DateTime;
 use libwikitext_common::{
+    Messages,
     config::Configuration,
     db::{Article, DatabaseProvider},
     lru_limiter::ByMemoryUsage,
     title::Title,
+    url::Url,
 };
 use libwikitext_parse::{
     FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, Parser, inspect, strip,
@@ -116,7 +117,7 @@ pub struct RenderOutput {
 /// * Rendering fails
 pub fn preprocess_article(
     statics: &mut Statics<'_>,
-    messages: &serde_json_borrow::Value<'_>,
+    messages: &Messages<'_>,
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
@@ -143,7 +144,7 @@ pub fn preprocess_article(
 /// * Rendering fails
 pub fn render_article(
     statics: &mut Statics<'_>,
-    messages: &serde_json_borrow::Value<'_>,
+    messages: &Messages<'_>,
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
@@ -170,7 +171,7 @@ pub fn render_article(
 /// * Rendering fails
 pub fn render_string(
     statics: &mut Statics<'_>,
-    messages: &serde_json_borrow::Value<'_>,
+    messages: &Messages<'_>,
     mut page_name: &str,
     source: &str,
     args: Option<&str>,
@@ -246,7 +247,7 @@ pub fn render_string(
 /// Main renderer entrypoint.
 fn render(
     statics: &mut Statics<'_>,
-    messages: &serde_json_borrow::Value<'_>,
+    messages: &Messages<'_>,
     article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
@@ -304,7 +305,7 @@ fn render(
 /// Wikitext.
 fn render_preprocess<'a, 'b, 'c>(
     statics: &'a mut Statics<'b>,
-    messages: &'c serde_json_borrow::Value<'c>,
+    messages: &'c Messages<'c>,
     article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
@@ -492,7 +493,7 @@ pub struct Statics<'config> {
     base_time: DateTime,
     /// The server’s base URI.
     #[builder(setter(doc = "Sets the server’s base URI."))]
-    base_uri: Uri,
+    base_uri: Url,
     /// The article database.
     #[builder(setter(doc = "Sets the article database."))]
     db: Arc<dyn DatabaseProvider>,
@@ -634,7 +635,7 @@ pub(crate) struct State<'s, 'config, 'dict> {
     /// The page load strategy.
     pub load_mode: LoadMode,
     /// Messages dictionary.
-    pub messages: &'s serde_json_borrow::Value<'dict>,
+    pub messages: &'s Messages<'dict>,
     /// Thread static global variables.
     pub statics: &'s mut Statics<'config>,
     /// Stripped extension tag substitutions.

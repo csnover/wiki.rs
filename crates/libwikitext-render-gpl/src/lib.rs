@@ -19,8 +19,7 @@ fn waaaaaa() {
     // However, we can still tell this was handled as a link in the preprocessor:
     // [[Foo}}|bar]]";
 
-    let source = "*#*#;*;;foo : bar
-*#*#;boo : baz";
+    let source = "http://e.com/t,";
 
     let parser = libwikitext_parse::Parser::new(&config::CONFIG);
     // let root = parser.preprocess(source, false).unwrap();

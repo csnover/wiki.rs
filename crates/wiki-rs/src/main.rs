@@ -4,10 +4,10 @@ mod db;
 mod pages;
 mod renderer;
 
-use axum::{Router, http::Uri, routing::get};
+use axum::{Router, routing::get};
 use core::time::Duration;
 use db::Database;
-use libwikitext_common::{db::DatabaseProvider as _, title::Namespace};
+use libwikitext_common::{db::DatabaseProvider as _, title::Namespace, url::Url};
 use libwikitext_render::LoadMode;
 use r2d2::Pool;
 use renderer::Manager as RenderManager;
@@ -17,7 +17,7 @@ use tokio::net::TcpListener;
 /// Global application state.
 struct WikiState {
     /// The base URI to use when emitting canonical URIs.
-    base_uri: Uri,
+    base_uri: Url,
     /// The global article database.
     database: Arc<Database<'static>>,
     /// The default load mode for new pages.
@@ -309,7 +309,7 @@ async fn run() -> Result<(), Box<dyn core::error::Error>> {
     let base_uri = if let Some(base_uri) = args.base_uri {
         base_uri.parse()
     } else {
-        args.bind.parse()
+        format!("//{}", args.bind).parse()
     }?;
 
     let limits = args.limits;

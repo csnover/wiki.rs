@@ -1,9 +1,8 @@
 //! Collections for semi-structured article data.
 
 use core::fmt::{self, Write as _};
-use http::Uri;
 use libmisc::to_ascii_lower;
-use libwikitext_common::{make_url, title::Title};
+use libwikitext_common::{make_url, title::Title, url::Url};
 use libwikitext_parse::HeadingLevel;
 use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 
@@ -21,7 +20,7 @@ impl Categories {
     pub fn fmt<W: fmt::Write + ?Sized>(
         &self,
         f: &mut W,
-        base_uri: &Uri,
+        base_uri: &Url,
         article_path: &str,
     ) -> fmt::Result {
         if !self.0.is_empty() {

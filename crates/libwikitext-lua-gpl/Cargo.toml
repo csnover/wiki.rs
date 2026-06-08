@@ -13,7 +13,6 @@ anyhow.workspace = true
 either.workspace = true
 gc-arena.workspace = true
 html-escape.workspace = true
-http.workspace = true
 libmisc.workspace = true
 libphp-rs.workspace = true
 libwikitext-common.workspace = true

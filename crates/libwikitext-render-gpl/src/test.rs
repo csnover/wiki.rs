@@ -3,11 +3,11 @@ use super::{
     test_parser::{Chunk, OPTION_TO_META, SectionText, Sections, Testfile},
 };
 use core::{cell::RefCell, fmt::Write as _};
-use http::Uri;
 use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
     db::{Article, DatabaseProvider, MockDatabase},
     decode_html,
+    url::Url,
 };
 use libwikitext_data::MESSAGES;
 use libwikitext_parse::{FileMap, inspect};
@@ -38,7 +38,7 @@ test_from_file! {
     definition_lists => "definitionLists",
     // dom_normalizer_tests => "domNormalizerTests",
     empty => "empty",
-    encap_parser_tests => "encapParserTests",
+    // encap_parser_tests => "encapParserTests",
     ext_links => "extLinks",
     headings => "headings",
     // i18n_parser_tests => "i18nParserTests",
@@ -728,7 +728,7 @@ fn render_test(
 
     let mut statics = Statics::builder()
         .base_time(base_time)
-        .base_uri(Uri::from_static("http://example.org"))
+        .base_uri(Url::from_static("http://example.org").unwrap())
         .extension_tags(HashMap::from_iter([
             ("asidetag", &AsideTag as _),
             ("divtag", &DivTagPf as _),

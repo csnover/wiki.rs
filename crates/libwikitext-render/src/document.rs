@@ -1,7 +1,7 @@
 //! The root of a Wikitext document.
 
 use super::{
-    Error, Result, State, StripMarker,
+    Error, LinkKind, Result, State, StripMarker,
     emitters::{
         Accumulator, AttributeFilter, CategoryTrim, Chain as _, DomTree, EmptyTagger, GrafEmitter,
         ListEmitter, OutlineEmitter, PrettyText, Sink, TableEmitter, TableFoster, TemplateTagger,
@@ -12,17 +12,19 @@ use super::{
     surrogate::{self, Surrogate},
     tags::{self, PHRASING_TAGS},
 };
+use crate::tags::ExternalLinkKind;
 use core::fmt::Write as _;
 use either::Either;
 use libmisc::{CowExt as _, to_ascii_lower};
+use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode, decode_html, format_message, normalize_attr,
     title::{Namespace, Title},
     title_decode,
 };
 use libwikitext_parse::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, Output, Span,
-    Spanned, TextStyle, Token, VOID_TAGS,
+    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, MagicLink,
+    Output, Span, Spanned, TextStyle, Token, VOID_TAGS,
 };
 use std::borrow::Cow;
 
@@ -581,12 +583,44 @@ impl Surrogate<Error> for Document {
 
     fn adopt_magic_link(
         &mut self,
-        _state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
         _span: Span,
-        _magic: &libwikitext_parse::MagicLink,
+        magic: &MagicLink,
     ) -> Result {
-        todo!()
+        let (link, content) = match magic {
+            MagicLink::Isbn(id) => {
+                let url_id = strtr(id, &[("-", ""), (" ", ""), ("x", "X")]);
+                let link = LinkKind::Internal(Title::new(
+                    state.statics.db.config(),
+                    &format!("Booksources/{url_id}"),
+                    Some(Namespace::SPECIAL),
+                )?);
+                (link, format!("ISBN {id}"))
+            }
+            MagicLink::Pmid(id) => {
+                let url = format_message(state.messages, ["pubmedurl"], |key| {
+                    Ok::<_, Error>(
+                        (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
+                    )
+                })?;
+                let link = LinkKind::External(url, ExternalLinkKind::MagicPmid);
+                (link, format!("PMID {}", &sp.source[id.into_range()]))
+            }
+            MagicLink::Rfc(id) => {
+                let url = format_message(state.messages, ["rfcurl"], |key| {
+                    Ok::<_, Error>(
+                        (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
+                    )
+                })?;
+                let link = LinkKind::External(url, ExternalLinkKind::MagicRfc);
+                (link, format!("RFC {}", &sp.source[id.into_range()]))
+            }
+        };
+        tags::render_start_link(self, state, sp, &link)?;
+        self.next.text(&content);
+        tags::render_end_link(self, state, sp)?;
+        Ok(())
     }
 
     fn adopt_new_line(
