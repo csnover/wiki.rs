@@ -1874,7 +1874,8 @@ Let `P` be 0. While `P` is not the position of the end of the input:
 
    1. The string `"RFC"`; then
    2. At least one magic space[^magicspace]; then
-   3. One or more `['0'..='9']`, captured as `ID`.
+   3. One or more `['0'..='9']`, captured as `ID`; then
+   4. A word boundary.
 
    On success:
 
@@ -1893,7 +1894,8 @@ Let `P` be 0. While `P` is not the position of the end of the input:
 
    1. The string `"PMID"`; then
    2. At least one magic space[^magicspace]; then
-   3. One or more `['0'..='9']`.
+   3. One or more `['0'..='9']`; then
+   4. A word boundary.
 
    On success:
 
@@ -1925,6 +1927,9 @@ Let `P` be 0. While `P` is not the position of the end of the input:
       then;
 
       3. `['0'..='9'|'X'|'x']`.
+
+      Then;
+   4. A word boundary.
 
    On success:
 

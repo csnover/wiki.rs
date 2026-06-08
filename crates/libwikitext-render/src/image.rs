@@ -235,7 +235,12 @@ pub(super) fn media_options<'s>(
     if matches!(options.format.as_deref(), Some("thumb" | "frame")) {
         options.align.get_or_insert("right".into());
     } else if let Some(caption) = options.caption.take() {
-        let mut extractor = TextContent::new(state.statics.db.config(), &sp.source, String::new());
+        let mut extractor = TextContent::new(
+            state.statics.db.config(),
+            state.globals.title.namespace().is_talk(),
+            &sp.source,
+            String::new(),
+        );
         extractor.visit_tokens(caption)?;
         options.attrs.insert(
             "title".into(),

@@ -1,8 +1,0 @@
-[
-    Template @ 1:44..49 {
-        target: [
-            "b",
-        ],
-        parameters: [],
-    },
-]

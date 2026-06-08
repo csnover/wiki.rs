@@ -166,6 +166,11 @@ pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
                                     }]);
                                 }
                             } else if !title.prefixed_text().is_empty() {
+                                if title.interwiki().is_some() {
+                                    args.push(token![source, Argument {
+                                        "class" => "extiw"
+                                    }]);
+                                }
                                 args.push(token![source, Argument {
                                     "title" => title.prefixed_text()
                                 }]);

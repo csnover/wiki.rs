@@ -121,32 +121,71 @@ where
 }
 // SPDX-SnippetEnd
 
-/// Lowercases ASCII in the given `text`.
-#[must_use]
-pub fn to_ascii_lower(input: &str) -> Cow<'_, str> {
-    for index in 0..input.len() {
-        if input.as_bytes()[index].is_ascii_uppercase() {
-            return Cow::Owned(format!(
-                "{}{}",
-                &input[..index],
-                input[index..].to_ascii_lowercase()
-            ));
+/// Scans `input` with `check`; if `check` returns true, runs `transform` on
+/// the current and all subsequent bytes and returns an owned string.
+#[expect(clippy::inline_always, reason = "hot path")]
+#[inline(always)]
+fn mutate_ascii(
+    input: &str,
+    check: impl Fn(&u8) -> bool,
+    transform: impl Fn(&u8) -> u8,
+) -> Cow<'_, str> {
+    let bytes = input.as_bytes();
+    for index in 0..bytes.len() {
+        if check(&bytes[index]) {
+            let mut out = Vec::with_capacity(input.len());
+            out.extend(&bytes[..index]);
+            out.extend(bytes[index..].iter().map(transform));
+            // SAFETY: Changing ASCII bytes only does not invalidate UTF-8.
+            return Cow::Owned(unsafe { String::from_utf8_unchecked(out) });
         }
     }
     Cow::Borrowed(input)
 }
 
-/// Uppercases ASCII in the given `text`.
-#[must_use]
-pub fn to_ascii_upper(input: &str) -> Cow<'_, str> {
-    for index in 0..input.len() {
-        if input.as_bytes()[index].is_ascii_lowercase() {
-            return Cow::Owned(format!(
-                "{}{}",
-                &input[..index],
-                input[index..].to_ascii_uppercase()
-            ));
+/// Scans `input` with `check`; if `check` returns true, run `transform` on
+/// the rest of `input` starting from the current position and returns an owned
+/// string.
+#[expect(clippy::inline_always, reason = "hot path")]
+#[inline(always)]
+fn mutate_unicode(
+    input: &str,
+    check: impl Fn(char) -> bool,
+    transform: impl Fn(&str) -> String,
+) -> Cow<'_, str> {
+    for (index, c) in input.char_indices() {
+        if check(c) {
+            let mut out = String::with_capacity(input.len());
+            out += &input[..index];
+            out += &transform(&input[index..]);
+            return Cow::Owned(out);
         }
     }
     Cow::Borrowed(input)
+}
+
+/// Lowercases ASCII in the given `text` in `O(n+m)` time and without allocating
+/// if the string is already lowercase.
+#[must_use]
+pub fn to_ascii_lower(input: &str) -> Cow<'_, str> {
+    mutate_ascii(input, u8::is_ascii_uppercase, u8::to_ascii_lowercase)
+}
+
+/// Uppercases ASCII in the given `text` in `O(n+m)` time and without allocating
+/// if the string is already uppercase.
+#[must_use]
+pub fn to_ascii_upper(input: &str) -> Cow<'_, str> {
+    mutate_ascii(input, u8::is_ascii_lowercase, u8::to_ascii_uppercase)
+}
+
+/// Lowercases Unicode in the given `text`.
+#[must_use]
+pub fn to_lower(input: &str) -> Cow<'_, str> {
+    mutate_unicode(input, char::is_uppercase, str::to_lowercase)
+}
+
+/// Uppercases Unicode in the given `text`.
+#[must_use]
+pub fn to_upper(input: &str) -> Cow<'_, str> {
+    mutate_unicode(input, char::is_lowercase, str::to_uppercase)
 }

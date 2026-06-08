@@ -48,7 +48,11 @@ impl<'config, Db: DatabaseProvider + 'static> UriLibrary<'config, Db> {
             .map_err(|_| "missing parser".into_value(ctx))?;
         let s = {
             let root = parser.parse(s)?;
-            let mut extractor = TextContent::new(parser.config(), s, String::new());
+            // TODO: Technically this is supposed to not care about whether a
+            // link is a category or interwiki because the original code was
+            // so shitty it just tried to scoop out the insides of a link using
+            // yet more regular expressions.
+            let mut extractor = TextContent::new(parser.config(), false, s, String::new());
             let _ = extractor.visit_output(&root);
             extractor.finish()
         };

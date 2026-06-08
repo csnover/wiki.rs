@@ -12,10 +12,12 @@ use super::{
     TextStylePosition, Token, VOID_TAGS,
 };
 use core::iter;
-use libmisc::to_ascii_lower;
+use libmisc::{to_ascii_lower, to_lower};
 use libphp_rs::strtr;
+use libwikitext_common::config::BitMap;
 use peg::RuleResult;
 use std::collections::HashSet;
+use unicode_general_category::{GeneralCategory, get_general_category};
 
 peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for str {
     //////////////
@@ -767,27 +769,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     // if that starts with an external URL fail the parse so it can be parsed
     // by extlink.
     rule wikilink_target() -> Spanned<Token>
-    = spanned(<#{|input, mut pos| {
-        let bytes = input.as_bytes();
-        while pos < bytes.len()
-            && (
-                matches!(bytes[pos], b'#' | b'%')
-                || o.config.valid_title_bytes.contains(bytes[pos])
-            )
-        {
-            if input.is_char_boundary(pos) && input[pos..].starts_with(MARKER_PREFIX) {
-                return RuleResult::Failed;
-            }
-
-            pos += 1;
-        }
-
-        if input.is_char_boundary(pos) {
-            RuleResult::Matched(pos, ())
-        } else {
-            RuleResult::Failed
-        }
-    }} { Token::Text }>)
+    = spanned(<#{|input, pos| scan_wikilink_target(
+        input, pos, &o.config.valid_title_bytes
+    )} { Token::Text }>)
 
     /// Text content part of a Wikilink.
     ///
@@ -1028,7 +1012,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule magic_pmid() -> Spanned<Token>
     = spanned(<
         &assert(o.config.magic_links.pmid, "PMID enabled")
-        "PMID" magic_space()+ id:spanned(<digit()+ {}>)
+        "PMID" magic_space()+ id:spanned(<digit()+ {}>) &boundary()
         { Token::MagicLink(MagicLink::Pmid(id.span)) }
     >)
 
@@ -1040,7 +1024,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule magic_rfc() -> Spanned<Token>
     = spanned(<
         &assert(o.config.magic_links.rfc, "RFC enabled")
-        "RFC" magic_space()+ id:spanned(<digit()+ {}>)
+        "RFC" magic_space()+ id:spanned(<digit()+ {}>) &boundary()
         { Token::MagicLink(MagicLink::Rfc(id.span)) }
     >)
 
@@ -1051,8 +1035,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// ```
     rule magic_isbn() -> Spanned<Token>
     = spanned(<
-        &assert(o.config.magic_links.rfc, "RFC enabled")
-        "ISBN" magic_space()+ id:$(magic_isbn_id())
+        &assert(o.config.magic_links.rfc, "ISBN enabled")
+        "ISBN" magic_space()+ id:$(magic_isbn_id()) &boundary()
         {
             Token::MagicLink(MagicLink::Isbn({
                 let id = html_escape::decode_html_entities(id);
@@ -1068,9 +1052,21 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     ///      ^^^^^^^^^^^^^^^^^
     /// ```
     rule magic_isbn_id()
-    = ("97" ['8'|'9'])?
-      (digit() (magic_space() / "-")?)*<9>
-      (digit() / ['X'|'x'])
+    = "97" ['8'|'9'] magic_isbn_space() magic_isbn_id_short()
+    / magic_isbn_id_short()
+
+    /// A 10-digit ISBN identifier.
+    ///
+    /// ```wikitext
+    /// ISBN 978-0-1234-56
+    ///      ^^^^^^^^^^^^^
+    /// ```
+    rule magic_isbn_id_short()
+    = (digit() magic_isbn_space())*<9> (digit() / ['X'|'x'])
+
+    /// Allow whitespace in an ISBN identifier.
+    rule magic_isbn_space()
+    = (magic_space() / "-")?
 
     /// Allowed whitespace in a magic link identifier.
     rule magic_space()
@@ -1106,6 +1102,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule url_term()
     = unispace()
     / eof()
+    / behavior_switch()
       // In the original parser, text styles had already been converted to HTML
       // before parsing an external link, so would be excluded due to being an
       // HTML tag
@@ -1320,7 +1317,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
               RuleResult::Matched(pos, None)
           } else if let Some((body_end, tag_end)) = find_end_tag(&input[pos..], name.as_ref(),
             // TODO: Use a non-allocating comparator
-            |a, b| a.to_lowercase() == b.to_lowercase())
+            |a, b| to_lower(a) == to_lower(b))
           {
               RuleResult::Matched(pos + tag_end, Some(Span::new(pos as u32, (pos + body_end) as u32)))
           } else {
@@ -1336,19 +1333,15 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// <extension-tag>Value</extension-tag>
     ///  ^^^^^^^^^^^^^
     /// ```
+    ///
+    /// This list is less restrictive than HTML, which requires all tag names to
+    /// be ASCII alphanumeric.
     rule extension_tag_name()
-    = name:$(tag_text())
+    = name:$([^' '|'\t'|'\n'|'\r'|'\x0c'|'/'|'>']+)
       &assert(
         contains_ignore_case_unicode(&o.config.extension_tags, name),
         "extension tag"
       )
-
-    /// Allowed characters in an extension tag name.
-    ///
-    /// This list is less restrictive than HTML, which requires all tag names to
-    /// be ASCII alphanumeric.
-    rule tag_text()
-    = [^' '|'\t'|'\n'|'\r'|'\x0c'|'/'|'>']+
 
     /// An allowed HTML5 start or end tag.
     ///
@@ -1357,33 +1350,45 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// ^^^^^^^^^^^^^^^^                 ^^^^^^^
     /// ```
     rule html_tag() -> Spanned<Token>
-    = spanned(<
-        "<"
-        is_end:(e:"/"? { e.is_some() })
-        name:spanned(<$(alnum()+)>)
-        &assert(contains_ignore_case(&HTML5_TAGS, *name), "html tag")
-        space_nl()*
-        start:(
-            !assert(is_end, "start tag")
-            attributes:late_attributes(<"/"? ">">)
-            self_closing:(c:"/"? { c.is_some() })
-            { (attributes, self_closing) }
-        )?
-        ">"
-        {
-            if is_end {
-                Token::EndTag { name: name.span }
-            } else {
-                let (attributes, mut self_closing) = start.unwrap_or_default();
-                self_closing |= VOID_TAGS.contains(&to_ascii_lower(name.node));
-                Token::StartTag {
-                    attributes,
-                    name: name.span,
-                    self_closing
-                }
-            }
-        }
-    >)
+    = spanned(<"<" t:(html_end_tag() / html_start_tag()) ">" { t }>)
+
+    /// The inside of an allowed HTML5 start tag.
+    ///
+    /// ```wikitext
+    /// <span dir="ltr"><not-allowed-tag></span>
+    ///  ^^^^^^^^^^^^^^
+    /// ```
+    rule html_start_tag() -> Token
+    = name:html_tag_name()
+      (space_nl()+ / &("/"? ">"))
+      attributes:late_attributes(<"/"? ">">)
+      space_nl()*
+      self_closing:(c:"/"? { c.is_some() })
+    {
+        let self_closing = self_closing | VOID_TAGS.contains(&to_ascii_lower(*name));
+        Token::StartTag { attributes, name: name.span, self_closing }
+    }
+
+    /// The inside of an allowed HTML5 end tag.
+    ///
+    /// ```wikitext
+    /// <span dir="ltr"><not-allowed-tag></span>
+    ///                                   ^^^^^
+    /// ```
+    rule html_end_tag() -> Token
+    = "/" name:html_tag_name() space_nl()*
+    { Token::EndTag { name: name.span } }
+
+    /// An allowed HTML5 tag name.
+    ///
+    /// ```wikitext
+    /// <span dir="ltr"><not-allowed-tag></span>
+    ///  ^^^^                              ^^^^
+    /// ```
+    rule html_tag_name() -> Spanned<&'input str>
+    = name:spanned(<$(alnum()+)>)
+      &assert(contains_ignore_case(&HTML5_TAGS, *name), "html tag")
+    { name }
 
     /// A list of tag attributes delimited by garbage which may contain strip
     /// markers whose contents must also participate in the attribute parsing.
@@ -1941,10 +1946,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
 
     /// A match of the PCRE `\p{Zs}` character class.
     rule unispace()
-      // Using `White_Space` also includes u+0085, u+2028 and u+2029 which are
-      // not present in `Zs`. In practice, this should not matter, but it is
-      // technically non-compliant.
-    = [c if c.is_whitespace()]
+    = [c if get_general_category(c) == GeneralCategory::SpaceSeparator]
 }}
 
 /// Balances text style tokens by decomposing the first ‘best’ bold style in a
@@ -1967,7 +1969,7 @@ fn contains_ignore_case(candidates: &phf::Set<&str>, value: &str) -> bool {
 #[inline]
 fn contains_ignore_case_unicode(candidates: &phf::Set<&str>, value: &str) -> bool {
     // TODO: Use a case-insensitive hashable type instead of allocating.
-    candidates.contains(&value.to_lowercase())
+    candidates.contains(&to_lower(value))
 }
 
 /// Finds the start and end position of the next end tag which matches the given
@@ -2014,10 +2016,10 @@ fn find_end_tag(
 )]
 fn is_word(c: char) -> bool {
     #[allow(clippy::enum_glob_use, reason = "my fingers hurt")]
-    use unicode_general_category::GeneralCategory::*;
+    use GeneralCategory::*;
     c == '_'
         || matches!(
-            unicode_general_category::get_general_category(c),
+            get_general_category(c),
             LowercaseLetter
                 | ModifierLetter
                 | OtherLetter
@@ -2181,6 +2183,9 @@ fn make_heading(start: Span, ce: Option<(Vec<Spanned<Token>>, Span)>) -> Token {
 
 /// Wraps or discards an inclusion control tag and its contents according to
 /// the [`Options::including`] disposition of the input.
+///
+/// Unlike the PHP preprocessor, this one simply makes the content disappear by
+/// excluding it from the AST entirely.
 fn make_include(
     o: &Parser<'_>,
     pp: &PreprocessorOptions,
@@ -2209,56 +2214,82 @@ fn make_include(
             &input[mode.span.into_range()],
             str::eq_ignore_ascii_case,
         )
+        .map(|(end_start, end_end)| (pos + end_start, pos + end_end))
     };
 
-    match (pp.including, mode.node) {
-        (true, InclusionMode::IncludeOnly)
-        | (false, InclusionMode::NoInclude | InclusionMode::OnlyInclude) => {
-            RuleResult::Matched(pos, vec![tag])
+    match (pp.including, mode.node, is_end) {
+        (true, InclusionMode::IncludeOnly, _)
+        | (false, InclusionMode::NoInclude | InclusionMode::OnlyInclude, _)
+        | (true, InclusionMode::OnlyInclude, true) => {
+            // Discard the tag and keep parsing
+            RuleResult::Matched(pos, vec![])
         }
-        (true, InclusionMode::OnlyInclude) => {
+        (true, InclusionMode::NoInclude, _) | (false, InclusionMode::IncludeOnly, false) => {
+            // Discard the tag and its body
+            let end = content.map_or(if is_end { pos } else { input.len() }, |(_, e)| e);
+            RuleResult::Matched(end, vec![])
+        }
+        (false, InclusionMode::IncludeOnly, true) => {
+            // Oops, somebody did a bug and now we must all live with that
+            // forever
+            RuleResult::Matched(pos, vec![tag.map_node(|_| Token::Text)])
+        }
+        (true, InclusionMode::OnlyInclude, false) => {
+            let (body_end, end) = content.unwrap_or((input.len(), input.len()));
+
             // The content inside `<onlyinclude>` needs to be parsed separately
             // because it should be parsed as if none of the earlier content
             // ever existed at all, but the parser is already in the middle of
-            // some context that belongs to that other content.
-            if let Some((content_len, end_pos)) = content
-                // To make sure that the span positions are correct, reparsing
-                // happens with a special rule which just skips earlier content
-                // and then continues normally.
-                && let Ok(inner) = wikitext::only_include(&input[..pos + content_len], o, pp, pos)
-            {
-                // This rule result could end at `pos + content_len` and then
-                // allow the parser to read the close tag, but we already did
-                // the work, so save those frames and generate the entire thing
-                // here
-                let end = pos + end_pos;
-                let end_tag = Spanned::new(
-                    Token::EndInclude(*mode),
-                    (pos + content_len) as u32,
-                    end as u32,
-                );
-                RuleResult::Matched(
-                    end,
-                    iter::once(tag)
-                        .chain(inner)
-                        .chain(iter::once(end_tag))
-                        .collect(),
-                )
-            } else {
-                RuleResult::Matched(pos, vec![tag])
-            }
+            // some context that belongs to that other content. To make sure
+            // that the span positions are correct, reparsing happens with a
+            // special rule which skips from 0..pos and then continues normally
+            // until the end of the input slice.
+            let inner = wikitext::only_include(&input[..body_end], o, pp, pos).unwrap_or_default();
+
+            let end_tag = Spanned::new(Token::EndInclude(*mode), body_end as u32, end as u32);
+
+            RuleResult::Matched(
+                end,
+                iter::once(tag)
+                    .chain(inner)
+                    .chain(iter::once(end_tag))
+                    .collect(),
+            )
         }
-        (true, InclusionMode::NoInclude) | (false, InclusionMode::IncludeOnly) => {
-            if is_end && *mode == InclusionMode::IncludeOnly {
-                RuleResult::Matched(pos, vec![tag.map_node(|_| Token::Text)])
-            } else {
-                RuleResult::Matched(
-                    content
-                        .map_or_else(|| if is_end { pos } else { input.len() }, |(_, e)| pos + e),
-                    vec![tag],
-                )
-            }
+    }
+}
+
+/// Consumes bytes valid in a Wikilink target part.
+fn scan_wikilink_target(input: &str, mut pos: usize, valid: &BitMap) -> RuleResult<()> {
+    fn valid_ltgt(valid: &BitMap, b: u8) -> bool {
+        // In the original parser, '<' and '>' are accepted in this position
+        // because these characters were replaced with HTML entities in a
+        // previous step
+        if b == b'<' {
+            b"&lt;".iter().copied().all(|b| valid.contains(b))
+        } else if b == b'>' {
+            b"&gt;".iter().copied().all(|b| valid.contains(b))
+        } else {
+            false
         }
+    }
+
+    let bytes = input.as_bytes();
+    while pos < bytes.len()
+        && let b = bytes[pos]
+        && (matches!(b, b'#' | b'%') || valid.contains(b) || valid_ltgt(valid, b))
+    {
+        if input.is_char_boundary(pos) && input[pos..].starts_with(MARKER_PREFIX) {
+            return RuleResult::Failed;
+        }
+
+        pos += 1;
+    }
+
+    if input.is_char_boundary(pos) {
+        RuleResult::Matched(pos, ())
+    } else {
+        RuleResult::Failed
     }
 }
 

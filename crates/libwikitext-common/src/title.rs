@@ -2,7 +2,7 @@
 
 use super::{config::Configuration, decode_html, url_encode};
 use core::fmt::Write as _;
-use libmisc::{CowExt as _, to_ascii_lower};
+use libmisc::{CowExt as _, to_lower};
 use libphp_rs::strtr;
 use std::borrow::Cow;
 
@@ -310,7 +310,8 @@ impl Title {
             })
             .transpose()?;
 
-        if namespace.case == NamespaceCase::FirstLetter
+        if interwiki.is_none()
+            && namespace.case == NamespaceCase::FirstLetter
             && let Some(first) = title.chars().next()
             && first.is_lowercase()
         {
@@ -351,52 +352,80 @@ impl Title {
 
         // Namespaced & interwiki titles that start with ':' are given special
         // rendering behaviour, but it could also be an explicit main namespace.
-        // It is not possible to know at this point.
-        let (empty_start, mut text) = text
+        // It is not possible to know at this point, but that does not stop
+        // MediaWiki from overriding the default namespace anyway.
+        let (default_ns, mut text) = text
             .strip_prefix(':')
-            .map_or((false, text.as_ref()), |text| (true, text));
+            .map_or((default_ns, text.as_ref()), |text| {
+                (None, text.trim_start_matches(' '))
+            });
 
         // Namespaces and interwiki prefixes may have the same name, and
         // namespaces are given priority. (It does not make much sense that
         // namespaces from one wiki are treated as if they might exist on a
         // foreign wiki, but the Lua mw.title interface acts like this is the
         // case, so wiki.rs does too.)
-        let (ns, iw) = text.split_once(':').map_or(<_>::default(), |(lhs, rhs)| {
-            let lhs = lhs.trim_end();
-            let rhs = rhs.trim_start();
-            if let Some(ns) = Namespace::find_by_name(config, lhs) {
+        let (iw, ns) = text.split_once(':').map_or(<_>::default(), |(lhs, rhs)| {
+            let lhs = lhs.trim_end_matches(' ');
+            let rhs = rhs.trim_start_matches(' ');
+            if lhs.is_empty() {
+                // This mustn’t match anything since an empty segment for the
+                // main namespace was already extracted by the first split. If
+                // this matched again, then `::` would be treated as a
+                // double namespace, which is not correct. (It is necessary to
+                // do the early split separately because otherwise *this* split
+                // would not match an interwiki after an empty segment.)
+                <_>::default()
+            } else if let Some(ns) = Namespace::find_by_name(config, lhs) {
                 text = rhs;
-                (Some(ns), None)
-            } else if config.interwiki_map.contains_key(&to_ascii_lower(lhs)) {
+                (None, Some(ns))
+            } else if let Some(iw) = config.interwiki_map.get_key(&to_lower(lhs)) {
                 text = rhs;
-                (None, Some(lhs))
+                (Some(*iw), None)
             } else {
                 <_>::default()
             }
         });
 
-        let ns = ns.unwrap_or_else(|| {
-            if let Some((lhs, rhs)) = text.split_once(':')
-                && let Some(ns) = Namespace::find_by_name(config, lhs.trim_end())
+        // After an interwiki, there is a bonus chance to find a namespace.
+        // (Technically, there are infinite bonus chances to find an interwiki
+        // again here, but let’s just pretend that the original code was not so
+        // brain damaged.)
+        let ns = if iw.is_some()
+            && let Some((lhs, rhs)) = text.split_once(':')
+        {
+            if lhs.is_empty() {
+                text = rhs.trim_start_matches(' ');
+                Some(Namespace::main(config))
+            } else if let ns @ Some(_) = Namespace::find_by_name(config, lhs.trim_end_matches(' '))
             {
-                text = rhs.trim_start();
+                text = rhs.trim_start_matches(' ');
                 ns
-            } else if empty_start {
-                Namespace::main(config)
             } else {
-                default_ns
-                    .and_then(|id| Namespace::find_by_id(config, id))
-                    .unwrap_or_else(|| Namespace::main(config))
+                None
             }
-        });
+        } else {
+            ns
+        };
 
-        if text.is_empty() {
+        // MediaWiki checked twice for an empty key part with different
+        // conditions at different points in the algorithm, but it turns out
+        // that those two conditions are really just this one condition, since
+        // if the text was empty from the start then neither `iw` nor `ns` will
+        // have been set
+        if iw.is_none() && ns.is_none_or(|ns| ns.id != Namespace::MAIN) && text.is_empty() {
             return Err(Error::Empty);
         }
 
-        let (text, fragment) = text
-            .split_once('#')
-            .map_or((text, None), |(text, frag)| (text.trim_end(), Some(frag)));
+        let ns = ns.unwrap_or_else(|| {
+            default_ns
+                .and_then(|id| Namespace::find_by_id(config, id))
+                .unwrap_or_else(|| Namespace::main(config))
+        });
+
+        let (text, fragment) = text.split_once('#').map_or((text, None), |(text, frag)| {
+            (text.trim_end_matches(' '), Some(frag))
+        });
 
         Self::new_normalized(config, ns, text, fragment, iw)
     }
@@ -511,10 +540,14 @@ impl Title {
             .map(|end_at| &self.text[..usize::from(end_at)])
     }
 
-    /// Returns true if this title corresponds to a non-interwiki category.
+    /// Returns true if this title corresponds to a category.
     #[must_use]
-    pub fn is_local_category(&self) -> bool {
-        self.interwiki().is_none() && self.namespace.id == Namespace::CATEGORY
+    pub fn is_category(&self, config: &Configuration, from_talk_page: bool) -> bool {
+        if let Some(interwiki) = self.interwiki() {
+            !from_talk_page && config.interlanguage_map.contains_key(interwiki)
+        } else {
+            self.namespace.id == Namespace::CATEGORY
+        }
     }
 
     /// Returns true if this title corresponds to a non-interwiki media file.

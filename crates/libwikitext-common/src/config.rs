@@ -59,6 +59,10 @@ pub struct ConfigurationSource {
     /// Registered function hooks, lowercased, by alias.
     pub function_hooks: Map<&'static str, &'static str>,
 
+    /// A map from a registered title interwiki prefix to bcp47 code for
+    /// interlanguages.
+    pub interlanguage_map: Map<&'static str, &'static str>,
+
     /// Registered title interwikis.
     pub interwiki_map: Map<&'static str, &'static str>,
 

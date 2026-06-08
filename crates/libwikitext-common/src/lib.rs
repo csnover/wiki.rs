@@ -395,12 +395,12 @@ pub fn lang_to_bcp47(code: &str) -> Cow<'_, str> {
             to_ascii_lower(text)
         };
         after_x = text == "x";
-        last = index + 1;
         if let Cow::Owned(text) = text {
             out += &code[flushed..last];
             out += &text;
-            flushed = last;
+            flushed = index;
         }
+        last = index + 1;
     }
 
     if flushed == 0 {
@@ -574,6 +574,34 @@ pub fn title_decode(target: &str) -> Cow<'_, str> {
         .borrowed_or(|target| strtr(&target, &[("<", "&lt;"), (">", "&gt;")]).into_owned())
 }
 
+/// Converts the first letter in the string to Unicode lowercase, avoiding
+/// allocation if it is already lowercase.
+#[must_use]
+pub fn to_lower_first(input: &str) -> Cow<'_, str> {
+    let mut chars = input.chars();
+    if let Some(first) = chars.next()
+        && !first.is_lowercase()
+    {
+        Cow::Owned(format!("{}{}", first.to_lowercase(), chars.as_str()))
+    } else {
+        Cow::Borrowed(input)
+    }
+}
+
+/// Converts the first letter in the string to Unicode uppercase, avoiding
+/// allocation if it is already uppercase.
+#[must_use]
+pub fn to_upper_first(input: &str) -> Cow<'_, str> {
+    let mut chars = input.chars();
+    if let Some(first) = chars.next()
+        && !first.is_uppercase()
+    {
+        Cow::Owned(format!("{}{}", first.to_uppercase(), chars.as_str()))
+    } else {
+        Cow::Borrowed(input)
+    }
+}
+
 /// Percent-decodes a URL part.
 #[inline]
 #[must_use]
@@ -708,5 +736,90 @@ mod tests {
             Cow::Owned::<str>(String::from("hello&\u{00a0}world")),
             "incomplete entity should not interfere with later entity"
         );
+    }
+
+    #[test]
+    fn test_lang_to_bcp47() {
+        const TESTS: &[(&str, &str)] = &[
+            ("en-ca-x-ca", "en-CA-x-ca"),
+            ("sgn-be-fr", "sgn-BE-FR"),
+            ("az-latn-x-latn", "az-Latn-x-latn"),
+            ("sr-Latn-RS", "sr-Latn-RS"),
+            ("az-arab-ir", "az-Arab-IR"),
+            ("sl-nedis", "sl-nedis"),
+            ("de-ch-1996", "de-CH-1996"),
+            (
+                "en-latn-gb-boont-r-extended-sequence-x-private",
+                "en-Latn-GB-boont-r-extended-sequence-x-private",
+            ),
+            ("DE", "de"),
+            ("fR", "fr"),
+            ("ja", "ja"),
+            ("zh-hans", "zh-Hans"),
+            ("sr-cyrl", "sr-Cyrl"),
+            ("sr-latn", "sr-Latn"),
+            ("zh-cmn-hans-cn", "zh-cmn-Hans-CN"),
+            ("cmn-hans-cn", "cmn-Hans-CN"),
+            ("zh-yue-hk", "zh-yue-HK"),
+            ("yue-hk", "yue-HK"),
+            ("zh-hans-cn", "zh-Hans-CN"),
+            ("sr-latn-RS", "sr-Latn-RS"),
+            ("sl-rozaj", "sl-rozaj"),
+            ("sl-rozaj-biske", "sl-rozaj-biske"),
+            ("sl-nedis", "sl-nedis"),
+            ("de-ch-1901", "de-CH-1901"),
+            ("sl-it-nedis", "sl-IT-nedis"),
+            ("hy-latn-it-arevela", "hy-Latn-IT-arevela"),
+            ("de-de", "de-DE"),
+            ("en-us", "en-US"),
+            ("es-419", "es-419"),
+            ("de-ch-x-phonebk", "de-CH-x-phonebk"),
+            ("az-arab-x-aze-derbend", "az-Arab-x-aze-derbend"),
+            ("x-whatever", "x-whatever"),
+            ("qaa-qaaa-qm-x-southern", "qaa-Qaaa-QM-x-southern"),
+            ("de-qaaa", "de-Qaaa"),
+            ("sr-latn-qm", "sr-Latn-QM"),
+            ("sr-qaaa-rs", "sr-Qaaa-RS"),
+            ("en-us-u-islamcal", "en-US-u-islamcal"),
+            ("zh-cn-a-myext-x-private", "zh-CN-a-myext-x-private"),
+            ("en-a-myext-b-another", "en-a-myext-b-another"),
+            ("als", "gsw"),
+            ("bat-smg", "sgs"),
+            ("be-x-old", "be-tarask"),
+            ("fiu-vro", "vro"),
+            ("roa-rup", "rup"),
+            ("zh-classical", "lzh"),
+            ("zh-min-nan", "nan"),
+            ("zh-yue", "yue"),
+            ("cbk-zam", "cbk"),
+            ("de-formal", "de-x-formal"),
+            ("eml", "egl"),
+            ("en-rtl", "en-x-rtl"),
+            ("es-formal", "es-x-formal"),
+            ("hu-formal", "hu-x-formal"),
+            ("kk-Arab", "kk-Arab"),
+            ("kk-Cyrl", "kk-Cyrl"),
+            ("kk-Latn", "kk-Latn"),
+            ("map-bms", "jv-x-bms"),
+            ("mo", "ro-Cyrl-MD"),
+            ("nrm", "nrf"),
+            ("nl-informal", "nl-x-informal"),
+            ("roa-tara", "nap-x-tara"),
+            ("simple", "en-simple"),
+            ("sr-ec", "sr-Cyrl"),
+            ("sr-el", "sr-Latn"),
+            ("zh-cn", "zh-Hans-CN"),
+            ("zh-sg", "zh-Hans-SG"),
+            ("zh-my", "zh-Hans-MY"),
+            ("zh-tw", "zh-Hant-TW"),
+            ("zh-hk", "zh-Hant-HK"),
+            ("zh-mo", "zh-Hant-MO"),
+            ("zh-hans", "zh-Hans"),
+            ("zh-hant", "zh-Hant"),
+        ];
+
+        for (code, expected) in TESTS {
+            assert_eq!(lang_to_bcp47(code), *expected);
+        }
     }
 }

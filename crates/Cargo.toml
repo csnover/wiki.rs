@@ -5,6 +5,7 @@ members = [
 	"barely-css/derive",
 	"barely-css/impl",
 	"easytimeline",
+	"fetch-config",
 	"libmisc",
 	"libphp-rs",
 	"libwikitext-common",
@@ -13,9 +14,27 @@ members = [
 	"libwikitext-lua",
 	"libwikitext-lua-gpl",
 	"libwikitext-parse",
-	"libwikitext-parse-gpl",
 	"libwikitext-render",
-	"libwikitext-render-gpl",
+	"libwikitext-tests-gpl",
+	"timelib-rs",
+	"vega2-rs",
+	"wiki-rs"
+]
+default-members = [
+	"barely-css",
+	"barely-css/derive",
+	"barely-css/impl",
+	"easytimeline",
+	"libmisc",
+	"libphp-rs",
+	"libwikitext-common",
+	"libwikitext-common-gpl",
+	"libwikitext-data",
+	"libwikitext-lua",
+	"libwikitext-lua-gpl",
+	"libwikitext-parse",
+	"libwikitext-render",
+	"libwikitext-tests-gpl",
 	"timelib-rs",
 	"vega2-rs",
 	"wiki-rs"
@@ -110,6 +129,7 @@ percent-encoding = "2"
 phf = { version = "0.13.1", features = ["macros"] }
 piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
 piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
+pico-args = "0.5"
 rand = { version = "0.9", default-features = false, features = ["small_rng", "std"] }
 rayon = "1"
 regex = "1"

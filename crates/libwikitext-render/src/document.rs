@@ -461,12 +461,18 @@ impl Surrogate<Error> for Document {
     ) -> Result {
         let target = sp.eval(state, target)?.map(title_decode);
         let target = state.globals.title.join(&target);
-        let Ok(title) = Title::new(state.statics.db.config(), &target, None) else {
+        let target = target.trim_start_matches(' ');
+        let Ok(title) = Title::new(state.statics.db.config(), target, None) else {
             return self.adopt_text(state, sp, span, &sp.source[span.into_range()]);
         };
         self.text_style_emitter.push(<_>::default());
         let force_link = target.starts_with(':');
-        if !force_link && title.is_local_category() {
+        if !force_link
+            && title.is_category(
+                state.statics.db.config(),
+                state.globals.title.namespace().is_talk(),
+            )
+        {
             // Normally the corresponding content-part is supposed to be used as
             // a sort key. However, since this implementation does not have any
             // category pages, and the sort key does not change the sort order
@@ -493,7 +499,7 @@ impl Surrogate<Error> for Document {
                 self,
                 state,
                 sp,
-                &target,
+                target,
                 prefix.map(|v| v.as_ref()),
                 content,
                 trail.map(|v| v.as_ref()),
@@ -593,7 +599,7 @@ impl Surrogate<Error> for Document {
                 let url_id = strtr(id, &[("-", ""), (" ", ""), ("x", "X")]);
                 let link = LinkKind::Internal(Title::new(
                     state.statics.db.config(),
-                    &format!("Booksources/{url_id}"),
+                    &format!("BookSources/{url_id}"),
                     Some(Namespace::SPECIAL),
                 )?);
                 (link, format!("ISBN {id}"))

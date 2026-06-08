@@ -14,12 +14,11 @@ use libwikitext_common::{
     make_url,
     title::Title,
 };
-use libwikitext_parse::{FileMap, inspect};
-use libwikitext_parse_gpl::Parser;
 use libwikitext_render::{Error as RenderError, EvalPp, LoadMode, RenderOutput};
 use rayon::{iter::ParallelIterator as _, slice::ParallelSliceMut as _};
 use sailfish::TemplateSimple;
 use std::{
+    borrow::Cow,
     sync::{Arc, mpsc},
     time::Instant,
 };
@@ -541,19 +540,21 @@ pub(crate) async fn source(
     let title = Title::new(state.database.config(), &name, None)?;
     let article = state.database.get(&title).map_err(Error::Database)?;
 
-    match mode {
-        None | Some(SourceMode::Raw) => {
-            raw_source(state.base_uri.path(), article.body(), article.model(), None)
-                .map(IntoResponse::into_response)
-        }
+    let body = match mode {
+        None | Some(SourceMode::Raw) => Cow::Borrowed(article.body()),
         Some(SourceMode::Tree) => {
-            let source = FileMap::new(article.body());
-            let tree = Parser::new(state.database.config())
-                .parse(&source, include.is_some())
-                .map_err(RenderError::from)?;
-            Ok(format!("{:#?}", inspect(&source, &tree.root)).into_response())
+            let command = renderer::Command::Eval {
+                args: include,
+                code: article.body().to_owned(),
+                markers: true,
+                mode: EvalPp::PreTree,
+                page_name: article.title().to_owned(),
+            };
+            Cow::Owned(call_renderer(&state, command)?.content)
         }
-    }
+    };
+
+    raw_source(state.base_uri.path(), &body, article.model(), None).map(IntoResponse::into_response)
 }
 
 /// Calls to the renderer thread using the given command.

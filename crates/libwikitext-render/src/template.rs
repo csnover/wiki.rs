@@ -11,6 +11,7 @@ use super::{
 };
 use core::fmt::{self, Write as _};
 use indexmap::IndexSet;
+use libmisc::to_lower;
 use libwikitext_common::{
     config::Configuration,
     db::DatabaseProvider as _,
@@ -385,7 +386,7 @@ fn split_target<'tt>(
             // `{{subst:foo}}` | `{{{{{|subst:}}}bar}}`     | content of bar
             // `{{subst:foo}}` | `{{{{{|safesubst:}}}bar}}` | content of bar
             let config = state.statics.db.config();
-            let magic = config.extra_words.get(&callee.trim_ascii().to_lowercase());
+            let magic = config.extra_words.get(&to_lower(callee.trim_ascii()));
             if magic.is_some_and(|candidates| candidates.contains(&SUBST)) {
                 // Since wiki.rs is never in save mode, subst will always just
                 // emit the original text
@@ -418,7 +419,7 @@ fn split_target<'tt>(
     }
     let rest = rest.as_slice();
 
-    let callee_lower = callee.trim_ascii().to_lowercase();
+    let callee_lower = to_lower(callee.trim_ascii());
 
     // eprintln!("{callee_lower} / {first:?} / {rest:?}");
 

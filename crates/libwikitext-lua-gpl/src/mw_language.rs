@@ -9,9 +9,11 @@
 
 use super::prelude::*;
 use gc_arena::Rootable;
+use libmisc::{to_lower, to_upper};
 use libphp_rs::strval;
 use libwikitext_common::{
     db::DatabaseProvider, format_date_mediawiki, format_number, parse_formatted_number,
+    to_lower_first, to_upper_first,
 };
 use libwikitext_lua::WallTime;
 
@@ -251,7 +253,7 @@ impl LanguageLibrary {
         ctx: Context<'gc>,
         (_code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        Ok(ctx.intern(text.to_str()?.to_lowercase().as_bytes()))
+        Ok(ctx.intern(to_lower(text.to_str()?).as_bytes()))
     }
 
     /// Converts the first letter of a string to lowercase according to the
@@ -261,12 +263,7 @@ impl LanguageLibrary {
         ctx: Context<'gc>,
         (_code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        let mut text = text.to_str()?.chars();
-        Ok(if let Some(first) = text.next() {
-            ctx.intern(format!("{}{}", first.to_lowercase(), text.as_str()).as_bytes())
-        } else {
-            VmString::from_static(&ctx, "")
-        })
+        Ok(ctx.intern(to_lower_first(text.to_str()?).as_bytes()))
     }
 
     /// Parses a number formatted according to the rules of the language given
@@ -296,7 +293,7 @@ impl LanguageLibrary {
         ctx: Context<'gc>,
         (_code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        Ok(ctx.intern(text.to_str()?.to_uppercase().as_bytes()))
+        Ok(ctx.intern(to_upper(text.to_str()?).as_bytes()))
     }
 
     /// Converts the first letter of a string to uppercase according to the
@@ -306,12 +303,7 @@ impl LanguageLibrary {
         ctx: Context<'gc>,
         (_code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        let mut text = text.to_str()?.chars();
-        Ok(if let Some(first) = text.next() {
-            ctx.intern(format!("{}{}", first.to_uppercase(), text.as_str()).as_bytes())
-        } else {
-            VmString::from_static(&ctx, "")
-        })
+        Ok(ctx.intern(to_upper_first(text.to_str()?).as_bytes()))
     }
 }
 

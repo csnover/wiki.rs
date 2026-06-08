@@ -12,6 +12,7 @@ mod tests;
 
 use super::prelude::*;
 use core::cell::Cell;
+use libmisc::{to_lower, to_upper};
 use libwikitext_common::db::DatabaseProvider;
 use libwikitext_lua::stdlib::{
     calculate_start_count, find_lua, gmatch_next, gsub_lua, match_lua, sub_lua,
@@ -238,7 +239,7 @@ impl UstringLibrary {
         s: VmString<'_>,
     ) -> Result<VmString<'gc>, VmError<'gc>> {
         check_string("lower", ctx, s)?;
-        Ok(ctx.intern(s.to_str()?.to_lowercase().as_bytes()))
+        Ok(ctx.intern(to_lower(s.to_str()?).as_bytes()))
     }
 
     /// Matches a pattern in a string, optionally starting from an index.
@@ -314,7 +315,7 @@ impl UstringLibrary {
         s: VmString<'_>,
     ) -> Result<VmString<'gc>, VmError<'gc>> {
         check_string("upper", ctx, s)?;
-        Ok(ctx.intern(s.to_str()?.to_uppercase().as_bytes()))
+        Ok(ctx.intern(to_upper(s.to_str()?).as_bytes()))
     }
 }
 

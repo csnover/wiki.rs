@@ -7,7 +7,7 @@ use super::{
     renderer::NumberFormatter,
 };
 use core::str::Chars;
-use libmisc::CowExt as _;
+use libmisc::{CowExt as _, to_lower, to_upper};
 use libphp_rs::format_date_strftime;
 use serde_json_borrow::Value;
 use std::borrow::Cow;
@@ -160,7 +160,7 @@ impl Filter<'_> {
         match self {
             Self::Left(n) => map_str(value, |value| (&value[..u16_index(value, n)]).into()),
             Self::Length => map_str(value, |value| format!("{}", u16_len(value)).into()),
-            Self::Lower => map_str(value, |value| value.to_lowercase().into()),
+            Self::Lower => map_str(value, to_lower),
             Self::Mid(start, end) => map_str(value, |value| {
                 let start = u16_index(value, start);
                 let end = u16_index(value, end);
@@ -233,7 +233,7 @@ impl Filter<'_> {
                 }
                 .into()
             }),
-            Self::Upper => map_str(value, |value| value.to_uppercase().into()),
+            Self::Upper => map_str(value, to_upper),
         }
     }
 }

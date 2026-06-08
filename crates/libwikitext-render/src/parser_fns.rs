@@ -22,7 +22,7 @@ use core::{
     str::FromStr,
 };
 use either::Either;
-use libmisc::CowExt as _;
+use libmisc::{CowExt as _, to_lower, to_upper};
 use libphp_rs::{floatval, fuzzy_cmp, strtr};
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode,
@@ -345,6 +345,7 @@ mod ext {
     //! Tag parser functions.
 
     use super::*;
+    use libmisc::to_lower;
 
     /// `{{#tag: tag_name | content [| attribute [= value] ...] }}`
     pub fn extension_tag(
@@ -355,7 +356,7 @@ mod ext {
         if let (Some(name), Some(body)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
             let name = strip::kill(&name);
             // Extension tags may contain non-ASCII characters
-            let name = name.trim_ascii().to_lowercase();
+            let name = to_lower(name.trim_ascii());
             match extension_tags::render_extension_tag(
                 state,
                 arguments.sp,
@@ -817,7 +818,7 @@ mod site {
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(authority) = state.statics.base_uri.authority() {
-            write!(out, "//{authority}")?;
+            write!(out, "{authority}")?;
         }
         Ok(())
     }
@@ -829,7 +830,7 @@ mod site {
         _: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(authority) = state.statics.base_uri.authority() {
-            write!(out, "{authority}")?;
+            write!(out, "{}", authority.strip_prefix("//").unwrap_or(authority))?;
         }
         Ok(())
     }
@@ -1050,7 +1051,7 @@ mod string {
             write!(
                 out,
                 "{}",
-                strip::for_each_non_marker(&value, |value| { Some(value.to_lowercase().into()) })
+                strip::for_each_non_marker(&value, |value| { Some(to_lower(value)) })
             )?;
         }
         Ok(())
@@ -1211,7 +1212,7 @@ mod string {
             write!(
                 out,
                 "{}",
-                strip::for_each_non_marker(&value, |value| { Some(value.to_uppercase().into()) })
+                strip::for_each_non_marker(&value, |value| { Some(to_upper(value)) })
             )?;
         }
         Ok(())
@@ -1542,9 +1543,7 @@ mod time {
 
             for (n, month) in months {
                 let input = input.get(pos..pos + month.len());
-                if input.is_some_and(|input| {
-                    input.to_lowercase() == month.to_lowercase()
-                }) {
+                if input.is_some_and(|input| to_lower(input) == to_lower(month)) {
                     #[expect(clippy::cast_possible_truncation, reason = "guaranteed range")]
                     return peg::RuleResult::Matched(
                         pos + month.len(),
@@ -1735,7 +1734,7 @@ mod title {
             let real_page = config
                 .special_pages
                 .aliases
-                .get(&page.to_lowercase())
+                .get(&to_lower(page))
                 .copied()
                 .unwrap_or(page);
             let canonical = config
@@ -1747,7 +1746,7 @@ mod title {
                     // TODO: Not sure what to do about this, other than to preregister
                     // all the ‘known’ special pages, since there seems to be no API
                     // to learn which special pages are actually existing.
-                    if real_page.to_lowercase() == "badtitle" {
+                    if to_lower(real_page) == "badtitle" {
                         "Badtitle"
                     } else {
                         real_page
@@ -2080,7 +2079,7 @@ fn magic_flag(
     any_of: &[&'static str],
     alias: &str,
 ) -> Option<&'static str> {
-    let alias = alias.trim_ascii().to_lowercase();
+    let alias = to_lower(alias.trim_ascii());
     state
         .statics
         .db
@@ -2099,7 +2098,7 @@ fn magic_flag(
 /// representation, returning `true` if any of the possible representations is
 /// `flag`.
 fn magic_matches(state: &State<'_, '_, '_>, flag: &'static str, alias: &str) -> bool {
-    let alias = alias.trim_ascii().to_lowercase();
+    let alias = to_lower(alias.trim_ascii());
     state
         .statics
         .db

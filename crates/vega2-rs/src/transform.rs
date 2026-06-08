@@ -13,7 +13,7 @@ use super::{
 use core::{cmp::Ordering, f64::consts::PI};
 use either::Either;
 use indexmap::{IndexMap, IndexSet};
-use libmisc::svg::ValueDisplay as _;
+use libmisc::{svg::ValueDisplay as _, to_lower, to_upper};
 use rand::rngs::SmallRng;
 use regex::{Regex, RegexBuilder};
 use serde_json_borrow::Value;
@@ -825,8 +825,8 @@ impl<'s> CountPattern<'s> {
         {
             let value = ValueExt::to_string(value);
             let value = match self.case {
-                CountPatternCase::Lower => Cow::Owned(value.to_lowercase()),
-                CountPatternCase::Upper => Cow::Owned(value.to_uppercase()),
+                CountPatternCase::Lower => to_lower(&value),
+                CountPatternCase::Upper => to_upper(&value),
                 CountPatternCase::None => value,
             };
             for token in re.find_iter(&value) {

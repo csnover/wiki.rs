@@ -16,6 +16,8 @@ where
     config: &'tt Configuration,
     /// The accumulated text.
     content: W,
+    /// Whether the caller is a talk page.
+    from_talk_page: bool,
     /// The token tree source.
     source: &'tt str,
 }
@@ -25,10 +27,16 @@ where
     W: fmt::Write,
 {
     /// Creates a new text content extractor with the given source and output.
-    pub fn new(config: &'tt Configuration, source: &'tt str, content: W) -> Self {
+    pub fn new(
+        config: &'tt Configuration,
+        from_talk_page: bool,
+        source: &'tt str,
+        content: W,
+    ) -> Self {
         Self {
             config,
             content,
+            from_talk_page,
             source,
         }
     }
@@ -68,7 +76,7 @@ where
         #[rustfmt::skip]
         if let [Spanned { span, node: Token::Text }] = target
             && let Ok(title) = Title::new(self.config, &self.source[span.into_range()], None)
-            && title.is_local_category() {
+            && title.is_category(self.config, self.from_talk_page) {
             return Ok(());
         };
 

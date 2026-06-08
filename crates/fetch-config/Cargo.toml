@@ -1,0 +1,19 @@
+[package]
+name = "fetch-config"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+env_logger.workspace = true
+pico-args.workspace = true
+prettyplease = "0.2"
+proc-macro2 = "1"
+quote = "1"
+serde.workspace = true
+serde_json.workspace = true
+syn = { version = "2", features = ["parsing", "printing"] }
+ureq = "3.1"
+
+[lints]
+workspace = true

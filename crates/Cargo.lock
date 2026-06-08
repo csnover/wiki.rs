@@ -499,6 +499,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
+name = "fetch-config"
+version = "1.0.0"
+dependencies = [
+ "env_logger",
+ "pico-args",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn",
+ "ureq",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -535,6 +550,12 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "form_urlencoded"
@@ -671,7 +692,7 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
- "foldhash",
+ "foldhash 0.1.5",
 ]
 
 [[package]]
@@ -1003,24 +1024,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libwikitext-parse-gpl"
-version = "1.0.0"
-dependencies = [
- "either",
- "goldenfile",
- "html-escape",
- "libmisc",
- "libphp-rs",
- "libwikitext-common",
- "libwikitext-data",
- "libwikitext-parse",
- "memchr",
- "peg",
- "phf",
- "regex",
-]
-
-[[package]]
 name = "libwikitext-render"
 version = "1.0.0"
 dependencies = [
@@ -1065,7 +1068,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libwikitext-render-gpl"
+name = "libwikitext-tests-gpl"
 version = "1.0.0"
 dependencies = [
  "env_logger",
@@ -1074,7 +1077,6 @@ dependencies = [
  "libwikitext-common",
  "libwikitext-data",
  "libwikitext-parse",
- "libwikitext-parse-gpl",
  "libwikitext-render",
  "log",
  "memchr",
@@ -2604,7 +2606,6 @@ dependencies = [
  "libwikitext-data",
  "libwikitext-lua-gpl",
  "libwikitext-parse",
- "libwikitext-parse-gpl",
  "libwikitext-render",
  "log",
  "memmap2",
@@ -2613,9 +2614,6 @@ dependencies = [
  "phf",
  "piccolo",
  "pico-args",
- "prettyplease",
- "proc-macro2",
- "quote",
  "r2d2",
  "rayon",
  "regex",
@@ -2623,13 +2621,11 @@ dependencies = [
  "schnellru",
  "serde",
  "serde_json",
- "syn",
  "syntect",
  "thiserror 2.0.18",
  "time",
  "tokio",
  "unicase",
- "ureq",
 ]
 
 [[package]]

@@ -19,9 +19,6 @@ pub(super) trait Chain: Sink {
     /// The type of the next sink in the chain.
     type Next;
 
-    /// Returns a reference to the next sink in the chain.
-    fn next(&self) -> &Self::Next;
-
     /// Returns a mutable reference to the next sink in the chain.
     fn next_mut(&mut self) -> &mut Self::Next;
 }
@@ -194,9 +191,9 @@ pub(super) trait Sink {
 pub(super) struct Accumulator {
     /// The target string buffer.
     inner: MarkableString,
-    /// If `Some`, the accumulator has received a `tag_attribute_start` and is
+    /// If true, the accumulator has received a `tag_attribute_start` and is
     /// waiting for a `tag_attribute_end`.
-    in_attr: Option<bool>,
+    in_attr: bool,
 }
 
 impl Accumulator {
@@ -246,7 +243,7 @@ impl Sink for Accumulator {
     }
 
     fn entity(&mut self, value: char, raw: &str) {
-        if matches!(value, '<' | '>' | '&') || (self.in_attr.is_some() && value == '"') {
+        if matches!(value, '<' | '>' | '&') || (self.in_attr && value == '"') {
             self.inner.push_str(raw);
         } else {
             self.inner.push(value);
@@ -264,7 +261,7 @@ impl Sink for Accumulator {
     }
 
     fn raw_html_block(&mut self, html: &str) {
-        if self.in_attr.is_some() {
+        if self.in_attr {
             self.inner.push_str(&strtr(html, &[("\"", "&quot;")]));
         } else {
             self.inner.push_str(html);
@@ -279,6 +276,7 @@ impl Sink for Accumulator {
     #[inline]
     fn tag_attribute_end(&mut self, _: &str) {
         self.inner.push('"');
+        self.in_attr = false;
     }
 
     #[inline]
@@ -288,6 +286,7 @@ impl Sink for Accumulator {
         // MediaWiki always emits double-quoted attributes, even if there is
         // no value, and since this is exposed in CSS, it matters
         self.inner.push_str(r#"=""#);
+        self.in_attr = true;
     }
 
     #[inline]
@@ -3638,11 +3637,6 @@ macro_rules! chainable {
             $s: Sink + Markable,
         {
             type Next = $s;
-
-            #[inline]
-            fn next(&self) -> &Self::Next {
-                &self.next
-            }
 
             #[inline]
             fn next_mut(&mut self) -> &mut Self::Next {
