@@ -310,7 +310,7 @@ fn render_preprocess<'a, 'b, 'c>(
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
 ) -> Result<(State<'a, 'b, 'c>, String)> {
-    let root = statics.parser.preprocess(&sp.source, false)?;
+    let root = statics.parser.preprocess(&sp.source, sp.parent.is_some())?;
 
     lua::reset_vm(&mut statics.vm, messages, &sp.name, statics.base_time)?;
 
@@ -323,10 +323,15 @@ fn render_preprocess<'a, 'b, 'c>(
         timing: <_>::default(),
     };
 
-    // TODO: Rewrite the PEG so that it does the expansions instead of
-    // doing this awful double-parsing.
     let mut out = String::new();
-    let mut preprocessor = ExpandTemplates::new(&mut out, ExpandMode::Normal);
+    let mut preprocessor = ExpandTemplates::new(
+        &mut out,
+        if sp.parent.is_some() {
+            ExpandMode::Include
+        } else {
+            ExpandMode::Normal
+        },
+    );
     preprocessor.adopt_output(&mut state, sp, &root)?;
     Ok((state, out))
 }
@@ -339,7 +344,10 @@ fn preprocess_frame(
     mode: ExpandMode,
 ) -> Result<String> {
     let sp = sp.clone_with_source(FileMap::new(text));
-    let root = state.statics.parser.preprocess(&sp.source, false)?;
+    let root = state
+        .statics
+        .parser
+        .preprocess(&sp.source, mode == ExpandMode::Include)?;
     let mut out = String::new();
     let mut preprocessor = ExpandTemplates::new(&mut out, mode);
     preprocessor.adopt_output(state, &sp, &root)?;

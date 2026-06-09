@@ -211,7 +211,7 @@ pub(crate) struct EvalForm {
     include: Option<bool>,
     /// If `Some(true)`, also show the contents of strip markers.
     markers: Option<bool>,
-    /// If `Some(true)`, show the parse tree instead of the rendered output.
+    /// The display mode.
     mode: EvalPp,
     /// The name to use for the root frame.
     page_name: String,
@@ -516,10 +516,14 @@ fn single_result<'a>(results: &[&'a str]) -> Option<&'a str> {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum SourceMode {
-    /// Raw text.
+    /// Show raw text.
     Raw,
-    /// Parser tree.
+    /// Show unprocessed source as a tree.
     Tree,
+    /// Show preprocessed source.
+    Pre,
+    /// Show preprocessed source as a tree.
+    PreTree,
 }
 
 /// Query options for `/source`.
@@ -542,12 +546,17 @@ pub(crate) async fn source(
 
     let body = match mode {
         None | Some(SourceMode::Raw) => Cow::Borrowed(article.body()),
-        Some(SourceMode::Tree) => {
+        Some(mode) => {
             let command = renderer::Command::Eval {
                 args: include,
                 code: article.body().to_owned(),
                 markers: true,
-                mode: EvalPp::PreTree,
+                mode: match mode {
+                    SourceMode::Raw => unreachable!(),
+                    SourceMode::Tree => EvalPp::Tree,
+                    SourceMode::Pre => EvalPp::Pre,
+                    SourceMode::PreTree => EvalPp::PreTree,
+                },
                 page_name: article.title().to_owned(),
             };
             Cow::Owned(call_renderer(&state, command)?.content)

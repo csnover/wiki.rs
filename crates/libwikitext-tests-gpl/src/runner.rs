@@ -348,6 +348,9 @@ fn check_skips(
     } else if options.contains("language") {
         log::warn!(target: target, "TODO {name}: language switching not implemented");
         true
+    } else if options.contains("pst") {
+        log::info!(target: target, "Skipping {name}: pre-save transform");
+        true
     } else if options
         .get("parsoid.modes")
         .is_some_and(any_of(&["html2wt"]))

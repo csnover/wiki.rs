@@ -486,7 +486,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
             !table() c:comment_tag()* " " r:inline()* e:line_eol()
             { c.into_iter().chain(r).chain(e) }
         )*
-        end:spanned(<eof() { Token::NewLine }>)?
+        end:spanned(<!at_sol() eof() { Token::NewLine }>)?
         { Token::Preformatted {
             content: reduce_tree(first.into_iter().chain(e).chain(rest.into_iter().flatten()).chain(end))
         } }
@@ -1126,16 +1126,24 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// 1 `{`
     /// 2 `{{`
     /// 3 `{{{`
-    /// 4 `{ {{{`
+    /// 4 `{ {{{` (unless there is no `}}}`, then `{{ {{`)
     /// 5 `{{ {{{`
-    /// 6 `{{{ {{{`
+    /// 6 `{{{ {{{` (unless there is no `}}}`, then `{{ {{ {{`)
     /// 7 `{ {{{ {{{`
     /// 8 `{{ {{{ {{{`
+    ///
+    /// TODO: This is not working correctly in all cases because the original
+    /// parser actually seems to work by counting up and down. So
+    /// `{{{{1x|1}}{{1x|x}}|foo}}}` should be `{{ {{ }} {{ }} }} "}"`, but using
+    /// a “right-most” rule as the ABNF implies actually results in
+    /// `"{" {{{ "}}" {{ }} }}}`. Neato!
     rule pp_template() -> Vec<Spanned<Token>>
     = // 2, 5, 8, ...
       &("{{" &("{{{"* !"{")) t:template_expansion() { vec![t] }
-      // 3, 4; 6, 7; ...
+      // 3, 4 (1+3); 6 (3+3), 7; ...
     / template_parameter()
+      // 4 (2+2), 6 (2+?), ...
+    / t:template_expansion() { vec![t] }
       // 1
     / t:spanned(<"{" { Token::Text }>) { vec![t] }
 
@@ -2206,15 +2214,17 @@ fn make_include(
         pp.has_onlyinclude.set(true);
     }
 
-    let content = if self_closing || is_end {
-        None
+    let (body_end, end) = if self_closing || is_end {
+        (pos, pos)
     } else {
         find_end_tag(
             &input[pos..],
             &input[mode.span.into_range()],
             str::eq_ignore_ascii_case,
         )
-        .map(|(end_start, end_end)| (pos + end_start, pos + end_end))
+        .map_or((input.len(), input.len()), |(end_start, end_end)| {
+            (pos + end_start, pos + end_end)
+        })
     };
 
     match (pp.including, mode.node, is_end) {
@@ -2226,28 +2236,22 @@ fn make_include(
         }
         (true, InclusionMode::NoInclude, _) | (false, InclusionMode::IncludeOnly, false) => {
             // Discard the tag and its body
-            let end = content.map_or(if is_end { pos } else { input.len() }, |(_, e)| e);
             RuleResult::Matched(end, vec![])
         }
         (false, InclusionMode::IncludeOnly, true) => {
             // Oops, somebody did a bug and now we must all live with that
-            // forever
+            // mistake for forever
             RuleResult::Matched(pos, vec![tag.map_node(|_| Token::Text)])
         }
         (true, InclusionMode::OnlyInclude, false) => {
-            let (body_end, end) = content.unwrap_or((input.len(), input.len()));
-
             // The content inside `<onlyinclude>` needs to be parsed separately
-            // because it should be parsed as if none of the earlier content
-            // ever existed at all, but the parser is already in the middle of
-            // some context that belongs to that other content. To make sure
-            // that the span positions are correct, reparsing happens with a
-            // special rule which skips from 0..pos and then continues normally
-            // until the end of the input slice.
+            // because it should be parsed as if the earlier content never
+            // existed at all, but the parser is already in the middle of some
+            // context that belongs to that other content. To make sure that the
+            // span positions are correct, this uses a special rule which starts
+            // at 0 and immediately skips to `pos`, continuing until `body_end`.
             let inner = wikitext::only_include(&input[..body_end], o, pp, pos).unwrap_or_default();
-
             let end_tag = Spanned::new(Token::EndInclude(*mode), body_end as u32, end as u32);
-
             RuleResult::Matched(
                 end,
                 iter::once(tag)

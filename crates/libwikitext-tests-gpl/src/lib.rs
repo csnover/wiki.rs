@@ -50,10 +50,10 @@ test_from_file! {
 
 #[test]
 fn ad_hoc() {
-    let source = "{{{{1x|1}}{{1x|x}}|foo}}";
+    let source = "{{{{1x|1}}{{1x|x}}|foo}}}";
 
     let parser = libwikitext_parse::Parser::new(&config::CONFIG);
-    let root = parser.preprocess(source, false).unwrap();
+    let root = parser.preprocess(source, true).unwrap();
     // let root = parser.parse(source).unwrap();
     eprintln!(
         "{:#?}",

@@ -57,8 +57,8 @@ impl<'a> StackFrame<'a> {
         debug_backtrace(&self.name, self.parent.as_deref().unwrap_or(self));
     }
 
-    /// Creates a new stack frame for the given title, with the given parent and
-    /// arguments.
+    /// Creates a child stack frame of `self` with the given `title`, `source`,
+    /// and `arguments`.
     pub fn chain(
         &'a self,
         name: Title,

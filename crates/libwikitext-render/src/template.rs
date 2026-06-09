@@ -9,7 +9,10 @@ use super::{
     stack::{KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate,
 };
-use core::fmt::{self, Write as _};
+use core::{
+    fmt::{self, Write as _},
+    iter,
+};
 use indexmap::IndexSet;
 use libmisc::to_lower;
 use libwikitext_common::{
@@ -171,32 +174,44 @@ pub(super) fn render_parameter(
 
     if let Some(value) = sp.expand(state, key.trim_ascii())? {
         write!(out.out(), "{value}")?;
+        Ok(())
     } else if let Some(default) = default {
         out.adopt_tokens(state, sp, default)?;
+        Ok(())
     } else {
-        // This cannot simply adopt the whole text of the parameter as-is
-        // because if the parameter contained inclusion control tags, e.g.
-        // `{{{1<noinclude>|default</noinclude>}}}` then the wrong result
-        // will be emitted.
-        let fragment = Span::new(span.start, span.start + 3);
-        out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
-        for token in name {
-            out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
-        }
-        if let Some(default) = default {
-            let first = default
-                .first()
-                .map_or(span.end - 3, |first| first.span.start);
-            let fragment = Span::new(first - 1, first);
-            out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
-            for token in default {
-                out.adopt_text(state, sp, token.span, &sp.source[token.span.into_range()])?;
-            }
-        }
-        let fragment = Span::new(span.end - 3, span.end);
-        out.adopt_text(state, sp, fragment, &sp.source[fragment.into_range()])?;
+        render_as_text(out, state, sp, span, 3, iter::once(name))
     }
+}
 
+/// Renders a template expansion or parameter as plain text to `out`, using the
+/// first and last `delim_size` characters from `span` as the start and end
+/// delimiters of the output expression, and writing `parts` separated by the
+/// pipe delimiter.
+fn render_as_text<'a>(
+    out: &mut ExpandTemplates<'_>,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    span: Span,
+    delim_size: u32,
+    parts: impl IntoIterator<Item = &'a [Spanned<Token>]>,
+) -> Result {
+    // This cannot simply adopt the whole text of a template expansion or
+    // parameter as-is because if there are inclusion control tags inside, e.g.
+    // `{{{1<noinclude>|default</noinclude>}}}`, then the wrong thing would be
+    // emitted
+    let fragment = Span::new(span.start, span.start + delim_size);
+    write!(out.out(), "{}", &sp.source[fragment.into_range()])?;
+    let mut first = true;
+    for part in parts {
+        if first {
+            first = false;
+        } else {
+            write!(out.out(), "|")?;
+        }
+        out.adopt_tokens(state, sp, part)?;
+    }
+    let fragment = Span::new(span.end - delim_size, span.end);
+    write!(out.out(), "{}", &sp.source[fragment.into_range()])?;
     Ok(())
 }
 
@@ -220,20 +235,19 @@ pub(super) fn render_parameter(
 ///    stack recursion limits.
 /// 6. Query a database.
 /// 7. Emit as text.
-pub(super) fn render_template<'tt, W: fmt::Write + ?Sized>(
-    out: &mut W,
+pub(super) fn render_template<'tt>(
+    out: &mut ExpandTemplates<'_>,
     state: &mut State<'_, '_, '_>,
     sp: &'tt StackFrame<'_>,
     bounds: Span,
     target: &'tt [Spanned<Token>],
     arguments: &'tt [Spanned<Argument>],
     line_start: bool,
-) -> Result<bool> {
+) -> Result {
     // eprintln!("render_template {sp:?} {:?}", libwikitext_parse::inspect(&sp.source, target));
 
     if state.load_mode == LoadMode::Base {
-        render_fallback(out, state)?;
-        return Ok(true);
+        return render_fallback(out.out(), state);
     }
 
     // TODO: There is some undocumented stuff to remove 'msgnw', 'msg', or 'raw'
@@ -259,7 +273,15 @@ pub(super) fn render_template<'tt, W: fmt::Write + ?Sized>(
         }
 
         Target::Text => {
-            return Ok(false);
+            return render_as_text(
+                out,
+                state,
+                sp,
+                bounds,
+                2,
+                iter::once(target)
+                    .chain(arguments.iter().map(|argument| argument.content.as_slice())),
+            );
         }
     };
 
@@ -272,24 +294,26 @@ pub(super) fn render_template<'tt, W: fmt::Write + ?Sized>(
     if let Some(key) = wrapper_key {
         // It is necessary to inject strip markers rather than extension tags
         // or else the start-of-line rules break
-        state
-            .strip_markers
-            .push(out, "wiki-rs", StripMarker::WikiRsSourceStart(key.clone()));
+        state.strip_markers.push(
+            out.out(),
+            "wiki-rs",
+            StripMarker::WikiRsSourceStart(key.clone()),
+        );
         if needs_newline {
-            writeln!(out)?;
+            writeln!(out.out())?;
         }
-        write!(out, "{partial}")?;
+        write!(out.out(), "{partial}")?;
         state
             .strip_markers
-            .push(out, "wiki-rs", StripMarker::WikiRsSourceEnd(key));
+            .push(out.out(), "wiki-rs", StripMarker::WikiRsSourceEnd(key));
     } else {
         if needs_newline {
-            writeln!(out)?;
+            writeln!(out.out())?;
         }
-        write!(out, "{partial}")?;
+        write!(out.out(), "{partial}")?;
     }
 
-    Ok(true)
+    Ok(())
 }
 
 /// Template target information.
