@@ -70,7 +70,26 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             Token::Autolink(content)
             | Token::Heading { content, .. }
             | Token::ListItem { content, .. }
-            | Token::Preformatted { content } => {
+            | Token::Preformatted { content }
+            | Token::StartTag {
+                attributes: content,
+                ..
+            }
+            | Token::TableRow {
+                attributes: content,
+            }
+            | Token::TableStart {
+                attributes: content,
+            }
+            | Token::TableCaption {
+                attributes: content,
+            }
+            | Token::TableData {
+                attributes: content,
+            }
+            | Token::TableHeading {
+                attributes: content,
+            } => {
                 self.size += vec_size(content);
                 self.visit_tokens(content)?;
             }
@@ -113,13 +132,7 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             Token::StartAnnotation { attributes, .. } => {
                 self.size += vec_size(attributes);
             }
-            Token::Extension { attributes, .. }
-            | Token::StartTag { attributes, .. }
-            | Token::TableRow { attributes }
-            | Token::TableStart { attributes }
-            | Token::TableCaption { attributes }
-            | Token::TableData { attributes }
-            | Token::TableHeading { attributes } => {
+            Token::Extension { attributes, .. } => {
                 self.size += vec_size(attributes);
                 self.visit_arguments(attributes)?;
             }

@@ -53,7 +53,7 @@ impl<'config, Db: DatabaseProvider + 'static> UriLibrary<'config, Db> {
             // so shitty it just tried to scoop out the insides of a link using
             // yet more regular expressions.
             let mut extractor = TextContent::new(parser.config(), false, s, String::new());
-            let _ = extractor.visit_output(&root);
+            let _ = extractor.visit_tokens(&root);
             extractor.finish()
         };
 

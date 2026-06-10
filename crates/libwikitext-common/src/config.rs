@@ -122,6 +122,8 @@ pub struct Configuration {
     /// A set of compiled regular expressions that match for protocols and magic
     /// links for escaping literal strings containing these patterns.
     pub escape_pattern: Option<Regex>,
+    /// A compiled regular expression that
+    extra_words_pattern: ExtraWordsPattern,
     /// A compiled regular expression that matches link prefixes.
     ///
     /// This is basically outsourcing the parsing and creation of a sparse bit
@@ -133,6 +135,8 @@ pub struct Configuration {
     /// `ConfigurationSource` cannot be constructed at runtime, and I am lazy.
     #[cfg(test)]
     pub magic_links: MagicLinks,
+    /// A prefix search for [`ConfigurationSource::protocols`].
+    pub protocols_pattern: Regex,
     /// Configuration source.
     source: &'static ConfigurationSource,
     /// A lookup table for valid title bytes.
@@ -161,14 +165,37 @@ impl Configuration {
         let link_prefix_pattern = (!source.link_prefix.is_empty())
             .then(|| BytesRegex::new(&format!("[{}]+", source.link_prefix)).unwrap());
 
+        let protocols_pattern =
+            Regex::new(&format!("^(?i:{})", regex_switch(source.protocols.iter()))).unwrap();
+
         Self {
             escape_pattern: build_escape_pattern(&source.protocols, source.magic_links),
+            extra_words_pattern: ExtraWordsPattern::new(source.extra_words.entries()),
             link_prefix_pattern,
             link_trail_pattern: link_trail_regex(source.link_trail),
             #[cfg(test)]
             magic_links: source.magic_links,
+            protocols_pattern,
             source,
             valid_title_bytes,
+        }
+    }
+
+    /// Tries matching the given `alias` to one of the configured `extra_words`,
+    /// returning the list of canonical names for the alias if it matches, and
+    /// optionally a value if the `alias` was a parameterised alias.
+    #[must_use]
+    pub fn magic_word_matches<'a>(&self, alias: &'a str) -> Option<(&[&str], Option<&'a str>)> {
+        if let Some(canonical) = self.extra_words.get(alias).copied() {
+            Some((canonical, None))
+        } else {
+            let patterns = &self.extra_words_pattern.patterns;
+            let matches = patterns.matches(alias);
+            let index = matches.iter().next()?;
+            let which = &self.extra_words_pattern.which[index];
+            let canonical = &which.canonical;
+            let arg_range = usize::from(which.prefix)..alias.len() - usize::from(which.suffix);
+            Some((canonical, Some(&alias[arg_range])))
         }
     }
 }
@@ -257,6 +284,60 @@ fn char_class_to_bitmap(bytes: impl Iterator<Item = u8>) -> BitMap {
     }
 
     BitMap(bits)
+}
+
+/// Parameterised extra words.
+#[derive(Debug)]
+pub struct ExtraWordsPattern {
+    /// A regular expression set for matching any parameterised extra words.
+    patterns: regex::RegexSet,
+    /// For each pattern in the set, data required to return the canonical list
+    /// and argument value.
+    which: Vec<ExtraWordsValue>,
+}
+
+impl ExtraWordsPattern {
+    /// Creates a new `ExtraWordsPattern`.
+    fn new<'a, I>(extra_words: I) -> Self
+    where
+        I: Iterator<Item = (&'a &'static str, &'a &'static [&'static str])> + Clone,
+    {
+        let param_words = extra_words.filter(|(key, _)| key.contains("$1"));
+
+        let res = param_words
+            .clone()
+            .map(|(key, _)| regex::escape(key).replace("\\$1", ".*"));
+
+        let patterns = regex::RegexSetBuilder::new(res)
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let which = param_words
+            .map(|(key, canonical)| {
+                let pos = key.find("$1").unwrap();
+                ExtraWordsValue {
+                    canonical,
+                    prefix: u8::try_from(pos).unwrap(),
+                    suffix: u8::try_from(key.len() - pos - 2).unwrap(),
+                }
+            })
+            .collect();
+
+        Self { patterns, which }
+    }
+}
+
+/// Data associated with a parameterised extra word.
+#[derive(Debug)]
+struct ExtraWordsValue {
+    /// The canonical value list from [`ConfigurationSource::extra_words`] for
+    /// this pattern.
+    canonical: &'static [&'static str],
+    /// The length of the parameter prefix.
+    prefix: u8,
+    /// The length of the parameter suffix.
+    suffix: u8,
 }
 
 /// Builds a regular expression from the given `protocols` and `magic_links`

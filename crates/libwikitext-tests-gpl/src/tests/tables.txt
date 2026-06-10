@@ -946,6 +946,15 @@ parsoid={
 <td>ho</td>
 </tr>
 </tbody></table>
+!! html/wiki.rs
+<table>
+<tr>
+<td>hi</td>
+<td>ho</td>
+<td>hi</td>
+<td>ho</td>
+</tr>
+</table>
 !! end
 
 !! test
@@ -2038,7 +2047,7 @@ parsoid=wt2html,wt2wt
    <!--cmt--></td></tr>
 </tbody></table></figcaption></figure>
 !! html/wiki.rs
-<figure><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Foobar.jpg"></a><figcaption>
+<figure class="mw-halign-right"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Foobar.jpg"></a><figcaption>
 <table>
 <tr>
 <td>test

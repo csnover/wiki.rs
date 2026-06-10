@@ -21,6 +21,12 @@ pub use peg::str::LineCol;
 use regex::{Captures, Regex};
 use std::{borrow::Cow, collections::HashSet};
 
+/// A parser result.
+pub type Result<T, E = Error> = core::result::Result<T, E>;
+
+/// A parser error.
+pub type Error = peg::error::ParseError<LineCol>;
+
 /// A Wikitext parser.
 #[derive(Clone, Debug)]
 pub struct Parser<'config> {
@@ -38,10 +44,6 @@ pub struct Parser<'config> {
     ///
     /// [1]: libwikitext_common::config::ConfigurationSource::redirect_magic_words
     redirect: Regex,
-    /// The prefix search for [URI schemes][1].
-    ///
-    /// [1]: libwikitext_common::config::ConfigurationSource::protocols
-    url_scheme: Regex,
 }
 
 impl<'config> Parser<'config> {
@@ -85,15 +87,12 @@ impl<'config> Parser<'config> {
             regex_switch(config.redirect_magic_words.iter())
         ))
         .unwrap();
-        let url_scheme =
-            Regex::new(&format!("^(?i:{})", regex_switch(config.protocols.iter()))).unwrap();
 
         Self {
             bs,
             config,
             lang,
             redirect,
-            url_scheme,
         }
     }
 
@@ -108,7 +107,7 @@ impl<'config> Parser<'config> {
     /// # Errors
     ///
     /// * `source` cannot be parsed as an argument list
-    pub fn debug_parse_args(&self, args: &str) -> Result<Vec<Spanned<Argument>>, Error> {
+    pub fn debug_parse_args(&self, args: &str) -> Result<Vec<Spanned<Argument>>> {
         grammar::wikitext::debug_template_args(args, self, &<_>::default())
     }
 
@@ -117,12 +116,17 @@ impl<'config> Parser<'config> {
     /// # Errors
     ///
     /// * `source` cannot be parsed as Wikitext
-    pub fn parse(&self, source: &str) -> Result<Output, Error> {
-        let options = <_>::default();
-        grammar::wikitext::start(source, self, &options).map(|root| Output {
-            has_onlyinclude: options.has_onlyinclude.get(),
-            root,
-        })
+    pub fn parse(&self, source: &str) -> Result<Vec<Spanned<Token>>> {
+        grammar::wikitext::start(source, self)
+    }
+
+    /// Parses late-evaluated Wikitext from `source` into a list of attributes.
+    ///
+    /// # Errors
+    ///
+    /// * `source` cannot be parsed as Wikitext
+    pub fn parse_attributes(&self, attributes: &str) -> Result<Vec<Spanned<Argument>>> {
+        grammar::wikitext::late_attributes(attributes, self)
     }
 
     /// Parses a `<gallery>` media item.
@@ -130,8 +134,8 @@ impl<'config> Parser<'config> {
     /// # Errors
     ///
     /// * `source` cannot be parsed as a `<gallery>` media item
-    pub fn parse_gallery_media(&self, options: &str) -> Result<Vec<Spanned<Argument>>, Error> {
-        grammar::wikitext::gallery_image_options(options, self, &<_>::default())
+    pub fn parse_gallery_media(&self, options: &str) -> Result<Vec<Spanned<Argument>>> {
+        grammar::wikitext::gallery_image_options(options, self)
     }
 
     /// Parses a single redirect and returns its target.
@@ -139,8 +143,8 @@ impl<'config> Parser<'config> {
     /// # Errors
     ///
     /// * `source` cannot be parsed as a Wikitext redirect
-    pub fn parse_redirect<'s>(&self, source: &'s str) -> Result<&'s str, Error> {
-        grammar::wikitext::single_redirect(source, self, &<_>::default())
+    pub fn parse_redirect<'s>(&self, source: &'s str) -> Result<&'s str> {
+        grammar::wikitext::single_redirect(source, self)
     }
 
     /// Parses Wikitext from `source` into a preprocessor token tree.
@@ -148,7 +152,7 @@ impl<'config> Parser<'config> {
     /// # Errors
     ///
     /// * `source` cannot be parsed as Wikitext
-    pub fn preprocess(&self, source: &str, including: bool) -> Result<Output, Error> {
+    pub fn preprocess(&self, source: &str, including: bool) -> Result<Output> {
         let options = PreprocessorOptions {
             has_onlyinclude: Cell::new(false),
             including,
@@ -173,8 +177,21 @@ struct PreprocessorOptions {
     including: bool,
 }
 
-/// A parser error.
-pub type Error = peg::error::ParseError<LineCol>;
+// This does not change the outcome of a rule match so can just hash to nothing
+impl core::hash::Hash for PreprocessorOptions {
+    fn hash<H: core::hash::Hasher>(&self, _: &mut H) {}
+}
+
+impl peg::Cacheable for PreprocessorOptions {
+    type Cached = ();
+    type Key = ();
+
+    fn key(&self) -> &Self::Key {
+        &()
+    }
+
+    fn to_cached(&self) -> Self::Cached {}
+}
 
 /// A template argument or XML-like tag attribute.
 ///
@@ -507,7 +524,7 @@ pub enum Token {
     /// An HTML start tag.
     StartTag {
         /// The tag attributes.
-        attributes: Vec<Spanned<Argument>>,
+        attributes: Vec<Spanned<Token>>,
         /// The tag name.
         name: Span,
         /// Whether the tag is self-closing (void).
@@ -519,29 +536,29 @@ pub enum Token {
     /// A table caption.
     TableCaption {
         /// The caption attributes.
-        attributes: Vec<Spanned<Argument>>,
+        attributes: Vec<Spanned<Token>>,
     },
     /// A table data cell.
     TableData {
         /// The cell attributes.
-        attributes: Vec<Spanned<Argument>>,
+        attributes: Vec<Spanned<Token>>,
     },
     /// A table end.
     TableEnd,
     /// A table heading cell.
     TableHeading {
         /// The heading cell attributes.
-        attributes: Vec<Spanned<Argument>>,
+        attributes: Vec<Spanned<Token>>,
     },
     /// A table row.
     TableRow {
         /// The table row attributes.
-        attributes: Vec<Spanned<Argument>>,
+        attributes: Vec<Spanned<Token>>,
     },
     /// A table start.
     TableStart {
         /// The table attributes.
-        attributes: Vec<Spanned<Argument>>,
+        attributes: Vec<Spanned<Token>>,
     },
     /// A template.
     Template {

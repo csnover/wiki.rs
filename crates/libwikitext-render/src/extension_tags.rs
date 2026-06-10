@@ -148,7 +148,7 @@ use libwikitext_common::{
     decode_html, escape, escape_no_wiki,
     title::{Namespace, Title},
 };
-use libwikitext_parse::{Argument, FileMap, Output, Span, Spanned, Token};
+use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
 use numerals::roman::Roman;
 use regex::{Regex, RegexBuilder};
 use std::{
@@ -307,7 +307,10 @@ impl ExtensionTag<'_, '_, '_> {
     }
 
     /// Returns the body of the tag as a token tree.
-    pub fn parse_body(&self, state: &mut State<'_, '_, '_>) -> Result<(StackFrame<'_>, Output)> {
+    pub fn parse_body(
+        &self,
+        state: &mut State<'_, '_, '_>,
+    ) -> Result<(StackFrame<'_>, Vec<Spanned<Token>>)> {
         let sp = self.sp.clone_with_source(FileMap::new(self.body()));
         state
             .statics
@@ -423,7 +426,6 @@ fn indicator(
 
     let (sp, body) = arguments.parse_body(state)?;
     let image = body
-        .root
         .iter()
         .find_map(|token| {
             #[rustfmt::skip]
@@ -1328,7 +1330,7 @@ fn eval_string(
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse(&sp.source)?;
     let mut out = Document::new(!unstrip);
-    out.adopt_output(state, &sp, &root)?;
+    out.adopt_tokens(state, &sp, &root)?;
     Ok(out.finish(state))
 }
 

@@ -426,7 +426,7 @@ fn print_debug(
     }
 
     if let Some((pp, Ok(ast))) = ast {
-        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(pp), &ast.root));
+        log::info!(target: target, "AST: {:?}", inspect(&FileMap::new(pp), &ast));
     }
 }
 

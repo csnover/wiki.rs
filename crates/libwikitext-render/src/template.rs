@@ -746,13 +746,10 @@ impl Surrogate<Error> for DbPrefetch {
         sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
         _self_closing: bool,
     ) -> Result<(), Error> {
-        for attribute in attributes {
-            self.adopt_tokens(state, sp, &attribute.content)?;
-        }
-        Ok(())
+        self.adopt_tokens(state, sp, attributes)
     }
 
     fn adopt_table_caption(
@@ -760,12 +757,9 @@ impl Surrogate<Error> for DbPrefetch {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result<(), Error> {
-        for attribute in attributes {
-            self.adopt_tokens(state, sp, &attribute.content)?;
-        }
-        Ok(())
+        self.adopt_tokens(state, sp, attributes)
     }
 
     fn adopt_table_data(
@@ -773,12 +767,9 @@ impl Surrogate<Error> for DbPrefetch {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result<(), Error> {
-        for attribute in attributes {
-            self.adopt_tokens(state, sp, &attribute.content)?;
-        }
-        Ok(())
+        self.adopt_tokens(state, sp, attributes)
     }
 
     fn adopt_table_heading(
@@ -786,36 +777,27 @@ impl Surrogate<Error> for DbPrefetch {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result<(), Error> {
-        for attribute in attributes {
-            self.adopt_tokens(state, sp, &attribute.content)?;
-        }
-        Ok(())
+        self.adopt_tokens(state, sp, attributes)
     }
     fn adopt_table_row(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result<(), Error> {
-        for attribute in attributes {
-            self.adopt_tokens(state, sp, &attribute.content)?;
-        }
-        Ok(())
+        self.adopt_tokens(state, sp, attributes)
     }
     fn adopt_table_start(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result<(), Error> {
-        for attribute in attributes {
-            self.adopt_tokens(state, sp, &attribute.content)?;
-        }
-        Ok(())
+        self.adopt_tokens(state, sp, attributes)
     }
 
     fn adopt_template(

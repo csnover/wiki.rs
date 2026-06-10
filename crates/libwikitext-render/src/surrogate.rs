@@ -326,7 +326,7 @@ pub(crate) trait Surrogate<E> {
         _sp: &StackFrame<'_>,
         _span: Span,
         _name: &str,
-        _attributes: &[Spanned<Argument>],
+        _attributes: &[Spanned<Token>],
         _self_closing: bool,
     ) -> Result<(), E> {
         Ok(())
@@ -351,7 +351,7 @@ pub(crate) trait Surrogate<E> {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _attributes: &[Spanned<Argument>],
+        _attributes: &[Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -363,7 +363,7 @@ pub(crate) trait Surrogate<E> {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _attributes: &[Spanned<Argument>],
+        _attributes: &[Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -386,7 +386,7 @@ pub(crate) trait Surrogate<E> {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _attributes: &[Spanned<Argument>],
+        _attributes: &[Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -398,7 +398,7 @@ pub(crate) trait Surrogate<E> {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _attributes: &[Spanned<Argument>],
+        _attributes: &[Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -410,7 +410,7 @@ pub(crate) trait Surrogate<E> {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _attributes: &[Spanned<Argument>],
+        _attributes: &[Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }

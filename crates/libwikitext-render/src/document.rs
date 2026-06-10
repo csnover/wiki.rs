@@ -23,8 +23,8 @@ use libwikitext_common::{
     title_decode,
 };
 use libwikitext_parse::{
-    AnnoAttribute, Argument, HeadingLevel, InclusionMode, LangFlags, LangVariant, MagicLink,
-    Output, Span, Spanned, TextStyle, Token, VOID_TAGS,
+    AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
+    MagicLink, Output, Span, Spanned, TextStyle, Token, VOID_TAGS,
 };
 use std::borrow::Cow;
 
@@ -50,7 +50,7 @@ pub(crate) struct Document {
     /// The stack of inclusion control tags.
     in_include: Vec<InclusionMode>,
     /// The output sink.
-    next: RendererChain,
+    pub(super) next: RendererChain,
     /// The stack of open HTML elements.
     list_stack: Vec<ListEmitter>,
     /// The [`TextStyle`] emitter.
@@ -80,36 +80,15 @@ impl Document {
         sp: &StackFrame<'_>,
         attribute: &Spanned<Argument>,
     ) -> Result {
-        let name = attribute.name();
-        let is_kv = name.is_some();
+        let name = attribute
+            .name()
+            .map(|name| sp.eval(state, name))
+            .expect("k-v")?;
+        let name = to_ascii_lower(name.trim_ascii());
         let value = attribute.value();
-        #[rustfmt::skip]
-        if let [Spanned { span, node: Token::Text }] = name.unwrap_or(value)
-        {
-            let name = to_ascii_lower(sp.source[span.into_range()].trim_ascii());
-            self.next.tag_attribute_start(&name);
-            if is_kv {
-                self.attribute_value(state, sp, &name, value)?;
-            }
-            self.next.tag_attribute_end(&name);
-        } else {
-            // Maybe it is a Wikitext table and someone shoved e.g. `<ref>`
-            // into the attribute list, smile smile. When this happens, content
-            // needs to be ignored, only attributes should be emitted, using the
-            // awful Wikitext table attributes whitelisted HTML tag rule
-            self.adopt_tokens(state, sp, name.unwrap_or(value))?;
-
-            // At least 'Template:Skip to top and bottom' contains invalid HTML
-            // where an attribute is missing a close quote, and this is error
-            // corrected differently in HTML5 versus the MW parser, so it is
-            // necessary to handle the key and value parts separately and always
-            // make sure the value is quoted or most of the page content ends up
-            // in the attribute.
-            if is_kv {
-                self.adopt_tokens(state, sp, value)?;
-            }
-        };
-
+        self.next.tag_attribute_start(&name);
+        self.attribute_value(state, sp, &name, value)?;
+        self.next.tag_attribute_end(&name);
         Ok(())
     }
 
@@ -121,10 +100,7 @@ impl Document {
         name: &str,
         value: &[Spanned<Token>],
     ) -> Result {
-        let name = to_ascii_lower(name);
-        // TODO: Probably *all* the values should be going through
-        // StripMarkers::unstrip?
-        let value = match name.as_ref() {
+        let value = match name {
             "class" => {
                 // TODO: Look for the mw-collapse classes and dump appropriate
                 // form hooks into the HTML to allow arbitrary collapsing
@@ -132,7 +108,7 @@ impl Document {
                 Either::Right(value)
             }
             "id" => Either::Left(
-                sp.eval_unstrip(state, value)?
+                sp.eval(state, value)?
                     .map(normalize_attr)
                     .map(|v| anchor_encode(v, AnchorEncodeMode::Html5)),
             ),
@@ -140,7 +116,7 @@ impl Document {
                 // MediaWiki does sanitising, wiki.rs does not. What wiki.rs
                 // *does* do is get all these inline styles out of the way so
                 // that `!important` is not required to style pages
-                let value = sp.eval_unstrip(state, value)?.map(decode_html);
+                let value = sp.eval(state, value)?.map(decode_html);
                 let mut out = String::new();
                 let mut input = value.as_ref();
                 while !input.is_empty() {
@@ -165,7 +141,7 @@ impl Document {
                 Either::Left(out.into())
             }
             "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
-                let value = sp.eval_unstrip(state, value)?.map(decode_html);
+                let value = sp.eval(state, value)?.map(decode_html);
                 // https://github.com/rust-lang/rust/issues/79524
                 let mut out = String::new();
                 for v in value
@@ -596,10 +572,20 @@ impl Surrogate<Error> for Document {
     ) -> Result {
         let (link, content) = match magic {
             MagicLink::Isbn(id) => {
+                const BOOKSOURCES: &str = "Booksources";
                 let url_id = strtr(id, &[("-", ""), (" ", ""), ("x", "X")]);
+                let canonical = state
+                    .statics
+                    .db
+                    .config()
+                    .special_pages
+                    .canonical
+                    .get(BOOKSOURCES)
+                    .copied()
+                    .unwrap_or(BOOKSOURCES);
                 let link = LinkKind::Internal(Title::new(
                     state.statics.db.config(),
-                    &format!("BookSources/{url_id}"),
+                    &format!("{canonical}/{url_id}"),
                     Some(Namespace::SPECIAL),
                 )?);
                 (link, format!("ISBN {id}"))
@@ -623,9 +609,9 @@ impl Surrogate<Error> for Document {
                 (link, format!("RFC {}", &sp.source[id.into_range()]))
             }
         };
-        tags::render_start_link(self, state, sp, &link)?;
+        tags::render_start_link(&mut self.next, state, &link);
         self.next.text(&content);
-        tags::render_end_link(self, state, sp)?;
+        self.next.tag_end("a");
         Ok(())
     }
 
@@ -744,14 +730,21 @@ impl Surrogate<Error> for Document {
         sp: &StackFrame<'_>,
         _span: Span,
         name: &str,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
         _self_closing: bool,
     ) -> Result {
         let name = to_ascii_lower(name);
         self.next.tag_start(&name);
-        for attr in attributes {
-            self.attribute(state, sp, attr)?;
+
+        let source = sp
+            .eval(state, attributes)?
+            .map(|out| state.strip_markers.unstrip(out));
+        let sp = sp.clone_with_source(FileMap::new(&source));
+        let attributes = state.statics.parser.parse_attributes(&source)?;
+        for attribute in attributes {
+            self.attribute(state, &sp, &attribute)?;
         }
+
         self.next.tag_start_end(&name);
         Ok(())
     }
@@ -776,7 +769,7 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result {
         if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
@@ -791,7 +784,7 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result {
         if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
@@ -824,7 +817,7 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result {
         if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
@@ -842,7 +835,7 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result {
         if self.next.is_empty() {
             self.next.text(&sp.source[span.into_range()]);
@@ -861,7 +854,7 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        attributes: &[Spanned<Argument>],
+        attributes: &[Spanned<Token>],
     ) -> Result {
         self.adopt_start_tag(state, sp, span, "table", attributes, false)?;
         self.next.start();

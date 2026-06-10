@@ -123,9 +123,11 @@ that out yourself (unless it is also *your* first day being a programmer, too?).
 
 * `mode` is used to change the operating mode of the inspector. The choices are:
   * `raw` - Show the raw source directly from the database (this is the default)
-  * `tree` - Shows the dump of the abstract syntax tree from the Wikitext parser
+  * `tree` - Shows the dump of the abstract syntax tree used by the preprocessor
+  * `pre` - Shows the outcome of the preprocessor expanding all of the templates
+  * `pretree` - Shows the dump of the abstract syntax tree of the final Wikitext
 
-* The `include` flag is useful only in `tree` mode. By default the parser is run
+* The `include` flag is useful only in non-raw modes. By default the parser runs
   in no-include mode. Setting this flag will run it in the include mode instead.
 
 ### Parser output inspection ###################################################
@@ -160,3 +162,16 @@ semantic versioning at all, so minor releases are not actually fully compatible.
 Whoops! When these compatibility problems occur, they are almost always due to a
 change to the stdlib, and these can be fixed with medication. (See, for example,
 the replacements of `table.insert` and `table.remove`, in `lua::stdlib::table`.)
+
+### Test inspection ############################################################
+
+The test runner (`cargo test -p libwikitext-tests-gpl`) can also be made to show
+the intermediates generated for the tests by setting some environment variables:
+
+* `WIKI_RS_SHOW_PP_AST` - shows the AST that was used for template preprocessing
+* `WIKI_RS_SHOW_PP` - (hehe) shows the Wikitext output from the preprocessor run
+* `WIKI_RS_SHOW_AST` - shows the Wikitext AST that was used to render final HTML
+
+Set any of the variables to `1` to show the output for every test. To match only
+some tests, set the variable to a string that matches the test’s target (e.g. to
+show only the test at `test.txt:123`, set the var to `test.txt:123`, or `:123`.)

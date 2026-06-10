@@ -1,6 +1,8 @@
 //! Plain HTML rendering functions.
 
-use super::{Error, Paths, Result, StackFrame, State, Surrogate};
+use super::{
+    Error, Paths, Result, StackFrame, State, Surrogate, document::Document, emitters::Sink,
+};
 use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode,
@@ -10,12 +12,12 @@ use libwikitext_common::{
     url::Url,
     url_encode_sanitized,
 };
-use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, builder::token};
+use libwikitext_parse::{Argument, Span, Spanned, Token};
 use std::borrow::Cow;
 
 /// Renders an external web site link.
-pub(super) fn render_external_link<W: Surrogate<Error> + ?Sized>(
-    out: &mut W,
+pub(super) fn render_external_link(
+    out: &mut Document,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &[Spanned<Token>],
@@ -36,7 +38,7 @@ pub(super) fn render_external_link<W: Surrogate<Error> + ?Sized>(
             ExternalLinkKind::Text
         },
     );
-    render_start_link(out, state, sp, &link)?;
+    render_start_link(&mut out.next, state, &link);
     if content.is_empty() {
         let ordinal = &mut state.globals.external_link_ordinal;
         *ordinal += 1;
@@ -45,13 +47,14 @@ pub(super) fn render_external_link<W: Surrogate<Error> + ?Sized>(
     } else {
         out.adopt_tokens(state, sp, content)?;
     }
-    render_end_link(out, state, sp)
+    out.next.tag_end("a");
+    Ok(())
 }
 
 /// Renders an internal link.
 #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
-pub(super) fn render_internal_link<W: Surrogate<Error> + ?Sized>(
-    out: &mut W,
+pub(super) fn render_internal_link(
+    out: &mut Document,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &str,
@@ -61,34 +64,19 @@ pub(super) fn render_internal_link<W: Surrogate<Error> + ?Sized>(
     title: Title,
 ) -> Result<(), Error> {
     if state.globals.title == title {
+        out.next.tag_start("a");
         if let Some(fragment) = title.fragment() {
-            render_runtime(out, state, sp, |_, source| {
-                token!(
-                    source,
-                    Token::StartTag {
-                        name: token!(source, Span { "a" }),
-                        attributes: token![source, [
-                            "class" => "mw-selflink-fragment",
-                            "href" => &format!("#{}", anchor_encode(fragment, AnchorEncodeMode::Html5)),
-                        ]].into(),
-                        self_closing: false
-                    }
-                )
-            })?;
+            out.next.tag_attribute_full("class", "mw-selflink-fragment");
+            out.next.tag_attribute_full(
+                "href",
+                &format!("#{}", anchor_encode(fragment, AnchorEncodeMode::Html5)),
+            );
         } else {
-            render_runtime(out, state, sp, |_, source| {
-                token!(
-                    source,
-                    Token::StartTag {
-                        name: token!(source, Span { "a" }),
-                        attributes: token![source, [ "class" => "mw-selflink selflink" ]].into(),
-                        self_closing: false
-                    }
-                )
-            })?;
+            out.next.tag_attribute_full("class", "mw-selflink selflink");
         }
+        out.next.tag_start_end("a");
     } else {
-        render_start_link(out, state, sp, &LinkKind::Internal(title))?;
+        render_start_link(&mut out.next, state, &LinkKind::Internal(title));
     }
 
     if let Some(prefix) = prefix {
@@ -107,16 +95,17 @@ pub(super) fn render_internal_link<W: Surrogate<Error> + ?Sized>(
     if let Some(trail) = trail {
         out.adopt_generated(state, sp, None, trail)?;
     }
-    render_end_link(out, state, sp)
+
+    out.next.tag_end("a");
+    Ok(())
 }
 
 /// Renders an anchor for a link.
-pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
+pub(super) fn render_start_link<W: Sink + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
     link: &LinkKind<'_>,
-) -> Result {
+) {
     let (missing, query) = if let LinkKind::Internal(title) = link
         && title.interwiki().is_none()
         && !title.key().is_empty()
@@ -143,62 +132,32 @@ pub(super) fn render_start_link<W: Surrogate<Error> + ?Sized>(
         &href
     };
 
-    render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::StartTag {
-                name: token!(source, Span { "a" }),
-                attributes: {
-                    match link {
-                        LinkKind::External(_, kind) => token![source, [
-                            "rel" => "nofollow",
-                            "class" => kind.css(),
-                            "href" => &href
-                        ]]
-                        .into(),
-                        LinkKind::Internal(title) => {
-                            let mut args = token![source, ["href" => &href]].to_vec();
-                            if missing {
-                                args.push(token![source, Argument { "class" => "new" }]);
-                                if let Some(message) = state.messages.get("red-link-title") {
-                                    args.push(token![source, Argument {
-                                        "title" => message.replace("$1", title.key())
-                                    }]);
-                                }
-                            } else if !title.prefixed_text().is_empty() {
-                                if title.interwiki().is_some() {
-                                    args.push(token![source, Argument {
-                                        "class" => "extiw"
-                                    }]);
-                                }
-                                args.push(token![source, Argument {
-                                    "title" => title.prefixed_text()
-                                }]);
-                            }
-                            args
-                        }
-                    }
-                },
-                self_closing: false
+    out.tag_start("a");
+    // Stupid redundancies and reordering are to avoid having to do a bunch of
+    // contorting in the unit test runner, not because this is smart or makes
+    // any sense or has any purpose
+    match link {
+        LinkKind::External(_, kind) => {
+            out.tag_attribute_full("rel", "nofollow");
+            out.tag_attribute_full("class", kind.css());
+            out.tag_attribute_full("href", href);
+        }
+        LinkKind::Internal(title) => {
+            out.tag_attribute_full("href", href);
+            if missing {
+                out.tag_attribute_full("class", "new");
+                if let Some(message) = state.messages.get("red-link-title") {
+                    out.tag_attribute_full("title", &message.replace("$1", title.key()));
+                }
+            } else if !title.prefixed_text().is_empty() {
+                if title.interwiki().is_some() {
+                    out.tag_attribute_full("class", "extiw");
+                }
+                out.tag_attribute_full("title", title.prefixed_text());
             }
-        )
-    })
-}
-
-/// Renders an `</a>` tag. This is only suitable for use with a `Document`.
-pub(super) fn render_end_link<W: Surrogate<Error> + ?Sized>(
-    out: &mut W,
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-) -> Result {
-    render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::EndTag {
-                name: token!(source, Span { "a" }),
-            }
-        )
-    })
+        }
+    }
+    out.tag_start_end("a");
 }
 
 /// Static option data for [`LinkKind::to_string`].
@@ -410,36 +369,6 @@ pub(super) fn render_single_attribute<W: Surrogate<Error> + ?Sized>(
         out.adopt_tokens(state, sp, &curr.content)?;
     }
     Ok(())
-}
-
-/// Renders a runtime-generated token.
-pub(super) fn render_runtime<
-    W: Surrogate<Error> + ?Sized,
-    F: FnOnce(&mut State<'_, '_, '_>, &mut String) -> Spanned<Token>,
->(
-    out: &mut W,
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-    f: F,
-) -> Result {
-    let source = &mut String::new();
-    let token = f(state, source);
-    out.adopt_token(state, &sp.clone_with_source(FileMap::new(source)), &token)
-}
-
-/// Renders runtime-generated tokens.
-pub(super) fn render_runtime_list<
-    W: Surrogate<Error> + ?Sized,
-    F: FnOnce(&mut State<'_, '_, '_>, &mut String) -> Vec<Spanned<Token>>,
->(
-    out: &mut W,
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-    f: F,
-) -> Result {
-    let source = &mut String::new();
-    let tokens = f(state, source);
-    out.adopt_tokens(state, &sp.clone_with_source(FileMap::new(source)), &tokens)
 }
 
 /// Phrasing content, per the HTML5 specification, including obsolete elements

@@ -1,19 +1,14 @@
 //! Code for handling MediaWiki images.
 
 use super::{
-    Error, Result, StackFrame, State, Surrogate,
+    Result, StackFrame, State, Surrogate as _,
+    document::Document,
+    emitters::Sink,
     tags::{self, LinkKind},
-    text_run,
 };
-use core::iter;
 use libmisc::{CowExt as _, to_ascii_lower};
 use libwikitext_common::{db::DatabaseProvider as _, make_url, title::Title};
-use libwikitext_parse::{
-    Argument, FileMap, Spanned, Token,
-    builder::{tok_arg, token},
-    helpers::TextContent,
-    visit::Visitor as _,
-};
+use libwikitext_parse::{Argument, Spanned, Token, helpers::TextContent, visit::Visitor as _};
 use std::{borrow::Cow, collections::BTreeMap};
 
 /// The kind of media.
@@ -89,8 +84,6 @@ pub(super) struct Options<'a> {
     clippy::too_many_lines,
     reason = "not enough value in splitting this into smaller units"
 )]
-// TODO: This needs to use `config.extra_words` instead of hard coding the
-// keywords.
 pub(super) fn media_options<'s>(
     state: &mut State<'_, '_, '_>,
     sp: &'s StackFrame<'_>,
@@ -122,113 +115,93 @@ pub(super) fn media_options<'s>(
     options.link = Some(LinkKind::Internal(title));
 
     for argument in arguments {
-        let value = sp.eval(state, argument.value())?.map_ref(str::trim_ascii);
-        if let Some(name_node) = &argument.name() {
-            let name = sp.eval(state, name_node)?;
-            if name == "link" {
-                // “If there is a space character between link and the
-                // equals sign, the link statement will be treated as a
-                // caption.” This will happen because evaluating
-                // `argument.name` does not strip whitespace so the key will
-                // not match.
-                options.link = if value.is_empty() {
-                    None
-                } else if state.statics.db.config().protocols.iter().any(|proto| {
-                    value
-                        .get(..proto.len())
-                        .is_some_and(|v| v.eq_ignore_ascii_case(proto))
-                }) {
-                    Some(LinkKind::External(value, tags::ExternalLinkKind::Text))
+        let value = sp
+            .eval(state, argument.combined())?
+            .map_ref(str::trim_ascii);
+        let config = state.statics.db.config();
+        let Some((value, arg)) = config.magic_word_matches(&value) else {
+            continue;
+        };
+
+        if let Some(arg) = arg.map(str::trim_ascii) {
+            if value.contains(&"img_alt") {
+                options.attrs.insert("alt".into(), arg.to_owned().into());
+            } else if value.contains(&"img_class") {
+                if !arg.is_empty() {
+                    options.attrs.insert("class".into(), arg.to_owned().into());
+                }
+            } else if value.contains(&"img_lang") {
+                options.lang = Some(arg.to_owned().into());
+            } else if value.contains(&"img_link") {
+                options.link = if config.protocols_pattern.is_match(arg) {
+                    Some(LinkKind::External(
+                        arg.to_owned().into(),
+                        tags::ExternalLinkKind::Text,
+                    ))
                 } else {
-                    Title::new(state.statics.db.config(), &value, None)
-                        .ok()
-                        .map(LinkKind::Internal)
+                    Title::new(config, arg, None).ok().map(LinkKind::Internal)
                 };
-            } else if name == "alt" {
-                // “If there is a space character between alt and the equals
-                // sign, the alt statement will be treated as a caption.”
-                // This will happen because evaluating `argument.name` does
-                // not strip whitespace so the key will not match.
-                options.attrs.insert(name, text_run(state, &value).into());
-            } else {
-                match name.trim_ascii() {
-                    "upright" => {
-                        options.upright = Some(value.parse::<f64>().unwrap_or(1.0));
-                    }
-                    "page" => {
-                        options.page = Some(value.parse::<i32>().unwrap_or(1));
-                    }
-                    "thumbtime" => {
-                        options.thumbtime = Some(value);
-                    }
-                    "start" => {
-                        options.start = Some(value);
-                    }
-                    "lossy" => {
-                        options.lossy = Some(value != "false");
-                    }
-                    "class" => {
-                        if !value.is_empty() {
-                            options.attrs.insert(name, value);
-                        }
-                    }
-                    "lang" => {
-                        options.lang = Some(value);
-                    }
-                    "border" => {
-                        options.border = Some(());
-                    }
-                    _ => {
-                        options.caption = Some(argument.combined());
-                    }
+            } else if value.contains(&"img_lossy") {
+                options.lossy = Some(arg != "false");
+            } else if value.contains(&"img_page") {
+                options.page = Some(arg.parse::<i32>().unwrap_or(1));
+            } else if value.contains(&"img_upright") {
+                options.upright = Some(arg.parse::<f64>().unwrap_or(1.0));
+            } else if value.contains(&"img_width") {
+                let (w, h) = arg.split_once('x').unwrap_or((arg, ""));
+                if w.as_bytes().iter().all(u8::is_ascii_digit) {
+                    options.attrs.insert("width".into(), w.to_owned().into());
                 }
+                if h.as_bytes().iter().all(u8::is_ascii_digit) {
+                    options.attrs.insert("height".into(), h.to_owned().into());
+                }
+            } else if value.contains(&"timedmedia_disablecontrols") {
+                log::warn!("TODO: timedmedia_disablecontrols");
+            } else if value.contains(&"timedmedia_endtime") {
+                log::warn!("TODO: timedmedia_endtime");
+            } else if value.contains(&"timedmedia_starttime") {
+                options.start = Some(arg.to_owned().into());
+            } else if value.contains(&"timedmedia_thumbtime") {
+                options.thumbtime = Some(arg.to_owned().into());
             }
-        } else if value.ends_with("px") {
-            let value = value.trim_end_matches("px").trim_ascii_end();
-            let (w, h) = value.split_once('x').unwrap_or((value, ""));
-            if let Ok(value) = w.parse::<i32>() {
-                options
-                    .attrs
-                    .insert("width".into(), Cow::Owned(value.to_string()));
-            }
-            if let Ok(value) = h.parse::<i32>() {
-                options
-                    .attrs
-                    .insert("height".into(), Cow::Owned(value.to_string()));
-            }
-        } else if let Some(value) = value.strip_prefix("upright ") {
-            options.upright = Some(value.parse::<f64>().unwrap_or(1.0));
+        } else if value.contains(&"img_border") {
+            options.border = Some(());
+        } else if value.contains(&"img_center") {
+            options.align = Some("center".into());
+        } else if value.contains(&"img_left") {
+            options.align = Some("left".into());
+        } else if value.contains(&"img_none") {
+            options.align = Some("none".into());
+        } else if value.contains(&"img_right") {
+            options.align = Some("right".into());
+        } else if value.contains(&"img_baseline") {
+            options.attrs.insert("valign".into(), "baseline".into());
+        } else if value.contains(&"img_middle") {
+            options.attrs.insert("valign".into(), "middle".into());
+        } else if value.contains(&"img_sub") {
+            options.attrs.insert("valign".into(), "sub".into());
+        } else if value.contains(&"img_super") {
+            options.attrs.insert("valign".into(), "super".into());
+        } else if value.contains(&"img_text_bottom") {
+            options.attrs.insert("valign".into(), "text-bottom".into());
+        } else if value.contains(&"img_text_top") {
+            options.attrs.insert("valign".into(), "text-top".into());
+        } else if value.contains(&"img_top") {
+            options.attrs.insert("valign".into(), "top".into());
+        } else if value.contains(&"img_framed") {
+            options.format = Some("frame".into());
+        } else if value.contains(&"img_frameless") {
+            options.format = Some("frameless".into());
+        } else if value.contains(&"img_thumbnail") {
+            options.format = Some("thumb".into());
+        } else if value.contains(&"img_upright") {
+            options.upright = Some(0.75);
+        } else if value.contains(&"timedmedia_muted") {
+            options.muted = Some(());
+        } else if value.contains(&"timedmedia_loop") {
+            options.r#loop = Some(());
         } else {
-            match value.as_ref() {
-                "upright" => {
-                    options.upright = Some(0.75);
-                }
-                "left" | "right" | "center" | "none" => {
-                    options.align = Some(value);
-                }
-                "baseline" | "sub" | "super" | "top" | "text-top" | "middle" | "bottom"
-                | "text-bottom" => {
-                    options.attrs.insert("valign".into(), value);
-                }
-                "frameless" | "frame" | "thumb" => {
-                    options.format = Some(value);
-                }
-                "framed" => {
-                    options.format = Some("frame".into());
-                }
-                "thumbnail" => {
-                    options.format = Some("thumb".into());
-                }
-                "muted" => {
-                    options.muted = Some(());
-                }
-                "loop" => {
-                    options.r#loop = Some(());
-                }
-                _ => {
-                    options.caption = Some(argument.combined());
-                }
-            }
+            options.caption = Some(argument.combined());
         }
     }
 
@@ -244,7 +217,7 @@ pub(super) fn media_options<'s>(
         extractor.visit_tokens(caption)?;
         options.attrs.insert(
             "title".into(),
-            text_run(state, extractor.finish().trim_ascii()).into(),
+            extractor.finish().trim_ascii().to_owned().into(),
         );
     }
 
@@ -252,8 +225,8 @@ pub(super) fn media_options<'s>(
 }
 
 /// Renders a media tag.
-pub(super) fn render_media<W: Surrogate<Error> + ?Sized>(
-    out: &mut W,
+pub(super) fn render_media(
+    out: &mut Document,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     title: Title,
@@ -264,158 +237,82 @@ pub(super) fn render_media<W: Surrogate<Error> + ?Sized>(
 }
 
 /// Renders a media tag using the given media options.
-pub(super) fn render_media_with_options<W: Surrogate<Error> + ?Sized>(
-    out: &mut W,
+pub(super) fn render_media_with_options(
+    out: &mut Document,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     options: &Options<'_>,
 ) -> Result {
     if options.caption.is_some() {
-        tags::render_runtime(out, state, sp, |_, source| {
-            token!(
-                source,
-                Token::StartTag {
-                    name: token!(source, Span { "figure" }),
-                    attributes: if let Some(align) = &options.align {
-                        vec![tok_arg(source, "class", format!("mw-halign-{align}"))]
-                    } else {
-                        vec![]
-                    },
-                    self_closing: false,
-                }
-            )
-        })?;
+        out.next.tag_start("figure");
+        if let Some(align) = &options.align {
+            out.next
+                .tag_attribute_full("class", &format!("mw-halign-{align}"));
+        }
+        out.next.tag_start_end("figure");
     }
 
     match options.kind {
         MediaKind::Audio | MediaKind::Video => {
-            render_timed_media(out, state, sp, options)?;
+            render_timed_media(&mut out.next, options);
         }
         MediaKind::Image => {
-            render_image(out, state, sp, options)?;
+            render_image(&mut out.next, state, options);
         }
     }
 
     if let Some(body) = options.caption {
-        tags::render_runtime(out, state, sp, |_, source| {
-            token!(
-                source,
-                Token::StartTag {
-                    name: token!(source, Span { "figcaption" }),
-                    attributes: vec![],
-                    self_closing: false
-                }
-            )
-        })?;
-
+        out.next.tag_start_full("figcaption");
         out.adopt_tokens(state, sp, body)?;
-
-        let source = &mut String::new();
-        let end = token!(
-            source,
-            [
-                Token::EndTag {
-                    name: token!(source, Span { "figcaption" })
-                },
-                Token::EndTag {
-                    name: token!(source, Span { "figure" })
-                }
-            ]
-        );
-
-        out.adopt_tokens(state, &sp.clone_with_source(FileMap::new(source)), &end)?;
+        out.next.tag_end("figcaption");
+        out.next.tag_end("figure");
     }
 
     Ok(())
 }
 
 /// Renders an image tag.
-fn render_image<W: Surrogate<Error> + ?Sized>(
-    out: &mut W,
+fn render_image<S: Sink + ?Sized>(
+    out: &mut S,
     state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
     options: &Options<'_>,
-) -> Result {
+) {
     if let Some(link) = &options.link {
-        tags::render_start_link(out, state, sp, link)?;
+        tags::render_start_link(out, state, link);
     }
 
-    tags::render_runtime(out, state, sp, |_, source| {
-        token!(
-            source,
-            Token::StartTag {
-                name: token!(source, Span { options.kind.tag_name() }),
-                attributes: {
-                    alignment(source, options)
-                        .chain(
-                            options
-                                .attrs
-                                .iter()
-                                .map(|(key, value)| tok_arg(source, key, value)),
-                        )
-                        .collect()
-                },
-                self_closing: true
-            }
-        )
-    })?;
+    out.tag_start(options.kind.tag_name());
+
+    if options.caption.is_none()
+        && let Some(align) = &options.align
+    {
+        out.tag_attribute_full("align", align);
+    }
+
+    for (k, v) in &options.attrs {
+        out.tag_attribute_full(k, v);
+    }
+
+    // This is a void tag so there is no `tag_end`
+    out.tag_start_end(options.kind.tag_name());
 
     if options.link.is_some() {
-        tags::render_end_link(out, state, sp)?;
+        out.tag_end("a");
     }
-
-    Ok(())
 }
 
 /// Renders an audio or video tag.
 // TODO: This is even more bogus than the image tags; this does not even *use*
 // most of the timed media options.
-fn render_timed_media<W: Surrogate<Error> + ?Sized>(
-    out: &mut W,
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-    options: &Options<'_>,
-) -> Result {
-    tags::render_runtime_list(out, state, sp, |_, source| {
-        token![
-            source,
-            [
-                Token::StartTag {
-                    name: token!(source, Span { options.kind.tag_name() }),
-                    attributes: {
-                        iter::once(tok_arg(source, "controls", ""))
-                            .chain(
-                                options
-                                    .attrs
-                                    .iter()
-                                    .map(|(key, value)| tok_arg(source, key, value)),
-                            )
-                            .collect()
-                    },
-                    self_closing: false
-                },
-                Token::EndTag {
-                    name: token!(source, Span { options.kind.tag_name() })
-                }
-            ]
-        ]
-        .into()
-    })
-}
-
-/// Generates an image tag horizontal alignment attribute iterator.
-fn alignment(
-    source: &mut String,
-    options: &Options<'_>,
-) -> impl Iterator<Item = Spanned<Argument>> + use<> {
-    if options.caption.is_none()
-        && let Some(align) = &options.align
-    {
-        Some(tok_arg(source, "align", align))
-    } else {
-        None
+fn render_timed_media<S: Sink + ?Sized>(out: &mut S, options: &Options<'_>) {
+    let tag_name = options.kind.tag_name();
+    out.tag_start(tag_name);
+    out.tag_attribute_full("controls", "");
+    for (k, v) in &options.attrs {
+        out.tag_attribute_full(k, v);
     }
-    .into_iter()
+    out.tag_start_end(tag_name);
+    out.tag_end(tag_name);
 }
 
 /// Returns `true` if the string appears to be an absolute URL.

@@ -127,7 +127,7 @@ impl PluginFnArgs<'_, '_, '_> {
         let sp = self.0.sp.clone_with_source(FileMap::new(&source));
         let root = state.0.statics.parser.parse(&sp.source)?;
         let mut out = Document::new(fragment);
-        out.adopt_output(state.0, &sp, &root)?;
+        out.adopt_tokens(state.0, &sp, &root)?;
         Ok(Some(out.finish(state.0).into()))
     }
 

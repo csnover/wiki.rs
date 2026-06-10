@@ -19,7 +19,7 @@ use peg::RuleResult;
 use std::collections::HashSet;
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for str {
+peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     //////////////
     // Wikitext //
     //////////////
@@ -84,8 +84,16 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule inline_in_tag() -> Spanned<Token>
     = extension_tag()
     / html_tag()
-    / language_tag()
-    / strip_marker()
+    / inline_in_attr()
+
+    /// Expressions allowed inside HTML attributes.
+    rule inline_in_attr() -> Spanned<Token>
+    = strip_marker()
+    / inline_in_late_attr()
+
+    /// Expressions allowed inside late HTML attributes.
+    rule inline_in_late_attr() -> Spanned<Token>
+    = language_tag()
     / inline_in_url()
 
     /// Expressions allowed inside a Wikitext link URL.
@@ -152,27 +160,27 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     //////////////////
 
     /// A minimal parser for template arguments. Used for debugging.
-    pub rule debug_template_args() -> Vec<Spanned<Argument>>
-    = t:spanned(<template_argument_kv(PpTerm::PIPE)>) ** "|"
+    pub rule debug_template_args(pp: &PreprocessorOptions) -> Vec<Spanned<Argument>>
+    = t:spanned(<template_argument_kv(pp, PpTerm::PIPE)>) ** "|"
     { t }
 
     /// Generates a half-parsed token tree for template expansion.
-    pub rule preprocess() -> Vec<Spanned<Token>>
-    = pp_items(PpTerm::empty())
+    pub rule preprocess(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
+    = pp_items(pp, PpTerm::empty())
 
     /// Zero or more preprocessor items.
-    rule pp_items(flags: PpTerm) -> Vec<Spanned<Token>>
-    = items:pp_item(flags)*
+    rule pp_items(pp: &PreprocessorOptions, flags: PpTerm) -> Vec<Spanned<Token>>
+    = items:pp_item(pp, flags)*
     { reduce_tree(items.into_iter().flatten()) }
 
     /// A preprocessor item.
-    rule pp_item(flags: PpTerm) -> Vec<Spanned<Token>>
+    rule pp_item(pp: &PreprocessorOptions, flags: PpTerm) -> Vec<Spanned<Token>>
     = t:pp_illegal() { vec![t] }
-    / pp_tag()
-    / t:pp_heading() { vec![t] }
-    / pp_template()
-    / half_language_tag()
-    / half_wikilink()
+    / pp_tag(pp)
+    / t:pp_heading(pp) { vec![t] }
+    / pp_template(pp)
+    / half_language_tag(pp)
+    / half_wikilink(pp)
     / t:pp_text(flags) { vec![t] }
 
     /// A run of non-token text.
@@ -222,10 +230,10 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// 6 `- {{{ {{{`
     /// 7 `-{ {{{ {{{`
     #[cache]
-    rule half_language_tag() -> Vec<Spanned<Token>>
+    rule half_language_tag(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
     = &assert(o.config.language_conversion_enabled, "conversion enabled")
       // 1, 4, 7, ...
-      t:half_parsed_wikitext(PpTerm::IN_CONVERT, <"-{" &("{{{"* !"{")>, <"}-">, <"-">)
+      t:half_parsed_wikitext(pp, PpTerm::IN_CONVERT, <"-{" &("{{{"* !"{")>, <"}-">, <"-">)
     { t }
       // 2, 3, ..
       // Required here because pp_text will not match "-{"
@@ -241,18 +249,19 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// [[Link target|extra|arguments]]
     /// ```
     #[cache]
-    rule half_wikilink() -> Vec<Spanned<Token>>
-    = half_parsed_wikitext(PpTerm::IN_LINK, <"[[">, <"]]">, <"[">)
+    rule half_wikilink(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
+    = half_parsed_wikitext(pp, PpTerm::IN_LINK, <"[[">, <"]]">, <"[">)
 
     /// A generic rule for half-parsed Wikitext expressions.
     rule half_parsed_wikitext(
+        pp: &PreprocessorOptions,
         flags: PpTerm,
         before: rule<()>,
         after: rule<()>,
         broken: rule<()>,
     ) -> Vec<Spanned<Token>>
     = start:spanned(<before() { Token::Text }>)
-      content:pp_items(flags)
+      content:pp_items(pp, flags)
       end:spanned(<after() { Token::Text }>)
     { iter::once(start).chain(content).chain(iter::once(end)).collect() }
       // A failed parse here with a valid `before` means that whatever prior
@@ -268,7 +277,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
       // be a potentially long backtrack
     / &before()
       broken:spanned(<broken() { Token::Text }>)
-      rest:pp_items(PpTerm::empty())
+      rest:pp_items(pp, PpTerm::empty())
     { iter::once(broken).chain(rest).collect() }
 
     //////////////
@@ -317,11 +326,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// Unlike a full heading parse, this parse fails if there are comments at
     /// the start of the line, the inner contents are half-parsed, and sequences
     /// of trailing newlines are not consumed.
-    rule pp_heading() -> Spanned<Token>
+    rule pp_heading(pp: &PreprocessorOptions) -> Spanned<Token>
     = spanned(<
         &at_sol()
         start:heading_start()
-        ce:(c:pp_items(PpTerm::IN_HEADING) e:heading_end() { (c, e) })?
+        ce:(c:pp_items(pp, PpTerm::IN_HEADING) e:heading_end() { (c, e) })?
         &assert(ce.is_some() || start.len() > 2, "heading")
         heading_trail()
         { make_heading(start, ce) }
@@ -576,7 +585,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule table_start() -> Spanned<Token>
     = spanned(<
         space_s()* "{|"
-        attributes:late_attributes(<nl() {}>)
+        attributes:html_attributes(<nl() {}>)
         { Token::TableStart { attributes } }
     >)
 
@@ -589,7 +598,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule table_row() -> Spanned<Token>
     = spanned(<
         space_s()* "|" "-"+
-        attributes:late_attributes(<nl() {}>)
+        attributes:html_attributes(<nl() {}>)
         { Token::TableRow { attributes } }
     >)
 
@@ -647,7 +656,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
         rest_start: rule<()>,
         token_map: F,
     ) -> Vec<Spanned<Token>>
-        where F: Fn(Vec<Spanned<Argument>>) -> Token
+        where F: Fn(Vec<Spanned<Token>>) -> Token
     = first:table_cell(first_start, &rest_start)
       rest:table_cell(&rest_start, &rest_start)*
       end:rtrim_eol()
@@ -667,7 +676,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     ///             ^^^^^^^^^^^^^^^             ^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^
     /// ```
     rule table_cell(start: rule<()>, term: rule<()>)
-        -> (Span, Vec<Spanned<Argument>>, Vec<Spanned<Token>>)
+        -> (Span, Vec<Spanned<Token>>, Vec<Spanned<Token>>)
     = sa:spanned(<
         space_s()*
         start()
@@ -679,7 +688,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
         // to put any "|" literal in a `<nowiki>` because the original parser is
         // so context-unaware the only way to successfully get that character in
         // this position is by having it in a strip marker.)
-        a:(t:late_attributes(<"[[" / "-{" / "|" / nl() {}>) "|" !"|" { t })?
+        a:(t:html_attributes(<"[[" / "-{" / "|" / nl() {}>) "|" !"|" { t })?
         space_s()*
         { a }
       >)
@@ -1081,7 +1090,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// ```
     rule url_scheme() -> Spanned<Token>
     = spanned(<#{|input, pos| {
-        o.url_scheme.find(&input[pos..]).map_or(RuleResult::Failed, |scheme| {
+        o.config.protocols_pattern.find(&input[pos..]).map_or(RuleResult::Failed, |scheme| {
             RuleResult::Matched(pos + scheme.end(), Token::Text)
         })
     }}>)
@@ -1137,13 +1146,14 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// `{{{{1x|1}}{{1x|x}}|foo}}}` should be `{{ {{ }} {{ }} }} "}"`, but using
     /// a “right-most” rule as the ABNF implies actually results in
     /// `"{" {{{ "}}" {{ }} }}}`. Neato!
-    rule pp_template() -> Vec<Spanned<Token>>
+    #[cache]
+    rule pp_template(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
     = // 2, 5, 8, ...
-      &("{{" &("{{{"* !"{")) t:template_expansion() { vec![t] }
+      &("{{" &("{{{"* !"{")) t:template_expansion(pp) { vec![t] }
       // 3, 4 (1+3); 6 (3+3), 7; ...
-    / template_parameter()
+    / template_parameter(pp)
       // 4 (2+2), 6 (2+?), ...
-    / t:template_expansion() { vec![t] }
+    / &"{{{{" t:template_expansion(pp) { vec![t] }
       // 1
     / t:spanned(<"{" { Token::Text }>) { vec![t] }
 
@@ -1152,12 +1162,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// ```wikitext
     /// {{{parameter_name|default}}}
     /// ```
-    #[cache]
-    rule template_parameter() -> Vec<Spanned<Token>>
+    rule template_parameter(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
       // 4, 7, ...
     = p:spanned(<"{" &("{{{"+ !"{") { Token::Text }>)?
       // 3, 6, ...
-      t:template_or_parameter(PpTerm::IN_PARAMETER, <"{{{" !("{{"+ !"{")>, <"}}}">)
+      t:template_or_parameter(pp, PpTerm::IN_PARAMETER, <"{{{" !("{{"+ !"{")>, <"}}}">)
     {
         let t = t.map_node(|(name, arguments)| {
             let default = arguments.into_iter().next().map(|a| a.node.content);
@@ -1171,11 +1180,10 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// ```wikitext
     /// {{Template name|numbered argument|key=value}}
     /// ```
-    #[cache]
-    rule template_expansion() -> Spanned<Token>
+    rule template_expansion(pp: &PreprocessorOptions) -> Spanned<Token>
       // Converting `{{!}}` into a token early is a performance optimisation
     = spanned(<"{{!}}" { Token::Generated("|".into()) }>)
-    / t:template_or_parameter(PpTerm::IN_TEMPLATE, <"{{">, <"}}">)
+    / t:template_or_parameter(pp, PpTerm::IN_TEMPLATE, <"{{">, <"}}">)
     { t.map_node(|(target, arguments)| {
         Token::Template { arguments, target }
     })}
@@ -1187,12 +1195,12 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     ///
     /// {{{parameter_name|default}}}
     /// ```
-    rule template_or_parameter(flags: PpTerm, before: rule<()>, after: rule<()>)
+    rule template_or_parameter(pp: &PreprocessorOptions, flags: PpTerm, before: rule<()>, after: rule<()>)
         -> Spanned<(Vec<Spanned<Token>>, Vec<Spanned<Argument>>)>
     = spanned(<
         before()
-        name:pp_items(flags | PpTerm::PIPE)
-        arguments:template_argument(flags)*
+        name:pp_items(pp, flags | PpTerm::PIPE)
+        arguments:template_argument(pp, flags)*
         after()
         { (name, arguments) }
     >)
@@ -1203,7 +1211,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// {{Template name|numbered argument |key=value}}
     ///                ^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^
     /// ```
-    rule template_argument(flags: PpTerm) -> Spanned<Argument>
+    rule template_argument(pp: &PreprocessorOptions, flags: PpTerm) -> Spanned<Argument>
     = // Keeping the delimiter outside of the argument span allows the arguments
       // list to be glued back together into text in a generic way that applies
       // to all lists of spans, instead of requiring special work to extract the
@@ -1211,7 +1219,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
       // content token
       "|"
       t:spanned(<
-        kv:template_argument_kv(flags | PpTerm::PIPE)?
+        kv:template_argument_kv(pp, flags | PpTerm::PIPE)?
         { kv.unwrap_or(Argument { content: vec![], delimiter: None, terminator: None }) }
       >)
     { t }
@@ -1222,9 +1230,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// {{Template name|numbered argument|key=value}}
     ///                 ^^^^^^^^^^^^^^^^^ ^^^^^^^^^
     /// ```
-    rule template_argument_kv(flags: PpTerm) -> Argument
-    = key:pp_items(flags | PpTerm::EQUALS)
-      value:(d:spanned(<"=" { Token::Text }>) v:pp_items(flags) { (d, v) })?
+    rule template_argument_kv(pp: &PreprocessorOptions, flags: PpTerm) -> Argument
+    = key:pp_items(pp, flags | PpTerm::EQUALS)
+      value:(d:spanned(<"=" { Token::Text }>) v:pp_items(pp, flags) { (d, v) })?
     { make_argument(key, value) }
 
     //////////
@@ -1233,10 +1241,10 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
 
     /// A comment, extension tag, inclusion control tag, or literal `"<"`.
     #[cache]
-    rule pp_tag() -> Vec<Spanned<Token>>
+    rule pp_tag(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
     = comment()
     / t:extension_tag() { vec![t] }
-    / pp_ignore()
+    / pp_ignore(pp)
     / t:spanned(<"<" { Token::Text }>) { vec![t] }
 
     /// A comment block or inline comment.
@@ -1317,7 +1325,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     = spanned(<
       "<"
       name:spanned(<$(extension_tag_name())>)
-      attributes:attributes(<"/"? ">">)
+      attributes:extension_tag_attributes(<"/"? ">">)
       self_closing:(c:"/"? { c.is_some() })
       ">"
       content:#{|input, pos| {
@@ -1351,6 +1359,45 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
         "extension tag"
       )
 
+    /// A list of tag attributes delimited by garbage.
+    ///
+    /// ```wikitext
+    /// <tag-name <bogus attr="value" attr2 = value>content</tag-name>
+    ///          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    rule extension_tag_attributes(term: rule<()>) -> Vec<Spanned<Argument>>
+    = extension_tag_attribute_junk(&term)
+      attributes:(
+        a:extension_tag_attribute(&term)
+        extension_tag_attribute_junk(&term)
+        { a }
+      )*
+    { attributes }
+
+    /// Non-attribute data in an attribute position that should be discarded.
+    /// Normally this is just whitespace, but it’s actually a mystery box that
+    /// could be almost anything. It could even be a 🛥!
+    ///
+    /// ```wikitext
+    /// <tag-name <bogus attr="value" attr2 = value>content</tag-name>
+    ///          ^^^^^^^^            ^
+    /// ```
+    rule extension_tag_attribute_junk(term: rule<()>)
+    = (!(term() / extension_tag_attribute(&term)) [_])*
+
+    /// A tag attribute.
+    ///
+    /// ```wikitext
+    /// <tag-name attr="value" attr2 = value>content</tag-name>
+    ///           ^^^^^^^^^^^^ ^^^^^^^^^^^^^
+    /// ```
+    rule extension_tag_attribute(term: rule<()>) -> Spanned<Argument>
+    = spanned(<
+        name:attribute_name(&term)
+        value:attribute_value(<spanned(<[_] { Token::Text }>)>, &term)?
+      { make_attribute(name, value) }
+    >)
+
     /// An allowed HTML5 start or end tag.
     ///
     /// ```wikitext
@@ -1369,7 +1416,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     rule html_start_tag() -> Token
     = name:html_tag_name()
       (space_nl()+ / &("/"? ">"))
-      attributes:late_attributes(<"/"? ">">)
+      attributes:html_attributes(<"/"? ">">)
       space_nl()*
       self_closing:(c:"/"? { c.is_some() })
     {
@@ -1401,23 +1448,28 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// A list of tag attributes delimited by garbage which may contain strip
     /// markers whose contents must also participate in the attribute parsing.
     ///
-    /// ```wikitext
-    /// <tag-name <bogus attr="value" attr2 = value>content</tag-name>
-    ///          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    /// ```
-    // TODO: This needs to try to unstrip markers.
-    rule late_attributes(term: rule<()>) -> Vec<Spanned<Argument>>
-    = attributes(term)
-
-    /// A list of tag attributes delimited by garbage.
+    /// Because the strip marker content must participate, only the raw list of
+    /// tokens is produced. They must be converted to attribute lists later by
+    /// unstripping the markers.
     ///
     /// ```wikitext
     /// <tag-name <bogus attr="value" attr2 = value>content</tag-name>
     ///          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule attributes(term: rule<()>) -> Vec<Spanned<Argument>>
-    = attribute_junk(&term)
-      attributes:(a:attribute(&term) attribute_junk(&term) { a })*
+    rule html_attributes(term: rule<()>) -> Vec<Spanned<Token>>
+    = attributes:(!term() t:inline_in_attr() { t })*
+    { reduce_tree(attributes) }
+
+    /// A list of HTML tag attributes delimited by garbage, after unstripping
+    /// strip markers.
+    ///
+    /// ```wikitext
+    /// <tag-name <bogus attr="value" attr2 = value>content</tag-name>
+    ///          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    /// ```
+    pub rule late_attributes() -> Vec<Spanned<Argument>>
+    = late_attribute_junk()
+      attributes:(a:late_attribute() late_attribute_junk() { a })*
     { attributes }
 
     /// Non-attribute data in an attribute position that should be discarded.
@@ -1428,8 +1480,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// <tag-name <bogus attr="value" attr2 = value>content</tag-name>
     ///          ^^^^^^^^            ^
     /// ```
-    rule attribute_junk(term: rule<()>)
-    = (!(term() / attribute(&term)) [_])*
+    rule late_attribute_junk()
+    = (!late_attribute() [_])*
 
     /// A tag attribute.
     ///
@@ -1437,10 +1489,10 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// <tag-name attr="value" attr2 = value>content</tag-name>
     ///           ^^^^^^^^^^^^ ^^^^^^^^^^^^^
     /// ```
-    rule attribute(term: rule<()>) -> Spanned<Argument>
+    rule late_attribute() -> Spanned<Argument>
     = spanned(<
-        name:attribute_name(&term)
-        value:attribute_value(&term)?
+        name:attribute_name(<![_]>)
+        value:attribute_value(<inline_in_late_attr()>, <![_]>)?
       { make_attribute(name, value) }
     >)
 
@@ -1489,9 +1541,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// <tag-name attr="value/>content</tag-name>
     ///               ^^^^^^^
     /// ```
-    rule attribute_value(term: rule<()>) -> (Spanned<Token>, Spanned<Token>, Option<Spanned<Token>>)
-    = attribute_value_quoted(&term)
-    / attribute_value_unquoted(&term)
+    rule attribute_value(item: rule<Spanned<Token>>, term: rule<()>) -> AttributeValue
+    = attribute_value_quoted(&item, &term)
+    / attribute_value_unquoted(&item, &term)
 
     /// A quoted value part of a tag attribute.
     ///
@@ -1499,14 +1551,14 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// <tag-name attr="value" attr2 = value>content</tag-name>
     ///               ^^^^^^^
     /// ```
-    rule attribute_value_quoted(term: rule<()>) -> (Spanned<Token>, Spanned<Token>, Option<Spanned<Token>>)
+    rule attribute_value_quoted(item: rule<Spanned<Token>>, term: rule<()>) -> AttributeValue
     = start:spanned(<attribute_delimiter() t:['\''|'"'] { t }>)
-      value:spanned(<(!term() [c if c != *start])* { Token::Text }>)
+      value:(!(term() / [c if c == *start]) t:item() { t })*
       end:(
-        t:spanned(<[c if c == *start] { Token::Text }>) { Some(t) }
-        / &term() { None }
+        &term() { None }
+        / t:spanned(<[c if c == *start] { Token::Text }>) { Some(t) }
       )
-    { (start.map_node(|_| Token::Text), value, end) }
+    { (start.map_node(|_| Token::Text), reduce_tree(value), end) }
 
     /// An unquoted value part of a tag attribute.
     ///
@@ -1514,10 +1566,10 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// <tag-name attr="value" attr2 = value>content</tag-name>
     ///                              ^^^^^^^
     /// ```
-    rule attribute_value_unquoted(term: rule<()>) -> (Spanned<Token>, Spanned<Token>, Option<Spanned<Token>>)
+    rule attribute_value_unquoted(item: rule<Spanned<Token>>, term: rule<()>) -> AttributeValue
     = start:spanned(<attribute_delimiter() { Token::Text }>)
-      value:spanned(<(!term() !space_nl() [_])* { Token::Text }>)
-    { (start, value, None) }
+      value:(!term() !space_nl() t:item() { t })*
+    { (start, reduce_tree(value), None) }
 
     ///////////////////////
     // Inclusion control //
@@ -1544,7 +1596,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// unrestricted in the Wikitext source and so it is legal to, for example,
     /// define different numbers of arguments for a template depending on
     /// whether or not the document is being included.
-    rule pp_ignore() -> Vec<Spanned<Token>>
+    rule pp_ignore(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
     = t:inclusion_control_tag()
       t:#{|input, pos| make_include(o, pp, input, pos, t)}
     { t }
@@ -1575,9 +1627,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>, pp: &PreprocessorOptions) for
     /// <onlyinclude>inner {{content}}</onlyinclude>
     ///              ^^^^^^^^^^^^^^^^^
     /// ```
-    pub rule only_include(start_at: usize) -> Vec<Spanned<Token>>
+    pub rule only_include(pp: &PreprocessorOptions, start_at: usize) -> Vec<Spanned<Token>>
     = #{|input, pos| RuleResult::Matched(start_at, ()) }
-      t:preprocess()
+      t:preprocess(pp)
     { t }
 
     /////////////////////////
@@ -2071,14 +2123,17 @@ fn make_argument(
 }
 
 /// The intermediate type of a parsed XML attribute.
-type AttributeValue = (Spanned<Token>, Spanned<Token>, Option<Spanned<Token>>);
+type AttributeValue = (Spanned<Token>, Vec<Spanned<Token>>, Option<Spanned<Token>>);
 
 /// Creates an [`Argument`] for an XML attribute from the given `name` and
 /// optional `value`.
 fn make_attribute(name: Spanned<Token>, value: Option<AttributeValue>) -> Argument {
     let delimiter = Some(1);
     if let Some((delimiter_token, value, end_quote)) = value {
-        let mut content = vec![name, delimiter_token, value];
+        let mut content = [name, delimiter_token]
+            .into_iter()
+            .chain(value)
+            .collect::<Vec<_>>();
         let terminator = end_quote.as_ref().map(|_| content.len());
         content.extend(end_quote);
 

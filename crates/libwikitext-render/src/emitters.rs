@@ -122,6 +122,13 @@ pub(super) trait Sink {
     /// ```
     fn tag_attribute_end(&mut self, name: &str);
 
+    /// Emits a whole tag attribute with the given `name` and `value`.
+    fn tag_attribute_full(&mut self, name: &str, value: &str) {
+        self.tag_attribute_start(name);
+        self.text(value);
+        self.tag_attribute_end(name);
+    }
+
     /// Start a tag attribute with the given `name`.
     ///
     /// ```html

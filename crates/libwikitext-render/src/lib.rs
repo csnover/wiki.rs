@@ -220,9 +220,12 @@ pub fn render_string(
                 source
             } else if mode == EvalPp::PreTree {
                 let root = state.statics.parser.parse(&source)?;
-                format!("{:#?}", inspect(&FileMap::new(&source), &root.root))
+                format!("{:#?}", inspect(&FileMap::new(&source), &root))
             } else {
-                let root = state.statics.parser.preprocess(&sp.source, false)?;
+                let root = state
+                    .statics
+                    .parser
+                    .preprocess(&sp.source, args.is_some())?;
                 format!("{:#?}", inspect(&sp.source, &root.root))
             };
 
@@ -258,11 +261,11 @@ fn render(
     let root = state.statics.parser.parse(&sp.source)?;
 
     let mut prefetcher = DbPrefetch::default();
-    prefetcher.adopt_output(&mut state, &sp, &root)?;
+    prefetcher.adopt_tokens(&mut state, &sp, &root)?;
     prefetcher.finish(&mut state);
 
     let mut renderer = Document::new(false);
-    renderer.adopt_output(&mut state, &sp, &root)?;
+    renderer.adopt_tokens(&mut state, &sp, &root)?;
     let content = renderer.finish(&mut state);
 
     let mut timings = state.timing.into_iter().collect::<Vec<_>>();

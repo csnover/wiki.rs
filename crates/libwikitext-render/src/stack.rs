@@ -120,20 +120,6 @@ impl<'a> StackFrame<'a> {
         Ok(out.into())
     }
 
-    /// Evaluates the given `expr` in the scope of this stack frame, removing
-    /// any strip markers in the evaluated output.
-    pub fn eval_unstrip(
-        &'a self,
-        state: &mut State<'_, '_, '_>,
-        expr: &[Spanned<Token>],
-    ) -> Result<Cow<'a, str>> {
-        self.eval(state, expr).map(|out| {
-            // TODO: This probably should only be unstripping nowiki and
-            // discarding the rest?
-            out.map(|out| state.strip_markers.unstrip(out))
-        })
-    }
-
     /// Evaluates the argument with the given key.
     pub fn expand(&self, state: &mut State<'_, '_, '_>, key: &str) -> Result<Option<Cow<'_, str>>> {
         Ok(

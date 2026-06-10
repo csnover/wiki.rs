@@ -214,7 +214,7 @@ pub trait Visitor<'tt, E> {
         &mut self,
         _span: Span,
         _name: &str,
-        _attributes: &'tt [Spanned<Argument>],
+        _attributes: &'tt [Spanned<Token>],
         _self_closing: bool,
     ) -> Result<(), E> {
         Ok(())
@@ -231,7 +231,7 @@ pub trait Visitor<'tt, E> {
     fn visit_table_caption(
         &mut self,
         _span: Span,
-        _attributes: &'tt [Spanned<Argument>],
+        _attributes: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -241,7 +241,7 @@ pub trait Visitor<'tt, E> {
     fn visit_table_data(
         &mut self,
         _span: Span,
-        _attributes: &'tt [Spanned<Argument>],
+        _attributes: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -257,7 +257,7 @@ pub trait Visitor<'tt, E> {
     fn visit_table_heading(
         &mut self,
         _span: Span,
-        _attributes: &'tt [Spanned<Argument>],
+        _attributes: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -267,7 +267,7 @@ pub trait Visitor<'tt, E> {
     fn visit_table_row(
         &mut self,
         _span: Span,
-        _attributes: &'tt [Spanned<Argument>],
+        _attributes: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }
@@ -277,7 +277,7 @@ pub trait Visitor<'tt, E> {
     fn visit_table_start(
         &mut self,
         _span: Span,
-        _attributes: &'tt [Spanned<Argument>],
+        _attributes: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         Ok(())
     }

@@ -62,8 +62,9 @@ start or end of a range is written as `Range.start` or `Range.end`.
 
 Characters are written as `'c'` and character sequences as `"cs"`. Slices of
 character sequences are written as `Text[Range]`. Interpolated sequences are
-written as `A{{Expr}}B`, where the placeholder `{{Expr}}` should be interpolated
-with the value of the expression `Expr`.
+written as `A{Expr}B`, where the placeholder `{Expr}` should be interpolated
+with the value of the expression `Expr`. *In an interpolation*, literal `{` and
+`}` are written as `{{` and `}}` and literal `"` is written as `\"`.
 
 “Empty” is to be an empty container (string, list, etc.).
 
@@ -79,6 +80,11 @@ For avoidance of confusion, sometimes `' '` is written out as “space character
 
 “ASCII whitespace” is the standard C locale
 `['\t'|'\n'|'\x0b'|'\x0c'|'\r'|' ']`.
+
+When a *configured* value is referenced (a “configured alias”, “configured URI
+scheme”, etc.), this is a reference to the
+[out-of-band configuration data](#configuration) required to render the
+document.
 
 ---
 
@@ -671,7 +677,7 @@ For each [`Token`](#preprocessor-tokens) in input:
       `"h"` and **decimal** ordinal `N`;
    4. Insert the strip marker `M` with kind `general` and content empty to the
       global list of strip markers;
-   5. Emit the interpolation `"{{S[..Level]}}{{M}}{{S[Level..]}}"`.
+   5. Emit the interpolation `"{S[..Level]}{M}{S[Level..]}"`.
 
    Otherwise;
 
@@ -726,14 +732,14 @@ A string is considered an error if it starts with `<span class="error">`.
 2. Let `Arguments` be the preprocessor arguments token tree;
 3. Let `Name` be the [expanded](#preprocess-input) name of the template;
 4. Trim ASCII whitespace from `Name`;
-5. If `Name` is prefixed by a registered alias for `"subst"` or `"safesubst"`,
+5. If `Name` is prefixed by a configured alias for `"subst"` or `"safesubst"`,
    and the parser is not in save mode[^subst], remove the prefix;
 6. If `Arguments` is empty, and `Name` matches a configured variable alias, emit
    the variable’s value and terminate here; otherwise
-7. If `Name` is prefixed by a registered alias for `"msgnw"`, remove the prefix
-   and set `No Wiki`; otherwise, if `Name` is prefixed by a registered alias
+7. If `Name` is prefixed by a configured alias for `"msgnw"`, remove the prefix
+   and set `No Wiki`; otherwise, if `Name` is prefixed by a configured alias
    for `"msg"`, remove the prefix;
-8. If `Name` is prefixed by a registered alias for `"raw"`, remove the prefix
+8. If `Name` is prefixed by a configured alias for `"raw"`, remove the prefix
    and set `Force Raw`;
 9. If `Name` contains `[':'|'：']`:
 
@@ -750,7 +756,7 @@ A string is considered an error if it starts with `<span class="error">`.
     3. If a template with the title `Title` exists, emit the result of expanding
        the `Title` template [with `Arguments`](#template-arguments); otherwise
     4. Let `Title` be the [prefixed](#title-glossary) text of `Title` and emit
-       the interpolation `"[[:{{Title}}]]"`.
+       the interpolation `"[[:{Title}]]"`.
 
     Otherwise;
 
@@ -843,10 +849,11 @@ For each attribute of each HTML tag in the input:
    Otherwise;
 
 5. If `Name` is `["href"|"src"|"poster"]`, and the value does not use one of the
-   supported URI schemes, discard it; otherwise
-6. If `Name` is `tabindex` and the value is not `"0"`, discard it; otherwise
+   configured URI schemes, discard it; otherwise
+6. If `Name` is `"tabindex"` and the value is not `"0"`, discard it; otherwise
 7. If `Name` is `["itemtype"|"itemid"|"itemref"]` and there is no corresponding
    `"itemscope"` attribute, discard it; otherwise
+8. If `Name` is `"class"`,
 8. If `Name` is not on the following whitelist for the given tag name, discard
    it:
 
@@ -900,8 +907,9 @@ For each attribute of each HTML tag in the input:
 9. If the attribute name matches an attribute name which already exists
    on the tag:
 
-   1. If the attribute name is `"class"`, append a space character and then
-      the new value to the previous class attribute’s value; otherwise
+   1. If the attribute name is `"class"`, split the value on whitespace and
+      append each value to the previous class attribute’s value, separated
+      by a space character, if it does not already exist; otherwise
    2. Replace the old value of the previous attribute with the new value
       from the new attribute.
 
@@ -917,7 +925,7 @@ For each attribute of each HTML tag in the input:
 
 For each line of the input `L` split on `'\n'`:
 
-1. If `L` contains only ASCII whitespace, emit the interpolation `"{{L}}\n"`;
+1. If `L` contains only ASCII whitespace, emit the interpolation `"{L}\n"`;
    otherwise
 2. If `L` matches the regular expression `^\s*(?::*)\s*\{\|`:
 
@@ -929,17 +937,17 @@ For each line of the input `L` split on `'\n'`:
    5. Push `false` to `TD History`, `TR History`, and `Open TR History`;
    6. Push empty to `Last Tag` and `TR Attributes`.
    7. For each `Indent Level`, emit `"<dl><dd>"`;
-   8. Emit the interpolation `"<table{{A}}>\n"`;
+   8. Emit the interpolation `"<table{A}>\n"`;
 
    Otherwise;
 
-3. If `TD History` is empty, emit the interpolation `"{{L}}\n"`; otherwise
+3. If `TD History` is empty, emit the interpolation `"{L}\n"`; otherwise
 4. Trim ASCII whitespace from the start and end of `L`;
 5. If `L` starts with `"|}"`:
 
    1. Pop `TR Attributes`;
    2. Pop `Last Tag`;
-   3. Pop `TD History`. If `true`, emit the interpolation `"</{{Last Tag}}>"`;
+   3. Pop `TD History`. If `true`, emit the interpolation `"</{Last Tag}>"`;
    4. Pop `TR History`. If `true`, emit `"</tr>"`;
    5. Pop `Open TR History`. If not `true`, emit `"<tr><td></td></tr>"`;
    6. Emit `"</table>"`.
@@ -967,7 +975,7 @@ For each line of the input `L` split on `'\n'`:
    4. Pop and push `true` to `Open TR History`;
    5. Pop and push empty to `Last Tag`;
    6. Pop and push `false` to `TD History`. If `true`, emit the interpolation
-      `"</{{Last Tag}}>"`.
+      `"</{Last Tag}>"`.
    7. Pop and push `false` to `TR History`. If `true`, emit `"</tr>"`;
    8. Emit `'\n'`.
 
@@ -983,12 +991,12 @@ For each line of the input `L` split on `'\n'`:
 
       1. Pop `Last Tag`;
       2. Pop and push `true` to `TD History`. If `true`, emit the interpolation
-         `"</{{Last Tag}}>\n"`;
+         `"</{Last Tag}>\n"`;
       3. If `L` does not start with `"|+"`:
 
          1. Pop and push empty to `TR Attributes`;
          2. Pop and push `true` to `TR History`. If not `true`, emit the
-            interpolation `"<tr{{TR Attributes}}>\n"`;
+            interpolation `"<tr{TR Attributes}>\n"`;
          3. Pop and push `true` to `Open TR History`.
 
       4. If `L` starts with `'|'`, push `td` to `Last Tag`; otherwise
@@ -1000,14 +1008,14 @@ For each line of the input `L` split on `'\n'`:
          internal link or language conversion:
 
          1. Trim ASCII whitespace from `Cell`;
-         2. Emit the interpolation `"<{{Last Tag}}>{{Cell}}\n"`.
+         2. Emit the interpolation `"<{Last Tag}>{Cell}\n"`.
 
          Otherwise;
 
          1. Let `A` be the result of [parsing the attributes](#parse-attributes)
             from `A`;
          2. Trim ASCII whitespace from `D`;
-         3. Emit the interpolation `"<{{Last Tag}}{{A}}>{{D}}\n"`.
+         3. Emit the interpolation `"<{Last Tag}{A}>{D}\n"`.
 
 Finally:
 
@@ -1056,10 +1064,8 @@ Finally, return `A`.
 
 ## Double underscores
 
-For each sequence of characters that corresponds with a registered double
-   underscore alias from the configuration:
-
-1. Delete the sequence.
+For each sequence of characters that corresponds with a configured double
+   underscore alias, delete the sequence.
 
 ## Headings
 
@@ -1084,7 +1090,7 @@ While `S` is not the position of the end of the input:
       1. Let `T` be the text in the range `TS..TE`;
       2. Trim `[' '|'\t']` from the start and end of `T`;
       3. Replace the range `S..E` with the interpolation
-         `"<h{{N}}>{{T}}</h{{N}}>`.
+         `"<h{N}>{T}</h{N}>`.
       4. If `E` is not the position of the end of the input, emit `'\n'`.
 
 3. Let `S` equal `E`.
@@ -1134,7 +1140,7 @@ While `S` is not the position of the end of the input:
     2. Replace all `<` and `>` in `Link` with `&lt;` and `&gt;`.
 
 12. Trim space characters from the left side of `Link`;
-13. If `Link` starts with one of the supported URI schemes from the
+13. If `Link` starts with one of the configured URI schemes from the
     configuration, emit the range `S..E` as text, let `S` equal `E`, and
     restart the loop; otherwise
 14. Set the `Force Display` flag if `Link` starts with `':'`;
@@ -1251,9 +1257,9 @@ While `S` is not the position of the end of the input:
    [language conversion tag](#language-conversion), or the end of the input if
    there is no next `'|'`;
 3. Let `Part` be the ASCII whitespace trimmed text from the range `Input[S..P]`;
-4. If `Part` starts with a registered alias for an image parameter:
+4. If `Part` starts with a configured alias for an image parameter:
 
-   1. Let `Name` be the canonical name for the matched registered alias and
+   1. Let `Name` be the canonical name for the matched configured alias and
       `Value` be the rest of `Part` after the alias;
    2. Let `Kind` be the value of `Name` in `Param Map`;
    3. If `Name` is `img_width`, and `Value` matches the case-sensitive regular
@@ -1350,11 +1356,11 @@ Emits an enumeration with variants:
 
 1. Let `Input` be the input;
 2. If `Input` is empty, emit `NoLink`; otherwise
-3. If `Input` starts with a registered URI scheme:
+3. If `Input` starts with a configured URI scheme:
 
    1. If `Input` matches:
 
-      1. A registered URI scheme; then
+      1. A configured URI scheme; then
       2. A fuzzy IP address[^fuzzyip] or character in the URL set[^urlset]; then
       3. Zero or more characters in the URL set[^urlset].
 
@@ -1469,7 +1475,7 @@ Emits an enumeration with variants:
 
       1. Append `" mw-file-upright"` to the value of `Thumb Params` with the
          key `"img-class"`;
-      2. Insert the interpolation `"--mw-file-upright: {{Upright}}"` to
+      2. Insert the interpolation `"--mw-file-upright: {Upright}"` to
          `Thumb Params` with the key `"style"`.
 
    6. Insert `Link` to `Thumb Params` with the key `"link"`;
@@ -1484,7 +1490,7 @@ Emits an enumeration with variants:
 
    1. Let `Wrapper` be `"figure"`;
    2. Strip the `"img_"` prefix from `Align`;
-   3. Push the interpolation `"mw-halign-{{Align}}"` to `Classes`;
+   3. Push the interpolation `"mw-halign-{Align}"` to `Classes`;
    4. Let `Image Caption` be the value from `Params` with the key `"caption"`;
    5. Let `Caption` be an HTML element with tag name `"figcaption"` and body
       `Image Caption`.
@@ -1495,7 +1501,7 @@ Emits an enumeration with variants:
 
    1. Strip the `"img_"` prefix from `Align`;
    2. Replace all `'_'` with `'-'` in `Align`;
-   3. Push the interpolation `"mw-valign-{{VAlign}}"` to `Classes`.
+   3. Push the interpolation `"mw-valign-{VAlign}"` to `Classes`.
 
 10. If `Params` has a key `"border"`, push `"mw-image-border"` to `Classes`;
 11. If `Params` has a key `"class"`, push its value to `Classes`;
@@ -1503,7 +1509,7 @@ Emits an enumeration with variants:
     character;
 13. Let `S` be an HTML element with the tag name `Wrapper`, `"class"` attribute
     value `Class`, `"typeof"` attribute value `RDFa Type`, and body the
-    interpolation `"{{S}}{{Caption}}"`;
+    interpolation `"{S}{Caption}"`;
 14. Replace all `'\n'` in `S` with the space character;
 15. Emit `S`.
 
@@ -1539,7 +1545,7 @@ Emits an enumeration with variants:
     `[ "title" => Thumb Title ]`;
 12. Let `Style` be empty;
 13. If `"vertAlign"` is in `Params`, append the interpolation
-    `"vertical-align: {{Params.vertAlign}}"` to `Style`;
+    `"vertical-align: {Params.vertAlign}"` to `Style`;
 14. If `"style"` is in `Params`, append its value to `Style`;
 15. Trim ASCII whitespace from `Style`;
 16. If `Style` is not empty, insert the value `Style` to `Attrs` with the key
@@ -1604,7 +1610,7 @@ Emits an enumeration with variants:
 ### External link cloaks
 
 1. Let `Input` be the input;
-2. Let `P` be the position of the first case-insensitive match of a registered
+2. Let `P` be the position of the first case-insensitive match of a configured
    URI scheme after a word boundary;
 3. If `P` is none, emit `Input`; otherwise
 4. Emit `Input[..P]`;
@@ -1627,7 +1633,7 @@ True if:
 1. Let `Title` and `Text` be the input [title](#title) and text, respectively;
 2. Let `F` be the [fragment](#title-glossary) of `Title`;
 3. If `F` is not none, emit the interpolation
-   `"<a class=\"mw-selflink-fragment\" href=\"#"{{F}}>"`; otherwise
+   `"<a class=\"mw-selflink-fragment\" href=\"#"{F}>"`; otherwise
 4. Emit `<a class="mw-selflink selflink">`;
 5. If `Text` is empty, let `Text` be the HTML encoded [prefix](#title-glossary)
    text of `Title`;
@@ -1753,7 +1759,7 @@ While `S` is not the position of the end of the input:
     Otherwise:
 
     1. Let `URL` be the text in the range `TS..Break`;
-    2. Let `Text` be the interpolation `{{Input[Break..UE]}} {{Input[TS..TE]}}`.
+    2. Let `Text` be the interpolation `{Input[Break..UE]} {Input[TS..TE]}`.
 
 14. Run the [maybe make external image algorithm](#maybe-external-image) on
     `Text`;
@@ -1761,20 +1767,20 @@ While `S` is not the position of the end of the input:
 
     1. Let `Link Type` be `autonumber`;
     2. Increment the global counter `Link Ordinal` by 1;
-    3. Let `Text` be the interpolation `"[{{Link Ordinal}}]"`.
+    3. Let `Text` be the interpolation `"[{Link Ordinal}]"`.
 
     Otherwise:
 
     1. Let `Link Type` be `text`.
 
-16. If `URL` starts with a registered absolute URI scheme, and `Text` does not
-    contain `["-{"|"}-"]` let `Text` be the interpolation
-    `"-{R|{{Text}}}-"`[^rawtext];
+16. If `URL` starts with a configured URI scheme other than `"//"`, and `Text`
+    does not contain `["-{"|"}-"]` let `Text` be the interpolation
+    `"-{{R|{Text}}}-"`[^rawtext];
 17. Run the [URL cleaning algorithm](#url-cleaning) on `URL`;
 18. If the `URL` is not on the configurable whitelist of followable domains, let
     `Rel` be `"rel=\"nofollow\""`;
 19. Emit a hyperlink with `"href"` attribute value `URL`, `"class"` attribute
-    of the interpolation `"external {{Link Type}}"`, attribute `Rel`, and body
+    of the interpolation `"external {Link Type}"`, attribute `Rel`, and body
     `Text`;
 20. Let `S` equal `E`.
 
@@ -1815,7 +1821,7 @@ While `S` is not the position of the end of the input:
 
    1. Let `Name` be the HTML entity encoded filename of `URL`;
    2. HTML entity encode `URL`;
-   3. Emit the interpolation `"<img src=\"{{URL}}\" alt=\"{{Name}}\">"`.
+   3. Emit the interpolation `"<img src=\"{URL}\" alt=\"{Name}\">"`.
 
    Otherwise;
 
@@ -1836,7 +1842,7 @@ Let `P` be 0. While `P` is not the position of the end of the input:
 
 3. Let `URL` be the text matching a word boundary followed by:
 
-   1. A registered absolute URI scheme, captured as `Scheme`; then
+   1. A configured absolute URI scheme, captured as `Scheme`; then
    2. An fuzzy IP address[^fuzzyip], or character in the URL set[^urlset]; then
    3. Zero or more characters in the URL set[^urlset].
 
@@ -1884,7 +1890,7 @@ Let `P` be 0. While `P` is not the position of the end of the input:
       `"pubmedurl"` with argument `ID`;
    3. Emit text in the range `P..Start`;
    4. Emit a hyperlink with `"href"` attribute value `URL`, `"class"` attribute
-      `"external mw-magiclink-rfc"`, and body the interpolation `"RFC {{ID}}"`;
+      `"external mw-magiclink-rfc"`, and body the interpolation `"RFC {ID}"`;
    5. Let `P` equal `End`.
 
    Otherwise;
@@ -1905,7 +1911,7 @@ Let `P` be 0. While `P` is not the position of the end of the input:
    3. Emit text in the range `P..Start`;
    4. Emit a hyperlink with `href` attribute value `URL`, `"class"` attribute
       `"external mw-magiclink-pmid"`, and body the interpolation
-      `"PMID {{ID}}"`;
+      `"PMID {ID}"`;
    5. Let `P` equal `End`.
 
    Otherwise;
@@ -1937,13 +1943,14 @@ Let `P` be 0. While `P` is not the position of the end of the input:
    2. Let `ISBN` be the `ID`, with magic spaces replaced with a space character;
    3. Let `N` be `ISBN` where all `['-'|' ']` are removed and `'x'` is replaced
       with `'X'`;
-   4. Let `URL` be the [partial URL](#title-glossary) of the title constructed
-      using the interpolation `"Special:Booksources/{{N}}"`;
-   5. Emit text in the range `P..Start`;
-   6. Emit a hyperlink with `"href"` attribute value `URL`, `"class"` attribute
+   4. Let `Page` be the configured alias for the special page `Booksources`;
+   5. Let `URL` be the [partial URL](#title-glossary) of the title constructed
+      using the interpolation `"Special:{Page}/{N}"`;
+   6. Emit text in the range `P..Start`;
+   7. Emit a hyperlink with `"href"` attribute value `URL`, `"class"` attribute
       `"internal mw-magiclink-isbn"`, and body the interpolation
-      `"ISBN {{ISBN}}"`;
-   7. Let `P` equal `End`.
+      `"ISBN {ISBN}"`;
+   8. Let `P` equal `End`.
 
    Otherwise;
 
@@ -1991,11 +1998,11 @@ For each balanced HTML tag in the input with a tag name
    2. While `C` is a key in `Used IDs`:
 
       1. Let `S` be `S + 1`;
-      2. Let `C` be the interpolation `"{{F}}_{{S}}"`.
+      2. Let `C` be the interpolation `"{F}_{S}"`.
 
    3. Insert 1 to `Used IDs` for the key `C`;
    4. Replace `S` to `Used IDs` for the key `F`;
-   5. Let `ID` be the interpolation `"{{ID}}_{{S}}"`.
+   5. Let `ID` be the interpolation `"{ID}_{S}"`.
 
    Otherwise;
 
@@ -2220,7 +2227,7 @@ the body of an HTML tag, or a language conversion tag.
 
 1. If `Last Paragraph` is not empty:
 
-   1. Emit the interpolation `"</{{Last Paragraph}}>"`;
+   1. Emit the interpolation `"</{Last Paragraph}>"`;
    2. If `At The End` is clear, emit `'\n'`;
 
 2. Clear `In Pre`;
@@ -2305,7 +2312,7 @@ While `S` is not the position of the end of the input:
   recursion into this sequence.
 
 1. Let `C` be a reference to the input converter’s translation map and `CT`
-   a reference to the input converter’s registered title;
+   a reference to the input converter’s currently stored page title;
 2. Let `I` be the input text;
 3. Assert that `I` starts with `"-{"`;
 4. Let `S` be the start position;
@@ -2355,7 +2362,7 @@ While `S` is not the position of the end of the input:
 4. For each `Flag` in `F` separated by `';'`:
 
    1. Trim ASCII whitespace from the start and end of `Flag`;
-   2. If `Flag` is one of `['A'|'T'|'R'|'D'|'-'|'H'|'N']` or a registered
+   2. If `Flag` is one of `['A'|'T'|'R'|'D'|'-'|'H'|'N']` or a configured
       language variant code, set `Flag` in `Flags`.
 
 5. If `Flags` is empty, set `'S'` on `Flags`; otherwise
@@ -2368,7 +2375,7 @@ While `S` is not the position of the end of the input:
 
    1. If `'A'` is in `Flags`, set `'+'` and `'S'` on `Flags`;
    2. If `'D'` is in `Flags`, clear `'S'` on `Flags`;
-   3. If `Flags` contains any registered language variant codes, let
+   3. If `Flags` contains any configured language variant codes, let
       `Variant Flags` be `Flags` and clear `Flags`.
 
 9. If `Variant Flags` is not none:
@@ -2452,14 +2459,14 @@ While `S` is not the position of the end of the input:
 
 1. Let `Rules` be the input;
 2. Let `S` be 0;
-3. Let `Vs` be the case-sensitive list of registered language codes and their
+3. Let `Vs` be the case-sensitive list of configured language codes and their
    corresponding BCP 47 codes in a non-capturing regular expression alternates
    group (i.e. `(?:A|B|C)`);
 4. While `S` is not the position of the end of the input:
 
    1. Let `P` be the position of the next `';'` which is not an HTML entity
       terminator and which matches the interpolated regular expression
-      `;\s*(?:([^;]*?=>\s*)?{{Vs}}\s*:|$)`, or the position of the end of
+      `;\s*(?:([^;]*?=>\s*)?{Vs}\s*:|$)`, or the position of the end of
       `Rules` if there is no match;
    2. Let `Choice` be the text in the range `S..P`;
    3. Let `S` equal `P + 1`;
@@ -2496,7 +2503,7 @@ While `S` is not the position of the end of the input:
    unidirectional translation tables;
 2. Let `Marked` be a list;
 3. Let `Conv Table` be a map;
-4. For each registered variant `Variant`:
+4. For each configured variant `Variant`:
 
    1. If `Variant` is not a key in `Bidir Table`:
 
@@ -2613,8 +2620,8 @@ As of writing, the “manual levels” are:
 1. Let `Variant` be the input;
 2. Convert `Variant` to ASCII lowercase;
 3. Replace `Variant` with its non-deprecated equivalent;
-4. If `Variant` is in the list of registered variants, return it;
-5. For each registered variant `R`, if the ASCII lowercase BCP 47 code of `R`
+4. If `Variant` is in the list of configured variants, return it;
+5. For each configured variant `R`, if the ASCII lowercase BCP 47 code of `R`
    equals `Variant`, return `R`;
 6. Return none.
 
@@ -2719,9 +2726,9 @@ For each element:
    the tag body consists only of ASCII whitespace:
 
    1. Let `Tag Name` be the tag name;
-   2. Emit the interpolation `"<{{Tag Name}} class=\"mw-empty-elt\">"`;
+   2. Emit the interpolation `"<{Tag Name} class=\"mw-empty-elt\">"`;
    3. Emit the tag contents;
-   4. Emit the interpolation `"</{{Tag Name}}>"`.
+   4. Emit the interpolation `"</{Tag Name}>"`.
 
    Otherwise;
 
@@ -2812,15 +2819,15 @@ following these steps:
 
 11. If `Target` is not valid, fail; otherwise
 12. Let `Title` be an empty string;
-13. If `IW` is set, append the interpolation `"{{IW}}:"` to `Title`;
+13. If `IW` is set, append the interpolation `"{IW}:"` to `Title`;
 14. If `NS` is set:
 
     1. If the namespace’s case strategy is `First Letter`, case fold the
        first character of `NS` to uppercase;
-    2. Append the interpolation `"{{NS}}:"` to `Title`.
+    2. Append the interpolation `"{NS}:"` to `Title`.
 
 15. Append `Target` to `Title`;
-16. If `Hash` is set, append the interpolation `"#{{Hash}}"` to `Title`;
+16. If `Hash` is set, append the interpolation `"#{Hash}"` to `Title`;
 17. Return `Title`.
 
 ### Title glossary
@@ -2850,13 +2857,13 @@ than `['-'|'_'|'.'|'!'|'$'|'('|')'|'*'|','|'/'|':'|';'|'@'|'~']`.
 
    1. Let `URL` be the [full](#title-glossary) URL;
    2. If `Query` is not none and not empty, let `Q` be `'?'`;
-   3. Emit the interpolation `"{{Scheme}}{{URL}}{{Q}}{{Query}}"`.
+   3. Emit the interpolation `"{Scheme}{URL}{Q}{Query}"`.
 
    Otherwise;
 
 5. Let `Fragment` be the [fragment](#title-glossary) of `Title`;
 6. If the [prefixed](#title-glossary) text of `Title` is empty and `Fragment` is
-   not empty, emit the interpolation `"#{{Fragment}}"`; otherwise
+   not empty, emit the interpolation `"#{Fragment}"`; otherwise
 7. Emit the [local URL](#title-local-url) of `Title`.
 
 ### Title local URL
@@ -2866,7 +2873,7 @@ than `['-'|'_'|'.'|'!'|'$'|'('|')'|'*'|','|'/'|':'|';'|'@'|'~']`.
 3. Let `URL` be the [partial](#title-glossary) URL of the title;
 4. If `Fragment` is not none, let `H` be `'#'`;
 5. Let `P` be the configuration article path;
-6. Let `URL` be the interpolation `"{{URL}}{{Q}{{Query}}{{H}}{{Fragment}}"`;
+6. Let `URL` be the interpolation `"{URL}{Q}{Query}{H}{Fragment}"`;
 7. Replace `"$1"` in `P` with `URL`;
 8. Emit `P`.
 
@@ -2888,7 +2895,7 @@ If the input starts with `"../"` or `'/'`:
       start;
    3. Using `'/'` as a delimiter, remove `C` segments from the end of `P`;
    4. If `P` is empty, return an empty string; otherwise
-   5. Use the interpolation `"{{P}}/{{S}}{{H}}"` as the target-part.
+   5. Use the interpolation `"{P}/{S}{H}"` as the target-part.
 
    Otherwise;
 
@@ -2896,7 +2903,7 @@ If the input starts with `"../"` or `'/'`:
 
    1. Let `S` be `Target` with all repetitions of `'/'` trimmed from the
       end;
-   2. Use the interpolation `"{{P}}{{S}}{{H}}"` as the target-part.
+   2. Use the interpolation `"{P}{S}{H}"` as the target-part.
 
 ## URL cleaning
 

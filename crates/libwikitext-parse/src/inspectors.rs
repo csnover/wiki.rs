@@ -371,7 +371,7 @@ impl fmt::Debug for TokenInspector<'_> {
                 .field("name", &&self.0[name.into_range()])
                 .field(
                     "attributes",
-                    &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
+                    &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
                 .field("self_closing", self_closing)
                 .finish(),
@@ -382,14 +382,14 @@ impl fmt::Debug for TokenInspector<'_> {
                 .debug_struct(&span_name("TableCaption", self.0, self.1))
                 .field(
                     "attributes",
-                    &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
+                    &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
                 .finish(),
             Token::TableData { attributes } => f
                 .debug_struct(&span_name("TableData", self.0, self.1))
                 .field(
                     "attributes",
-                    &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
+                    &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
                 .finish(),
             Token::TableEnd => f
@@ -399,21 +399,21 @@ impl fmt::Debug for TokenInspector<'_> {
                 .debug_struct(&span_name("TableHeading", self.0, self.1))
                 .field(
                     "attributes",
-                    &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
+                    &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
                 .finish(),
             Token::TableRow { attributes } => f
                 .debug_struct(&span_name("TableRow", self.0, self.1))
                 .field(
                     "attributes",
-                    &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
+                    &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
                 .finish(),
             Token::TableStart { attributes } => f
                 .debug_struct(&span_name("TableStart", self.0, self.1))
                 .field(
                     "attributes",
-                    &VInspector::<ArgumentInspector<'_>>(self.0, attributes),
+                    &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
                 .finish(),
             Token::Template {
