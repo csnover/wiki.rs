@@ -7,12 +7,15 @@ use super::{
     tags::PHRASING_TAGS,
 };
 use core::fmt::{self, Write as _};
+use indexmap::IndexMap;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode, decode_html, normalize_section_name, title::normalize_fragment,
 };
 use libwikitext_parse::{HeadingLevel, TextStyle, VOID_TAGS};
+use regex::Regex;
+use std::{borrow::Cow, collections::HashSet, sync::LazyLock};
 
 /// An intermediate sink.
 pub(super) trait Chain: Sink {
@@ -326,17 +329,26 @@ impl Sink for Accumulator {
 /// Deduplicates and filters invalid HTML attributes using the last-wins rule.
 #[derive(Debug)]
 pub(super) struct AttributeFilter<S: Sink + Markable> {
+    /// The attribute accumulator.
+    acc: IndexMap<Cow<'static, str>, String>,
     /// The list of allowed attribute names for the currently processing tag.
     allowed: &'static [&'static phf::Set<&'static str>],
-    /// The start position of the value of the currently processing attribute.
-    current: Option<Mark>,
-    /// The value ranges of emitted attributes for the currently processing
-    /// element.
-    emitted: HashMap<String, (Mark, Mark)>,
-    /// If true, filtering an invalid attribute.
-    filtering: bool,
     /// The output.
     next: S,
+    /// The current state of the filter.
+    state: FilterState,
+}
+
+/// The [`AttributeFilter`] state.
+#[derive(Debug, Default, Eq, PartialEq)]
+enum FilterState {
+    /// Inactive.
+    #[default]
+    Idle,
+    /// Buffering an attribute at the given index in [`AttributeFilter::acc`].
+    Buffering(usize),
+    /// Filtering an attribute.
+    Filtering,
 }
 
 chainable!(AttributeFilter);
@@ -345,31 +357,122 @@ impl<S: Sink + Markable> AttributeFilter<S> {
     /// Creates a new `TableEmitter` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
+            acc: <_>::default(),
             allowed: <_>::default(),
-            current: <_>::default(),
-            emitted: <_>::default(),
-            filtering: <_>::default(),
             next,
+            state: <_>::default(),
+        }
+    }
+
+    /// Fixes up a list of IDs.
+    fn fixup_aria(next: &mut S, ids: &str) {
+        let mut first = true;
+        for id in ids.split_ascii_whitespace() {
+            if first {
+                first = false;
+            } else {
+                next.text(" ");
+            }
+            next.text(&anchor_encode(id, AnchorEncodeMode::Html5));
+        }
+    }
+
+    /// Fixes up a `class` attribute.
+    fn fixup_class(next: &mut S, classes: &str) {
+        let mut seen = HashSet::new();
+        for class in classes.split_ascii_whitespace() {
+            if seen.insert(class) {
+                if seen.len() != 1 {
+                    next.text(" ");
+                }
+                next.text(class);
+            }
+        }
+    }
+
+    /// Fixes up a `style` attribute.
+    fn fixup_style(next: &mut S, style: &str) {
+        static RE_UHOH: LazyLock<Regex> = LazyLock::new(|| {
+            const UHOH: &str = concat!(
+                "expression",
+                r"|accelerator\s*:",
+                r"|-o-(?:link(?:-source)?|replace)\s*:",
+                r"|(?:url|src|image|image-set)\s*\(",
+                r"|attr\s*\([^)]+[\s,]+url"
+            );
+            Regex::new(UHOH).unwrap()
+        });
+
+        // TODO: Must decode CSS escapes.
+        // TODO: `^\s*/\*[^*\\/]*\*/\s*$` should do nothing
+        // TODO: Replace CSS comments by a single space character
+        // TODO: Discard anything after "/*"
+
+        if style.contains(
+            |c| matches!(c, '\0'..='\x08' | '\x0b' | '\x0e'..='\x1f' | '\x7f' | '\u{fffd}'),
+        ) {
+            next.text("/* invalid control char */");
+            return;
+        } else if RE_UHOH.is_match(style) {
+            next.text("/* insecure input */");
+            return;
+        }
+
+        let mut style = style.trim_ascii();
+        while !style.is_empty() {
+            // 'Template:Table cell templates' contains a bunch of invalid
+            // garbage. When this happens, just try skipping to the next
+            // possibly valid declaration.
+            if let Ok((decl, rest)) = barely_css::decl(style) {
+                style = &style[rest..];
+                if let Some((name, value)) = decl {
+                    if name.starts_with("--") {
+                        next.text(name);
+                        next.text(":");
+                        next.text(value);
+                        next.text(";");
+                    } else {
+                        next.text("--mw-output-");
+                        next.text(name);
+                        next.text(":");
+                        next.text(value);
+                        next.text(";");
+                    }
+                }
+            } else if let Some(rest) = style.find(';') {
+                next.text(&style[..=rest]);
+                style = &style[rest + 1..];
+            } else {
+                next.text(style);
+                break;
+            }
         }
     }
 
     /// Returns true if the given attribute `name` is allowed.
-    fn is_allowed(&self, name: &str) -> bool {
-        if self.allowed.iter().any(|allowed| allowed.contains(name)) {
-            true
+    fn is_allowed(&self, name: &str) -> Option<Cow<'static, str>> {
+        if let Some(name) = self
+            .allowed
+            .iter()
+            .find_map(|allowed| allowed.get_key(name))
+        {
+            Some(Cow::Borrowed(*name))
         } else {
             // Technically, these are supposed to be only allowed for things
             // which allow the common attributes, but HTML5 does not care, and
             // maybe our own data attributes want to go somewhere unexpected, so
             // it does not matter
             if let Some(suffix) = name.strip_prefix("data-") {
-                !suffix.starts_with("mw")
+                (!suffix.starts_with("mw")
                     && !suffix.starts_with("ooui")
                     && !suffix.starts_with("parsoid")
+                    && !suffix
+                        .contains([':', '=', ' ', '\t', '\r', '\n', '/', '>', '\0', '_', '＿']))
+                .then(|| name.to_owned().into())
             } else if let Some(suffix) = name.strip_prefix("xmlns:") {
-                !suffix.is_empty()
+                (!suffix.is_empty()).then(|| name.to_owned().into())
             } else {
-                false
+                None
             }
         }
     }
@@ -378,88 +481,72 @@ impl<S: Sink + Markable> AttributeFilter<S> {
 impl<S: Sink + Markable> Sink for AttributeFilter<S> {
     #[inline]
     fn comment_end(&mut self) {
-        if !self.filtering {
+        if self.state == FilterState::Idle {
             self.next.comment_end();
         }
     }
 
     #[inline]
     fn comment_start(&mut self) {
-        if !self.filtering {
+        if self.state == FilterState::Idle {
             self.next.comment_start();
         }
     }
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
-        if !self.filtering {
-            self.next.entity(value, raw);
+        match self.state {
+            FilterState::Idle => self.next.entity(value, raw),
+            FilterState::Buffering(index) => self.acc[index].push(value),
+            FilterState::Filtering => {}
         }
     }
 
     #[inline]
-    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
-        for (a, b) in self.emitted.into_values() {
-            self.next.free_mark(a);
-            self.next.free_mark(b);
-        }
+    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
         self.next.finish(state)
     }
 
     #[inline]
     fn new_line(&mut self) {
-        if !self.filtering {
+        if self.state == FilterState::Idle {
             self.next.new_line();
         }
     }
 
     #[inline]
     fn raw_html_block(&mut self, html: &str) {
-        if !self.filtering {
+        if self.state == FilterState::Idle {
             self.next.raw_html_block(html);
         }
     }
 
     #[inline]
     fn raw_html_inline(&mut self, html: &str) {
-        if !self.filtering {
+        if self.state == FilterState::Idle {
             self.next.raw_html_inline(html);
         }
     }
 
     #[inline]
-    fn tag_attribute_end(&mut self, name: &str) {
-        if !self.filtering {
-            self.next.tag_attribute_end(name);
-            let range = (self.current.take().unwrap(), self.next.mark());
-            let last = self.emitted.insert(name.into(), range);
-            if let Some((start, end)) = last {
-                self.next.with_marks([&start, &end], |[start, end], out| {
-                    if let (Some(start), Some(end)) = (start, end) {
-                        out.replace_range(start..end, "");
-                    }
-                });
-                self.next.free_mark(start);
-                self.next.free_mark(end);
-            }
-        }
-        self.filtering = false;
+    fn tag_attribute_end(&mut self, _: &str) {
+        self.state = FilterState::Idle;
     }
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
-        if self.is_allowed(name) {
-            debug_assert!(self.current.is_none());
-            self.current = Some(self.next.mark());
-            self.next.tag_attribute_start(name);
+        if let Some(name) = self.is_allowed(name) {
+            let entry = self.acc.entry(name);
+            let index = entry.index();
+            entry.or_default().clear();
+            self.state = FilterState::Buffering(index);
         } else {
-            self.filtering = true;
+            self.state = FilterState::Filtering;
         }
     }
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        self.allowed = <_>::default();
         self.next.tag_end(name);
     }
 
@@ -470,24 +557,56 @@ impl<S: Sink + Markable> Sink for AttributeFilter<S> {
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
-        debug_assert!(self.emitted.is_empty() && self.current.is_none());
         self.allowed = ALLOWED_ATTRS.get(name).copied().unwrap_or_default();
         self.next.tag_start(name);
     }
 
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
-        for (_, (a, b)) in self.emitted.drain() {
-            self.next.free_mark(a);
-            self.next.free_mark(b);
+        self.allowed = <_>::default();
+
+        let has_itemscope = self.acc.contains_key("itemscope");
+        for (name, value) in self.acc.drain(..) {
+            if name == "tabindex" && value != "0" {
+                continue;
+            }
+            // TODO: Figure out how to get a config in here without blowing up
+            // borrowck
+            // if matches!(name.as_ref(), "href" | "poster" | "src")
+            //     && !self.config.protocols_pattern.is_match(&value) {
+            //     continue;
+            // }
+            if name == "id" && value.is_empty() {
+                continue;
+            }
+            if !has_itemscope && matches!(name.as_ref(), "itemtype" | "itemid" | "itemref") {
+                continue;
+            }
+
+            self.next.tag_attribute_start(&name);
+            match name.as_ref() {
+                "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
+                    Self::fixup_aria(&mut self.next, &value);
+                }
+                "class" => Self::fixup_class(&mut self.next, &value),
+                "id" => self
+                    .next
+                    .text(&anchor_encode(&value, AnchorEncodeMode::Html5)),
+                "style" => Self::fixup_style(&mut self.next, &value),
+                _ => self.next.text(&value),
+            }
+            self.next.tag_attribute_end(&name);
         }
+
         self.next.tag_start_end(name);
     }
 
     #[inline]
     fn text(&mut self, text: &str) {
-        if !self.filtering {
-            self.next.text(text);
+        match self.state {
+            FilterState::Idle => self.next.text(text),
+            FilterState::Buffering(index) => self.acc[index] += text,
+            FilterState::Filtering => {}
         }
     }
 }
@@ -3654,7 +3773,6 @@ macro_rules! chainable {
 }
 
 use chainable;
-use std::collections::HashMap;
 
 #[cfg(test)]
 mod tests {

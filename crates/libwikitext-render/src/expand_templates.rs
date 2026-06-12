@@ -83,6 +83,17 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         Ok(())
     }
 
+    fn adopt_entity(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _value: char,
+    ) -> Result {
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
+    }
+
     fn adopt_extension(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -167,6 +178,19 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         Ok(())
     }
 
+    #[inline]
+    fn adopt_strip_marker(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _marker: &str,
+    ) -> Result {
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
+    }
+
+    #[inline]
     fn adopt_template(
         &mut self,
         state: &mut State<'_, '_, '_>,

@@ -464,29 +464,6 @@ pub fn parse_formatted_number(s: &str) -> Cow<'_, str> {
     }
 }
 
-/// Normalises `text` by converting runs of ASCII whitespace to a single space
-/// character and trimming. This is like `Sanitizer::normalizeWhitespace`.
-#[must_use]
-pub fn normalize_ascii_whitespace(text: &str) -> Cow<'_, str> {
-    #[inline]
-    fn spacelike(c: char) -> bool {
-        c.is_ascii_whitespace()
-    }
-    normalize_whitespace::<true>(text, spacelike, spacelike)
-}
-
-/// Normalises `text` by converting runs of ASCII whitespace to a single space
-/// character, trimming, and decoding HTML. This is like
-/// `Sanitizer::decodeTagAttributes`.
-#[must_use]
-pub fn normalize_attr(text: &str) -> Cow<'_, str> {
-    #[inline]
-    fn spacelike(c: char) -> bool {
-        c.is_ascii_whitespace()
-    }
-    normalize_whitespace::<true>(text, spacelike, spacelike).map(decode_html)
-}
-
 /// Normalises `text` by converting runs of whitespace that might exist in
 /// a normalised [`Title`](title::Title) to a single space character and
 /// trimming. This is like `Sanitizer::normalizeSectionNameWhitespace`.

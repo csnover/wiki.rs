@@ -13,12 +13,11 @@ use super::{
     tags::{self, PHRASING_TAGS},
 };
 use crate::tags::ExternalLinkKind;
-use core::fmt::Write as _;
 use either::Either;
 use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
 use libwikitext_common::{
-    AnchorEncodeMode, anchor_encode, decode_html, format_message, normalize_attr,
+    decode_html, format_message,
     title::{Namespace, Title},
     title_decode,
 };
@@ -87,81 +86,8 @@ impl Document {
         let name = to_ascii_lower(name.trim_ascii());
         let value = attribute.value();
         self.next.tag_attribute_start(&name);
-        self.attribute_value(state, sp, &name, value)?;
+        self.adopt_tokens(state, sp, value)?;
         self.next.tag_attribute_end(&name);
-        Ok(())
-    }
-
-    /// Transforms and writes an attribute value.
-    fn attribute_value(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        name: &str,
-        value: &[Spanned<Token>],
-    ) -> Result {
-        let value = match name {
-            "class" => {
-                // TODO: Look for the mw-collapse classes and dump appropriate
-                // form hooks into the HTML to allow arbitrary collapsing
-                // elements without scripts
-                Either::Right(value)
-            }
-            "id" => Either::Left(
-                sp.eval(state, value)?
-                    .map(normalize_attr)
-                    .map(|v| anchor_encode(v, AnchorEncodeMode::Html5)),
-            ),
-            "style" => {
-                // MediaWiki does sanitising, wiki.rs does not. What wiki.rs
-                // *does* do is get all these inline styles out of the way so
-                // that `!important` is not required to style pages
-                let value = sp.eval(state, value)?.map(decode_html);
-                let mut out = String::new();
-                let mut input = value.as_ref();
-                while !input.is_empty() {
-                    // 'Template:Table cell templates' contains a bunch of
-                    // invalid garbage. When this happens, just try skipping to
-                    // the next possibly valid declaration.
-                    if let Ok((decl, next)) = barely_css::decl(input) {
-                        input = &input[next..];
-                        if let Some((name, value)) = decl {
-                            if name.starts_with("--") {
-                                write!(out, "{name}:{value};")?;
-                            } else {
-                                write!(out, "--mw-output-{name}:{value};")?;
-                            }
-                        }
-                    } else if let Some(next) = input.find(';') {
-                        input = &input[next + 1..];
-                    } else {
-                        break;
-                    }
-                }
-                Either::Left(out.into())
-            }
-            "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
-                let value = sp.eval(state, value)?.map(decode_html);
-                // https://github.com/rust-lang/rust/issues/79524
-                let mut out = String::new();
-                for v in value
-                    .split_ascii_whitespace()
-                    .map(|v| normalize_attr(v).map(|v| anchor_encode(v, AnchorEncodeMode::Html5)))
-                {
-                    if !out.is_empty() {
-                        out += " ";
-                    }
-                    out += &v;
-                }
-                Either::Left(out.into())
-            }
-            _ => Either::Right(value),
-        };
-
-        match value {
-            Either::Left(value) => self.next.text(&value),
-            Either::Right(value) => self.adopt_tokens(state, sp, value)?,
-        }
         Ok(())
     }
 

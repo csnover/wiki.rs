@@ -821,9 +821,9 @@ For each attribute of each HTML tag in the input:
       4. Replace CSS comments by a single space character;
       5. Split the result at `"/*"` and discard the right hand side.
 
-   2. If `Value` contains any UTF-8 replacement character or any
-      byte in the range `['\0'..='\x08'|'\x0b'|'\x0e..=\x1f'|'\x7f']`,
-      let `Value` be `"/* invalid control char */"`; otherwise
+   2. If `Value` contains any character in
+      `['\0'..='\x08'|'\x0b'|'\x0e..=\x1f'|'\x7f'|'\u{fffd}']`, let `Value` be
+      `"/* invalid control char */"`; otherwise
    3. If `Value` matches any of the following regular expressions, let
       `Value` be `"/* insecure input */"`:
 
@@ -905,16 +905,8 @@ For each attribute of each HTML tag in the input:
    * `"font"`:          `Common` + `["size"|"color"|"face"]`
 
 9. If the attribute name matches an attribute name which already exists
-   on the tag:
-
-   1. If the attribute name is `"class"`, split the value on whitespace and
-      append each value to the previous class attribute’s value, separated
-      by a space character, if it does not already exist; otherwise
-   2. Replace the old value of the previous attribute with the new value
-      from the new attribute.
-
-   Otherwise;
-
+   on the tag, replace the old value of the previous attribute with the new
+   value from the new attribute; otherwise
 10. Add the attribute to the tag.
 
 ## Tables
@@ -1108,16 +1100,15 @@ While `S` is not the position of the end of the input:
    bytes `[b'#'|b'%']`;
 5. Let `A` be the position of the first byte after the start token that is not
    in `TC`;
-6. If `A` is not at a character boundary, or the character sequence at `A` is
-   not `['|'|"]]"]`, emit the range `S..E` as text, let `E` equal `S`, and
-   restart the loop; otherwise
+6. If the character sequence at `A` is not `['|'|"]]"]`, emit the range `S..E`
+   as text, let `E` equal `S`, and restart the loop; otherwise
 7. Let `Link` be the text in the range `S + 2..A`;
 8. If `Link` contains any [strip marker](#strip-marker), emit the range `S..E`
    as text, let `E` equal `S`, and restart the loop; otherwise
 9. If the character at `A` is `'|'`:
 
    1. Let `A` equal `A + 1`;
-   2. Let `B` be the position of the character sequence `"]]"`;
+   2. Let `B` be the position of the next character sequence `"]]"` before `E`;
    3. If `B` is not found, or `B` equals `A`, set `Maybe Image`; otherwise
 
       1. If the next character after `B` is `']'`, and a character `'['` is in

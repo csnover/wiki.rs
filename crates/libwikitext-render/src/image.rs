@@ -7,7 +7,7 @@ use super::{
     tags::{self, LinkKind},
 };
 use libmisc::{CowExt as _, to_ascii_lower};
-use libwikitext_common::{db::DatabaseProvider as _, make_url, title::Title};
+use libwikitext_common::{db::DatabaseProvider as _, make_url, title::Title, url::Url};
 use libwikitext_parse::{Argument, Spanned, Token, helpers::TextContent, visit::Visitor as _};
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -102,14 +102,14 @@ pub(super) fn media_options<'s>(
         MediaKind::Image
     };
 
-    let path = format_args!("{}/{}", state.statics.paths.media, title.text_url());
     options.attrs.insert(
         "src".into(),
-        Cow::Owned(if is_absolute_url(state.statics.paths.media) {
-            path.to_string()
-        } else {
-            make_url(&state.statics.base_uri, None, path, None, None)
-        }),
+        make_media_url(
+            &state.statics.base_uri,
+            state.statics.paths.media,
+            &title.text_url(),
+        )
+        .into(),
     );
 
     options.link = Some(LinkKind::Internal(title));
@@ -120,6 +120,7 @@ pub(super) fn media_options<'s>(
             .map_ref(str::trim_ascii);
         let config = state.statics.db.config();
         let Some((value, arg)) = config.magic_word_matches(&value) else {
+            options.caption = Some(argument.combined());
             continue;
         };
 
@@ -163,6 +164,8 @@ pub(super) fn media_options<'s>(
                 options.start = Some(arg.to_owned().into());
             } else if value.contains(&"timedmedia_thumbtime") {
                 options.thumbtime = Some(arg.to_owned().into());
+            } else {
+                log::warn!("unexpected magic word {value:?}");
             }
         } else if value.contains(&"img_border") {
             options.border = Some(());
@@ -222,6 +225,18 @@ pub(super) fn media_options<'s>(
     }
 
     Ok(options)
+}
+
+/// Creates a URL to a title in the [media namespace].
+///
+/// [media namespace]: libwikitext_common::title::Namespace::MEDIA
+pub(super) fn make_media_url(base_uri: &Url, media_path: &str, text: &str) -> String {
+    let path = format_args!("{media_path}/{text}");
+    if is_absolute_url(media_path) {
+        path.to_string()
+    } else {
+        make_url(base_uri, None, path, None, None)
+    }
 }
 
 /// Renders a media tag.

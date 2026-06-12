@@ -805,7 +805,7 @@ mod site {
             let no_separators = arguments
                 .eval(state, 1)?
                 .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
-            write!(out, "{}", format_number(1.0, no_separators))?;
+            write!(out, "{}", format_number(0.0, no_separators))?;
         }
 
         Ok(())
@@ -1669,7 +1669,7 @@ mod title {
             if let Ok(id) = value.parse::<i32>() {
                 Namespace::find_by_id(state.statics.db.config(), id)
             } else {
-                Namespace::find_by_name(state.statics.db.config(), &value)
+                Namespace::find_by_name(state.statics.db.config(), &strtr(&value, &[("_", " ")]))
             }
         });
 

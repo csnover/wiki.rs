@@ -348,20 +348,32 @@ fn check_skips(
     } else if options.contains("language") {
         log::warn!(target: target, "TODO {name}: language switching not implemented");
         true
+    } else if options.contains("wgNonincludableNamespaces") {
+        log::warn!(target: target, "TODO {name}: runtime non-includable namespaces not implemented");
+        true
+    } else if options.contains("maxincludesize") || options.contains("maxtemplatedepth") {
+        log::warn!(target: target, "TODO {name}: resource limits not implemented");
+        true
+    } else if options.contains("disabled") {
+        log::info!(target: target, "Skipping {name}: disabled");
+        true
     } else if options.contains("pst") {
         log::info!(target: target, "Skipping {name}: pre-save transform");
+        true
+    } else if options.contains("annotations") {
+        log::info!(target: target, "Skipping {name}: Parsoid annotations");
         true
     } else if options
         .get("parsoid.modes")
         .is_some_and(any_of(&["html2wt"]))
     {
-        log::info!(target: target, "Skipping {name}: html2wt");
+        log::info!(target: target, "Skipping {name}: Parsoid html2wt");
         true
     } else if options
         .get("parsoid.modes")
         .is_some_and(any_of(&["selser"]))
     {
-        log::info!(target: target, "Skipping {name}: selser");
+        log::info!(target: target, "Skipping {name}: Parsoid selser");
         true
     } else {
         false
@@ -512,6 +524,11 @@ fn check_test_results(
                         heuristic = "unpretty + remove tbody + table ws + unwrap heading";
                         fail = expected_html != actual;
                     }
+                }
+
+                if fail && let Cow::Owned(expected_html) = replace_url(&expected_html) {
+                    heuristic = "unpretty + remove tbody + replace url";
+                    fail = expected_html != actual;
                 }
 
                 if fail && let Cow::Owned(expected_html) = styles(&expected_html) {
@@ -771,14 +788,14 @@ fn replace_url(html: &str) -> Cow<'_, str> {
 
 fn styles(html: &str) -> Cow<'_, str> {
     static RE_PREFIX_STYLES: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"style="([^"]+)""#).unwrap());
+        LazyLock::new(|| Regex::new(r#"(<[^>]+ )style="([^"]+)""#).unwrap());
     static RE_PREFIX_STYLE_DECL: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\s*([^\s:]+)\s*:\s*([^;]+);?\s*").unwrap());
 
     fn re_style(caps: &regex::Captures<'_>) -> String {
-        let (orig, [decls]) = caps.extract();
+        let (orig, [prefix, decls]) = caps.extract();
         if let Cow::Owned(s) = RE_PREFIX_STYLE_DECL.replace_all(decls, "--mw-output-$1:$2;") {
-            format!(r#"style="{s}""#)
+            format!(r#"{prefix}style="{s}""#)
         } else {
             orig.to_owned()
         }

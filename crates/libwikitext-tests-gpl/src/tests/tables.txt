@@ -2011,7 +2011,7 @@ asdf</td></tr>
 </tbody></table>
 </figcaption></figure>
 !! html/wiki.rs
-<figure><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg"></a><figcaption>
+<figure class="mw-halign-right"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Foobar.jpg"></a><figcaption>
 <table>
 <tr>
 <td>asdf</td>

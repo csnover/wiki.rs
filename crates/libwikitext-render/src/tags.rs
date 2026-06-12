@@ -2,6 +2,7 @@
 
 use super::{
     Error, Paths, Result, StackFrame, State, Surrogate, document::Document, emitters::Sink,
+    image::make_media_url,
 };
 use libmisc::CowExt as _;
 use libwikitext_common::{
@@ -337,6 +338,8 @@ impl LinkKind<'_> {
                             AnchorEncodeMode::Html5
                         )
                     )
+                } else if title.namespace().id == Namespace::MEDIA {
+                    make_media_url(options.base_uri, options.paths.media, &title.text_url())
                 } else {
                     make_url(
                         options.base_uri,

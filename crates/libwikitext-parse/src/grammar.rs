@@ -42,7 +42,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     / hr_line()
       // The parser needs to act as if comments are stripped, even if they are
       // not, for these expressions to match
-    / c:comment_tag()* t:space_sensitive_line() n:line_eol()
+    / c:(behavior_switch() / comment_tag())* t:space_sensitive_line() n:line_eol()
     { c.into_iter().chain(iter::once(t)).chain(n).collect() }
     / i:inline()+ n:line_eol()
     { reduce_tree(i.into_iter().chain(n)) }
@@ -693,9 +693,6 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         { a }
       >)
       body:(!(space_s()* (term() / nl())) t:inline() { t })*
-      // TODO: Technically, losing the span for this trimmed space makes this
-      // not round-trippable.
-      space_s()*
     { (sa.span, sa.node.unwrap_or_default(), body) }
 
     /// The end of a table line.
@@ -736,7 +733,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         { Token::Link {
             prefix,
             content,
-            target: vec![target],
+            target,
             trail
         } }
     >)
@@ -772,15 +769,20 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[Link target|extra|arguments]]
     ///   ^^^^^^^^^^^
     /// ```
-    // TODO: This is wrong. It is supposed to check valid bytes plus '#'|'%',
-    // then if it contains a strip marker fail, then if it contains '%' decode
-    // URL encoding and then trim spaces from the left for the link, and then
-    // if that starts with an external URL fail the parse so it can be parsed
-    // by extlink.
-    rule wikilink_target() -> Spanned<Token>
-    = spanned(<#{|input, pos| scan_wikilink_target(
+    ///
+    /// Technically this is supposed to decode any percent-encoding before
+    /// checking for a URL scheme, but in practice it makes no sense that part
+    /// would be URL encoded, so hopefully nobody did that (lol).
+    rule wikilink_target() -> Vec<Spanned<Token>>
+    = (" " / "%20")* !url_scheme() t:wikilink_target_part()*
+    { reduce_tree(t) }
+
+    rule wikilink_target_part() -> Spanned<Token>
+    = entity()
+    / !strip_marker() t:spanned(<#{|input, pos| wikilink_target_char(
         input, pos, &o.config.valid_title_bytes
     )} { Token::Text }>)
+    { t }
 
     /// Text content part of a Wikilink.
     ///
@@ -792,13 +794,24 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = start:position!()
       t:wikilink_argument()*
       bracket:wikilink_content_end_bracket(start)?
-    {
+    {?
+        fn is_pipe_trick(args: &[Spanned<Argument>]) -> bool {
+            matches!(args, [
+                Spanned { node: Argument { content, .. }, .. }
+            ] if content.is_empty())
+        }
+
         let mut t = t;
         if let (Some(last), Some(bracket)) = (t.last_mut(), bracket) {
             last.span.end = bracket.span.end;
             last.node.content.push(bracket);
         }
-        t
+
+        if is_pipe_trick(&t) {
+            Err("wikilink content")
+        } else {
+            Ok(t)
+        }
     }
 
     /// A Wikilink argument with pipe delimiter.
@@ -859,7 +872,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     / t:table() ie:wikilink_after_table()?
     { reduce_tree(t.into_iter().chain(ie.into_iter().flatten())) }
     / hr_line()
-    / c:comment_tag()* h:heading() n:line_eol()
+    / c:(behavior_switch() / comment_tag())* h:heading() n:line_eol()
     { reduce_tree(c.into_iter().chain(iter::once(h)).chain(n)) }
     / !"|" i:(!"]]" t:inline() { t })+ n:line_eol()
     { reduce_tree(i.into_iter().chain(n)) }
@@ -1116,6 +1129,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // before parsing an external link, so would be excluded due to being an
       // HTML tag
     / text_style()
+    / strip_marker()
     / [']'|'['|'<'|'>'|'"'|'\x00'..='\x20'|'\u{fffd}']
 
     ///////////////
@@ -1432,7 +1446,17 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ```
     rule html_end_tag() -> Token
     = "/" name:html_tag_name() space_nl()*
-    { Token::EndTag { name: name.span } }
+    {
+        if *name == "br" {
+            Token::StartTag {
+                attributes: <_>::default(),
+                name: name.span,
+                self_closing: true
+            }
+        } else {
+            Token::EndTag { name: name.span }
+        }
+    }
 
     /// An allowed HTML5 tag name.
     ///
@@ -2318,12 +2342,14 @@ fn make_include(
     }
 }
 
-/// Consumes bytes valid in a Wikilink target part.
-fn scan_wikilink_target(input: &str, mut pos: usize, valid: &BitMap) -> RuleResult<()> {
+/// Consumes the next valid byte sequence that corresponds to a valid UTF-8
+/// character.
+fn wikilink_target_char(input: &str, start: usize, valid: &BitMap) -> RuleResult<()> {
     fn valid_ltgt(valid: &BitMap, b: u8) -> bool {
         // In the original parser, '<' and '>' are accepted in this position
-        // because these characters were replaced with HTML entities in a
-        // previous step
+        // even when they are not in the valid bytes list because these
+        // characters would’ve been replaced with HTML entities in a previous
+        // step
         if b == b'<' {
             b"&lt;".iter().copied().all(|b| valid.contains(b))
         } else if b == b'>' {
@@ -2334,18 +2360,18 @@ fn scan_wikilink_target(input: &str, mut pos: usize, valid: &BitMap) -> RuleResu
     }
 
     let bytes = input.as_bytes();
+    let mut pos = start;
     while pos < bytes.len()
         && let b = bytes[pos]
         && (matches!(b, b'#' | b'%') || valid.contains(b) || valid_ltgt(valid, b))
     {
-        if input.is_char_boundary(pos) && input[pos..].starts_with(MARKER_PREFIX) {
-            return RuleResult::Failed;
-        }
-
         pos += 1;
+        if input.is_char_boundary(pos) {
+            break;
+        }
     }
 
-    if input.is_char_boundary(pos) {
+    if pos != start && input.is_char_boundary(pos) {
         RuleResult::Matched(pos, ())
     } else {
         RuleResult::Failed

@@ -4901,6 +4901,10 @@ Don't bail on table cell attribute parsing if wikilink is found in template arg
 <table>
 <tbody><tr data-parsoid='{"autoInsertedStart":true}'><td>Test <span typeof="mw:Extension/spantag mw:Transclusion" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"One two \"[[three]]\" four"},"parts":[{"template":{"target":{"wt":"#tag:spantag","function":"tag"},"params":{"1":{"wt":"One two \"[[three]]\" four"}},"i":0}}]}'>One two "<a rel="mw:WikiLink" href="./Three" title="Three">three</a>" four</span></td></tr>
 </tbody></table>
+!! html/wiki.rs
+<table>
+<tr><td>Test <span>One two "<a href="/wiki/Three" title="Three">three</a>" four</span></td></tr>
+</table>
 !! end
 
 !! test
@@ -5651,6 +5655,11 @@ parsoid=wt2html,wt2wt
 <span typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":""}},"i":0}}]}'></span><table width="100%">
 <tbody><tr><td>foo</td></tr>
 </tbody></table>
+!!html/wiki.rs
+<table width="100%">
+<tr>
+<td>foo
+</td></tr></table>
 !!end
 
 ## We used to, but no longer wt2wt this test since the default serializer
@@ -5669,6 +5678,11 @@ parsoid=wt2html
 <meta typeof="mw:Includes/IncludeOnly" data-parsoid='{"src":"&lt;includeonly>a&lt;/includeonly>"}' data-mw='{"src":"&lt;includeonly>a&lt;/includeonly>"}'/><meta typeof="mw:Includes/IncludeOnly/End" data-parsoid='{"src":""}'/><table about="#mwt2" typeof="mw:ExpandedAttrs" data-parsoid='{"a":{"{{{b}}}":null},"sa":{"{{{b}}}":""}}' data-mw='{"attribs":[[{"txt":"{{{b}}}","html":"&lt;span about=\"#mwt1\" typeof=\"mw:Param\" data-parsoid=&#39;{\"pi\":[[]]}&#39; data-mw=&#39;{\"parts\":[{\"templatearg\":{\"target\":{\"wt\":\"b\"},\"params\":{},\"i\":0}}]}&#39;>{{{b}}}&lt;/span>"},{"html":""}]]}'>
 <tbody><tr><td>c</td></tr>
 </tbody></table>
+!!html/wiki.rs
+<table>
+<tr>
+<td>c
+</td></tr></table>
 !!end
 
 !! test
@@ -6287,6 +6301,9 @@ File with template filename
 [[File:{{1x|Foobar.jpg}}]]
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File mw:ExpandedAttrs" data-mw='{"attribs":[[{"txt":"href"},{"html":"File:&lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&apos;{\"pi\":[[{\"k\":\"1\"}]]}&apos; data-mw=&apos;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"1x\",\"href\":\"./Template:1x\"},\"params\":{\"1\":{\"wt\":\"Foobar.jpg\"}},\"i\":0}}]}&apos;>Foobar.jpg&lt;/span>"}]]}'><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:{{1x|Foobar.jpg}}"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs
+<p><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Foobar.jpg"></a>
+</p>
 !! end
 
 !!test
@@ -6430,6 +6447,10 @@ Table cell with attribute before expanded attribute
 <table>
 <tbody><tr><td align="center" class="123" about="#mwt2" typeof="mw:ExpandedAttrs" data-mw='{"attribs":[[{"txt":"class","html":"&lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&apos;{\"pi\":[[]]}&apos; data-mw=&apos;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"attribute_from_template\",\"href\":\"./Template:Attribute_from_template\"},\"params\":{},\"i\":0}}]}&apos;>class=\"123\"&lt;/span>"},{"html":""}]]}'>456</td></tr>
 </tbody></table>
+!! html/wiki.rs
+<table>
+<tr><td align="center" class="123">456
+</td></tr></table>
 !! end
 
 # In integrated mode, the {{=}} template is expanded before Parsoid sees it
@@ -6761,6 +6782,17 @@ Templates: Wiki Tables: 8. Fosterable meta-tags should get fostered
 
 <td>foo</td></tr>
 </tbody></table>
+!! html/wiki.rs
+
+<table>
+<tr>
+<td>foo
+</td></tr></table>
+
+<table>
+<tr>
+<td>foo
+</td></tr></table>
 !! end
 
 ## Parsoid standalone mode seems to drop nonexisting templates
@@ -6795,6 +6827,8 @@ Templates: Ugly nesting: 2. Quotes opened/closed across templates (1x_with_span)
 {{1x_with_span|''a}}{{1x_with_span|b''c''d}}{{1x_with_span|''e}}
 !! html/parsoid
 <p><span about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x_with_span","href":"./Template:1x_with_span"},"params":{"1":{"wt":"&apos;&apos;a"}},"i":0}}]}'><i>a</i></span><i about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"autoInsertedStart":true,"pi":[[{"k":"1"}],[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x_with_span","href":"./Template:1x_with_span"},"params":{"1":{"wt":"b&apos;&apos;c&apos;&apos;d"}},"i":0}},{"template":{"target":{"wt":"1x_with_span","href":"./Template:1x_with_span"},"params":{"1":{"wt":"&apos;&apos;e"}},"i":1}}]}'><span>b</span></i><span about="#mwt2">c</span><i about="#mwt2">d<span></span></i><span about="#mwt2">e</span></p>
+!! html/wiki.rs
+<p><span><i>a</i></span><i><span>b</span></i><span>c</span><i>d<span></span></i><span>e</span></p>
 !! end
 
 ## Legacy parser generates misnested html; Parsoid html2wt mode adds newlines between {{1x}}s
@@ -6853,6 +6887,10 @@ Templates: Ugly templates: 5. Template encapsulation test: Non-trivial overlap o
 <div about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"stx":"html","autoInsertedEnd":true,"pi":[[{"k":"1"}],[{"k":"1"}],[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;table>"}},"i":0}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;div>foo"}},"i":1}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;/table>"}},"i":2}}]}'>foo</div><span about="#mwt1">
 </span><table about="#mwt1">
 </table>
+!! html/wiki.rs
+<div>foo
+</div><table>
+</table>
 !! end
 
 # T66017 -- ugly wikitext with fostered content generates two template ranges
@@ -6867,6 +6905,10 @@ Templates: Ugly templates: 6. Template encapsulation test: Cyclical nesting of t
 <table about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;table>&lt;tr>&lt;td>&lt;table>"}},"i":0}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;div>"}},"i":1}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;/div>"}},"i":2}}]}' data-parsoid='{"stx":"html","autoInsertedEnd":true,"pi":[[{"k":"1"}],[{"k":"1"}],[{"k":"1"}]]}'><tbody><tr data-parsoid='{"stx":"html"}'><td data-parsoid='{"stx":"html"}'><div data-parsoid='{"stx":"html"}'>
 </div><table about="#mwt1" data-parsoid='{"stx":"html"}'>
 </table></td></tr></tbody></table>
+!! html/wiki.rs
+<table><tr><td><div>
+</div><table>
+</table></td></tr></table>
 !! end
 
 !! test
@@ -6891,6 +6933,7 @@ Templates: Param with empty arg in the final position
 {{{hi|}}}
 !! html/parsoid
 <span about="#mwt1" typeof="mw:Param" data-mw='{"parts":[{"templatearg":{"target":{"wt":"hi"},"params":{"1":{"wt":""}},"i":0}}]}'></span>
+!! html/wiki.rs
 !! end
 
 !! test
@@ -7774,6 +7817,9 @@ parsoid=wt2html
 
 <link rel="mw:PageProp/Category" href="./Category:Foo" />
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" />
+!! html/wiki.rs
+<ul><li>a
+<ul><li><ul><li><ul><li>b</li></ul></li></ul></li></ul></li></ul>
 !! end
 
 ## only wt2html for this to make sure the algo only applies to the rightmost path
@@ -7797,6 +7843,12 @@ parsoid=wt2html
 <ul><li>d</li></ul></li></ul>
 <link rel="mw:PageProp/Category" href="./Category:Foo" />
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" />
+!! html/wiki.rs
+<ul><li>a
+<ul><li>b
+</li></ul></li>
+<li>c
+<ul><li>d</li></ul></li></ul>
 !! end
 
 ## We used to, but no longer wt2wt this test since the default serializer
@@ -7813,6 +7865,9 @@ parsoid=wt2html
 !! html/parsoid
 <ul><li>a<link rel="mw:PageProp/Category" href="./Category:Foo" /></li>
 <li>b<link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" /></li></ul>
+!! html/wiki.rs
+<ul><li>a</li>
+<li>b</li></ul>
 !! end
 
 # This test also demonstrates because of newline+category tunneling
@@ -7828,6 +7883,8 @@ parsoid=wt2html
 <ul><li><span about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"a\n[[Category:Foo]]\n[[es:Foo]]"}},"i":0}}]}'>a
 </span><link rel="mw:PageProp/Category" href="./Category:Foo" about="#mwt1" /><span about="#mwt1">
 </span><link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" about="#mwt1"/></li></ul>
+!! html/wiki.rs
+<ul><li>a</li></ul>
 !! end
 
 !! test
@@ -7846,6 +7903,8 @@ parsoid=wt2html
 </span><link rel="mw:PageProp/Category" href="./Category:Bar" about="#mwt1" data-parsoid='{"stx":"simple","a":{"href":"./Category:Bar"},"sa":{"href":"Category:Bar"}}'/>
 <link rel="mw:PageProp/Category" href="./Category:Baz" data-parsoid='{"stx":"simple","a":{"href":"./Category:Baz"},"sa":{"href":"Category:Baz"}}'/>
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Baz" />
+!! html/wiki.rs
+<ul><li>a</li></ul>
 !! end
 
 !! test
@@ -7862,6 +7921,8 @@ cats/langlinks: migrateTrailingSolTransparentLinks dom pass should not get tripp
 <link rel="mw:PageProp/Category" href="./Category:Bar" /><!--boo1--> <!--boo2-->
 <link rel="mw:PageProp/Category" href="./Category:Baz" /><!--boo3--> <!--boo4-->
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" /><!--boo5--> <!--boo6-->
+!! html/wiki.rs
+<ul><li>a</li></ul>
 !! end
 
 !! test
@@ -7931,6 +7992,7 @@ Category links with multiple namespaces
 [[Category:Project:Foo]]
 !! html/parsoid
 <link rel="mw:PageProp/Category" href="./Category:Project:Foo" />
+!! html/wiki.rs
 !! end
 
 !! test

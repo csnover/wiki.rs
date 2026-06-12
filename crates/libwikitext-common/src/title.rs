@@ -5,6 +5,7 @@ use core::fmt::Write as _;
 use libmisc::{CowExt as _, to_lower};
 use libphp_rs::strtr;
 use std::borrow::Cow;
+use unicode_normalization::UnicodeNormalization as _;
 
 /// A title parsing error.
 #[derive(Debug, thiserror::Error)]
@@ -755,7 +756,15 @@ impl Title {
     /// Encodes `text` as a URI component.
     #[inline]
     pub fn url_encode(text: &str) -> Cow<'_, str> {
-        strtr(text, &[(" ", "_")]).map(url_encode)
+        strtr(text, &[(" ", "_")])
+            .map(|text| {
+                if unicode_normalization::is_nfc(text) {
+                    Cow::Borrowed(text)
+                } else {
+                    Cow::Owned(text.nfc().collect())
+                }
+            })
+            .map(url_encode)
     }
 }
 
