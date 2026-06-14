@@ -1135,7 +1135,8 @@ While `S` is not the position of the end of the input:
     configuration, emit the range `S..E` as text, let `S` equal `E`, and
     restart the loop; otherwise
 14. Set the `Force Display` flag if `Link` starts with `':'`;
-15. Run the [subpage resolution algorithm](#subpage-resolution) on `Link`;
+15. Run the [subpage resolution algorithm](#subpage-resolution) on `Link` and
+    `Text`;
 16. Let `Title` be the `Link` [parsed as a title](#title);
 17. If `Title` is invalid, emit the range `S..E` as text, let `S` equal `E`, and
     restart the loop;
@@ -2849,29 +2850,48 @@ than `['-'|'_'|'.'|'!'|'$'|'('|')'|'*'|','|'/'|':'|';'|'@'|'~']`.
 
 If the input starts with `"../"` or `'/'`:
 
-1. If the [namespace](#title-glossary) of the caller does not support subpages,
-   return the input and terminate here; otherwise
-2. Let `Target` and `H` be the left and right hand sides of the input split at
-   `'#'`;
-3. Let `P` be the [prefixed text](#title-glossary) of the caller’s title;
-5. Trim ASCII whitespace from the end of `Target`;
-6. If `Target` starts with `"../"`:
+1. Let `Input` be the input title string;
+2. Let `Text` be the input display text;
+3. If the [namespace](#title-glossary) of the caller does not support subpages,
+   return `Input` and terminate here; otherwise
+4. Let `H` be the position of the first `'#'` in `Input`, or the position of the
+   end of `Input` if there is no match;
+5. Let `Target` be `Input[..H]` and `Hash` be `Input[H..]`;
+6. Let `P` be the [prefixed text](#title-glossary) of the caller’s title;
+7. Trim ASCII whitespace from `Target`;
+8. If `Target` starts with `"../"`:
 
    1. Let `C` be the number of repetitions of `"../"` at the start of
       `Target`;
    2. Let `S` be `Target` with all repetitions of `"../"` trimmed from the
       start;
-   3. Using `'/'` as a delimiter, remove `C` segments from the end of `P`;
-   4. If `P` is empty, return an empty string; otherwise
-   5. Use the interpolation `"{P}/{S}{H}"` as the target-part.
+   3. If `C` is not below the number of `'/'` in `P`, emit `Target` and `Text`
+      and terminate here; otherwise
+   4. Using `'/'` as a delimiter, remove `C` segments from the end of `P`;
+   5. If `S` ends with `'/'`:
+
+      1. Trim all `'/'` from the end of `S`;
+      2. If `Text` is empty, let `Text` be the interpolation `"{S}{Hash}"`.
+
+   6. Trim ASCII whitespace from `S`;
+   7. If `S` is not empty, prefix `'/'` to `S`;
+   8. Let `Target` be the interpolation `"{P}{S}{Hash}"`.
 
    Otherwise;
 
-7. If `Target` starts with `'/'`:
+9. If `Target` starts with `'/'`:
 
-   1. Let `S` be `Target` with all repetitions of `'/'` trimmed from the
-      end;
-   2. Use the interpolation `"{P}{S}{H}"` as the target-part.
+   1. Let `S` be `Target[1..]`;
+   2. If `S` ends with `'/'`:
+
+      1. Trim all `'/'` from the end of `S`;
+      2. Let `Target` equal `S`.
+
+   3. If `Text` is empty, let `Text` be the interpolation `"{Target}{Hash}"`.
+   4. Trim ASCII whitespace from `S`;
+   5. Let `Target` be the interpolation `"{P}/{S}{Hash}"`;
+
+10. Emit `Target` and `Text`.
 
 ## URL cleaning
 

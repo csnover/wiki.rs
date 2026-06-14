@@ -40,11 +40,17 @@ pub(super) fn render_external_link(
         },
     );
     render_start_link(&mut out.next, state, &link);
-    if content.is_empty() {
+    if auto_link {
+        let options = LinkKindOptions {
+            base_uri: &state.statics.base_uri,
+            interwiki_map: &state.statics.db.config().interwiki_map,
+            paths: &state.statics.paths,
+        };
+        out.next.text(&link.to_string(&options, None));
+    } else if content.is_empty() {
         let ordinal = &mut state.globals.external_link_ordinal;
         *ordinal += 1;
-        let text = format!("[{ordinal}]");
-        out.adopt_generated(state, sp, None, &text)?;
+        out.next.text(&format!("[{ordinal}]"));
     } else {
         out.adopt_tokens(state, sp, content)?;
     }
@@ -82,12 +88,7 @@ pub(super) fn render_internal_link(
 
     out.adopt_tokens(state, sp, prefix)?;
     if content.is_empty() {
-        out.adopt_generated(
-            state,
-            sp,
-            None,
-            &decode_html(target.trim_start_matches(':')),
-        )?;
+        out.next.text(&decode_html(target.trim_start_matches(':')));
     } else {
         render_single_attribute(out, state, sp, content)?;
     }

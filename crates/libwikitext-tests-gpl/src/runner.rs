@@ -348,7 +348,7 @@ fn check_skips(
     } else if options.contains("language") {
         log::warn!(target: target, "TODO {name}: language switching not implemented");
         true
-    } else if options.contains("wgNonincludableNamespaces") {
+    } else if options.contains("wgnonincludablenamespaces") {
         log::warn!(target: target, "TODO {name}: runtime non-includable namespaces not implemented");
         true
     } else if options.contains("maxincludesize") || options.contains("maxtemplatedepth") {

@@ -84,6 +84,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule inline_in_tag() -> Spanned<Token>
     = extension_tag()
     / html_tag()
+    / text_style()
     / inline_in_attr()
 
     /// Expressions allowed inside HTML attributes.
@@ -100,7 +101,6 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule inline_in_url() -> Spanned<Token>
     = comment_tag()
     / behavior_switch()
-    / text_style()
     / entity()
     / text()
 
@@ -598,8 +598,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule table_row() -> Spanned<Token>
     = spanned(<
         space_s()* "|" "-"+
-        attributes:html_attributes(<nl() {}>)
-        { Token::TableRow { attributes } }
+        // Because this table row token might actually be just a plain text `|-`
+        // at the start of a line outside of a table, the list of attributes
+        // has to be parsed as a list of any inline thing
+        attributes:inline()*
+        { Token::TableRow { attributes: reduce_tree(attributes) } }
     >)
 
     /// A table end tag.
@@ -1467,9 +1470,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       (space_nl()+ / &("/"? ">"))
       attributes:html_attributes(<"/"? ">">)
       space_nl()*
-      self_closing:(c:"/"? { c.is_some() })
+      self_closing:"/"?
     {
-        let self_closing = self_closing | VOID_TAGS.contains(&to_ascii_lower(*name));
+        let self_closing = self_closing.is_some() | VOID_TAGS.contains(&to_ascii_lower(*name));
         Token::StartTag { attributes, name: name.span, self_closing }
     }
 
@@ -1480,7 +1483,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///                                   ^^^^^
     /// ```
     rule html_end_tag() -> Token
-    = "/" name:html_tag_name() space_nl()*
+    = "/" name:html_tag_name()
+      // Wikitext allows a solidus here but this is illegal in HTML
+      ("/" / space_nl())*
     {
         if *name == "br" {
             Token::StartTag {
@@ -1516,7 +1521,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
     rule html_attributes(term: rule<()>) -> Vec<Spanned<Token>>
-    = attributes:(!term() t:inline_in_attr() { t })*
+    = attributes:(!term() t:(inline_in_attr() / newline()) { t })*
     { reduce_tree(attributes) }
 
     /// A list of HTML tag attributes delimited by garbage, after unstripping
@@ -1890,7 +1895,15 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// An HTML entity.
     rule entity() -> Spanned<Token>
-    = e:raw_entity() { e.map_node(Token::Entity) }
+    = e:raw_entity()
+      assert(matches!(*e,
+         '\t'|'\n'
+        |'\x20'..='\x7e'
+        |'\u{00a0}'..='\u{d7ff}'
+        |'\u{e000}'..='\u{fffd}'
+        |'\u{10000}'..='\u{10ffff}'
+      ), "allowed entity")
+    { e.map_node(Token::Entity) }
 
     /// A decoded HTML entity using the MediaWiki rules, which require a
     /// `;` terminator, even for entities with optional terminators in HTML.

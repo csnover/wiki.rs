@@ -561,11 +561,12 @@ impl Title {
     }
 
     /// Converts a page-relative title name to an absolute title name using
-    /// `self` as the base title.
+    /// `self` as the base title, returning a title name and a display text
+    /// part.
     #[must_use]
-    pub fn join<'a>(&self, partial: &'a str) -> Cow<'a, str> {
+    pub fn join<'a>(&self, partial: &'a str) -> (Cow<'a, str>, Cow<'a, str>) {
         if !self.namespace().subpages {
-            return Cow::Borrowed(partial);
+            return (Cow::Borrowed(partial), Cow::Borrowed(partial));
         }
 
         let (target, fragment) = if let Some(p) = partial.find('#') {
@@ -575,20 +576,47 @@ impl Title {
         };
         let target = target.trim_ascii();
 
-        // TODO: '/' at the end is supposed to do something to the output text
-        if target.starts_with('/') {
-            Cow::Owned(self.prefixed_text().to_owned() + target.trim_end_matches('/') + fragment)
+        if let Some(suffix) = target.strip_prefix('/') {
+            let suffix = suffix.trim_end_matches('/');
+            let prefix = self.prefixed_text();
+            let text = if target.ends_with('/') {
+                suffix
+            } else {
+                target
+            };
+            let suffix = suffix.trim_ascii();
+            let title = Cow::Owned(format!("{prefix}/{suffix}{fragment}"));
+            let text = if fragment.is_empty() {
+                Cow::Borrowed(text)
+            } else {
+                Cow::Owned(format!("{text}{fragment}"))
+            };
+
+            (title, text)
         } else if target.starts_with("../") {
             let suffix = target.trim_start_matches("../");
             let count = (target.len() - suffix.len()) / "../".len();
-            self.prefixed_text()
-                .rsplitn(count + 1, '/')
-                .nth(count)
-                .map_or(<_>::default(), |last| {
-                    Cow::Owned(format!("{last}/{suffix}{fragment}"))
-                })
+            let Some(prefix) = self.prefixed_text().rsplitn(count + 1, '/').nth(count) else {
+                return (Cow::Borrowed(partial), Cow::Borrowed(partial));
+            };
+
+            let suffix = suffix.trim_end_matches('/');
+            let suffix = suffix.trim_ascii();
+            let delim = if suffix.is_empty() { "" } else { "/" };
+            let title = Cow::Owned::<str>(format!("{prefix}{delim}{suffix}{fragment}"));
+            let text = if target.ends_with('/') {
+                if fragment.is_empty() {
+                    Cow::Borrowed(suffix)
+                } else {
+                    Cow::Owned(format!("{suffix}{fragment}"))
+                }
+            } else {
+                title.clone()
+            };
+
+            (title, text)
         } else {
-            Cow::Borrowed(partial.trim_ascii())
+            (Cow::Borrowed(partial), Cow::Borrowed(partial))
         }
     }
 

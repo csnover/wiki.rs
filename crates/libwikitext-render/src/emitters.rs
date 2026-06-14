@@ -466,8 +466,7 @@ impl<S: Sink + Markable> AttributeFilter<S> {
                 (!suffix.starts_with("mw")
                     && !suffix.starts_with("ooui")
                     && !suffix.starts_with("parsoid")
-                    && !suffix
-                        .contains([':', '=', ' ', '\t', '\r', '\n', '/', '>', '\0', '_', '＿']))
+                    && !suffix.contains([':', '=', ' ', '\t', '\r', '\n', '/', '>', '\0']))
                 .then(|| name.to_owned().into())
             } else if let Some(suffix) = name.strip_prefix("xmlns:") {
                 (!suffix.is_empty()).then(|| name.to_owned().into())

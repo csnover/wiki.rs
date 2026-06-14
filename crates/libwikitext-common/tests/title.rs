@@ -2,20 +2,34 @@
 
 use libwikitext_common::title::{Namespace, Title};
 use libwikitext_data::CONFIG;
-use std::borrow::Cow;
 
 #[test]
 fn join() {
     let base = Title::new(&CONFIG, "Talk:A/b/c", None).unwrap();
-    assert_eq!(base.join("Absolute"), Cow::Borrowed("Absolute"));
-    assert_eq!(base.join("/d"), "Talk:A/b/c/d");
-    assert_eq!(base.join("/d#F"), "Talk:A/b/c/d#F");
-    assert_eq!(base.join("/d///"), "Talk:A/b/c/d");
-    assert_eq!(base.join("/d/#F"), "Talk:A/b/c/d#F");
-    assert_eq!(base.join("/d/e"), "Talk:A/b/c/d/e");
-    assert_eq!(base.join("../z"), "Talk:A/b/z");
-    assert_eq!(base.join("../../y"), "Talk:A/y");
-    assert_eq!(base.join("../../../x"), "");
+    assert_eq!(
+        base.join("Absolute"),
+        ("Absolute".into(), "Absolute".into())
+    );
+    assert_eq!(base.join("/d"), ("Talk:A/b/c/d".into(), "/d".into()));
+    assert_eq!(base.join("/d#F"), ("Talk:A/b/c/d#F".into(), "/d#F".into()));
+    assert_eq!(base.join("/d///"), ("Talk:A/b/c/d".into(), "d".into()));
+    assert_eq!(base.join("/d/#F"), ("Talk:A/b/c/d#F".into(), "d#F".into()));
+    assert_eq!(base.join("/d/e"), ("Talk:A/b/c/d/e".into(), "/d/e".into()));
+    assert_eq!(
+        base.join("../z"),
+        ("Talk:A/b/z".into(), "Talk:A/b/z".into())
+    );
+    assert_eq!(base.join("../z/"), ("Talk:A/b/z".into(), "z".into()));
+    assert_eq!(base.join("../../y"), ("Talk:A/y".into(), "Talk:A/y".into()));
+    assert_eq!(base.join("../../y///"), ("Talk:A/y".into(), "y".into()));
+    assert_eq!(
+        base.join("../../y///#F"),
+        ("Talk:A/y#F".into(), "y#F".into())
+    );
+    assert_eq!(
+        base.join("../../../x"),
+        ("../../../x".into(), "../../../x".into())
+    );
 }
 
 #[test]

@@ -163,7 +163,7 @@ impl Surrogate<Error> for Document {
         _span: Span,
         target: &[Spanned<Token>],
     ) -> Result {
-        tags::render_external_link(self, state, sp, target, target, true)
+        tags::render_external_link(self, state, sp, target, &[], true)
     }
 
     fn adopt_behavior_switch(
@@ -355,19 +355,30 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        span: Span,
+        _span: Span,
         prefix: &[Spanned<Token>],
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
         trail: &[Spanned<Token>],
     ) -> Result {
-        let target = sp.eval(state, target)?.map(title_decode);
-        let target = state.globals.title.join(&target);
-        let target = target.trim_start_matches(' ');
-        let Ok(title) = Title::new(state.statics.db.config(), target, None) else {
-            return self.adopt_text(state, sp, span, &sp.source[span.into_range()]);
+        let title = sp.eval(state, target)?.map(title_decode);
+        let title = title.trim_start_matches(' ');
+        let force_link = title.starts_with(':');
+        let (title, text) = state.globals.title.join(title);
+        let Ok(title) = Title::new(state.statics.db.config(), &title, None) else {
+            // It is not possible to just emit the original span because it may
+            // contain entities
+            self.adopt_tokens(state, sp, prefix)?;
+            self.next.text("[[");
+            self.adopt_tokens(state, sp, target)?;
+            for content in content {
+                self.next.text("|");
+                self.adopt_tokens(state, sp, &content.content)?;
+            }
+            self.next.text("]]");
+            self.adopt_tokens(state, sp, trail)?;
+            return Ok(());
         };
-        let force_link = target.starts_with(':');
         if !force_link
             && title.is_category(
                 state.statics.db.config(),
@@ -389,7 +400,7 @@ impl Surrogate<Error> for Document {
             self.adopt_tokens(state, sp, trail)?;
         } else {
             self.text_style_emitter.push(<_>::default());
-            tags::render_internal_link(self, state, sp, target, prefix, content, trail, title)?;
+            tags::render_internal_link(self, state, sp, &text, prefix, content, trail, title)?;
             self.text_style_emitter
                 .pop()
                 .unwrap()
@@ -750,7 +761,12 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Token>],
     ) -> Result {
         if self.next.is_empty() {
+            let end = attributes
+                .first()
+                .map_or(span.end, |first| first.span.start);
+            let span = Span::new(span.start, end);
             self.next.text(&sp.source[span.into_range()]);
+            self.adopt_tokens(state, sp, attributes)?;
         } else {
             self.next.row_start();
             // This relies on DOM error correction later in the chain to make

@@ -29,7 +29,7 @@ use libwikitext_common::{
     config::Configuration,
     db::{Article, DatabaseProvider as _, Error as DatabaseError},
     decode_html, format_date_mediawiki, format_message, format_number, format_raw_message,
-    lang_to_bcp47, make_url, parse_formatted_number,
+    lang_to_bcp47, make_url, normalize_section_name, parse_formatted_number,
     title::{Namespace, Title},
     url::Url,
     url_encode,
@@ -858,7 +858,7 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(text) = arguments.eval(state, 0)?.map(trim) {
-            let text = strip::kill(&text);
+            let text = strip::kill(&text).map(normalize_section_name);
             write!(
                 out,
                 "{}",

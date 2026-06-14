@@ -476,7 +476,7 @@ fn split_target<'tt>(
                 callee += first;
             };
             callee += &sp.eval(state, rest)?;
-            let callee = sp.name.join(callee.trim_ascii());
+            let (callee, _) = sp.name.join(callee.trim_ascii());
             if let Ok(callee) = Title::new(
                 state.statics.db.config(),
                 &callee,

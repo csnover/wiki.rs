@@ -5180,6 +5180,8 @@ File:Foobar.jpg
 # hmm, fix this or just deprecate msgnw and document its behavior?
 !! test
 msgnw keyword
+!! options
+wiki-rs-expect-failure=[[msgnw is not implemented]]
 !! wikitext
 {{msgnw:MSGNW test}}
 !! html/php
@@ -6305,7 +6307,7 @@ File with template filename
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File mw:ExpandedAttrs" data-mw='{"attribs":[[{"txt":"href"},{"html":"File:&lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&apos;{\"pi\":[[{\"k\":\"1\"}]]}&apos; data-mw=&apos;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"1x\",\"href\":\"./Template:1x\"},\"params\":{\"1\":{\"wt\":\"Foobar.jpg\"}},\"i\":0}}]}&apos;>Foobar.jpg&lt;/span>"}]]}'><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:{{1x|Foobar.jpg}}"}}' class="mw-file-element"/></a></span></p>
 !! html/wiki.rs
-<p><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img src="http://example.com/images/3/3a/Foobar.jpg"></a>
+<p><span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><span class="mw-file-element mw-broken-media">File:Foobar.jpg</span></a></span>
 </p>
 !! end
 
@@ -8606,6 +8608,11 @@ Media link
 <p><a rel="mw:MediaLink" href="http://example.com/images/3/3a/Foobar.jpg" resource="./Media:Foobar.jpg" title="Foobar.jpg">Media:Foobar.jpg</a>
 <a rel="mw:MediaLink" href="http://example.com/images/0/00/Video.ogv" resource="./Media:Video.ogv" title="Video.ogv">Media:Video.ogv</a>
 <a rel="mw:MediaLink" href="http://example.com/images/0/00/Video.ogv" resource="./Media:Video.ogv" title="Video.ogv" data-parsoid='{"a":{"resource":"./Media:Video.ogv"},"sa":{"resource":":Media:Video.ogv"}}'>Media:Video.ogv</a></p>
+!! html/wiki.rs
+<p><a href="http://example.com/images/3/3a/Foobar.jpg" class="new" title="Foobar.jpg (page does not exist)">Media:Foobar.jpg</a>
+<a href="http://example.com/images/3/3a/Video.ogv" class="new" title="Video.ogv (page does not exist)">Media:Video.ogv</a>
+<a href="http://example.com/images/3/3a/Video.ogv" class="new" title="Video.ogv (page does not exist)">Media:Video.ogv</a>
+</p>
 !! end
 
 !! test
@@ -8617,6 +8624,9 @@ Media link with text
 </p>
 !! html/parsoid
 <p><a rel="mw:MediaLink" href="http://example.com/images/3/3a/Foobar.jpg" resource="./Media:Foobar.jpg" title="Foobar.jpg">A neat file to look at</a></p>
+!! html/wiki.rs
+<p><a href="http://example.com/images/3/3a/Foobar.jpg" class="new" title="Foobar.jpg (page does not exist)">A neat file to look at</a>
+</p>
 !! end
 
 # This won't pass in standalone mode because we don't have redirect handling in our mock data access.
@@ -8697,6 +8707,10 @@ Media link to nonexistent file (T3702)
 !! html/parsoid
 <p><a rel="mw:MediaLink" href="./Special:FilePath/No_such.jpg" resource="./Media:No_such.jpg" title="No such.jpg" typeof="mw:Error" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}' data-parsoid='{"a":{"resource":"./Media:No_such.jpg"},"sa":{"resource":"Media:No such.jpg"}}'>Media:No such.jpg</a>
 <a rel="mw:MediaLink" href="./Special:FilePath/No_such_file.jpg" resource="./Media:No_such_file.jpg" title="No such file.jpg" typeof="mw:Error" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}' data-parsoid='{"a":{"resource":"./Media:No_such_file.jpg"},"sa":{"resource":"Media:No_such file.jpg"}}'>Media:No_such file.jpg</a></p>
+!! html/wiki.rs # TODO: Media storage support
+<p><a href="http://example.com/images/3/3a/No_such.jpg" class="new" title="Media:No such.jpg (page does not exist)">Media:No such.jpg</a>
+<a href="http://example.com/images/3/3a/No_such_file.jpg" class="new" title="No such file.jpg (page does not exist)">Media:No_such file.jpg</a>
+</p>
 !! end
 
 !! test
@@ -8722,6 +8736,9 @@ Media link with multiple options
 </p>
 !! html/parsoid
 <p><a rel="mw:MediaLink" href="http://example.com/images/3/3a/Foobar.jpg" resource="./Media:Foobar.jpg" title="Foobar.jpg">123|345</a></p>
+!! html/wiki.rs # TODO: Media storage support
+<p><a href="http://example.com/images/3/3a/Foobar.jpg" class="new" title="Media:Foobar.jpg (page does not exist)">123|345</a>
+</p>
 !! end
 
 !! test
@@ -10329,6 +10346,8 @@ Article for special page transclusion test
 
 !! test
 Special page transclusion
+!! options
+wiki-rs-expect-failure=[[Special:Prefixindex is not implemented]]
 !! wikitext
 {{Special:Prefixindex/Xyzzyx}}
 !! html/php
@@ -10342,6 +10361,8 @@ Special page transclusion
 
 !! test
 Special page transclusion twice (T7021)
+!! options
+wiki-rs-expect-failure=[[Special:Prefixindex is not implemented]]
 !! wikitext
 {{Special:Prefixindex/Xyzzyx}}
 {{Special:Prefixindex/Xyzzyx}}
@@ -10367,6 +10388,8 @@ Template:Nested special
 
 !! test
 Nested special page transclusion
+!! options
+wiki-rs-expect-failure=[[Special:Prefixindex is not implemented]]
 !! wikitext
 {{nested special}}
 !! html/php
@@ -11808,6 +11831,8 @@ Don't fall for the self-closing div
 
 !! test
 MSGNW magic word
+!! options
+wiki-rs-expect-failure=[[msgnw is not implemented]]
 !! wikitext
 {{MSGNW:msg}}
 !! html/php
@@ -11817,6 +11842,8 @@ MSGNW magic word
 
 !! test
 RAW magic word
+!! options
+wiki-rs-expect-failure=[[raw is not implemented]]
 !! wikitext
 {{RAW:QUERTY}}
 !! html/php
@@ -13021,8 +13048,6 @@ HTML5 data attributes
 
 !! test
 Strip reserved data attributes
-!! options
-wiki-rs-expect-failure=[[reserved data attributes are not implemented]]
 !! wikitext
 <div data-mw="foo" data-parsoid="bar" data-mw-someext="baz" data-ok="fred" data-object-id="123" data-ooui="xyzzy" data-bad:ns="ns">d</div>
 !! html/php
@@ -14801,9 +14826,8 @@ parsoid=wt2html
 
 </table>
 !! html/wiki.rs # This output matches the PHP parser, except for the expected differences in figure HTML
-<figure class="mw-halign-right"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img alt="123" src="http://example.com/images/3/3a/Foobar.jpg"></a><figcaption><div>123</div></figcaption></figure><table>
-
-<tr><td></td></tr></table>
+<figure class="mw-default-size mw-halign-right" typeof="mw:Error mw:File"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><span class="mw-file-element mw-broken-media"></span></a><figcaption><div>123</div></figcaption></figure>
+<table><tr><td></td></tr></table>
 !! end
 
 !! article

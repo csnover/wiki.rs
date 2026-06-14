@@ -322,6 +322,15 @@ pub(super) fn render_media_with_options(
     sp: &StackFrame<'_>,
     options: &Options<'_>,
 ) -> Result {
+    fn emit_class<S: Sink + ?Sized>(next: &mut S, emitted: &mut bool) {
+        if *emitted {
+            next.text(" ");
+        } else {
+            next.tag_attribute_start("class");
+            *emitted = true;
+        }
+    }
+
     // For now, they are all missing.
     const MISSING_IMAGE: bool = true;
 
@@ -333,7 +342,6 @@ pub(super) fn render_media_with_options(
 
     out.next.tag_start(tag_name);
 
-    out.next.tag_attribute_start("class");
     let mut emitted = false;
     if options.width.is_none()
         && !matches!(
@@ -341,39 +349,30 @@ pub(super) fn render_media_with_options(
             Some(FrameKind::Frame | FrameKind::Thumb(Some(..)))
         )
     {
+        emit_class(&mut out.next, &mut emitted);
         out.next.text("mw-default-size");
-        emitted = true;
     }
     if let Some(align) = options.align {
-        if emitted {
-            out.next.text(" ");
-        }
+        emit_class(&mut out.next, &mut emitted);
         out.next.text("mw-halign-");
         out.next.text(align);
-        emitted = true;
     }
     if let Some(valign) = options.valign {
-        if emitted {
-            out.next.text(" ");
-        }
+        emit_class(&mut out.next, &mut emitted);
         out.next.text("mw-valign-");
         out.next.text(valign);
-        emitted = true;
     }
     if options.border {
-        if emitted {
-            out.next.text(" ");
-        }
+        emit_class(&mut out.next, &mut emitted);
         out.next.text("mw-image-border");
-        emitted = true;
     }
     if let Some(class) = &options.class {
-        if emitted {
-            out.next.text(" ");
-        }
+        emit_class(&mut out.next, &mut emitted);
         out.next.text(class);
     }
-    out.next.tag_attribute_end("class");
+    if emitted {
+        out.next.tag_attribute_end("class");
+    }
 
     out.next.tag_attribute_start("typeof");
     if MISSING_IMAGE {

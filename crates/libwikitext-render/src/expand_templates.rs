@@ -10,7 +10,9 @@ use super::{
 use core::fmt::Write as _;
 use either::Either;
 use libmisc::to_ascii_lower;
-use libwikitext_parse::{Argument, HeadingLevel, InclusionMode, Output, Span, Spanned, Token};
+use libwikitext_parse::{
+    Argument, HeadingLevel, InclusionMode, Output, Span, Spanned, TextStyle, Token,
+};
 
 /// Template expansion mode.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -225,6 +227,18 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         sp: &StackFrame<'_>,
         span: Span,
         _text: &str,
+    ) -> Result {
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
+    }
+
+    #[inline]
+    fn adopt_text_style(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _style: TextStyle,
     ) -> Result {
         self.out.write_str(&sp.source[span.into_range()])?;
         Ok(())
