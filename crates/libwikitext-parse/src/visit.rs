@@ -124,10 +124,10 @@ pub trait Visitor<'tt, E> {
     fn visit_link(
         &mut self,
         span: Span,
-        prefix: Option<&'tt str>,
+        prefix: &'tt [Spanned<Token>],
         target: &'tt [Spanned<Token>],
         content: &'tt [Spanned<Argument>],
-        trail: Option<&'tt str>,
+        trail: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         visit_link(self, span, prefix, target, content, trail)
     }
@@ -183,10 +183,10 @@ pub trait Visitor<'tt, E> {
     fn visit_redirect(
         &mut self,
         span: Span,
-        prefix: Option<&'tt str>,
+        prefix: &'tt [Spanned<Token>],
         target: &'tt [Spanned<Token>],
         content: &'tt [Spanned<Argument>],
-        trail: Option<&'tt str>,
+        trail: &'tt [Spanned<Token>],
     ) -> Result<(), E> {
         visit_redirect(self, span, prefix, target, content, trail)
     }
@@ -411,17 +411,15 @@ where
 pub fn visit_link<'tt, V, E>(
     visitor: &mut V,
     _span: Span,
-    prefix: Option<&'tt str>,
+    prefix: &'tt [Spanned<Token>],
     target: &'tt [Spanned<Token>],
     content: &'tt [Spanned<Argument>],
-    trail: Option<&'tt str>,
+    trail: &'tt [Spanned<Token>],
 ) -> Result<(), E>
 where
     V: Visitor<'tt, E> + ?Sized,
 {
-    if let Some(prefix) = prefix {
-        visitor.visit_text(prefix)?;
-    }
+    visitor.visit_tokens(prefix)?;
 
     if content.is_empty() {
         visitor.visit_tokens(target)?;
@@ -431,9 +429,7 @@ where
         }
     }
 
-    if let Some(trail) = trail {
-        visitor.visit_text(trail)?;
-    }
+    visitor.visit_tokens(trail)?;
 
     Ok(())
 }
@@ -495,10 +491,10 @@ where
 pub fn visit_redirect<'tt, V, E>(
     visitor: &mut V,
     span: Span,
-    prefix: Option<&'tt str>,
+    prefix: &'tt [Spanned<Token>],
     target: &'tt [Spanned<Token>],
     content: &'tt [Spanned<Argument>],
-    trail: Option<&'tt str>,
+    trail: &'tt [Spanned<Token>],
 ) -> Result<(), E>
 where
     V: Visitor<'tt, E> + ?Sized,
@@ -561,13 +557,7 @@ where
             content,
             prefix,
             trail,
-        } => visitor.visit_link(
-            token.span,
-            prefix.map(|prefix| &visitor.source()[prefix.into_range()]),
-            target,
-            content,
-            trail.map(|trail| &visitor.source()[trail.into_range()]),
-        ),
+        } => visitor.visit_link(token.span, prefix, target, content, trail),
         Token::ListItem { bullets, content } => {
             visitor.visit_list_item(token.span, &visitor.source()[bullets.into_range()], content)
         }
@@ -591,13 +581,7 @@ where
             else {
                 unreachable!();
             };
-            visitor.visit_redirect(
-                token.span,
-                prefix.map(|prefix| &visitor.source()[prefix.into_range()]),
-                target,
-                content,
-                trail.map(|trail| &visitor.source()[trail.into_range()]),
-            )
+            visitor.visit_redirect(token.span, prefix, target, content, trail)
         }
         Token::StartAnnotation { name, attributes } => visitor.visit_start_annotation(
             token.span,

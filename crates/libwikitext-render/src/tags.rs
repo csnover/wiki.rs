@@ -59,9 +59,9 @@ pub(super) fn render_internal_link(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &str,
-    prefix: Option<&str>,
+    prefix: &[Spanned<Token>],
     content: &[Spanned<Argument>],
-    trail: Option<&str>,
+    trail: &[Spanned<Token>],
     title: Title,
 ) -> Result<(), Error> {
     if state.globals.title == title {
@@ -80,9 +80,7 @@ pub(super) fn render_internal_link(
         render_start_link(&mut out.next, state, &LinkKind::Internal(title));
     }
 
-    if let Some(prefix) = prefix {
-        out.adopt_generated(state, sp, None, prefix)?;
-    }
+    out.adopt_tokens(state, sp, prefix)?;
     if content.is_empty() {
         out.adopt_generated(
             state,
@@ -93,10 +91,7 @@ pub(super) fn render_internal_link(
     } else {
         render_single_attribute(out, state, sp, content)?;
     }
-    if let Some(trail) = trail {
-        out.adopt_generated(state, sp, None, trail)?;
-    }
-
+    out.adopt_tokens(state, sp, trail)?;
     out.next.tag_end("a");
     Ok(())
 }
@@ -127,6 +122,7 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
     };
     let href = link.to_string(&options, query);
 
+    // TODO: Missing media is supposed to go to a special upload page
     let href = if missing {
         href.split_once('#').map_or(href.as_str(), |(lhs, _)| lhs)
     } else {
@@ -356,6 +352,10 @@ impl LinkKind<'_> {
 
 /// Serialises values which are structured like
 /// `{argument}{delimiter}{argument}...`.
+///
+/// This function can only be used on inputs without untokenised inclusion
+/// control tags since otherwise if those tags are used in the interstitial
+/// positions they will end up exposed in the output.
 pub(super) fn render_single_attribute<W: Surrogate<Error> + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,

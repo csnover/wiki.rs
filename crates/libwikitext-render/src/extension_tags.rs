@@ -132,7 +132,8 @@
 use super::{
     Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
     document::Document,
-    image, preprocess_frame,
+    image::{self, FrameKind},
+    preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     tags::ExternalLinkKind,
@@ -337,15 +338,6 @@ fn gallery(
     let class = arguments.get(state, "class")?.unwrap_or_default();
     let heights = arguments.get(state, "heights")?;
 
-    let mut defaults = image::Options::default();
-    defaults.align = Some("none".into());
-    defaults.format = Some("thumb".into());
-    if let Some(heights) = &heights {
-        defaults
-            .attrs
-            .insert("height".into(), Cow::Borrowed(heights));
-    }
-
     let per_row = arguments.get(state, "perrow")?;
     let widths = arguments.get(state, "widths")?;
     let attrs = if per_row.is_some() || widths.is_some() {
@@ -384,7 +376,15 @@ fn gallery(
         let args = preprocess_frame(state, arguments.sp, rest, ExpandMode::Normal)?;
         let sp = arguments.sp.clone_with_source(FileMap::new(&args));
         let args = state.statics.parser.parse_gallery_media(&sp.source)?;
-        let options = image::media_options(state, &sp, title, &args, defaults.clone())?;
+
+        let mut options = image::media_options(state, &sp, title, &args)?;
+        options.align.get_or_insert("none");
+        options.frame.get_or_insert(FrameKind::Thumb(None));
+        if options.height.is_none()
+            && let Some(Ok(height)) = heights.as_ref().map(|h| h.parse())
+        {
+            options.height = Some(height);
+        }
 
         let mut inner = Document::new(true);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;

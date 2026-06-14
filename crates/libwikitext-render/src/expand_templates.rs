@@ -10,7 +10,7 @@ use super::{
 use core::fmt::Write as _;
 use either::Either;
 use libmisc::to_ascii_lower;
-use libwikitext_parse::{Argument, InclusionMode, Output, Span, Spanned, Token};
+use libwikitext_parse::{Argument, HeadingLevel, InclusionMode, Output, Span, Spanned, Token};
 
 /// Template expansion mode.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -130,6 +130,21 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         text: &str,
     ) -> Result {
         self.out.write_str(text)?;
+        Ok(())
+    }
+
+    fn adopt_heading(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        level: HeadingLevel,
+        content: &[Spanned<Token>],
+    ) -> Result {
+        let heading = Span::new(span.start, span.start + u32::from(u8::from(level)));
+        self.out.write_str(&sp.source[heading.into_range()])?;
+        self.adopt_tokens(state, sp, content)?;
+        self.out.write_str(&sp.source[heading.into_range()])?;
         Ok(())
     }
 

@@ -197,10 +197,10 @@ pub(crate) trait Surrogate<E> {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        prefix: Option<Spanned<&str>>,
+        prefix: &[Spanned<Token>],
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
-        trail: Option<Spanned<&str>>,
+        trail: &[Spanned<Token>],
     ) -> Result<(), E> {
         adopt_link(self, state, sp, span, prefix, target, content, trail)
     }
@@ -285,10 +285,10 @@ pub(crate) trait Surrogate<E> {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        prefix: Option<Spanned<&str>>,
+        prefix: &[Spanned<Token>],
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
-        trail: Option<Spanned<&str>>,
+        trail: &[Spanned<Token>],
     ) -> Result<(), E> {
         adopt_redirect(self, state, sp, span, prefix, target, content, trail)
     }
@@ -559,25 +559,21 @@ pub fn adopt_link<V, E>(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     _span: Span,
-    prefix: Option<Spanned<&str>>,
+    prefix: &[Spanned<Token>],
     _target: &[Spanned<Token>],
     content: &[Spanned<Argument>],
-    trail: Option<Spanned<&str>>,
+    trail: &[Spanned<Token>],
 ) -> Result<(), E>
 where
     V: Surrogate<E> + ?Sized,
 {
-    if let Some(prefix) = prefix {
-        surrogate.adopt_text(state, sp, prefix.span, prefix.node)?;
-    }
+    surrogate.adopt_tokens(state, sp, prefix)?;
 
     for token in content {
         surrogate.adopt_tokens(state, sp, &token.content)?;
     }
 
-    if let Some(trail) = trail {
-        surrogate.adopt_text(state, sp, trail.span, trail.node)?;
-    }
+    surrogate.adopt_tokens(state, sp, trail)?;
 
     Ok(())
 }
@@ -635,10 +631,10 @@ pub fn adopt_redirect<V, E>(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     span: Span,
-    prefix: Option<Spanned<&str>>,
+    prefix: &[Spanned<Token>],
     target: &[Spanned<Token>],
     content: &[Spanned<Argument>],
-    trail: Option<Spanned<&str>>,
+    trail: &[Spanned<Token>],
 ) -> Result<(), E>
 where
     V: Surrogate<E> + ?Sized,
@@ -712,21 +708,7 @@ where
             target,
             content,
             trail,
-        } => surrogate.adopt_link(
-            state,
-            sp,
-            token.span,
-            prefix.map(|prefix| Spanned {
-                node: &sp.source[prefix.into_range()],
-                span: prefix,
-            }),
-            target,
-            content,
-            trail.map(|trail| Spanned {
-                node: &sp.source[trail.into_range()],
-                span: trail,
-            }),
-        ),
+        } => surrogate.adopt_link(state, sp, token.span, prefix, target, content, trail),
         Token::ListItem { bullets, content } => surrogate.adopt_list_item(
             state,
             sp,
@@ -756,21 +738,7 @@ where
             else {
                 unreachable!();
             };
-            surrogate.adopt_redirect(
-                state,
-                sp,
-                token.span,
-                prefix.map(|prefix| Spanned {
-                    node: &sp.source[prefix.into_range()],
-                    span: prefix,
-                }),
-                target,
-                content,
-                trail.map(|trail| Spanned {
-                    node: &sp.source[trail.into_range()],
-                    span: trail,
-                }),
-            )
+            surrogate.adopt_redirect(state, sp, token.span, prefix, target, content, trail)
         }
         Token::StartAnnotation { name, attributes } => surrogate.adopt_start_annotation(
             state,

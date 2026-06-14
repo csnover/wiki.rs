@@ -295,8 +295,8 @@ impl fmt::Debug for TokenInspector<'_> {
                     "content",
                     &VInspector::<ArgumentInspector<'_>>(self.0, content),
                 )
-                .field("prefix", &prefix.map(|prefix| &self.0[prefix.into_range()]))
-                .field("trail", &trail.map(|trail| &self.0[trail.into_range()]))
+                .field("prefix", &VInspector::<TokenInspector<'_>>(self.0, prefix))
+                .field("trail", &VInspector::<TokenInspector<'_>>(self.0, trail))
                 .finish(),
             Token::ListItem { bullets, content } => f
                 .debug_struct(&span_name("ListItem", self.0, self.1))

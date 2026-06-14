@@ -478,11 +478,11 @@ pub enum Token {
         /// version of the target title should be used.
         content: Vec<Spanned<Argument>>,
         /// The link prefix to be prefixed to content.
-        prefix: Option<Span>,
+        prefix: Vec<Spanned<Token>>,
         /// The target of the link.
         target: Vec<Spanned<Token>>,
         /// The link trail to be appended to content.
-        trail: Option<Span>,
+        trail: Vec<Spanned<Token>>,
     },
     /// A list item.
     ListItem {

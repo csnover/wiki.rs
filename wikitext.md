@@ -1267,7 +1267,7 @@ While `S` is not the position of the end of the input:
       Otherwise;
 
    4. If `Name` is `["img_alt"|"img_class"|"img_link"|"img_manualthumb"]`, run
-      the [caption sanitising algorithm](#caption-sanitiser) on `Value`;
+      the [image attribute algorithm](#image-attribute) on `Value`;
    5. If `Name` is `["img_alt"|"img_class"]`, set `Validated`; otherwise
    6. If `Name` is
       `["img_manualthumb"|"img_frameless"|"img_framed"|"img_thumbnail"]`, set
@@ -1289,14 +1289,14 @@ While `S` is not the position of the end of the input:
 
 Finally:
 
-1. If the value of the key `"frame"` of `Params` is not
-   `["img_framed"|"img_thumbnail"]` and `"manualthumb"` of `Params` is none:
+1. If the value of `Params.frame` is not `["img_framed"|"img_thumbnail"]` and
+   the value of `Params.manualthumb` is none:
 
-   1. Let `Title` be the result of running the
-      [caption sanitising algorithm](#caption-sanitiser) on `Caption`;
-   2. If `Params` has no `"alt"` key and `Caption` is not none, insert `Title`
+   1. Let `Alt` be the result of running the
+      [image attribute algorithm](#image-attribute) on `Caption`;
+   2. If `Params` has no `"alt"` key and `Caption` is not none, insert `Alt`
       to `Params` with the key `"alt"`;
-   3. Insert `Title` to `Params` with the key `"title"`.
+   3. Insert `Alt` to `Params` with the key `"title"`.
 
 2. Insert `Caption` to `Params` with the key `"caption"`;
 3. Emit the result of [making image HTML](#make-image-html) with `Params`.
@@ -1369,70 +1369,65 @@ Emits an enumeration with variants:
 1. Let `File` be the image file;
 2. Let `Params` be the parameters;
 3. Let `Title` be the image link target;
-4. If the image is not allowed to be displayed inline, treat it as a plain
-   [Wikilink](#wikilinks), emit a hyperlink, and terminate here; otherwise
+4. If the image is not allowed to be displayed inline according to an
+   implementation-defined condition, treat it as a plain [Wikilink](#wikilinks),
+   emit a hyperlink, and terminate here; otherwise
 5. Let `Classes` be a list;
-6. Let `Width` be the value from `Params` with the key `"width"`;
-7. Let `Frame` be the value from `Params` with the key `"frame"`;
-8. Let `Alt` be the value from `Params` with the key `"alt"`;
-9. Let `Image Title` be the value from `Params` with the key `"title"`;
-10. Let `Link` be the value from `Params` with the key `"link"`;
-11. Let `Upright` be the value from `Params` with the key `"upright"`;
-12. Let `Manual Thumb` be the value from `Params` with the key `"manualthumb"`;
-12. If `Width` is none and `Frame` is not `"img_framed"` and `Manual Thumb` is
-    none, push `"mw-default-size"` to `Classes`;
-13. Let `Prefix` and `Postfix` be empty;
-14. If `File` is not none and `Width` is none, let `Width` be an appropriate
-    implementation-defined computed value based on data from `File`;
-15. If `Frame` is `["img_thumbnail"|"img_framed"]` or `Manual Thumb` is not
-    none, emit [a bunch copy-pasted code](#thumb-link-2) and terminate here;
+6. Let `Width` be the value from `Params.width`;
+7. Let `Frame` be the value from `Params.frame`;
+8. Let `Manual Thumb` be the value from `Params.manualthumb`;
+9. If `Width` is none and `Frame` is not `"img_framed"` and `Manual Thumb` is
+   none, push `"mw-default-size"` to `Classes`;
+10. If `File` is not none and `Width` is none, set the value of `Params.width`
+    to an appropriate implementation-defined computed value based on data from
+    `File`;
+11. If `Frame` is `["img_thumbnail"|"img_framed"]` or `Manual Thumb` is not
+    none, emit [a bunch of copy-pasted code](#thumb-link-2) using `Params` and
+    `Classes` and terminate here;
     otherwise;
-16. Let `RDFa Type` be `"mw:file"`;
-17. If `Frame` is `"img_frameless"`:
+12. Let `RDFa Type` be `"mw:File"`;
+13. If `Frame` is `"img_frameless"`:
 
     1. Append `"/Frameless"` to `RDFa Type`;
-    2. If `File` is not none, let `Width` be an appropriate
+    2. If `File` is not none, set the value of `Params.width` to an appropriate
        implementation-defined computed value based on data from `File` if the
-       computed value is below `Width`.
+       computed value is below the value of `Params.width`.
 
-18. Emit the [finished image](#finish-image).
+14. Emit the [finished image](#finish-image) using `File`, `Params`,
+    `RDFa Type`, `Title`, and `Classes`.
 
 ### Thumb link 2
 
-1. If `Align` is none, let `Align` be empty;
-2. If `Caption` is none, let `Caption` be empty;
-3. If `Width` is none, let `Width` be 130 if `Upright` is set, else 180;
+1. If `Params.horizAlign` is none, let `Align` be empty, otherwise let `Align`
+   be the value from `Params.horizAlign`;
+2. If `Params.caption` is none, let `Caption` be empty, otherwise let `Caption`
+   be the value from `Params.caption`;
+3. If `Params.width` is none, let `Width` be 130 if `Params.upright` is not
+   none, else 180, otherwise let `Width` be the value from `Params.width`;
 4. Let `RDFa Type` be `"mw:File/Thumb"`;
 5. If `File` does not exist:
-   1. If `Frame` is not `"img_manualthumb"` and `Framed` is set, let `RDFa Type`
-      be `"mw:File/Frame"`;
-   2. Let `Outer Width` be `Width + 2`.
 
-   Otherwise:
-
-   1. If `Frame` is `"img_manualthumb"`:
+   1. If `Params.manualframe` is none and `Params.frame` is `"img_framed"`, let
+      `RDFa Type` be `"mw:File/Frame"`;
+   2. If `Params.frame` is `"img_manualthumb"`:
 
       1. Let `Title` be the result of
-         [parsing `Manual Thumb` as a title](#title) using default namespace
-         `File`;
+         [parsing `Params.manualthumb` as a title](#title) using default
+         namespace `File`;
       2. If `Title` is not none, let `File` be the file found in an
          implementation-defined way;
       3. If `File` is not none, let `Thumb` be the implementation-defined
-         thumbnail file, and set `Manual Thumb`;
+         thumbnail file;
+      4. If `Link` is none, let `Params.link` be `Title(Title)`.
 
-      Otherwise:
+      Otherwise;
 
-      1. If `Frame` is `"img_framed"`, let `RDFa Type` be `"mw:File/Frame"`;
-      2. Let `Width` be an appropriate implementation-defined computed value
-         based on data from `File` if the computed value is below `Width`;
-      3. Let `Thumb` be the implementation-defined thumbnail file;
+   3. Let `Width` be an appropriate implementation-defined computed value based
+      on data from `File` if the computed value is below `Width`, let `Thumb` be
+      the implementation-defined thumbnail file.
 
-   2. If `Thumb` is none, let `Outer Width` be `Width + 2`; otherwise, let
-      `Outer Width` be the width of `Thumb` plus 2.
-
-6. Let `URL` be the [local URL](#title-local-url) of `Title`;
-7. If `Manual Thumb` is set and `Link` is none, let `Link` be `Title(Title)`;
-8. Emit the [finished image](#finish-image).
+6. Emit the [finished image](#finish-image) using `File`, `Params`, `RDFa Type`,
+   and `Title`.
 
 ### Finish image
 
@@ -1440,116 +1435,98 @@ Emits an enumeration with variants:
   decided to copy and paste a bunch of code and make tiny tweaks. So this comes
   from one of two branches of basically identical code.
 
-1. If `File` is not none and `Width` is not none, let `Thumb` be an
-    implementation-defined thumbnail representation of `File`;
-2. If `File` is not none and `Thumb` is not none and `File` is considered a
+1. Let `File` be the input file;
+2. Let `Params` be the input parameters;
+3. Let `RDFa Type` be the input RDFa type;
+4. Let `Title` be the input title;
+5. Let `Classes` be the input class list, or empty if there is no input class
+   list;
+6. Let `Alt` be the value from `Params.alt`;
+7. Let `Upright` be the value from `Params.upright`;
+8. Let `Thumb` be none;
+9. If `File` is not none and `Params.width` is not none, let `Thumb` be an
+   implementation-defined thumbnail representation of `File`;
+10. If `File` is not none and `Thumb` is not none and `File` is considered a
     “bad” file according to an implementation-defined criteria, set `Bad File`;
-3. If `Thumb` is none or an implementation-defined error, or `Bad File` is set:
+11. If `Thumb` is none or an implementation-defined error, or `Bad File` is set:
 
-   1. Let `RDFa Type` be `"mw:error"`;
-   2. Let `Label` be an implementation-defined error message, or `Alt` if there
-      is no implementation-defined error message, or the
-      [prefixed](#title-glossary) text of `Title` if `Alt` is none;
-   3. Let `Body` be an HTML `span` element with `"class"` attribute value
-      `"mw-file-element mw-broken-media"` and body `Label`;
-   4. Let `S` be a [media link](#media-link) with `Title` and `Label`.
+    1. Prefix `RDFa Type` with `"mw:Error "`;
+    2. Let `Label` be an implementation-defined error message, or `Alt` if there
+       is no implementation-defined error message, or the
+       [prefixed](#title-glossary) text of `Title` if `Alt` is none;
+    3. Let `Body` be an HTML `span` element with `"class"` attribute value
+       `"mw-file-element mw-broken-media"` and body `Label`;
+    4. Let `Image` be a [media link](#media-link) with `Title` and `Body`.
 
-   Otherwise:
+    Otherwise:
 
-   1. Let `Thumb Params` be a map;
-   2. If `Alt` is not none, insert the value `Alt` to `Thumb Params` with the
-      key `"alt"`;
-   3. Insert the value `Image Title` to `Thumb Params` with the key `"title"`;
-   4. Insert the value `"mw-file-element"` to `Thumb Params` with the key
-      `"img-class"`;
-   5. If `Upright` is not none:
+    1. Let `Image` be the [thumbnail HTML representation](#thumb-html) of
+       `Thumb`.
 
-      1. Append `" mw-file-upright"` to the value of `Thumb Params` with the
-         key `"img-class"`;
-      2. Insert the interpolation `"--mw-file-upright: {Upright}"` to
-         `Thumb Params` with the key `"style"`.
+12. Let `Wrapper` be `"span"`;
+13. Let `Caption` be empty;
+14. Let `Align` be the value from `Params.horizAlign`;
+15. Let `VAlign` be the value from `Params.vertAlign`;
+16. If `Align` is not none:
 
-   6. Insert `Link` to `Thumb Params` with the key `"link"`;
-   7. Let `S` be the [thumbnail HTML representation](#thumb-html) of `Thumb`
-      using `Thumb Params`.
+    1. Let `Wrapper` be `"figure"`;
+    2. Strip the `"img_"` prefix from `Align`;
+    3. Push the interpolation `"mw-halign-{Align}"` to `Classes`;
+    4. Let `Caption` be an HTML element with tag name `"figcaption"` and body
+       `Params.caption`.
 
-4. Let `Wrapper` be `"span"`;
-5. Let `Caption` be empty;
-6. Let `Align` be the value from `Params` with the key `"horizAlign"`;
-7. Let `VAlign` be the value from `Params` with the key `"vertAlign"`;
-8. If `Align` is not none:
+    Otherwise;
 
-   1. Let `Wrapper` be `"figure"`;
-   2. Strip the `"img_"` prefix from `Align`;
-   3. Push the interpolation `"mw-halign-{Align}"` to `Classes`;
-   4. Let `Image Caption` be the value from `Params` with the key `"caption"`;
-   5. Let `Caption` be an HTML element with tag name `"figcaption"` and body
-      `Image Caption`.
+17. If `VAlign` is not none:
 
-   Otherwise;
+    1. Strip the `"img_"` prefix from `Align`;
+    2. Replace all `'_'` with `'-'` in `Align`;
+    3. Push the interpolation `"mw-valign-{VAlign}"` to `Classes`.
 
-9. If `VAlign` is not none:
-
-   1. Strip the `"img_"` prefix from `Align`;
-   2. Replace all `'_'` with `'-'` in `Align`;
-   3. Push the interpolation `"mw-valign-{VAlign}"` to `Classes`.
-
-10. If `Params` has a key `"border"`, push `"mw-image-border"` to `Classes`;
-11. If `Params` has a key `"class"`, push its value to `Classes`;
-12. Let `Class` be `Classes` joined into a string using the delimiter the space
+18. If `Params` has a key `"border"`, push `"mw-image-border"` to `Classes`;
+19. If `Params` has a key `"class"`, push its value to `Classes`;
+20. Let `Class` be `Classes` joined into a string using the delimiter the space
     character;
-13. Let `S` be an HTML element with the tag name `Wrapper`, `"class"` attribute
+21. Let `Image` be an HTML element with the tag name `Wrapper`, `"class"` attribute
     value `Class`, `"typeof"` attribute value `RDFa Type`, and body the
-    interpolation `"{S}{Caption}"`;
-14. Replace all `'\n'` in `S` with the space character;
-15. Emit `S`.
+    interpolation `"{Image}{Caption}"`;
+22. Replace all `'\n'` in `Image` with the space character;
+23. Emit `Image`.
 
 ### Thumb HTML
 
 1. Let `Thumb` be the implementation-defined thumbnail object;
-2. Let `Params` be the parameters;
-3. Let `Attrs` be a map;
-4. Insert the value from `Params` with the key `"alt"` into `Attrs` with the key
-   `"alt"`;
-5. Insert the value of the URL of `Thumb` into `Attrs` with the key `"src"`;
-6. Insert the value `"async"` to `Attrs` with the key `"decoding"`;
-7. Let `Link` be the value from `Params` with the key `"link"`;
-8. Let `Thumb Title` be the value from `Params` with the key `"title"`;
-9. If `Link` is `URL(URL)`:
+2. Let `Params` be a the input parameters;
+3. Let `Caption` be the value from `Params.caption`;
+4. Let `Classes` be `"mw-file-element"`;
+5. Let `Style` be empty;
+6. If `Params.upright` is not none:
 
-   1. Let `Link Attrs` be a map `[ "href" => URL ]`;
-   2. If `Thumb Title` is not none, insert the value `Thumb Title` to
-      `Link Attrs` with key `"title"`.
+   1. Append `" mw-file-upright"` to `Classes`;
+   2. Let `Style` be `"--mw-file-upright: {Params.upright};"`.
 
-   Otherwise;
+7. Let `Src` be the implementation-defined URL of `Thumb`;
+8. If `Params.link` is `URL(URL)`, let `Href` be `URL`; otherwise
+9. If `Params.link` is `Title(Title)`:
 
-10. If `Link` is `Title(Title)`:
+    1. Let `Href` be the [link URL](#title-link-url) of `Title`;
+    2. If `Caption` is none, let `Caption` be the
+       [prefixed](#title-glossary) text from `Title`.
 
-    1. Let `URL` be the [link URL](#title-link-url) of `Title`;
-    3. If `Thumb Title` is none, let `Thumb Title` be the
-       [prefixed](#title-glossary) text from `Title`;
-    4. Let `Link Attrs` be a map `[ "href" => URL, "title" => Thumb Title ]`.
+10. If `Params.vertAlign` is not none, append the interpolation
+    `"vertical-align: {Params.vertAlign};"` to `Style`;
+11. If the value of `Params.class` is not none, append it to `Classes`;
+12. Let `Image` be an HTML element with tag name `"img"`, `alt` attribute value
+    `Params.alt` if is not none, `src` attribute value `Src`, `decoding`
+    attribute value `"async"`, `class` attribute value `Classes`, and `style`
+    attribute value `Style` if it is not empty;
+13. If `Href` is none, let `Tag Name` be `"span"`, otherwise let `Tag Name` be
+    `"a"`;
+14. Emit an HTML element with the tag name `Tag Name`, `href` attribute value
+    `Href` if `Href` is not none, `title` attribute value `Caption` if `Caption`
+    is not none, and body `Image`.
 
-    Otherwise;
-
-11. If `Thumb Title` is not none, let `Link Attrs` be
-    `[ "title" => Thumb Title ]`;
-12. Let `Style` be empty;
-13. If `"vertAlign"` is in `Params`, append the interpolation
-    `"vertical-align: {Params.vertAlign}"` to `Style`;
-14. If `"style"` is in `Params`, append its value to `Style`;
-15. Trim ASCII whitespace from `Style`;
-16. If `Style` is not empty, insert the value `Style` to `Attrs` with the key
-    `"style"`;
-17. If `"img-class"` is in `Params`, insert its value to `Attrs` with the key
-    `"class"`;
-18. Let `Image` be an HTML element with tag name `"img"` and attributes `Attrs`;
-19. If `"href"` is in `Link Attrs`, let `Tag Name` be `"a"`, otherwise let
-    `Tag Name` be `"span"`;
-20. Emit an HTML element with the tag name `Tag Name`, attributes `Link Attrs`,
-    and body `Image`.
-
-### Caption sanitiser
+### Image attribute
 
 1. [Unstrip](#unstrip) the input using mode `both`;
 2. If the input contains one of the [HTML5 named character references] which
@@ -2763,7 +2740,7 @@ A valid Title is constructed from a string with an optional default namespace by
 following these steps:
 
 1. Let `Text` be the input after decoding HTML entities following the special
-   MediaWiki HTML entity rules[^entity];
+   MediaWiki HTML entity rules[^entity] and then normalising Unicode to NFC;
 2. Replace each run of title spaces[^titlews] in `Text` with a single space
    character;
 3. Trim title trimmables[^titletr] from the start and end of `Text`;

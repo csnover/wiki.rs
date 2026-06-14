@@ -66,10 +66,10 @@ where
     fn visit_link(
         &mut self,
         span: Span,
-        prefix: Option<&'tt str>,
+        prefix: &'tt [Spanned<Token>],
         target: &'tt [Spanned<Token>],
         content: &'tt [Spanned<Argument>],
-        trail: Option<&'tt str>,
+        trail: &'tt [Spanned<Token>],
     ) -> Result<(), fmt::Error> {
         // TODO: Actually evaluate the target (which requires making this helper
         // capable of evaluating wikitext, which is annoying).

@@ -409,7 +409,7 @@ impl<S: Sink + Markable> AttributeFilter<S> {
         // TODO: Discard anything after "/*"
 
         if style.contains(
-            |c| matches!(c, '\0'..='\x08' | '\x0b' | '\x0e'..='\x1f' | '\x7f' | '\u{fffd}'),
+            |c| matches!(c, '\0'..='\x08' | '\x0b' | '\x0e'..='\x1f' | '\x7f' | char::REPLACEMENT_CHARACTER),
         ) {
             next.text("/* invalid control char */");
             return;

@@ -731,17 +731,22 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         "]]"
         trail:wikilink_trail()?
         { Token::Link {
-            prefix,
+            prefix: prefix.unwrap_or_default(),
             content,
             target,
-            trail
+            trail: trail.unwrap_or_default(),
         } }
     >)
-      // The URL of an external link cannot start with `[`, so the first `[` in
-      // `[[` cannot be anything other than a plain text character, so save a
-      // tiny bit of time by accepting a bogus `[[` here as one `[` plus maybe
-      // the start of an external link.
-    / spanned(<"[" ("[" eof() / &"[") { Token::Text }>)
+      // The possibilities in this position are:
+      //
+      // "[[[" - A literal "[[" followed by maybe a Wikilink or external link
+      //        (take "[[")
+      // "[[" - A literal "[" followed by maybe an external link (take "[")
+      // "[" - Maybe an external link (fail)
+      //
+      // Absent is the possibility that this could be a "[" and then a Wikilink
+      // because the original parser ‘parsed’ by splitting the input on "[["
+    / spanned(<"[" &"[" ("[" &"[")? { Token::Text }>)
 
     /// Text preceding a Wikilink that should be absorbed into the start of
     /// the hyperlink.
@@ -750,14 +755,16 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// al[[Link target|extra|arguments]]
     /// ^^
     /// ```
-    rule wikilink_prefix() -> Span
+    rule wikilink_prefix() -> Vec<Spanned<Token>>
+    = &wikilink_prefix_match() t:(!"[[" t:inline() { t })*
+    { reduce_tree(t) }
+
+    /// A check for a matching Wikilink prefix.
+    rule wikilink_prefix_match()
     = #{|input, pos| {
         let pattern = o.config.link_prefix_pattern.as_ref();
-        if let Some(prefix) = pattern.and_then(|p| p.find(&input.as_bytes()[pos..]))
-            && let end = pos + prefix.end()
-            && input.is_char_boundary(end)
-        {
-            RuleResult::Matched(end, Span::new(pos as u32, end as u32))
+        if pattern.is_some_and(|p| p.is_match(&input.as_bytes()[pos..])) {
+            RuleResult::Matched(pos, ())
         } else {
             RuleResult::Failed
         }
@@ -779,7 +786,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     rule wikilink_target_part() -> Spanned<Token>
     = entity()
-    / !strip_marker() t:spanned(<#{|input, pos| wikilink_target_char(
+    / !("[[" / strip_marker()) t:spanned(<#{|input, pos| wikilink_target_char(
         input, pos, &o.config.valid_title_bytes
     )} { Token::Text }>)
     { t }
@@ -831,7 +838,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         n:newline()
         v:(&at_sol() t:wikilink_argument_line() { t })+
         { make_argument(reduce_tree(iter::once(n).chain(v.into_iter().flatten())), None) }
-        / kv:wikilink_argument_kv(<"|" / "]]">)?
+        / kv:wikilink_argument_kv(<"[[" / "|" / "]]">)?
         { kv.unwrap_or_default() }
       >)
     { t }
@@ -917,13 +924,41 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[Link target]]ings
     ///                ^^^^
     /// ```
-    rule wikilink_trail() -> Span
+    rule wikilink_trail() -> Vec<Spanned<Token>>
+    = start:position!()
+      i:wikilink_trail_raw()
+    {? wikilink_trail_content(i, o, start).map_err(|_| "trail") }
+
+    /// The content of a Wikilink trail.
+    ///
+    /// ```wikitext
+    /// [[Link target]]ings
+    ///                ^^^^
+    /// ```
+    ///
+    /// This contortion is necessary because the link trail regular expression
+    /// can match arbitrary sequences, including potentially cutting through the
+    /// middle of tokens. For example, a link trail `[a-z&]*` matching the
+    /// Wikilink `[[a]]foo&lt;` should result in `[Text("foo&")]` whereas a
+    /// link trail `[a-z&;]*` on the same Wikitext should result in
+    /// `[Text("foo"), Entity('<')]`. The least invasive way to do this is to
+    /// parse the truncated input separately. As with `only_include`, the whole
+    /// input is passed and then immediately advanced to the start position so
+    /// that the resulting spans are correct.
+    pub(self) rule wikilink_trail_content(start_at: usize) -> Vec<Spanned<Token>>
+    = #{|_, _| RuleResult::Matched(start_at, ()) }
+      t:(!"[[" t:inline() { t })*
+    { reduce_tree(t) }
+
+    /// Returns the input truncated at the end of a Wikilink trail, if there is
+    /// one.
+    rule wikilink_trail_raw() -> &'input str
     = #{|input, pos| {
         let pattern = &o.config.link_trail_pattern;
         let captures = pattern.captures(&input[pos..]).ok().flatten();
         if let Some(captures) = captures && let Some(trail) = captures.get(1) {
             let end = pos + trail.end();
-            RuleResult::Matched(end, Span::new(pos as u32, end as u32))
+            RuleResult::Matched(end, &input[..end])
         } else {
             RuleResult::Failed
         }
@@ -950,7 +985,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [//example.com External site]
     ///  ^^^^^^^^^^^^^
     /// ```
-    rule external_link_target() -> Vec<Spanned<Token>>
+    pub rule external_link_target() -> Vec<Spanned<Token>>
     = s:url_scheme()
       h:(url_ipish() / external_link_url_class())
       rest:external_link_url_class()*
@@ -976,7 +1011,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///                      ^
     /// ```
     rule external_link_term()
-    = [']'|'\x00'..='\x08'|'\x0a'..='\x1f'|'\u{FFFD}']
+    = [']'|'\x00'..='\x08'|'\x0a'..='\x1f'|char::REPLACEMENT_CHARACTER]
 
     /// A character sequence that is interpreted as a link to a resource.
     rule magic_link() -> Spanned<Token>
@@ -1130,7 +1165,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // HTML tag
     / text_style()
     / strip_marker()
-    / [']'|'['|'<'|'>'|'"'|'\x00'..='\x20'|'\u{fffd}']
+    / [']'|'['|'<'|'>'|'"'|'\x00'..='\x20'|char::REPLACEMENT_CHARACTER]
 
     ///////////////
     // Templates //
@@ -1651,8 +1686,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// <onlyinclude>inner {{content}}</onlyinclude>
     ///              ^^^^^^^^^^^^^^^^^
     /// ```
-    pub rule only_include(pp: &PreprocessorOptions, start_at: usize) -> Vec<Spanned<Token>>
-    = #{|input, pos| RuleResult::Matched(start_at, ()) }
+    pub(super) rule only_include(pp: &PreprocessorOptions, start_at: usize) -> Vec<Spanned<Token>>
+    = #{|_, _| RuleResult::Matched(start_at, ()) }
       t:preprocess(pp)
     { t }
 

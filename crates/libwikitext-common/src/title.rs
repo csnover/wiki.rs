@@ -449,7 +449,10 @@ impl Title {
         fragment: Option<&str>,
         interwiki: Option<&str>,
     ) -> Result<Self, Error> {
-        if !is_valid(config, title) || title.starts_with(':') {
+        if !is_valid(config, title)
+            || title.starts_with(':')
+            || title.contains(char::REPLACEMENT_CHARACTER)
+        {
             Err(Error::BadChars)
         } else if path_like(title) {
             Err(Error::Path)
@@ -557,8 +560,8 @@ impl Title {
         self.interwiki().is_none() && self.namespace.id == Namespace::FILE
     }
 
-    /// Converts a page-relative title name to an absolute title name using the
-    /// given `base` as the base title.
+    /// Converts a page-relative title name to an absolute title name using
+    /// `self` as the base title.
     #[must_use]
     pub fn join<'a>(&self, partial: &'a str) -> Cow<'a, str> {
         if !self.namespace().subpages {
@@ -756,15 +759,7 @@ impl Title {
     /// Encodes `text` as a URI component.
     #[inline]
     pub fn url_encode(text: &str) -> Cow<'_, str> {
-        strtr(text, &[(" ", "_")])
-            .map(|text| {
-                if unicode_normalization::is_nfc(text) {
-                    Cow::Borrowed(text)
-                } else {
-                    Cow::Owned(text.nfc().collect())
-                }
-            })
-            .map(url_encode)
+        strtr(text, &[(" ", "_")]).map(url_encode)
     }
 }
 
@@ -857,10 +852,19 @@ fn max_namespace_len(ns: &Namespace) -> usize {
 }
 
 /// Normalises a title text part by decoding HTML entities, converting runs of
-/// whitespace + underscore to a single space character, and trimming.
+/// whitespace + underscore to a single space character, trimming, and
+/// normalising to Unicode NFC.
 #[must_use]
 pub fn normalize(text: &str) -> Cow<'_, str> {
-    decode_html(text).map(|text| super::normalize_whitespace::<true>(text, trimmable, spacelike))
+    decode_html(text)
+        .map(|text| super::normalize_whitespace::<true>(text, trimmable, spacelike))
+        .map(|text| {
+            if unicode_normalization::is_nfc(text) {
+                Cow::Borrowed(text)
+            } else {
+                Cow::Owned(text.nfc().collect())
+            }
+        })
 }
 
 /// Normalises a title fragment part by decoding HTML entities, converting runs

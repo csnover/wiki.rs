@@ -356,10 +356,10 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        prefix: Option<Spanned<&str>>,
+        prefix: &[Spanned<Token>],
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
-        trail: Option<Spanned<&str>>,
+        trail: &[Spanned<Token>],
     ) -> Result {
         let target = sp.eval(state, target)?.map(title_decode);
         let target = state.globals.title.join(&target);
@@ -367,7 +367,6 @@ impl Surrogate<Error> for Document {
         let Ok(title) = Title::new(state.statics.db.config(), target, None) else {
             return self.adopt_text(state, sp, span, &sp.source[span.into_range()]);
         };
-        self.text_style_emitter.push(<_>::default());
         let force_link = target.starts_with(':');
         if !force_link
             && title.is_category(
@@ -382,33 +381,20 @@ impl Surrogate<Error> for Document {
             // a category is simply ignored.
             state.globals.categories.insert(&title);
             self.next.next_mut().next_mut().clear();
-            if let Some(prefix) = prefix {
-                self.adopt_generated(state, sp, None, &prefix)?;
-            }
-            if let Some(trail) = trail {
-                self.adopt_generated(state, sp, None, &trail)?;
-            }
+            self.adopt_tokens(state, sp, prefix)?;
+            self.adopt_tokens(state, sp, trail)?;
         } else if !force_link && title.is_local_file() {
-            if let Some(prefix) = prefix {
-                self.adopt_generated(state, sp, None, &prefix)?;
-            }
+            self.adopt_tokens(state, sp, prefix)?;
             super::image::render_media(self, state, sp, title, content)?;
-            if let Some(trail) = trail {
-                self.adopt_generated(state, sp, None, &trail)?;
-            }
+            self.adopt_tokens(state, sp, trail)?;
         } else {
-            tags::render_internal_link(
-                self,
-                state,
-                sp,
-                target,
-                prefix.map(|v| v.as_ref()),
-                content,
-                trail.map(|v| v.as_ref()),
-                title,
-            )?;
+            self.text_style_emitter.push(<_>::default());
+            tags::render_internal_link(self, state, sp, target, prefix, content, trail, title)?;
+            self.text_style_emitter
+                .pop()
+                .unwrap()
+                .finish(&mut self.next);
         }
-        self.text_style_emitter.pop();
         Ok(())
     }
 
@@ -612,10 +598,10 @@ impl Surrogate<Error> for Document {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        prefix: Option<Spanned<&str>>,
+        prefix: &[Spanned<Token>],
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
-        trail: Option<Spanned<&str>>,
+        trail: &[Spanned<Token>],
     ) -> Result {
         self.next.tag_start("p");
         self.next.tag_attribute_start("class");

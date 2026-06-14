@@ -686,11 +686,12 @@ impl Surrogate<Error> for DbPrefetch {
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         _span: Span,
-        _prefix: Option<Spanned<&str>>,
+        prefix: &[Spanned<Token>],
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
-        _trail: Option<Spanned<&str>>,
+        trail: &[Spanned<Token>],
     ) -> Result<(), Error> {
+        self.adopt_tokens(state, sp, prefix)?;
         self.adopt_tokens(state, sp, target)?;
 
         // Prefetching targets from the index is for redlinks.
@@ -708,6 +709,8 @@ impl Surrogate<Error> for DbPrefetch {
         for argument in content {
             self.adopt_tokens(state, sp, &argument.content)?;
         }
+
+        self.adopt_tokens(state, sp, trail)?;
 
         Ok(())
     }
@@ -732,10 +735,10 @@ impl Surrogate<Error> for DbPrefetch {
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
         _span: Span,
-        _prefix: Option<Spanned<&str>>,
+        _prefix: &[Spanned<Token>],
         _target: &[Spanned<Token>],
         _content: &[Spanned<Argument>],
-        _trail: Option<Spanned<&str>>,
+        _trail: &[Spanned<Token>],
     ) -> Result<(), Error> {
         Ok(())
     }

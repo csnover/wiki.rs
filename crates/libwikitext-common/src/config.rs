@@ -163,7 +163,7 @@ impl Configuration {
         let valid_title_bytes = char_class_to_bitmap(source.valid_title_bytes.bytes());
 
         let link_prefix_pattern = (!source.link_prefix.is_empty())
-            .then(|| BytesRegex::new(&format!("[{}]+", source.link_prefix)).unwrap());
+            .then(|| BytesRegex::new(&format!(r"^[{}]+\[\[", source.link_prefix)).unwrap());
 
         let protocols_pattern =
             Regex::new(&format!("^(?i:{})", regex_switch(source.protocols.iter()))).unwrap();
