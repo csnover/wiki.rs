@@ -58,6 +58,18 @@ impl<'s> ExpandTemplates<'s> {
 
 impl Surrogate<Error> for ExpandTemplates<'_> {
     #[inline]
+    fn adopt_behavior_switch(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        _name: &str,
+    ) -> Result {
+        self.out.write_str(&sp.source[span.into_range()])?;
+        Ok(())
+    }
+
+    #[inline]
     fn adopt_comment(
         &mut self,
         _state: &mut State<'_, '_, '_>,

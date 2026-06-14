@@ -260,7 +260,9 @@ pub(super) fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
             continue;
         };
 
-        if check_skips(target, &name, options, config) {
+        let has_wiki_rs_html = sections.contains_key("html/wiki.rs");
+
+        if check_skips(target, &name, options, config, has_wiki_rs_html) {
             skips += 1;
             continue;
         }
@@ -309,10 +311,16 @@ fn check_skips(
     name: &str,
     options: &SectionText<'_>,
     config: &SectionText<'_>,
+    has_wiki_rs_html: bool,
 ) -> bool {
     if let Some(reason) = options.get::<&str>("wiki-rs-skip") {
         log::info!(target: target, "Skipping {name}: {reason}");
         true
+    } else if has_wiki_rs_html {
+        // If the test has some wiki.rs-specific HTML, that should override any
+        // unimplemented feature check, since there would not be any wiki.rs
+        // section if it weren’t supported
+        false
     } else if options.contains("comment") {
         // This is some parser variant used only for revision comments
         log::warn!(target: target, "TODO {name}: comment not implemented");
@@ -353,6 +361,16 @@ fn check_skips(
         true
     } else if options.contains("maxincludesize") || options.contains("maxtemplatedepth") {
         log::warn!(target: target, "TODO {name}: resource limits not implemented");
+        true
+    } else if config
+        .get::<&[Value<'_>]>("wgFragmentMode")
+        .is_some_and(|modes| {
+            modes.len() != 2
+                || modes[0].as_str() != Some("html5")
+                || modes[1].as_str() != Some("legacy")
+        })
+    {
+        log::warn!(target: target, "TODO {name}: legacy encoding mode switching not implemented");
         true
     } else if options.contains("disabled") {
         log::info!(target: target, "Skipping {name}: disabled");
@@ -577,7 +595,7 @@ fn check_test_results(
             }
 
             if !fail {
-                log::warn!("Passed using the {heuristic} heuristic");
+                log::info!("Passed using the {heuristic} heuristic");
             }
         }
 

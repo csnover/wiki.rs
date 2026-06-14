@@ -85,7 +85,13 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = extension_tag()
     / html_tag()
     / text_style()
+    / behavior_switch()
     / inline_in_attr()
+
+    /// Expressions allowed inside a Wikitext link URL.
+    rule inline_in_url() -> Spanned<Token>
+    = behavior_switch()
+    / inline_in_any()
 
     /// Expressions allowed inside HTML attributes.
     rule inline_in_attr() -> Spanned<Token>
@@ -95,12 +101,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// Expressions allowed inside late HTML attributes.
     rule inline_in_late_attr() -> Spanned<Token>
     = language_tag()
-    / inline_in_url()
+    / inline_in_any()
 
-    /// Expressions allowed inside a Wikitext link URL.
-    rule inline_in_url() -> Spanned<Token>
+    /// Expressions allowed in any inline context.
+    rule inline_in_any() -> Spanned<Token>
     = comment_tag()
-    / behavior_switch()
     / entity()
     / text()
 
@@ -296,6 +301,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule heading() -> Spanned<Token>
     = spanned(<
         start:heading_start()
+        space_s()*
         // If `c` matches, `e` needs to see at least one `=` since otherwise
         // this rule would also match some non-heading template argument on a
         // new line that starts with a `=`. If it is just an “oops, all `=`”
@@ -330,6 +336,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = spanned(<
         &at_sol()
         start:heading_start()
+        // The preprocessor needs to retain whitespace in the contents because
+        // `== ==` is an h2 with no body but `====` is an h1 with body `==`
         ce:(c:pp_items(pp, PpTerm::IN_HEADING) e:heading_end() { (c, e) })?
         &assert(ce.is_some() || start.len() > 2, "heading")
         heading_trail()
@@ -347,7 +355,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ^^^
     /// ```
     rule heading_start() -> Span
-    = s:spanned(<"="+ {}>) space_s()*
+    = s:spanned(<"="+ {}>)
     { s.span }
 
     /// The end of a heading.
