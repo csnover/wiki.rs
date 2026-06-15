@@ -38,10 +38,10 @@ fn from_str() {
     assert_eq!(title.namespace().id, Namespace::TALK);
     assert_eq!(title.base_text(), "Aa/Bb");
     assert_eq!(title.fragment(), Some("Dd/Ee/Ff"));
-    assert_eq!(title.full_text(), "Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
-    assert_eq!(title.interwiki(), Some("Wikidata"));
+    assert_eq!(title.full_text(), "wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
+    assert_eq!(title.interwiki(), Some("wikidata"));
     assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
-    assert_eq!(title.prefixed_text(), "Wikidata:Talk:Aa/Bb/Cc");
+    assert_eq!(title.prefixed_text(), "wikidata:Talk:Aa/Bb/Cc");
     assert_eq!(title.root_text(), "Aa");
     assert_eq!(title.subpage_text(), "Cc");
     assert_eq!(title.text(), "Aa/Bb/Cc");
@@ -50,12 +50,12 @@ fn from_str() {
 #[test]
 fn interwiki() {
     let title = Title::new(&CONFIG, "Wikidata:File:A.png", None).unwrap();
-    assert_eq!(title.interwiki(), Some("Wikidata"));
+    assert_eq!(title.interwiki(), Some("wikidata"));
     assert_eq!(title.namespace().id, Namespace::FILE);
     assert_eq!(title.key(), "File:A.png");
 
     let title = Title::new(&CONFIG, ":Wikidata:File:A.png", None).unwrap();
-    assert_eq!(title.interwiki(), Some("Wikidata"));
+    assert_eq!(title.interwiki(), Some("wikidata"));
     assert_eq!(title.namespace().id, Namespace::FILE);
     assert_eq!(title.key(), "File:A.png");
 

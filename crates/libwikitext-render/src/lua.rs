@@ -25,6 +25,8 @@ use piccolo::{
 };
 use std::{borrow::Cow, sync::Arc, time::Instant};
 
+/// The concrete type used by the renderer for [`LanguageLibrary`](libwikitext_lua_gpl::LanguageLibrary).
+pub type LanguageLibrary = libwikitext_lua_gpl::LanguageLibrary<'static>;
 /// The concrete type used by the renderer for [`LuaEngine`](libwikitext_lua_gpl::LuaEngine).
 pub type LuaEngine =
     libwikitext_lua_gpl::LuaEngine<Arc<dyn DatabaseProvider>, Pin<&'static StackFrame<'static>>>;
@@ -309,6 +311,9 @@ pub(super) fn new_vm<'config>(
 
         let mw_site = ctx.singleton::<Rootable![SiteLibrary]>();
         mw_site.set_config(db.config());
+
+        let mw_lang = ctx.singleton::<Rootable![LanguageLibrary]>();
+        mw_lang.set_config(db.config());
 
         let mw_title = ctx.singleton::<Rootable![TitleLibrary]>();
         mw_title.set_shared(base_uri.clone(), Arc::clone(db));

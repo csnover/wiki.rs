@@ -1280,6 +1280,11 @@ Wikitext table with html-syntax row
 <tbody>
 <tr>
 <td>foo</td></tr></tbody></table>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
+<table>
+
+<tr><td>foo</td>
+</tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.

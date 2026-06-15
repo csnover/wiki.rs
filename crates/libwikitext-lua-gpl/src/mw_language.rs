@@ -8,22 +8,47 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
+use core::cell::{Cell, RefCell};
 use gc_arena::Rootable;
 use libmisc::{to_lower, to_upper};
 use libphp_rs::strval;
 use libwikitext_common::{
-    db::DatabaseProvider, format_date_mediawiki, format_number, parse_formatted_number,
-    to_lower_first, to_upper_first,
+    config::Configuration, db::DatabaseProvider, format_date_mediawiki, format_number,
+    parse_formatted_number, to_lower_first, to_upper_first,
 };
 use libwikitext_lua::WallTime;
+use piccolo::StashedString;
 
 /// The localisation support library.
 // TODO: Actually support all the languages.
 #[derive(gc_arena::Collect, Default)]
 #[collect(require_static)]
-pub struct LanguageLibrary;
+pub struct LanguageLibrary<'db> {
+    /// The database configuration.
+    config: Cell<Option<&'db Configuration>>,
+    /// The content language code.
+    ///
+    /// This is held separately because this information is requested indirectly
+    /// by the module setup function so must be available before the `config`
+    /// is set.
+    // TODO: Try to get rid of this without making the config permanently
+    // 'static.
+    content_language_code: RefCell<Option<StashedString>>,
+}
 
-impl LanguageLibrary {
+impl<'db> LanguageLibrary<'db> {
+    /// Gets the article database configuration.
+    fn config(&self) -> &'db Configuration {
+        self.config.get().unwrap()
+    }
+
+    /// Sets the article database configuration.
+    pub fn set_config(&self, config: &'db Configuration) {
+        self.config.set(Some(config));
+    }
+}
+
+impl LanguageLibrary<'_> {
     mw_unimplemented! {
         caseFold = case_fold,
         convertGrammar = convert_grammar,
@@ -37,13 +62,13 @@ impl LanguageLibrary {
     }
 
     /// Chooses the correct plural form for the number `n` from the given list
-    /// of possible `forms` for the language with the given BCP 47 `code`.
+    /// of possible `forms` for the language with the given language `code`.
     fn convert_plural<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, n, forms): (VmString<'gc>, i64, Table<'gc>),
+        (code, n, forms): (VmString<'gc>, i64, Table<'gc>),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        // log::warn!("stub: mw.language.convertPlural({_code:?}, {n:?}, {forms:?})");
+        log::warn!("stub: mw.language.convertPlural({code:?}, {n:?}, {forms:?})");
         Ok(if let value @ Value::String(_) = forms.get_value(ctx, n) {
             value
         } else {
@@ -51,19 +76,35 @@ impl LanguageLibrary {
         })
     }
 
-    /// Returns the name of the language matching the given BCP 47 `code`. If
-    /// `in_language` is provided, the name is localised to that language;
-    /// otherwise, the native name of the language is used.
+    /// Returns the name of the language matching the given MediaWiki language
+    /// `code`. If `in_language` is provided, the name is localised to that
+    /// language; otherwise, the native name of the language is used.
     fn fetch_language_name<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, _in_language): (VmString<'gc>, Option<VmString<'gc>>),
-    ) -> Result<Value<'gc>, VmError<'gc>> {
-        // log::trace!("stub: fetchLanguageName({code:?}, {in_language:?})");
-        Ok("English".into_value(ctx))
+        (code, in_language): (VmString<'gc>, Option<VmString<'gc>>),
+    ) -> Result<VmString<'gc>, VmError<'gc>> {
+        let code = code.to_str()?;
+        let in_language = in_language.map(VmString::to_str).transpose()?;
+
+        Ok(VmString::from_static(
+            &ctx,
+            if let Some(lang) = self.config().languages.get(code) {
+                if let Some(to_code) = in_language {
+                    if to_code != "en" {
+                        log::warn!("What? There are languages beyond English?");
+                    }
+                    lang.name
+                } else {
+                    lang.autonym
+                }
+            } else {
+                ""
+            },
+        ))
     }
 
-    /// Returns a table of `String(BCP 47 code): String(language name)`. If
+    /// Returns a table of `String(language code): String(language name)`. If
     /// `in_language` is provided, the language names are localised to that
     /// language; otherwise, the native names of each language are used.
     ///
@@ -75,14 +116,38 @@ impl LanguageLibrary {
     fn fetch_language_names<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_in_language, _include): (Option<VmString<'gc>>, Option<VmString<'gc>>),
+        (in_language, include): (Option<VmString<'gc>>, Option<VmString<'gc>>),
     ) -> Result<Table<'gc>, VmError<'gc>> {
-        // log::trace!("stub: fetchLanguageNames({in_language:?}, {include:?})");
-        Ok(table! {
-            using ctx;
+        let in_language = in_language.map(VmString::to_str).transpose()?;
+        let include = include.map(VmString::to_str).transpose()?;
 
-            en = "English".into_value(ctx),
-        })
+        let names = Table::new(&ctx);
+        for (code, lang) in &self.config().languages {
+            let add = match include {
+                Some("all") => true,
+                // TODO: Add more languages, I guess
+                Some("mwfile") => *code == "en",
+                _ => lang.is_enabled,
+            };
+            if !add {
+                continue;
+            }
+
+            let code = ctx.intern_static(code.as_bytes());
+            let name = ctx.intern_static(
+                in_language
+                    .map_or(lang.autonym, |to_code| {
+                        if to_code != "en" {
+                            log::warn!("What? There are languages beyond English?");
+                        }
+                        lang.name
+                    })
+                    .as_bytes(),
+            );
+
+            names.set(ctx, code, name)?;
+        }
+        Ok(names)
     }
 
     /// Formats a date according to the locale given in `code`. If `local` is
@@ -91,13 +156,16 @@ impl LanguageLibrary {
     fn format_date<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, format, date, local): (
+        (code, format, date, local): (
             VmString<'gc>,
             VmString<'gc>,
             Option<VmString<'gc>>,
             Option<bool>,
         ),
     ) -> Result<Value<'gc>, VmError<'gc>> {
+        if code != "en" {
+            log::warn!("stub: mw.language.formatDate({code:?}, {format:?}, {date:?}), {local:?}");
+        }
         Ok(format_date_mediawiki(
             &ctx.singleton::<Rootable![WallTime]>().get(),
             format.to_str()?,
@@ -111,10 +179,11 @@ impl LanguageLibrary {
     fn format_num<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, n, options): (VmString<'gc>, f64, Option<Table<'gc>>),
+        (code, n, options): (VmString<'gc>, f64, Option<Table<'gc>>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        // log::trace!("formatNum({code:?}, {n:?}, {options:?})");
-
+        if code != "en" {
+            log::warn!("formatNum({code:?}, {n:?}, {options:?})");
+        }
         let no_separators = if let Some(options) = options {
             options.get_value(ctx, "noCommafy").to_bool()
         } else {
@@ -124,21 +193,20 @@ impl LanguageLibrary {
         Ok(ctx.intern(format_number(n, no_separators).as_bytes()))
     }
 
-    /// Returns the default BCP 47 code for the wiki.
+    /// Returns the default language code for the wiki.
     fn get_cont_lang_code<'gc>(
         &self,
         ctx: Context<'gc>,
         (): (),
-    ) -> Result<Value<'gc>, VmError<'gc>> {
-        // log::warn!("stub: getContLangCode()");
-        Ok("en".into_value(ctx))
+    ) -> Result<VmString<'gc>, VmError<'gc>> {
+        Ok(ctx.fetch(self.content_language_code.borrow().as_ref().unwrap()))
     }
 
     /// Splits a duration, in seconds, into a table of larger time intervals.
     fn get_duration_intervals<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, mut seconds, chosen_intervals): (VmString<'gc>, f64, Option<Table<'gc>>),
+        (code, mut seconds, chosen_intervals): (VmString<'gc>, f64, Option<Table<'gc>>),
     ) -> Result<Table<'gc>, VmError<'gc>> {
         const INTERVALS: &[&str] = &[
             "millennia",
@@ -151,6 +219,12 @@ impl LanguageLibrary {
             "minutes",
             "seconds",
         ];
+
+        if code != "en" {
+            log::warn!(
+                "stub: mw.language.getDurationIntervals({code:?}, {seconds:?}, {chosen_intervals:?})"
+            );
+        }
 
         // TODO: :-(((((((
         let (intervals, smallest_key) = chosen_intervals.map_or_else(
@@ -229,7 +303,7 @@ impl LanguageLibrary {
         Ok(segments)
     }
 
-    /// Returns true if the given string is a BCP 47 code known to MediaWiki.
+    /// Returns true if the given string is a language code known to MediaWiki.
     fn is_known_language_tag<'gc>(
         &self,
         _: Context<'_>,
@@ -239,11 +313,14 @@ impl LanguageLibrary {
         Ok(true)
     }
 
-    /// Returns true if the language with the given BCP 47 code is written
+    /// Returns true if the language with the given language code is written
     /// right-to-left.
-    fn is_rtl<'gc>(&self, _: Context<'gc>, _code: VmString<'gc>) -> Result<bool, VmError<'gc>> {
-        // log::trace!("stub: isRTL()");
-        Ok(false)
+    fn is_rtl<'gc>(&self, _: Context<'gc>, code: VmString<'gc>) -> Result<bool, VmError<'gc>> {
+        Ok(self
+            .config()
+            .languages
+            .get(code.to_str()?)
+            .is_some_and(|lang| lang.is_rtl))
     }
 
     /// Converts a string to lowercase according to the rules of the given
@@ -251,8 +328,11 @@ impl LanguageLibrary {
     fn lc<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, text): (VmString<'gc>, VmString<'gc>),
+        (code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
+        if code != "en" {
+            log::warn!("stub: mw.language.lc({code:?}, {text:?})");
+        }
         Ok(ctx.intern(to_lower(text.to_str()?).as_bytes()))
     }
 
@@ -261,8 +341,11 @@ impl LanguageLibrary {
     fn lcfirst<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, text): (VmString<'gc>, VmString<'gc>),
+        (code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
+        if code != "en" {
+            log::warn!("stub: mw.language.lcfirst({code:?}, {text:?})");
+        }
         Ok(ctx.intern(to_lower_first(text.to_str()?).as_bytes()))
     }
 
@@ -271,9 +354,11 @@ impl LanguageLibrary {
     fn parse_formatted_number<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, value): (VmString<'_>, Value<'gc>),
+        (code, value): (VmString<'_>, Value<'gc>),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        // log::trace!("stub: mw.language.parseFormattedNumber({value:?})");
+        if code != "en" {
+            log::warn!("stub: mw.language.parseFormattedNumber({value:?})");
+        }
         // One might think that this would return `Value::Number` but actually
         // it is supposed to return strings…
         let s = match value {
@@ -291,8 +376,11 @@ impl LanguageLibrary {
     fn uc<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, text): (VmString<'gc>, VmString<'gc>),
+        (code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
+        if code != "en" {
+            log::warn!("stub: mw.language.uc({code:?}, {text:?})");
+        }
         Ok(ctx.intern(to_upper(text.to_str()?).as_bytes()))
     }
 
@@ -301,15 +389,18 @@ impl LanguageLibrary {
     fn ucfirst<'gc>(
         &self,
         ctx: Context<'gc>,
-        (_code, text): (VmString<'gc>, VmString<'gc>),
+        (code, text): (VmString<'gc>, VmString<'gc>),
     ) -> Result<VmString<'gc>, VmError<'gc>> {
+        if code != "en" {
+            log::warn!("stub: mw.language.ucfirst({code:?}, {text:?})");
+        }
         Ok(ctx.intern(to_upper_first(text.to_str()?).as_bytes()))
     }
 }
 
-impl MwInterface for LanguageLibrary {
-    const CODE: &[u8] = include_bytes!("./modules/mw.language.lua");
-    const NAME: &str = "mw.language";
+impl<'db: 'static> MwInterface for LanguageLibrary<'db> {
+    const CODE: &'static [u8] = include_bytes!("./modules/mw.language.lua");
+    const NAME: &'static str = "mw.language";
 
     fn register(ctx: Context<'_>) -> Table<'_> {
         interface! {
@@ -343,9 +434,11 @@ impl MwInterface for LanguageLibrary {
 
     fn setup<'gc, Db: DatabaseProvider>(
         &self,
-        _: &Db,
+        db: &Db,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
+        let lang = VmString::from_static(&ctx, db.config().language);
+        *self.content_language_code.borrow_mut() = Some(ctx.stash(lang));
         Ok(Table::new(&ctx))
     }
 }

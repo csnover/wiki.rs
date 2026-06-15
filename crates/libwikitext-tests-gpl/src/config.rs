@@ -1,5 +1,5 @@
 use libwikitext_common::{
-    config::{Configuration, ConfigurationSource, MagicLinks, SpecialPages},
+    config::{Configuration, ConfigurationSource, ImageHotlinking, MagicLinks, SpecialPages},
     title::{Namespace, NamespaceCase::FirstLetter},
 };
 use std::sync::LazyLock;
@@ -159,6 +159,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "ucfirst" => "ucfirst",
         "urlencode" => "urlencode",
     },
+    image_hotlinking: ImageHotlinking::Enabled,
     interlanguage_map: phf::phf_map! {
         "en" => "en",
         "es" => "es",
@@ -187,10 +188,9 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     },
     language: "en",
     language_bcp47: phf::phf_map! {},
-    language_code: phf::phf_map! {},
     language_conversion_enabled: true,
     language_conversions: phf::phf_map! {},
-    language_names: &[],
+    languages: phf::phf_ordered_map! {},
     link_prefix: "",
     link_trail: "/^([a-z]+)(.*)$/",
     magic_links: MagicLinks {

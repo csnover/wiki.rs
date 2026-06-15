@@ -74,7 +74,16 @@ fn main() -> Result<(), DisplayError> {
 
     let function_hooks = aliases_iter(&magic_words, query.function_hooks, &trim_parser_fn);
 
+    // To use the wfMessage whitelist, image_whitelist_enabled is true and
+    // image_whitelist is `[""]`.
+    // To use any external image, image_whitelist is `[""]` and
+    // image_whitelist_enabled is false.
+    // To use a whitelist, image_whitelist_enabled is true and image_whitelist
+    // is not `[""]`.
+    // Good API!
     let api::General {
+        image_whitelist,
+        image_whitelist_enabled,
         lang,
         lang_conversion,
         legal_title_chars,
@@ -82,6 +91,19 @@ fn main() -> Result<(), DisplayError> {
         link_trail,
         magic_links,
     } = query.general;
+
+    let image_hotlinking = if image_whitelist_enabled.is_none() && image_whitelist.is_some() {
+        quote!(Enabled)
+    } else if image_whitelist_enabled == Some(false) && image_whitelist.is_none() {
+        quote!(Disabled)
+    } else {
+        let config = image_whitelist.into_iter().flatten();
+        let message = image_whitelist_enabled.unwrap();
+        quote!(Whitelist {
+            config: &[#(#config),*],
+            message: #message,
+        })
+    };
 
     let interlanguage_map = query.interwiki_map.iter().filter_map(|v| {
         v.bcp47.as_ref().map(|bcp47| {
@@ -99,11 +121,12 @@ fn main() -> Result<(), DisplayError> {
     // Old language codes might map to the same BCP-47s. In an effort to avoid
     // making everything else bad for this one edge case, just avoid emitting
     // the same BCP-47 twice. To keep the indexes correct, dumping into a set
-    // seems easiest.
+    // seems easiest, though probably technically in this case it should make
+    // sure to alias back to the standard code instead of a non-standard one.
     let mut emitted_bcp47 = HashSet::new();
     let language_bcp47 = query
-        .languages
-        .iter()
+        .language_info
+        .values()
         .enumerate()
         .filter_map(|(index, lang)| {
             let bcp47 = &lang.bcp47;
@@ -113,10 +136,23 @@ fn main() -> Result<(), DisplayError> {
                 .then(|| quote!(#bcp47 => #index))
         });
 
-    let language_code = query.languages.iter().enumerate().map(|(index, lang)| {
-        let code = &lang.code;
-        let index = Literal::usize_unsuffixed(index);
-        quote!(#code => #index)
+    let enabled_languages = query
+        .languages
+        .into_iter()
+        .map(|lang| lang.code)
+        .collect::<HashSet<_>>();
+
+    let languages = query.language_info.iter().map(|(code, lang)| {
+        let autonym = &lang.autonym;
+        let is_enabled = enabled_languages.contains(code);
+        let is_rtl = lang.dir == "rtl";
+        let name = &lang.name;
+        quote!(#code => Language {
+            autonym: #autonym,
+            is_enabled: #is_enabled,
+            is_rtl: #is_rtl,
+            name: #name,
+        })
     });
 
     let language_conversions = query.language_variants.into_values().flat_map(|variants| {
@@ -124,11 +160,6 @@ fn main() -> Result<(), DisplayError> {
             let v = &v.fallbacks;
             quote!(#k => &[ #(#v),* ])
         })
-    });
-
-    let language_names = query.languages.iter().map(|lang| {
-        let name = &lang.name;
-        quote!(#name)
     });
 
     let api::MagicLinks { isbn, pmid, rfc } = magic_links;
@@ -185,6 +216,7 @@ fn main() -> Result<(), DisplayError> {
             function_hooks: phf::phf_map! {
                 #(#function_hooks),*
             },
+            image_hotlinking: ImageHotlinking::#image_hotlinking,
             interlanguage_map: phf::phf_map! {
                 #(#interlanguage_map),*
             },
@@ -195,14 +227,13 @@ fn main() -> Result<(), DisplayError> {
             language_bcp47: phf::phf_map! {
                 #(#language_bcp47),*
             },
-            language_code: phf::phf_map! {
-                #(#language_code),*
-            },
             language_conversion_enabled: #lang_conversion,
             language_conversions: phf::phf_map! {
                 #(#language_conversions),*
             },
-            language_names: &[ #(#language_names),* ],
+            languages: phf::phf_ordered_map! {
+                #(#languages),*
+            },
             link_prefix: #link_prefix,
             link_trail: #link_trail,
             magic_links: MagicLinks {
@@ -266,9 +297,11 @@ where
 
 /// Fetches site metadata from a MediaWiki instance.
 fn fetch(prefix: &str) -> Result<String, ureq::Error> {
+    const LANG_PROPS: &str = concat!("autonym", "|bcp47", "|dir", "|name",);
+
     // 'restrictions' might also be interesting
     // 'languagevariants' will be relevant when that is implemented
-    const PROPS: &str = concat!(
+    const SITE_PROPS: &str = concat!(
         "doubleunderscores",
         "|extensiontags",
         "|functionhooks",
@@ -286,11 +319,12 @@ fn fetch(prefix: &str) -> Result<String, ureq::Error> {
 
     let result = ureq::get(format!("{prefix}/w/api.php"))
         .query("action", "query")
-        .query("meta", "siteinfo")
+        .query("meta", "languageinfo|siteinfo")
         .query("format", "json")
         .query("formatversion", "2")
         .query("errorformat", "plaintext")
-        .query("siprop", PROPS)
+        .query("liprop", LANG_PROPS)
+        .query("siprop", SITE_PROPS)
         .header(
             "User-Agent",
             format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
@@ -404,7 +438,17 @@ mod api {
     }
 
     #[derive(serde::Deserialize)]
+    pub(super) struct EnabledLanguage<'a> {
+        #[serde(borrow)]
+        pub code: Cow<'a, str>,
+    }
+
+    #[derive(serde::Deserialize)]
     pub(super) struct General<'a> {
+        #[serde(borrow, rename = "externalimages")]
+        pub image_whitelist: Option<Vec<Cow<'a, str>>>,
+        #[serde(rename = "imagewhitelistenabled")]
+        pub image_whitelist_enabled: Option<bool>,
         #[serde(borrow)]
         pub lang: Cow<'a, str>,
         #[serde(rename = "langconversion")]
@@ -432,9 +476,11 @@ mod api {
     #[derive(serde::Deserialize)]
     pub(super) struct Language<'a> {
         #[serde(borrow)]
+        pub autonym: Cow<'a, str>,
+        #[serde(borrow)]
         pub bcp47: Cow<'a, str>,
         #[serde(borrow)]
-        pub code: Cow<'a, str>,
+        pub dir: Cow<'a, str>,
         #[serde(borrow)]
         pub name: Cow<'a, str>,
     }
@@ -510,10 +556,12 @@ mod api {
         pub general: General<'a>,
         #[serde(borrow, rename = "interwikimap")]
         pub interwiki_map: Vec<Interwiki<'a>>,
-        #[serde(borrow)]
-        pub languages: Vec<Language<'a>>,
+        #[serde(borrow, rename = "languageinfo")]
+        pub language_info: BTreeMap<Cow<'a, str>, Language<'a>>,
         #[serde(borrow, rename = "languagevariants")]
         pub language_variants: BTreeMap<Cow<'a, str>, BTreeMap<Cow<'a, str>, LanguageVariant<'a>>>,
+        #[serde(borrow)]
+        pub languages: Vec<EnabledLanguage<'a>>,
         #[serde(borrow, rename = "magicwords")]
         pub magic_words: Vec<MagicWord<'a>>,
         #[serde(borrow)]

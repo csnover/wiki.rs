@@ -43,6 +43,8 @@ pub fn init<Db: DatabaseProvider + 'static, Sp: HostFrame + 'static>(
 ) -> Result<(), RuntimeError> {
     init_first(vm)?;
 
+    // This specific library initialisation order is required for libraries to
+    // integrate in the way they expect
     init_libraries!(
         using vm, db;
 
@@ -50,7 +52,7 @@ pub fn init<Db: DatabaseProvider + 'static, Sp: HostFrame + 'static>(
         mw_site::SiteLibrary<'_>,
         mw_uri::UriLibrary<'_, Db>,
         mw_ustring::UstringLibrary,
-        mw_language::LanguageLibrary,
+        mw_language::LanguageLibrary<'_>,
         mw_message::MessageLibrary<'_>,
         mw_title::TitleLibrary<Db>,
         mw_text::TextLibrary,

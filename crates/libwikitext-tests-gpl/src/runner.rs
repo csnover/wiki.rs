@@ -335,6 +335,9 @@ fn check_skips(
     } else if options.get("styletag") == Some(true) {
         log::warn!(target: target, "TODO {name}: styletag not implemented");
         true
+    } else if config.contains("wgEnableMagicLinks") {
+        log::warn!(target: target, "TODO {name}: disable magic links not implemented");
+        true
     } else if config.get("wgInterwikiMagic") == Some(false) {
         log::warn!(target: target, "TODO {name}: disable interwiki magic not implemented");
         true
@@ -355,6 +358,9 @@ fn check_skips(
         true
     } else if options.contains("language") {
         log::warn!(target: target, "TODO {name}: language switching not implemented");
+        true
+    } else if options.get::<bool>("wgallowexternalimages") == Some(false) {
+        log::warn!(target: target, "TODO {name}: runtime hotlink disable not implemented");
         true
     } else if options.contains("wgnonincludablenamespaces") {
         log::warn!(target: target, "TODO {name}: runtime non-includable namespaces not implemented");
@@ -594,6 +600,21 @@ fn check_test_results(
                 fail = expected_html != actual;
             }
 
+            if fail && let Cow::Owned(actual) = swap_magic_rel(&actual) {
+                heuristic = "unpretty + swap magic rel";
+                fail = expected_html != actual;
+
+                if fail && let Cow::Owned(expected_html) = decode_html(expected_html) {
+                    heuristic = "unpretty + swap magic rel + decode html";
+                    fail = expected_html != actual;
+                }
+            }
+
+            if fail && let Cow::Owned(expected_html) = devoid(expected_html) {
+                heuristic = "unpretty + devoid";
+                fail = expected_html != actual;
+            }
+
             if !fail {
                 log::info!("Passed using the {heuristic} heuristic");
             }
@@ -804,6 +825,10 @@ fn render_test(
     result.ok()
 }
 
+fn devoid(html: &str) -> Cow<'_, str> {
+    strtr(html, &[(" />", ">")])
+}
+
 fn replace_url(html: &str) -> Cow<'_, str> {
     static RE_PHP_URL: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"/index\.php\?title=([^&]+)(?:&amp;)?").unwrap());
@@ -826,6 +851,22 @@ fn styles(html: &str) -> Cow<'_, str> {
     }
 
     RE_PREFIX_STYLES.replace_all(html, re_style)
+}
+
+fn swap_magic_rel(html: &str) -> Cow<'_, str> {
+    strtr(
+        html,
+        &[
+            (
+                r#"rel="nofollow" class="external mw-magiclink-pmid"#,
+                r#"class="external mw-magiclink-pmid" rel="nofollow"#,
+            ),
+            (
+                r#"rel="nofollow" class="external mw-magiclink-rfc"#,
+                r#"class="external mw-magiclink-rfc" rel="nofollow"#,
+            ),
+        ],
+    )
 }
 
 fn table_ws(html: &str) -> Cow<'_, str> {

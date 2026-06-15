@@ -2435,6 +2435,9 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
         id: OutlineEmitterEntryId,
         body_pos: Mark,
     ) {
+        // TODO: Because HTML5 anchor mode normalises some characters that the
+        // legacy mode does not, work needs to be done to make sure that those
+        // characters in legacy ID are actually emitted if things do not match.
         let legacy = match id {
             OutlineEmitterEntryId::Implicit {
                 start,
@@ -2881,9 +2884,9 @@ impl TextStyleEmitter {
             },
             TextStyle::BoldItalic => match self {
                 Self::None => {
-                    next.tag_start_full("b");
                     next.tag_start_full("i");
-                    Self::BI
+                    next.tag_start_full("b");
+                    Self::IB
                 }
                 Self::B => {
                     next.tag_end("b");
@@ -3820,5 +3823,12 @@ mod tests {
             positions,
             [Some(0), Some(8), Some(5), Some(9), Some(2), Some(1)]
         );
+
+        s.free_mark(before);
+        s.free_mark(after_a);
+        s.free_mark(after_c);
+        s.free_mark(after_d);
+        s.free_mark(after_e);
+        s.free_mark(after_i);
     }
 }

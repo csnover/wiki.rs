@@ -8,8 +8,41 @@
 use super::{regex_switch, title::Namespace};
 use core::fmt::Write as _;
 use fancy_regex::{Regex as FancyRegex, RegexBuilder as FancyRegexBuilder};
-use phf::{Map, Set};
+use phf::{Map, OrderedMap, Set};
 use regex::{Regex, bytes::Regex as BytesRegex};
+
+/// Image hotlinking configuration.
+#[derive(Clone, Debug)]
+pub enum ImageHotlinking {
+    /// Hotlinking to external images is disabled.
+    Disabled,
+    /// Hotlinking to external images is conditionally enabled.
+    Whitelist {
+        /// Hotlinking to external images is enabled if the URL starts with one
+        /// of the given strings. This is `wgAllowExternalImagesFrom`.
+        config: &'static [&'static str],
+        /// Hotlinking to external images is enabled if the URL matches a
+        /// regular expression from the `external_image_whitelist` interface
+        /// message. This is `wgEnableImageWhitelist`.
+        message: bool,
+    },
+    /// Hotlinking to anything anywhere is enabled. Go nuts. I am sure nobody
+    /// will replace that image with goatse. This is `wgAllowExternalImages`.
+    Enabled,
+}
+
+/// A registered language.
+#[derive(Clone, Copy, Debug)]
+pub struct Language {
+    /// The name of the language in its own language.
+    pub autonym: &'static str,
+    /// Whether the language is enabled.
+    pub is_enabled: bool,
+    /// Whether the language is written right-to-left.
+    pub is_rtl: bool,
+    /// The English name of the language.
+    pub name: &'static str,
+}
 
 /// Enabled magic links.
 ///
@@ -59,6 +92,9 @@ pub struct ConfigurationSource {
     /// Registered function hooks, lowercased, by alias.
     pub function_hooks: Map<&'static str, &'static str>,
 
+    /// Image hotlinking configuration.
+    pub image_hotlinking: ImageHotlinking,
+
     /// A map from a registered title interwiki prefix to bcp47 code for
     /// interlanguages.
     pub interlanguage_map: Map<&'static str, &'static str>,
@@ -66,14 +102,12 @@ pub struct ConfigurationSource {
     /// Registered title interwikis.
     pub interwiki_map: Map<&'static str, &'static str>,
 
-    /// The default page language.
+    /// The default page language code.
     pub language: &'static str,
 
-    /// A map from BCP-47 codes to indexes in the language name list.
+    /// A reverse map from a BCP-47 language code to the corresponding index in
+    /// [`Self::languages`].
     pub language_bcp47: Map<&'static str, u16>,
-
-    /// A map from MediaWiki language codes to indexes in the language name list.
-    pub language_code: Map<&'static str, u16>,
 
     /// Whether language conversions are enabled.
     pub language_conversion_enabled: bool,
@@ -82,8 +116,8 @@ pub struct ConfigurationSource {
     /// list of fallback language codes.
     pub language_conversions: Map<&'static str, &'static [&'static str]>,
 
-    /// A list of all the native language names.
-    pub language_names: &'static [&'static str],
+    /// A map from a MediaWiki language code to language information.
+    pub languages: OrderedMap<&'static str, Language>,
 
     /// A list of allowable characters that match link prefixes, in a format
     /// suitable for interpolation into a PHP PCRE character set pattern.

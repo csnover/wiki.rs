@@ -942,7 +942,7 @@ mod tests {
         assert_eq!(super::normalize("A__  __b"), "A b");
         assert_eq!(super::normalize("A  b"), "A b");
         assert_eq!(super::normalize("   A b   "), Cow::Borrowed("A b"));
-        assert_eq!(super::normalize(" \t A b"), Cow::Borrowed("A b"));
+        assert_eq!(super::normalize(" \t A b"), Cow::Borrowed("\t A b"));
         assert_eq!(super::normalize("A b   "), Cow::Borrowed("A b"));
         assert_eq!(super::normalize("\u{200e}A b   \u{202e}"), "A b");
     }

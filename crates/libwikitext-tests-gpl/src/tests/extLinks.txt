@@ -286,6 +286,27 @@ http://example.com/url_with_entity&#60;
 <a rel="mw:ExtLink" href="http://example.com/url_with_entity" class="external free" data-parsoid='{"stx":"url"}'>http://example.com/url_with_entity</a><span typeof="mw:Entity" data-parsoid='{"src":"&amp;lt;","srcContent":"&lt;"}'>&lt;</span>
 <a rel="mw:ExtLink" href="http://example.com/url_with_entity" class="external free" data-parsoid='{"stx":"url"}'>http://example.com/url_with_entity</a><span typeof="mw:Entity" data-parsoid='{"src":"&amp;#x3C;","srcContent":"&lt;"}'>&lt;</span>
 <a rel="mw:ExtLink" href="http://example.com/url_with_entity" class="external free" data-parsoid='{"stx":"url"}'>http://example.com/url_with_entity</a><span typeof="mw:Entity" data-parsoid='{"src":"&amp;#60;","srcContent":"&lt;"}'>&lt;</span></p>
+!! html/wiki.rs # This output matches the PHP parser, except inconsequential entity differences
+<p><a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>,
+<a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>;
+<a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>\
+<a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>.
+<a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>:
+<a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>!
+<a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>?
+<a rel="nofollow" class="external free" href="http://example.com">http://example.com</a>)
+<a rel="nofollow" class="external free" href="http://example.com/url_with_(brackets)">http://example.com/url_with_(brackets)</a>
+(<a rel="nofollow" class="external free" href="http://example.com/url_without_brackets">http://example.com/url_without_brackets</a>)
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity&amp;">http://example.com/url_with_entity&amp;</a>
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity&amp;">http://example.com/url_with_entity&amp;</a>
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity&amp;">http://example.com/url_with_entity&amp;</a>
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity">http://example.com/url_with_entity</a> 
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity">http://example.com/url_with_entity</a> 
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity">http://example.com/url_with_entity</a> 
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity">http://example.com/url_with_entity</a>&lt;
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity">http://example.com/url_with_entity</a>&#x3C;
+<a rel="nofollow" class="external free" href="http://example.com/url_with_entity">http://example.com/url_with_entity</a>&#60;
+</p>
 !! end
 
 !! test

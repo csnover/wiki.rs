@@ -611,10 +611,14 @@ pub fn url_encode_sanitized(input: &str) -> Cow<'_, str> {
     for (cursor, b) in input.bytes().enumerate() {
         if matches!(
             b,
-            b'\x00'..=b'\x20' | b'"' | b'<' | b'>' | b'[' | b']' | b'|' | b'\x7f'
+            b'\x00'..=b'\x1f' | b'"' | b'<' | b'>' | b'[' | b']' | b'|' | b'\x7f'
         ) {
             out += &input[flushed..cursor];
             out += percent_encoding::percent_encode_byte(b);
+            flushed = cursor + 1;
+        } else if b == b' ' {
+            out += &input[flushed..cursor];
+            out.push('+');
             flushed = cursor + 1;
         }
     }

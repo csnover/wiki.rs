@@ -26,6 +26,11 @@ pub struct SiteLibrary<'db> {
 }
 
 impl<'db> SiteLibrary<'db> {
+    /// Gets the article database configuration.
+    fn config(&self) -> &'db Configuration {
+        self.config.get().unwrap()
+    }
+
     /// Sets the article database configuration.
     pub fn set_config(&self, config: &'db Configuration) {
         self.config.set(Some(config));
@@ -43,9 +48,7 @@ impl SiteLibrary<'_> {
         let name = RE.replace_all(name.to_str()?, "_");
         let name = name.trim_matches('_');
         Ok(self
-            .config
-            .get()
-            .unwrap()
+            .config()
             .namespaces
             .iter()
             .find_map(|ns| {

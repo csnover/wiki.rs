@@ -1769,8 +1769,8 @@ While `S` is not the position of the end of the input:
 2. Let `Images From` be the configurable list of URL prefixes that are allowed
    when hotlinking external images;
 3. Set `Imagelike` if the `URL` is a syntactically valid URL string starting
-   with `["http://"|"https://"]` and ending with
-   `["avif|"gif"|"jpg"|"jpeg"|"png"|"svg"|"webp"]`.
+   with `["http://"|"https://"]` and ending with a `'.'` followed by a
+   case-insensitive match of `["avif|"gif"|"jpg"|"jpeg"|"png"|"svg"|"webp"]`.
 4. Set `Allowed` if:
 
    1. `Imagelike` is set and the configuration allows all external image
@@ -1784,11 +1784,11 @@ While `S` is not the position of the end of the input:
          `"external_image_whitelist"`;
       2. Split `Whitelist` by `'\n'` and remove any lines that are empty or
          start with `'#'`;
-      3. Treat each line as a case-insensitive regular expression.
+      3. Treat each remaining line as a case-insensitive regular expression.
 
 5. If `Allowed` is set:
 
-   1. Let `Name` be the HTML entity encoded filename of `URL`;
+   1. Let `Name` be the HTML entity encoded filename part of `URL`;
    2. HTML entity encode `URL`;
    3. Emit the interpolation `"<img src=\"{URL}\" alt=\"{Name}\">"`.
 
@@ -2898,8 +2898,9 @@ If the input starts with `"../"` or `'/'`:
 1. Decode HTML entities in `URL` following the special MediaWiki HTML entity
     rules[^entity];
 2. URL encode bytes in `URL` matching
-    `[']'|'['|'<'|'>'|'"'|'\x00'..='\x20'|'\x7F'|'|']`;
-3. If the URL has a host-part:
+    `[']'|'['|'<'|'>'|'"'|'\x00'..='\x1f'|'\x7f'|'|']`;
+3. Replace the space character in `URL` with `'+'`;
+4. If the URL has a host-part:
 
     1. Remove characters in the host-part that are ignored in IDNs per RFC 8264;
     2. URL decode `['['|']']` in the host-part of `URL` that correspond to an

@@ -37,6 +37,10 @@ Bar
 <p><a rel="mw:WikiLink" href="./Bar" title="Bar" about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"RegressionTest","href":"./Template:RegressionTest"},"params":{},"i":0}}]}'><span>bar</span></a></p>
 
 <p>Bar</p>
+!!html/wiki.rs # This output matches the PHP parser
+<p><a href="/wiki/Bar" title="Bar"><span>bar</span></a>
+</p><p>Bar
+</p>
 !!end
 
 # As seen in T334957#9026561
@@ -64,6 +68,19 @@ parsoid=wt2html,selser
 <i>x</i></p><ul data-parsoid='{"fostered":true}'><li class="mw-empty-elt"></li></ul><table about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"autoInsertedEnd":true}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"\n{{{!}}\n{{!}}-\n"}},"i":0}},"{|\n|-\n\né\n\n&apos;&apos;x&apos;&apos;\n\n* {{1x|\n{{{!}}\n{{!}}-\n}}"]}'>
 </table><table about="#mwt1">
 </table>
+!! html/wiki.rs # This output matches the PHP parser
+
+
+
+é
+
+<i>x</i><ul><li class="mw-empty-elt"></li></ul><table>
+
+
+</table><table>
+
+
+</table>
 !! end
 
 # This is just a regression test to ensure code can handle tables with fosterable content
@@ -85,6 +102,8 @@ parsoid=wt2html
 
 </table>
 </figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, mostly
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element"></a><figcaption> <span>foo</span><table>  <tbody><tr><td></td></tr></tbody></table> </figcaption></figure>
 !! end
 
 !! test
@@ -95,6 +114,8 @@ parsoid=wt2html
 [http://google.com <table>hi</table> ho]
 !! html/parsoid
 <a rel="mw:ExtLink nofollow" href="http://google.com" class="external text"><p data-parsoid='{"fostered":true,"autoInsertedStart":true}'>hi</p><table data-parsoid='{"stx":"html"}'></table> ho</a>
+!! html/wiki.rs # This output matches the PHP parser
+<a rel="nofollow" class="external text" href="http://google.com">hi<table></table></a><p><a rel="nofollow" class="external text" href="http://google.com"> ho</a></p>
 !! end
 
 !! test
@@ -130,6 +151,11 @@ parsoid=wt2html
   <p>
    <br></p>
 <div data-parsoid='{"stx":"html"}'>b</div>
+!! html/wiki.rs # This output matches the PHP parser, minus the XML void elements
+<ul><li>a</li></ul>
+<p><br>   
+</p>
+<div>b</div>
 !! end
 
 # Edge case in p-wrapping handling IndentPreTk
@@ -149,6 +175,13 @@ baz
 </blockquote>
 
 <p>baz</p>
+!! html/wiki.rs # This output matches the PHP parser
+<blockquote>
+<p>    foo <i>bar</i>
+</p>
+</blockquote>
+<p>baz
+</p>
 !! end
 
 !! test
@@ -165,6 +198,13 @@ parsoid=wt2html
 <tbody><tr><td>
 <pre>a</pre></td></tr>
 </tbody></table></dd></dl>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
+<dl><dd><table>
+<tr>
+<td>
+<pre>a
+</pre>
+</td></tr></table></dd></dl>
 !! end
 
 !! test
@@ -183,6 +223,13 @@ parsoid=wt2html
 3. <a rel="mw:WikiLink" href="./Foo?action=edit&amp;redlink=1" title="Foo" class="new" typeof="mw:LocalizedAttrs" data-mw-i18n='{"title":{"lang":"x-page","key":"red-link-title","params":["Foo"]}}'><span typeof="mw:Extension/spantag" about="#mwt3" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"a"}}'>a</span></a>
 4. <a rel="mw:WikiLink" href="./Foo?action=edit&amp;redlink=1" title="Foo" class="new" typeof="mw:LocalizedAttrs" data-mw-i18n='{"title":{"lang":"x-page","key":"red-link-title","params":["Foo"]}}'><span typeof="mw:Extension/spantag" about="#mwt4" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"a"}}'>a</span></a>
 5. <a rel="mw:WikiLink" href="./Foo?action=edit&amp;redlink=1" title="Foo" class="new" typeof="mw:LocalizedAttrs" data-mw-i18n='{"title":{"lang":"x-page","key":"red-link-title","params":["Foo"]}}'><span typeof="mw:Extension/spantag" about="#mwt5" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"a"}}'>a</span></a></p>
+!! html/wiki.rs
+<p>1. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
+2. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
+3. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
+4. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
+5. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
+</p>
 !! end
 
 # The integrity of empty-line-tk should not get compromised
@@ -197,6 +244,8 @@ parsoid=wt2html
 !! html/parsoid
 <table data-parsoid='{"stx":"html"}'><tbody><tr data-parsoid='{"stx":"html"}'><td data-parsoid='{"stx":"html"}'><i>a</i></td><td title="&amp;" data-parsoid='{"stx":"html","a":{"title":"&amp;"},"sa":{"title":"&amp;amp;"}}'>b</td></tr></tbody></table>
 <link rel="mw:PageProp/Category" href="./Category:C" />
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
+<table><tr><td><i>a</i></td><td title="&amp;">b</td></tr></table>
 !! end
 
 !! test

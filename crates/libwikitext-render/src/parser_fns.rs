@@ -889,18 +889,39 @@ mod string {
 
     /// `{{#dir}}`
     pub fn dir(
-        _: &mut String,
+        out: &mut String,
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         const BCP_47: &str = "language_option_bcp47";
-        if let Some(_code) = arguments.eval(state, 0)?.map(trim) {
+        let language = if let Some(code) = arguments.eval(state, 0)?.map(trim) {
             // If not, then ISO 639-3 or ISO 639-1?
-            let _is_bcp_47 = arguments
+            let is_bcp_47 = arguments
                 .eval(state, 1)?
                 .is_some_and(|arg| magic_matches(state, BCP_47, &arg));
-            log::warn!("TODO: #dir");
+
+            let config = state.statics.db.config();
+            if is_bcp_47 {
+                config
+                    .language_bcp47
+                    .get(&code)
+                    .copied()
+                    .and_then(|index| config.languages.index(index.into()))
+                    .map(|(_, lang)| lang)
+            } else {
+                config.languages.get(&code)
+            }
+        } else {
+            let config = state.statics.db.config();
+            config.languages.get(config.language)
+        };
+
+        if language.is_some_and(|language| language.is_rtl) {
+            write!(out, "rtl")?;
+        } else {
+            write!(out, "ltr")?;
         }
+
         Ok(())
     }
 

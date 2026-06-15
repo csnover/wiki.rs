@@ -7,6 +7,7 @@ use super::{
 use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode,
+    config::{Configuration, ImageHotlinking},
     db::DatabaseProvider as _,
     decode_html, make_url,
     title::{Namespace, Title},
@@ -14,7 +15,8 @@ use libwikitext_common::{
     url_encode_sanitized,
 };
 use libwikitext_parse::{Argument, Span, Spanned, Token};
-use std::borrow::Cow;
+use regex::Regex;
+use std::{borrow::Cow, sync::LazyLock};
 
 /// Renders an external web site link.
 pub(super) fn render_external_link(
@@ -25,12 +27,19 @@ pub(super) fn render_external_link(
     content: &[Spanned<Token>],
     auto_link: bool,
 ) -> Result {
+    let target = sp.eval(state, target)?;
+
+    if should_render_hotlink(state.statics.db.config(), &target) {
+        render_hotlink(&mut out.next, state, &target);
+        return Ok(());
+    }
+
     // TODO: Handle “external” links that just come back to the wiki. Right now
     // it is annoying to try to do this because `http::Uri` does not conform to
     // RFC 3986 so it mixes up authority and path when the scheme is missing,
     // but adding a whole new dependency just for this one case is too much.
     let link = LinkKind::External(
-        sp.eval(state, target)?,
+        target,
         if auto_link {
             ExternalLinkKind::Free
         } else if content.is_empty() {
@@ -52,10 +61,58 @@ pub(super) fn render_external_link(
         *ordinal += 1;
         out.next.text(&format!("[{ordinal}]"));
     } else {
-        out.adopt_tokens(state, sp, content)?;
+        let target = sp.eval(state, content)?;
+        if should_render_hotlink(state.statics.db.config(), &target) {
+            render_hotlink(&mut out.next, state, &target);
+        } else {
+            out.adopt_tokens(state, sp, content)?;
+        }
     }
     out.next.tag_end("a");
     Ok(())
+}
+
+/// Renders a hotlinked image.
+fn render_hotlink<S: Sink + ?Sized>(out: &mut S, state: &mut State<'_, '_, '_>, target: &str) {
+    let url = if let Some(external) = state.statics.paths.external {
+        Cow::Owned(make_url(
+            &state.statics.base_uri,
+            None,
+            format_args!("{external}/{}", &url_encode_sanitized(target)),
+            None,
+            None,
+        ))
+    } else {
+        Cow::Borrowed(target)
+    };
+
+    let (_, alt) = target.rsplit_once('/').unwrap();
+
+    out.tag_start("img");
+    out.tag_attribute_full("src", &url);
+    out.tag_attribute_full("alt", alt);
+    out.tag_start_end("img");
+}
+
+/// Returns true if the given `target` should be emitted as a hotlinked image.
+fn should_render_hotlink(config: &Configuration, target: &str) -> bool {
+    static RE_IMAGEY: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^https?://.+\.(?i:avif|gif|jpe?g|png|svg|webp)$").unwrap());
+
+    match config.image_hotlinking {
+        ImageHotlinking::Disabled => false,
+        ImageHotlinking::Whitelist { config, message } => {
+            if !RE_IMAGEY.is_match(target) {
+                false
+            } else if message {
+                log::warn!("TODO: external_image_whitelist");
+                false
+            } else {
+                config.iter().any(|prefix| target.starts_with(prefix))
+            }
+        }
+        ImageHotlinking::Enabled => RE_IMAGEY.is_match(target),
+    }
 }
 
 /// Renders an internal link.

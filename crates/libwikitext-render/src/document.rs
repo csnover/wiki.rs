@@ -493,7 +493,7 @@ impl Surrogate<Error> for Document {
         _span: Span,
         magic: &MagicLink,
     ) -> Result {
-        let (link, content) = match magic {
+        let (link, content, tracking) = match magic {
             MagicLink::Isbn(id) => {
                 const BOOKSOURCES: &str = "Booksources";
                 let url_id = strtr(id, &[("-", ""), (" ", ""), ("x", "X")]);
@@ -511,7 +511,7 @@ impl Surrogate<Error> for Document {
                     &format!("{canonical}/{url_id}"),
                     Some(Namespace::SPECIAL),
                 )?);
-                (link, format!("ISBN {id}"))
+                (link, format!("ISBN {id}"), "magiclink-tracking-isbn")
             }
             MagicLink::Pmid(id) => {
                 let url = format_message(state.messages, ["pubmedurl"], |key| {
@@ -520,7 +520,11 @@ impl Surrogate<Error> for Document {
                     )
                 })?;
                 let link = LinkKind::External(url, ExternalLinkKind::MagicPmid);
-                (link, format!("PMID {}", &sp.source[id.into_range()]))
+                (
+                    link,
+                    format!("PMID {}", &sp.source[id.into_range()]),
+                    "magiclink-tracking-pmid",
+                )
             }
             MagicLink::Rfc(id) => {
                 let url = format_message(state.messages, ["rfcurl"], |key| {
@@ -529,9 +533,23 @@ impl Surrogate<Error> for Document {
                     )
                 })?;
                 let link = LinkKind::External(url, ExternalLinkKind::MagicRfc);
-                (link, format!("RFC {}", &sp.source[id.into_range()]))
+                (
+                    link,
+                    format!("RFC {}", &sp.source[id.into_range()]),
+                    "magiclink-tracking-rfc",
+                )
             }
         };
+
+        if let Some(tracking) = state.messages.get(tracking) {
+            let title = Title::new(
+                state.statics.db.config(),
+                tracking,
+                Some(Namespace::CATEGORY),
+            )?;
+            state.globals.categories.insert(&title);
+        }
+
         tags::render_start_link(&mut self.next, state, &link);
         self.next.text(&content);
         self.next.tag_end("a");

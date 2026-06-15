@@ -2589,7 +2589,7 @@ parsoid=wt2html,html2html
 !! html/parsoid
 <h2 id="a">a</h2>
 <table style="__TOC__"></table>
-!! html/wiki.rs # The output matches the PHP parser using heuristics, except for the whitespace
+!! html/wiki.rs # This output matches the PHP parser using heuristics, except for the whitespace
 <h2 id="a">a</h2>
 <table style="__TOC__"><tr><td></td></tr></table>
 !! end
