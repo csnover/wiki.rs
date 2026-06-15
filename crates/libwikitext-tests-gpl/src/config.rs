@@ -226,7 +226,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: true,
             default_content_model: None,
-            subpages: false,
+            subpages: true,
             aliases: &[],
         },
         Namespace {

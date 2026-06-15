@@ -428,6 +428,38 @@ mod page {
         page_name_impl(out, state, arguments, Title::base_text, Title::base_uri)
     }
 
+    /// `{{#contentmodel: format [| title] }}`
+    pub fn content_model(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        const CANONICAL: &str = "contentmodel_canonical";
+        const LOCAL: &str = "contentmodel_local";
+
+        let format = arguments
+            .eval(state, 0)?
+            .map(trim)
+            .map_or(Some(LOCAL), |format| {
+                magic_flag(state, &[CANONICAL, LOCAL], &format)
+            });
+
+        let article = get_article(state, arguments, 1)?;
+
+        if let (Some(format), Some(article)) = (format, article) {
+            if format == LOCAL {
+                log::warn!("#contentmodel: local");
+            }
+            write!(
+                out,
+                "{}",
+                libwikitext_parse::escape_all(state.statics.db.config(), article.model())
+            )?;
+        }
+
+        Ok(())
+    }
+
     /// `{{FULLPAGENAME}}`
     pub fn full_page_name(
         out: &mut String,
@@ -449,7 +481,7 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(id) = get_article(state, arguments)?.map(|article| article.id()) {
+        if let Some(id) = get_article(state, arguments, 0)?.map(|article| article.id()) {
             write!(out, "{id}")?;
         }
         Ok(())
@@ -502,7 +534,8 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(page_size) = get_article(state, arguments)?.map(|article| article.body().len())
+        if let Some(page_size) =
+            get_article(state, arguments, 0)?.map(|article| article.body().len())
         {
             let no_separators = arguments
                 .eval(state, 1)?
@@ -582,7 +615,7 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let revision_id = get_article(state, arguments)?.map(|article| article.revision_id());
+        let revision_id = get_article(state, arguments, 0)?.map(|article| article.revision_id());
         if let Some(revision_id) = revision_id {
             write!(out, "{revision_id}")?;
         }
@@ -600,7 +633,7 @@ mod page {
         F: FnOnce(UtcDateTime) -> fmt::Result,
     {
         if let Some(time) =
-            get_article(state, arguments)?.map(|article| article.revision_timestamp())
+            get_article(state, arguments, 0)?.map(|article| article.revision_timestamp())
         {
             write_time(time)?;
         }
@@ -673,7 +706,7 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let revision = get_article(state, arguments)?;
+        let revision = get_article(state, arguments, 0)?;
         if let Some(author) = revision.as_ref().map(|article| article.revision_author()) {
             write!(out, "{author}")?;
         }
@@ -1895,6 +1928,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
 
     "basepagename" => page::base_page_name,
     "basepagenamee" => page::base_page_name,
+    "contentmodel" => page::content_model,
     "defaultsort" => page::set_page_var,
     "displaytitle" => page::set_page_var,
     "fullpagename" => page::full_page_name,
@@ -2075,26 +2109,29 @@ fn decode_trim(value: Cow<'_, str>) -> Cow<'_, str> {
 fn get_article(
     state: &mut State<'_, '_, '_>,
     arguments: &IndexedArgs<'_, '_, '_>,
+    index: usize,
 ) -> Result<Option<Arc<Article>>> {
-    Ok(if let Some(title) = arguments.eval(state, 0)?.map(trim) {
-        let title = Title::new(state.statics.db.config(), &title, None);
-        match title.ok().map(|title| state.statics.db.get(&title)) {
-            Some(Ok(article)) => Some(article),
-            None | Some(Err(DatabaseError::NotFound)) => None,
-            Some(Err(err)) => return Err(err.into()),
-        }
-    } else {
-        state
-            .statics
-            .db
-            .contains(&state.globals.title)
-            .then(|| Arc::clone(&state.globals.article))
-    })
+    Ok(
+        if let Some(title) = arguments.eval(state, index)?.map(trim) {
+            let title = Title::new(state.statics.db.config(), &title, None);
+            match title.ok().map(|title| state.statics.db.get(&title)) {
+                Some(Ok(article)) => Some(article),
+                None | Some(Err(DatabaseError::NotFound)) => None,
+                Some(Err(err)) => return Err(err.into()),
+            }
+        } else {
+            state
+                .statics
+                .db
+                .contains(&state.globals.title)
+                .then(|| Arc::clone(&state.globals.article))
+        },
+    )
 }
 
-/// Returns a function that tries to match the given `alias` to any of the
-/// canonical representations given in `any_of`. Returns the matched canonical
-/// representation, or `None` if the given `alias` did not match.
+/// Tries to match the given `alias` to any of the canonical representations
+/// given in `any_of`. Returns the matched canonical representation, or `None`
+/// if the given `alias` did not match.
 fn magic_flag(
     state: &State<'_, '_, '_>,
     any_of: &[&'static str],
@@ -2115,9 +2152,8 @@ fn magic_flag(
         })
 }
 
-/// Returns a function that tries to convert the given `alias` to a canonical
-/// representation, returning `true` if any of the possible representations is
-/// `flag`.
+/// Tries to convert the given `alias` to a canonical representation, returning
+/// `true` if any of the possible representations is `flag`.
 fn magic_matches(state: &State<'_, '_, '_>, flag: &'static str, alias: &str) -> bool {
     let alias = to_lower(alias.trim_ascii());
     state

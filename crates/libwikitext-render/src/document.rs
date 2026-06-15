@@ -364,10 +364,13 @@ impl Surrogate<Error> for Document {
         let title = sp.eval(state, target)?.map(title_decode);
         let title = title.trim_start_matches(' ');
         let force_link = title.starts_with(':');
-        let (title, text) = state.globals.title.join(title);
+        let (title, mut text) = state.globals.title.join(title);
+        if text.is_empty() {
+            text = Cow::Borrowed(title.as_ref());
+        }
         let Ok(title) = Title::new(state.statics.db.config(), &title, None) else {
             // It is not possible to just emit the original span because it may
-            // contain entities
+            // contain entities that must not be double-encoded
             self.adopt_tokens(state, sp, prefix)?;
             self.next.text("[[");
             self.adopt_tokens(state, sp, target)?;

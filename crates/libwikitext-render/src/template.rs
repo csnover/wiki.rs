@@ -477,11 +477,12 @@ fn split_target<'tt>(
             };
             callee += &sp.eval(state, rest)?;
             let (callee, _) = sp.name.join(callee.trim_ascii());
-            if let Ok(callee) = Title::new(
-                state.statics.db.config(),
-                &callee,
-                Some(Namespace::TEMPLATE),
-            ) {
+            let ns = if matches!(callee, Cow::Borrowed(_)) {
+                Namespace::TEMPLATE
+            } else {
+                state.globals.title.namespace().id
+            };
+            if let Ok(callee) = Title::new(state.statics.db.config(), &callee, Some(ns)) {
                 let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
                 Target::Template { callee, arguments }
             } else {
