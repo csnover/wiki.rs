@@ -55,6 +55,19 @@ where
     fn owned_or<F, T>(self, other: T, f: F) -> T
     where
         F: for<'b> FnOnce(<B as ToOwned>::Owned) -> T;
+
+    /// Makes a new `Cow` using a fallible `Cow`-returning callback. If `self`
+    /// is `Cow::Borrowed` and `f` returns `Cow::Borrowed`, the borrow is
+    /// extended. Otherwise, the result is moved (if owned) or converted to
+    /// `Cow::Owned` (if borrowed).
+    ///
+    /// # Errors
+    ///
+    /// * if the callback returns an error
+    fn try_map<F, E>(self, f: F) -> Result<Self, E>
+    where
+        Self: Sized,
+        F: for<'b> FnOnce(&'b B) -> Result<Cow<'b, B>, E>;
 }
 
 impl<'a, B> CowExt<'a, B> for Cow<'a, B>
@@ -116,6 +129,17 @@ where
         match self {
             Cow::Borrowed(_) => other,
             Cow::Owned(o) => f(o),
+        }
+    }
+
+    fn try_map<F, E>(self, f: F) -> Result<Self, E>
+    where
+        Self: Sized,
+        F: for<'b> FnOnce(&'b B) -> Result<Cow<'b, B>, E>,
+    {
+        match self {
+            Cow::Borrowed(v) => f(v),
+            Cow::Owned(v) => Ok(Cow::Owned(f(v.borrow())?.into_owned())),
         }
     }
 }

@@ -191,9 +191,9 @@ impl RawDatabase<'_> {
 
     /// Gets an article with the given title from the database. The article will
     /// be cached in memory.
-    pub fn get(&self, title: &Title) -> Result<Arc<Article>> {
+    pub fn get(&self, title: &Title) -> Result<Option<Arc<Article>>> {
         if !self.may_exist(title) {
-            return Err(Error::NotFound);
+            return Ok(None);
         }
 
         let key = title.key();
@@ -202,7 +202,7 @@ impl RawDatabase<'_> {
             log::warn!("Replacing {key} from hacks");
             let fake_id =
                 (i64::MAX as u64) - u64::from(self.next_id.fetch_add(1, Ordering::SeqCst));
-            return Ok(Arc::new(
+            return Ok(Some(Arc::new(
                 Article::builder()
                     .id(fake_id)
                     .title(key)
@@ -214,7 +214,7 @@ impl RawDatabase<'_> {
                     })
                     .revision_id(fake_id)
                     .build(),
-            ));
+            )));
         }
 
         // Do not use `get_or_insert` and hold the write lock during article
@@ -235,7 +235,7 @@ impl RawDatabase<'_> {
             article
         };
 
-        article.ok_or(Error::NotFound)
+        Ok(article)
     }
 
     /// The total number of articles in the database.

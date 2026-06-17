@@ -175,19 +175,10 @@ impl Surrogate<Error> for Document {
     ) -> Result {
         match name {
             "hiddencat" if state.globals.title.namespace().id == Namespace::CATEGORY => {
-                // TODO: This is supposed to ignore if a message is "-", but
-                // `format_message` filters those away.
-                let title = format_message(state.messages, ["hidden-category-category"], |_| {
-                    Ok::<_, Error>(None)
-                })?;
-                let title = Title::from_parts(
-                    state.statics.db.config(),
-                    state.globals.title.namespace(),
-                    &title,
-                    None,
-                    None,
-                )?;
-                state.globals.categories.insert(&title);
+                state
+                    .globals
+                    .categories
+                    .tracking(&state.statics.messages, "hidden-category-category")?;
             }
             _ => log::warn!("TODO: BehaviorSwitch __{name}__"),
         }
@@ -517,11 +508,12 @@ impl Surrogate<Error> for Document {
                 (link, format!("ISBN {id}"), "magiclink-tracking-isbn")
             }
             MagicLink::Pmid(id) => {
-                let url = format_message(state.messages, ["pubmedurl"], |key| {
-                    Ok::<_, Error>(
-                        (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
-                    )
-                })?;
+                let url =
+                    format_message(&state.statics.messages, None, true, ["pubmedurl"], |key| {
+                        Ok::<_, Error>(
+                            (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
+                        )
+                    })?;
                 let link = LinkKind::External(url, ExternalLinkKind::MagicPmid);
                 (
                     link,
@@ -530,7 +522,7 @@ impl Surrogate<Error> for Document {
                 )
             }
             MagicLink::Rfc(id) => {
-                let url = format_message(state.messages, ["rfcurl"], |key| {
+                let url = format_message(&state.statics.messages, None, true, ["rfcurl"], |key| {
                     Ok::<_, Error>(
                         (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
                     )
@@ -544,14 +536,10 @@ impl Surrogate<Error> for Document {
             }
         };
 
-        if let Some(tracking) = state.messages.get(tracking) {
-            let title = Title::new(
-                state.statics.db.config(),
-                tracking,
-                Some(Namespace::CATEGORY),
-            )?;
-            state.globals.categories.insert(&title);
-        }
+        state
+            .globals
+            .categories
+            .tracking(&state.statics.messages, tracking)?;
 
         tags::render_start_link(&mut self.next, state, &link);
         self.next.text(&content);

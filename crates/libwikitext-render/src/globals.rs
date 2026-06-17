@@ -2,9 +2,18 @@
 
 use core::fmt::{self, Write as _};
 use libmisc::to_ascii_lower;
-use libwikitext_common::{make_url, title::Title, url::Url};
+use libwikitext_common::{
+    Messages,
+    db::DynDatabaseProvider,
+    make_url,
+    title::{Namespace, Title},
+    url::Url,
+};
 use libwikitext_parse::HeadingLevel;
-use std::collections::{BTreeSet, HashMap, hash_map::Entry};
+use std::{
+    collections::{BTreeSet, HashMap, hash_map::Entry},
+    sync::Arc,
+};
 
 /// A sorted set of categories which the article belongs to.
 #[derive(Debug, Default)]
@@ -55,6 +64,21 @@ impl Categories {
     /// Returns the number of categories.
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Adds a tracking category using `messages` with the given `key`.
+    pub(super) fn tracking(
+        &mut self,
+        messages: &Messages<'_, Arc<dyn DynDatabaseProvider>>,
+        key: &str,
+    ) -> Result<(), super::Error> {
+        if let Some(tracking) = messages.get(key, None, true)?
+            && tracking != "-"
+        {
+            let title = Title::new(messages.db().config(), &tracking, Some(Namespace::CATEGORY))?;
+            self.insert(&title);
+        }
+        Ok(())
     }
 }
 

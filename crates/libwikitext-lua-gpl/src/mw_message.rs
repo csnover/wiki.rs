@@ -13,32 +13,44 @@ use libwikitext_common::{Messages, db::DatabaseProvider, format_message, format_
 use std::borrow::Cow;
 
 /// The internationalisation support library.
-#[derive(gc_arena::Collect, Default)]
+#[derive(gc_arena::Collect)]
 #[collect(require_static)]
-pub struct MessageLibrary<'dict> {
+pub struct MessageLibrary<'dict, Db> {
     /// A reference to the message dictionary for the requested locale.
-    messages: Cell<Option<&'dict Messages<'dict>>>,
+    messages: Cell<Option<&'dict Messages<'dict, Db>>>,
 }
 
-impl<'dict> MessageLibrary<'dict> {
+impl<Db> Default for MessageLibrary<'_, Db> {
+    fn default() -> Self {
+        Self {
+            messages: <_>::default(),
+        }
+    }
+}
+
+impl<'dict, Db> MessageLibrary<'dict, Db> {
     /// Returns the message dictionary.
     ///
     /// # Panics
     ///
     /// * The dictionary is not set
     #[inline]
-    fn messages(&self) -> &'dict Messages<'dict> {
+    fn messages(&self) -> &'dict Messages<'dict, Db> {
         self.messages.get().unwrap()
     }
 
     /// Sets the message dictionary.
     #[inline]
-    pub fn set_messages(&self, messages: &'dict Messages<'dict>) {
+    pub fn set_messages(&self, messages: &'dict Messages<'dict, Db>) {
         self.messages.set(Some(messages));
     }
 }
 
-impl<'dict> MessageLibrary<'dict> {
+impl<'dict, Db> MessageLibrary<'dict, Db>
+where
+    Db: DatabaseProvider,
+    for<'gc> VmError<'gc>: From<Db::Error>,
+{
     /// Checks whether a messages or sequence of messages exist, are blank, or
     /// are disabled.
     ///
@@ -55,22 +67,24 @@ impl<'dict> MessageLibrary<'dict> {
         (what, data): (VmString<'gc>, Table<'gc>),
     ) -> Result<bool, VmError<'gc>> {
         let message = if let Ok(s) = data.get::<_, VmString<'_>>(ctx, "rawMessage") {
-            Some(s.as_bytes())
-        } else if let Ok(keys) = data.get::<_, Table<'_>>(ctx, "keys") {
-            keys.iter().find_map(|(_, key)| {
-                key.into_string(ctx)
-                    .and_then(|key| key.to_str().ok())
-                    .and_then(|key| self.messages().get(key))
-                    .map(str::as_bytes)
-            })
+            Some(Cow::Borrowed(s.to_str()?))
         } else {
-            None
+            let (keys, lang, use_db) = message_options(ctx, data)?;
+            let mut message = None;
+            for key in keys {
+                message = self.messages().get(key, lang, use_db)?;
+                if message.is_some() {
+                    break;
+                }
+            }
+            message
         };
+        let message = message.as_deref();
 
         Ok(match what.to_str()? {
             "exists" => message.is_some(),
-            "isBlank" => message.is_none_or(<[u8]>::is_empty),
-            "disabled" => message.is_none_or(|message| message.is_empty() || message == b"-"),
+            "isBlank" => message.is_none_or(str::is_empty),
+            "disabled" => message.is_none_or(|message| message.is_empty() || message == "-"),
             _ => return Err("invalid what for 'messageCheck'".into_value(ctx))?,
         })
     }
@@ -93,39 +107,52 @@ impl<'dict> MessageLibrary<'dict> {
             .get::<_, Table<'_>>(ctx, "params")
             .unwrap_or_else(|_| Table::new(&ctx));
 
-        let message = if let Ok(message) = data.get::<_, VmString<'_>>(ctx, "rawMessage") {
-            format_raw_message(message.to_str()?, make_replacer(ctx, params))?
-        } else {
-            let keys = data
-                .get::<_, Table<'_>>(ctx, "keys")
-                .unwrap_or_else(|_| Table::new(&ctx))
-                .iter()
-                .filter_map(|(_, value)| value.into_string(ctx).and_then(|s| s.to_str().ok()));
+        let replacer = |key: &str| {
+            let key = key.parse::<i64>().unwrap();
+            Ok(params
+                .get::<_, VmString<'_>>(ctx, key)
+                .ok()
+                .and_then(|s| s.to_str().ok())
+                .map(Cow::Borrowed))
+        };
 
-            format_message(self.messages(), keys, make_replacer(ctx, params))?
+        let message = if let Ok(message) = data.get::<_, VmString<'_>>(ctx, "rawMessage") {
+            format_raw_message(message.to_str()?, replacer)?
+        } else {
+            let (keys, lang, use_db) = message_options(ctx, data)?;
+            format_message(self.messages(), lang, use_db, keys, replacer)?
         };
 
         Ok(ctx.intern(message.as_bytes()))
     }
 }
 
-/// Creates a message placeholder callback to retrieve values from the given
-/// table.
-fn make_replacer<'gc>(
+/// Extracts message formatting options from a table.
+fn message_options<'gc>(
     ctx: Context<'gc>,
-    params: Table<'gc>,
-) -> impl Fn(&str) -> Result<Option<Cow<'gc, str>>, core::convert::Infallible> {
-    move |key| {
-        let key = key.parse::<i64>().unwrap();
-        Ok(params
-            .get::<_, VmString<'gc>>(ctx, key)
-            .ok()
-            .and_then(|s| s.to_str().ok())
-            .map(Cow::Borrowed))
-    }
+    data: Table<'gc>,
+) -> Result<(impl Iterator<Item = &'gc str>, Option<&'gc str>, bool), VmError<'gc>> {
+    let keys = data
+        .get::<_, Table<'_>>(ctx, "keys")
+        .unwrap_or_else(|_| Table::new(&ctx))
+        .iter()
+        .filter_map(move |(_, value)| value.into_string(ctx).and_then(|s| s.to_str().ok()));
+
+    let lang = data
+        .get::<_, Option<VmString<'_>>>(ctx, "lang")?
+        .map(VmString::to_str)
+        .transpose()?;
+
+    let use_db = data.get::<_, bool>(ctx, "useDB").unwrap_or(false);
+
+    Ok((keys, lang, use_db))
 }
 
-impl<'dict: 'static> MwInterface for MessageLibrary<'dict> {
+impl<'dict: 'static, Db> MwInterface for MessageLibrary<'dict, Db>
+where
+    Db: DatabaseProvider,
+    for<'gc> VmError<'gc>: From<Db::Error>,
+{
     const CODE: &'static [u8] = include_bytes!("./modules/mw.message.lua");
     const NAME: &'static str = "mw.message";
 
@@ -138,9 +165,9 @@ impl<'dict: 'static> MwInterface for MessageLibrary<'dict> {
         }
     }
 
-    fn setup<'gc, Db: DatabaseProvider>(
+    fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
-        _: &Db,
+        _: &SetupDb,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {

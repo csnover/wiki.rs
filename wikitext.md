@@ -745,23 +745,57 @@ A string is considered an error if it starts with `<span class="error">`.
 
    1. Let `Name` and `Arg0` be the left and right hand side of `Name` split by
       `[':'|'：']`;
-   2. If calling the parser function with `Name`, [`Arg0`, and `Arguments`](#template-arguments) succeeds, emit the result and terminate here.
+   2. If calling the parser function with `Name`,
+      [`Arg0`, and `Arguments`](#template-arguments) succeeds, emit the result
+      and terminate here.
 
 10. Run the [subpage resolution algorithm](#subpage-resolution) on `Name`;
 11. If `Name` [parses as a title](#title):
 
     1. Let `Title` be the parsed title;
-    2. If `Title` already being expanded[^tpe], emit an
+    2. If an article with the title `Title` does not exist, and the
+       configuration enables link conversion, and the language converter
+       contains a registered term matching `Name`, let `Title` be the result of
+       [parsing](#title) the
+       [matched term from the language converter](#language-conversion) as a
+       title;
+    3. If `Title` is already being expanded[^tpe], emit an
        [error string](#error-string) and terminate here; otherwise
-    3. If a template with the title `Title` exists, emit the result of expanding
-       the `Title` template [with `Arguments`](#template-arguments); otherwise
-    4. Let `Title` be the [prefixed](#title-glossary) text of `Title` and emit
-       the interpolation `"[[:{Title}]]"`.
+    4. If `Title` is an internal title:
+
+       1. If `Title` has the namespace `Special`, and the configuration allows
+          special inclusion, and a special page with the given title exists,
+          emit the result of rendering the special page using `Arguments` and
+          terminate here; otherwise
+       2. If an article or [shadow page](#shadow-page) with the title `Title`
+          exists and the namespace of `Title` allows inclusion:
+
+          1. Follow up to two [redirect](#redirect) directives;
+          2. If `No Wiki` is set, emit the text of the `Title` template;
+             otherwise
+          3. Emit the result of expanding the `Title` template
+             [with `Arguments`](#template-arguments) and terminate here.
+
+          Otherwise;
+
+       3. Let `Title` be the [prefixed](#title-glossary) text of `Title` and
+          emit the interpolation `"[[:{Title}]]"`.
+
+       Otherwise;
+
+    5. If `Title` is an interwiki transclusion:
+
+       1. Let `Query` be `"action=raw"` if `Force Raw` is set, otherwise
+          `"action=render"`;
+       2. Let `Data` be the text fetched from the remote server from the
+          [full URL](#title-glossary) of `Title` using the query string `Query`;
+       3. If `Force Raw` is set and `No Wiki` is clear, emit the result of
+          expanding the `Data` with `Arguments` and terminate here; otherwise
+       4. Emit `Data` and terminate here.
 
     Otherwise;
 
-12. Emit the template expression itself, as plain text;
-13. TODO: Handle the `No Wiki` and `Force Raw` flags.
+12. Emit the template expression itself, as plain text.
 
 [^subst]: Save mode, and therefore the other `subst` rules, are out of scope of
   this document.
@@ -771,6 +805,27 @@ A string is considered an error if it starts with `<span class="error">`.
   may include itself without causing an error. But if that inclusion then tries
   to include itself again, that must emit an error, because it is an expansion
   inside of an expansion.
+
+### Redirect
+
+Whether a title should redirect is implementation-defined. Traditionally, this
+is a Wikitext document that starts with an alias for the redirect magic word,
+followed by a Wikitext link corresponding to the redirect target.
+
+### Shadow page
+
+If the namespace of `Title` is an alias for the `MediaWiki` namespace and
+`Title` is not an article:
+
+1. Let `Key` be the [key](#title-glossary) of `Title` with lower-cased first
+   letter;
+2. Let `ID` and `Lang` be the left and right hand side of `Key` split at the
+   last `'/'`;
+3. If `Lang` is not a configured enabled language code with a non-empty autonym,
+   let `ID` be `Key` and `Lang` be the user’s current language code;
+4. Let `Message` be the text from the message dictionary for the language code
+   `Lang`;
+5. If `Message` is none or empty, return none; otherwise, return `Message`.
 
 ### Template expansion argument rules
 

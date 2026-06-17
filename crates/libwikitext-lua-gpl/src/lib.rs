@@ -37,10 +37,12 @@ use prelude::*;
 /// # Errors
 ///
 /// * An interface fails to initialise
-pub fn init<Db: DatabaseProvider + 'static, Sp: HostFrame + 'static>(
-    vm: &mut Lua,
-    db: &Db,
-) -> Result<(), RuntimeError> {
+pub fn init<Db, Sp>(vm: &mut Lua, db: &Db) -> Result<(), RuntimeError>
+where
+    Db: DatabaseProvider + 'static,
+    Sp: HostFrame + 'static,
+    for<'a> VmError<'a>: From<Db::Error>,
+{
     init_first(vm)?;
 
     // This specific library initialisation order is required for libraries to
@@ -53,7 +55,7 @@ pub fn init<Db: DatabaseProvider + 'static, Sp: HostFrame + 'static>(
         mw_uri::UriLibrary<'_, Db>,
         mw_ustring::UstringLibrary,
         mw_language::LanguageLibrary<'_>,
-        mw_message::MessageLibrary<'_>,
+        mw_message::MessageLibrary<'_, Db>,
         mw_title::TitleLibrary<Db>,
         mw_text::TextLibrary,
         mw_html::HtmlLibrary,

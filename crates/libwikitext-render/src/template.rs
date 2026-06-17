@@ -5,7 +5,6 @@ use super::{
     expand_templates::{ExpandMode, ExpandTemplates},
     lua::run_vm,
     parser_fns::call_parser_fn,
-    resolve_redirects,
     stack::{KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate,
 };
@@ -17,10 +16,10 @@ use indexmap::IndexSet;
 use libmisc::to_lower;
 use libwikitext_common::{
     config::Configuration,
-    db::DatabaseProvider as _,
+    db::{Article, DatabaseProvider as _, resolve_redirects},
     make_url,
     title::{Namespace, Title},
-    title_decode,
+    title_decode, to_lower_first,
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
 use std::{borrow::Cow, pin::pin, sync::Arc, time::Instant};
@@ -104,7 +103,12 @@ pub(super) fn call_module(
     };
 
     let code = match state.statics.db.get(&callee) {
-        Ok(code) => resolve_redirects(&state.statics.db, code)?,
+        Ok(Some(code)) => resolve_redirects(&state.statics.db, code)?,
+        Ok(None) => {
+            log::warn!("could not find module");
+            sp.backtrace();
+            return Ok(());
+        }
         Err(err) => {
             log::warn!("could not load module {callee}: {err}");
             sp.backtrace();
@@ -326,7 +330,8 @@ enum Target<'tt> {
         /// The arguments to the function.
         arguments: Vec<Kv<'tt>>,
     },
-    /// The target is a template.
+    /// The target is a template (or interface message masquerading as a
+    /// template).
     Template {
         /// The arguments to the template.
         arguments: Vec<Kv<'tt>>,
@@ -431,10 +436,17 @@ fn split_target<'tt>(
 
             has_colon = true;
             if !rhs.is_empty() {
-                *first = Some(Spanned {
-                    node: Token::Generated(rhs.to_owned()),
-                    span: part.span,
-                });
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "Wikitext ≥2**32 is impossible"
+                )]
+                let span = Span::new(part.span.end - rhs.len() as u32, part.span.end);
+                let node = if matches!(text, Cow::Owned(_)) {
+                    Token::Generated(rhs.to_owned())
+                } else {
+                    Token::Text
+                };
+                *first = Some(Spanned { node, span });
             }
             break;
         }
@@ -470,11 +482,10 @@ fn split_target<'tt>(
                 arguments,
             }
         } else {
-            #[rustfmt::skip]
-            if let Some(Spanned { node: Token::Generated(first), .. }) = first {
+            if let Some(first) = first {
                 callee.push(':');
-                callee += first;
-            };
+                callee += &sp.eval(state, core::slice::from_ref(first))?;
+            }
             callee += &sp.eval(state, rest)?;
             let (callee, _) = sp.name.join(callee.trim_ascii());
             let ns = if matches!(callee, Cow::Borrowed(_)) {
@@ -500,7 +511,27 @@ pub(crate) fn call_template(
     callee: &Title,
     arguments: &[Kv<'_>],
 ) -> Result<Option<String>> {
-    let Ok(template) = state.statics.db.get(callee) else {
+    let mut template = state.statics.db.get(callee)?;
+
+    // This is (zombo) ShadowPage
+    if template.is_none()
+        && callee.namespace().id == Namespace::MEDIAWIKI
+        && let key = to_lower_first(callee.text())
+    {
+        template = state.statics.messages.get(&key, None, false)?.map(|body| {
+            Arc::new(
+                Article::builder()
+                    .body(&body)
+                    .id(Article::UNSAVED_ID)
+                    .model("wikitext")
+                    .title(callee.key())
+                    .revision_id(Article::UNSAVED_ID)
+                    .build(),
+            )
+        });
+    }
+
+    let Some(template) = template else {
         log::warn!("No template found for '{callee}'");
         write!(out, "[[{}]]", callee.key())?;
         return Ok(None);
@@ -539,7 +570,9 @@ pub(crate) fn call_template(
         arguments,
     )?;
 
-    let cached_root = if let Some(cache) = &state.statics.template_cache {
+    let cached_root = if let Some(cache) = &state.statics.template_cache
+        && template.revision_id() != Article::UNSAVED_ID
+    {
         // If a revision ID is duplicated this will break everything, so try not
         // to do that
         let cached = cache

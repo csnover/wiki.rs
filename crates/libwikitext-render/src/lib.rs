@@ -21,7 +21,7 @@ use libphp_rs::DateTime;
 use libwikitext_common::{
     Messages,
     config::Configuration,
-    db::{Article, DatabaseProvider},
+    db::{Article, BoxedDbError, DynDatabaseProvider, resolve_redirects},
     lru_limiter::ByMemoryUsage,
     title::Title,
     url::Url,
@@ -116,8 +116,7 @@ pub struct RenderOutput {
 ///
 /// * Rendering fails
 pub fn preprocess_article(
-    statics: &mut Statics<'_>,
-    messages: &Messages<'_>,
+    statics: &mut Statics<'_, '_>,
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
@@ -134,7 +133,7 @@ pub fn preprocess_article(
         FileMap::new(article.body()),
     );
 
-    render_preprocess(statics, messages, &article, &sp, load_mode).map(|(_, source)| source)
+    render_preprocess(statics, &article, &sp, load_mode).map(|(_, source)| source)
 }
 
 /// Main renderer entrypoint for articles.
@@ -143,8 +142,7 @@ pub fn preprocess_article(
 ///
 /// * Rendering fails
 pub fn render_article(
-    statics: &mut Statics<'_>,
-    messages: &Messages<'_>,
+    statics: &mut Statics<'_, '_>,
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
@@ -161,7 +159,7 @@ pub fn render_article(
         FileMap::new(article.body()),
     );
 
-    render(statics, messages, &article, &sp, load_mode)
+    render(statics, &article, &sp, load_mode)
 }
 
 /// Main renderer entrypoint for eval.
@@ -170,8 +168,7 @@ pub fn render_article(
 ///
 /// * Rendering fails
 pub fn render_string(
-    statics: &mut Statics<'_>,
-    messages: &Messages<'_>,
+    statics: &mut Statics<'_, '_>,
     mut page_name: &str,
     source: &str,
     args: Option<&str>,
@@ -189,10 +186,10 @@ pub fn render_string(
 
     let article = Arc::new(
         Article::builder()
-            .id(0xdead_beef)
+            .id(Article::UNSAVED_ID)
             .title(page_name)
             .body(source)
-            .revision_id(0xdead_beef)
+            .revision_id(Article::UNSAVED_ID)
             .build(),
     );
 
@@ -213,9 +210,9 @@ pub fn render_string(
 
     let load_mode = LoadMode::Module;
     match mode {
-        EvalPp::Post => render(statics, messages, &article, &sp, load_mode),
+        EvalPp::Post => render(statics, &article, &sp, load_mode),
         EvalPp::Pre | EvalPp::PreTree | EvalPp::Tree => {
-            let (state, source) = render_preprocess(statics, messages, &article, &sp, load_mode)?;
+            let (state, source) = render_preprocess(statics, &article, &sp, load_mode)?;
             let mut content = if mode == EvalPp::Pre {
                 source
             } else if mode == EvalPp::PreTree {
@@ -249,13 +246,12 @@ pub fn render_string(
 
 /// Main renderer entrypoint.
 fn render(
-    statics: &mut Statics<'_>,
-    messages: &Messages<'_>,
+    statics: &mut Statics<'_, '_>,
     article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
 ) -> Result<RenderOutput> {
-    let (mut state, source) = render_preprocess(statics, messages, article, sp, load_mode)?;
+    let (mut state, source) = render_preprocess(statics, article, sp, load_mode)?;
 
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse(&sp.source)?;
@@ -307,20 +303,23 @@ fn render(
 /// information and returning the incomplete state and the final pre-processed
 /// Wikitext.
 fn render_preprocess<'a, 'b, 'c>(
-    statics: &'a mut Statics<'b>,
-    messages: &'c Messages<'c>,
+    statics: &'a mut Statics<'b, 'c>,
     article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
 ) -> Result<(State<'a, 'b, 'c>, String)> {
     let root = statics.parser.preprocess(&sp.source, sp.parent.is_some())?;
 
-    lua::reset_vm(&mut statics.vm, messages, &sp.name, statics.base_time)?;
+    lua::reset_vm(
+        &mut statics.vm,
+        &statics.messages,
+        &sp.name,
+        statics.base_time,
+    )?;
 
     let mut state = State {
         globals: ArticleState::new(statics.db.config(), Arc::clone(article)),
         load_mode,
-        messages,
         statics,
         strip_markers: <_>::default(),
         timing: <_>::default(),
@@ -368,7 +367,7 @@ pub fn make_template_cache(size: usize) -> TemplateCache {
 pub enum Error {
     /// A database call failed.
     #[error("db error: {0}")]
-    Database(#[from] libwikitext_common::db::Error),
+    Database(#[from] BoxedDbError),
 
     /// An arithmetic expression evaluation error.
     #[error("eval error: {0}")]
@@ -381,6 +380,14 @@ pub enum Error {
     /// A write to a buffer failed.
     #[error("fmt error: {0}")]
     Fmt(#[from] fmt::Error),
+
+    /// ICU4X was sad about retrieving data.
+    #[error(transparent)]
+    IcuData(#[from] icu_provider::DataError),
+
+    /// ICU4X was sad about parsing a locale name.
+    #[error(transparent)]
+    IcuLocale(#[from] icu_locale::ParseError),
 
     /// Some Lua host code raised an error.
     #[error("{0:#}")]
@@ -498,7 +505,7 @@ pub type TemplateCache = Arc<RwLock<LruMap<ArticleId, Arc<Output>, ByMemoryUsage
 /// thread.
 #[derive(typed_builder::TypedBuilder)]
 #[builder(doc)]
-pub struct Statics<'config> {
+pub struct Statics<'config, 'dict> {
     /// The “current” time, according to the article database.
     #[builder(setter(doc = "Sets the “current” time."))]
     base_time: DateTime,
@@ -507,7 +514,7 @@ pub struct Statics<'config> {
     base_uri: Url,
     /// The article database.
     #[builder(setter(doc = "Sets the article database."))]
-    db: Arc<dyn DatabaseProvider>,
+    db: Arc<dyn DynDatabaseProvider>,
     /// Extra extension tags.
     #[builder(default)]
     extension_tags: HashMap<&'static str, &'static dyn PluginExtensionTag>,
@@ -517,6 +524,8 @@ pub struct Statics<'config> {
         setter(doc = "Sets the time and memory limits for the renderer.")
     )]
     limits: Limits,
+    /// The interface messages database.
+    messages: Messages<'dict, Arc<dyn DynDatabaseProvider>>,
     /// The URI paths for links and media.
     paths: Paths,
     /// The parser.
@@ -645,10 +654,8 @@ pub(crate) struct State<'s, 'config, 'dict> {
     pub globals: ArticleState,
     /// The page load strategy.
     pub load_mode: LoadMode,
-    /// Messages dictionary.
-    pub messages: &'s Messages<'dict>,
     /// Thread static global variables.
-    pub statics: &'s mut Statics<'config>,
+    pub statics: &'s mut Statics<'config, 'dict>,
     /// Stripped extension tag substitutions.
     pub strip_markers: StripMarkers,
     /// Page performance timing data.
@@ -697,31 +704,6 @@ impl ArticleState {
             variables: <_>::default(),
         }
     }
-}
-
-/// Resolves any redirects for an article, returning the final article.
-///
-/// # Errors
-///
-/// * `db` returns an error getting an article
-// TODO: This should really just resolve the redirects and then do the work, but
-// borrowck is being unbearable today and this is a toy project so who cares
-// TODO: This should be part of Database
-pub fn resolve_redirects<Db: DatabaseProvider>(
-    db: &Db,
-    mut article: Arc<Article>,
-) -> Result<Arc<Article>, Error> {
-    // “Loop to fetch the article, with up to 2 redirects”
-    for _ in 0..2 {
-        if let Some(target) = article.redirect() {
-            // log::trace!("Redirection #{} to {target}", attempt + 1);
-            article = db.get(&Title::new(db.config(), target, None)?)?;
-        } else {
-            break;
-        }
-    }
-
-    Ok(article)
 }
 
 /// Writes a run of text to the given output as entity-encoded HTML, converting

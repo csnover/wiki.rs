@@ -196,6 +196,8 @@ impl PrefetchableDatabase<'_> {
 }
 
 impl DatabaseProvider for PrefetchableDatabase<'_> {
+    type Error = super::Error;
+
     #[inline]
     fn cache_size(&self) -> usize {
         self.db.cache_size()
@@ -216,13 +218,10 @@ impl DatabaseProvider for PrefetchableDatabase<'_> {
     }
 
     #[inline]
-    fn get(&self, title: &Title) -> Result<Arc<Article>, libwikitext_common::db::Error> {
+    fn get(&self, title: &Title) -> Result<Option<Arc<Article>>, Self::Error> {
         let key = title.key();
         self.cancel_prefetch(title, key, true);
-        self.db.get(title).map_err(|err| match err {
-            super::Error::NotFound => libwikitext_common::db::Error::NotFound,
-            err => libwikitext_common::db::Error::Backend(Box::new(err)),
-        })
+        self.db.get(title)
     }
 
     #[inline]

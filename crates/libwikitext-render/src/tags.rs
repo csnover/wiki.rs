@@ -201,7 +201,13 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
             out.tag_attribute_full("href", href);
             if missing {
                 out.tag_attribute_full("class", "new");
-                if let Some(message) = state.messages.get("red-link-title") {
+                if let Some(message) = state
+                    .statics
+                    .messages
+                    .get("red-link-title", None, true)
+                    .ok()
+                    .flatten()
+                {
                     out.tag_attribute_full("title", &message.replace("$1", title.key()));
                 }
             } else if !title.prefixed_text().is_empty() {

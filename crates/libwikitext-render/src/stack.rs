@@ -98,13 +98,15 @@ impl<'a> StackFrame<'a> {
     pub fn eval(
         &'a self,
         state: &mut State<'_, '_, '_>,
-        expr: &[Spanned<Token>],
+        expr: &'a [Spanned<Token>],
     ) -> Result<Cow<'a, str>> {
         #[allow(clippy::allow_attributes, reason = "https://github.com/rust-lang/rust-clippy/issues/13358")]
         #[allow(clippy::unnecessary_semicolon, reason = "i want rustfmt::skip and rust-lang/rust#15701 is not fixed yet")]
         #[rustfmt::skip]
         if let [Spanned { span, node: Token::Text }] = expr {
             return Ok(Cow::Borrowed(&self.source[span.into_range()]));
+        } else if let [Spanned { node: Token::Generated(s), .. }] = expr {
+            return Ok(Cow::Borrowed(s));
         };
 
         let mut out = String::new();
@@ -322,7 +324,7 @@ impl KeyMap {
     }
 
     /// Returns true if the given index is a named key.
-    #[expect(clippy::cast_possible_truncation, reason = "value range is 0..7")]
+    #[expect(clippy::cast_possible_truncation, reason = "value range is 0..=7")]
     #[inline]
     fn is_named(&self, index: usize) -> bool {
         let slot = index / 8;
@@ -361,11 +363,12 @@ impl KeyMap {
 /// A list of k-v pairs with a cached key map.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KeyCacheKvs<'call, 'args> {
-    /// A lazily populated key-index map into [`Self::raw`].
+    /// A lazily populated key-to-index map into [`Self::raw`].
     key_map: Rc<RefCell<KeyMap>>,
     /// The raw arguments passed to the function.
     raw: &'call [Kv<'args>],
-    /// Cached values.
+    /// Lazy-evaluated cached value map, where the key is the index into
+    /// [`Self::raw`] and the value is the evaluated value.
     value_cache: Rc<RefCell<HashMap<usize, String>>>,
 }
 
@@ -437,16 +440,23 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
         }
     }
 
-    /// Returns the index of an argument by key.
+    /// Returns the index in [`Self::raw`] of an argument with the given `key`,
+    /// along with a flag that is true if argument was a named argument. The
+    /// flag will always be true for non-numeric keys.
     pub fn get_index(
         &self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         key: &str,
     ) -> Result<Option<(usize, bool)>> {
-        if let value @ Some(..) = self.key_map.borrow().get_cached(key) {
+        if let value @ Some(_) = self.key_map.borrow().get_cached(key) {
             return Ok(value);
-        } else if self.key_map.borrow().indices.len() != self.len() {
+        }
+
+        let mut candidate = None;
+        let numeric_key = key.as_bytes().iter().all(u8::is_ascii_digit);
+
+        if self.key_map.borrow().indices.len() != self.len() {
             let mut key_map = self.key_map.borrow_mut();
             for index in key_map.indices.len()..self.len() {
                 let (name, is_named) = if let Some(name) = self.name(state, sp, index)? {
@@ -459,11 +469,24 @@ impl<'call, 'args> KeyCacheKvs<'call, 'args> {
                 let is_match = name == key;
                 key_map.indices.insert(name, index);
                 if is_match {
-                    return Ok(Some((index, is_named)));
+                    candidate = Some((index, is_named));
+
+                    // Just to make everything maximally annoying and hard and
+                    // slow, Wikitext requires *unnamed* numeric arguments to be
+                    // preferred over named ones, so if the found key is named
+                    // and the request key is unnamed and there are still some
+                    // unnamed keys to go, keep going.
+                    if !is_named
+                        || !numeric_key
+                        || self.raw[index..self.len()].iter().all(Kv::is_named)
+                    {
+                        break;
+                    }
                 }
             }
         }
-        Ok(None)
+
+        Ok(candidate)
     }
 
     /// Returns true if there are no arguments.
@@ -667,8 +690,6 @@ pub(crate) enum Kv<'a> {
     /// ```
     Partial(Vec<&'a Spanned<Token>>),
     /// A k-v argument provided by a Lua script rather than a Wikitext document.
-    // TODO: Make sure that Lua strings always end up going through the parser
-    // since otherwise they will be emitted with improper entity encoding.
     String(StashedString, StashedString),
 }
 
@@ -706,6 +727,15 @@ impl Kv<'_> {
         }
     }
 
+    /// Returns `true` if this argument contains an explicit named key-part.
+    pub fn is_named(&self) -> bool {
+        match self {
+            Self::Argument(argument) => argument.name().is_some(),
+            Self::Partial(_) => false,
+            Self::String(..) => true,
+        }
+    }
+
     /// Evaluates the name-part of a k-v argument.
     ///
     /// The returned value will include any leading and trailing whitespace
@@ -717,7 +747,8 @@ impl Kv<'_> {
     ) -> Result<Option<Cow<'a, str>>> {
         match self {
             Kv::Partial(_) => {
-                log::warn!("The thing that should never happen, happened");
+                // This branch may be reached only when the key cache is being
+                // built via a call to `KeyCacheKvs::get`
                 Ok(None)
             }
             Kv::String(key, _) => state

@@ -6,11 +6,10 @@ use std::{borrow::Cow, collections::HashMap, sync::Arc};
 use time::UtcDateTime;
 
 /// A trait for implementing database backends.
-#[expect(
-    clippy::len_without_is_empty,
-    reason = "knowing a database is empty is not useful information"
-)]
 pub trait DatabaseProvider {
+    /// The type used for errors.
+    type Error;
+
     /// Returns the current memory usage of the cache, in bytes.
     fn cache_size(&self) -> usize;
 
@@ -25,9 +24,14 @@ pub trait DatabaseProvider {
     ///
     /// # Errors
     ///
-    /// * An article with the given `title` does not exist
     /// * The database implementation returns an error
-    fn get(&self, title: &Title) -> Result<Arc<Article>, Error>;
+    fn get(&self, title: &Title) -> Result<Option<Arc<Article>>, Self::Error>;
+
+    /// Returns true if the database is empty.
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// The total number of articles in the database.
     fn len(&self) -> usize;
@@ -47,40 +51,142 @@ pub trait DatabaseProvider {
     fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>);
 }
 
-impl DatabaseProvider for Arc<dyn DatabaseProvider> {
+/// A type-erased database provider error.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct BoxedDbError(Box<dyn core::error::Error + Send + Sync + 'static>);
+
+/// A database provider with an erased error type.
+pub trait DynDatabaseProvider: private::Sealed {
+    /// Returns the current memory usage of the cache, in bytes.
+    fn cache_size(&self) -> usize;
+
+    /// Returns the configuration data for the database.
+    fn config(&self) -> &Configuration;
+
+    /// Returns true if the database contains an article with the given title.
+    fn contains(&self, title: &Title) -> bool;
+
+    /// Gets an article with the given title from the database. The article will
+    /// be cached in memory.
+    ///
+    /// # Errors
+    ///
+    /// * The database implementation returns an error
+    fn get(&self, title: &Title) -> Result<Option<Arc<Article>>, BoxedDbError>;
+
+    /// Returns true if the database is empty.
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The total number of articles in the database.
+    fn len(&self) -> usize;
+
+    /// The site name from the database.
+    fn name(&self) -> &str;
+
+    /// Prefetches a collection of titles.
+    ///
+    /// Because the MW database dump index is totally unordered, finding a title
+    /// in the index requires a full table scan. Batching titles into request
+    /// sets reduces the number of scans required, increasing performance.
+    ///
+    /// Both templates and links need to check for existence in the index, but
+    /// templates are both more time-critical and also require decompressing
+    /// article data, so they are collected separately.
+    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>);
+}
+
+impl<Db> DynDatabaseProvider for Db
+where
+    Db: DatabaseProvider + ?Sized,
+    Db::Error: core::error::Error + Send + Sync + 'static,
+{
     #[inline]
     fn cache_size(&self) -> usize {
-        (**self).cache_size()
+        DatabaseProvider::cache_size(self)
     }
 
     #[inline]
     fn config(&self) -> &Configuration {
-        (**self).config()
+        DatabaseProvider::config(self)
     }
 
     #[inline]
     fn contains(&self, title: &Title) -> bool {
-        (**self).contains(title)
+        DatabaseProvider::contains(self, title)
     }
 
     #[inline]
-    fn get(&self, title: &Title) -> Result<Arc<Article>, Error> {
-        (**self).get(title)
+    fn get(&self, title: &Title) -> Result<Option<Arc<Article>>, BoxedDbError> {
+        DatabaseProvider::get(self, title).map_err(|err| BoxedDbError(Box::new(err)))
     }
 
     #[inline]
     fn len(&self) -> usize {
-        (**self).len()
+        DatabaseProvider::len(self)
     }
 
     #[inline]
     fn name(&self) -> &str {
-        (**self).name()
+        DatabaseProvider::name(self)
     }
 
     #[inline]
     fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>) {
-        (**self).prefetch_all(templates, links);
+        DatabaseProvider::prefetch_all(self, templates, links);
+    }
+}
+
+impl DatabaseProvider for Arc<dyn DynDatabaseProvider> {
+    type Error = BoxedDbError;
+
+    #[inline]
+    fn cache_size(&self) -> usize {
+        DynDatabaseProvider::cache_size(self.as_ref())
+    }
+
+    #[inline]
+    fn config(&self) -> &Configuration {
+        DynDatabaseProvider::config(self.as_ref())
+    }
+
+    #[inline]
+    fn contains(&self, title: &Title) -> bool {
+        DynDatabaseProvider::contains(self.as_ref(), title)
+    }
+
+    #[inline]
+    fn get(&self, title: &Title) -> Result<Option<Arc<Article>>, Self::Error> {
+        DynDatabaseProvider::get(self.as_ref(), title)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        DynDatabaseProvider::len(self.as_ref())
+    }
+
+    #[inline]
+    fn name(&self) -> &str {
+        DynDatabaseProvider::name(self.as_ref())
+    }
+
+    #[inline]
+    fn prefetch_all(&self, templates: IndexSet<Title>, links: IndexSet<Title>) {
+        DynDatabaseProvider::prefetch_all(self.as_ref(), templates, links);
+    }
+}
+
+#[doc(hidden)]
+mod private {
+    pub trait Sealed {}
+    impl<Db> Sealed for Db
+    where
+        Db: super::DatabaseProvider + ?Sized,
+        Db::Error: core::error::Error + Send + Sync + 'static,
+    {
     }
 }
 
@@ -109,6 +215,9 @@ pub struct Article {
 }
 
 impl Article {
+    /// The article and revision ID for an unsaved article.
+    pub const UNSAVED_ID: u64 = 0;
+
     /// Creates a builder for building an `Article`.
     #[inline]
     pub fn builder<'a>() -> ArticleBuilder<'a> {
@@ -287,18 +396,6 @@ impl HeapUsageCalculator for Article {
     }
 }
 
-/// A common database error.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    /// Some other error occurred.
-    #[error(transparent)]
-    Backend(Box<dyn core::error::Error + Send + Sync + 'static>),
-
-    /// Article was not found.
-    #[error("requested article not found")]
-    NotFound,
-}
-
 /// A fake database used for testing.
 pub struct MockDatabase<'config> {
     /// The mock articles.
@@ -346,6 +443,8 @@ impl<'config> MockDatabase<'config> {
 }
 
 impl DatabaseProvider for MockDatabase<'_> {
+    type Error = MockError;
+
     #[inline]
     fn cache_size(&self) -> usize {
         0
@@ -361,11 +460,8 @@ impl DatabaseProvider for MockDatabase<'_> {
         self.articles.contains_key(title.key())
     }
 
-    fn get(&self, title: &Title) -> Result<Arc<Article>, Error> {
-        self.articles
-            .get(title.key())
-            .cloned()
-            .ok_or(Error::NotFound)
+    fn get(&self, title: &Title) -> Result<Option<Arc<Article>>, Self::Error> {
+        Ok(self.articles.get(title.key()).cloned())
     }
 
     #[inline]
@@ -380,4 +476,53 @@ impl DatabaseProvider for MockDatabase<'_> {
 
     #[inline]
     fn prefetch_all(&self, _templates: IndexSet<Title>, _links: IndexSet<Title>) {}
+}
+
+/// An error from the mock database.
+///
+/// This is effectively `!` since there is no way for the mock database to
+/// fail.
+#[derive(Debug, thiserror::Error)]
+#[error("error")]
+pub struct MockError;
+
+/// Fetches an article from the given `db`, returning `Ok(None)` if the given
+/// title string is not valid for the given database.
+///
+/// # Errors
+///
+/// * the database broke
+pub fn fetch<Db: DatabaseProvider + ?Sized>(
+    db: &Db,
+    text: &str,
+    default_ns: Option<i32>,
+) -> Result<Option<Arc<Article>>, Db::Error> {
+    Title::new(db.config(), text, default_ns)
+        .ok()
+        .and_then(|title| db.get(&title).transpose())
+        .transpose()
+}
+
+/// Resolves any redirects for an article, returning the final article.
+///
+/// # Errors
+///
+/// * the database broke
+pub fn resolve_redirects<Db>(db: &Db, mut article: Arc<Article>) -> Result<Arc<Article>, Db::Error>
+where
+    Db: DatabaseProvider + ?Sized,
+{
+    // “Loop to fetch the article, with up to 2 redirects”
+    for _ in 0..2 {
+        if let Some(target) = article.redirect()
+            && let Some(target) = fetch(db, target, None)?
+        {
+            // log::trace!("Redirection #{} to {target}", attempt + 1);
+            article = target;
+        } else {
+            break;
+        }
+    }
+
+    Ok(article)
 }

@@ -13,7 +13,7 @@ use libphp_rs::DateTime;
 use libphp_rs::strtr;
 use libwikitext_common::{
     Messages,
-    db::{Article, DatabaseProvider},
+    db::{Article, DynDatabaseProvider},
     title::{Namespace, Title},
     url::Url,
 };
@@ -29,15 +29,16 @@ use std::{borrow::Cow, sync::Arc, time::Instant};
 pub type LanguageLibrary = libwikitext_lua_gpl::LanguageLibrary<'static>;
 /// The concrete type used by the renderer for [`LuaEngine`](libwikitext_lua_gpl::LuaEngine).
 pub type LuaEngine =
-    libwikitext_lua_gpl::LuaEngine<Arc<dyn DatabaseProvider>, Pin<&'static StackFrame<'static>>>;
+    libwikitext_lua_gpl::LuaEngine<Arc<dyn DynDatabaseProvider>, Pin<&'static StackFrame<'static>>>;
 /// The concrete type used by the renderer for [`MessageLibrary`](libwikitext_lua_gpl::MessageLibrary).
-pub type MessageLibrary = libwikitext_lua_gpl::MessageLibrary<'static>;
+pub type MessageLibrary =
+    libwikitext_lua_gpl::MessageLibrary<'static, Arc<dyn DynDatabaseProvider>>;
 /// The concrete type used by the renderer for [`SiteLibrary`](libwikitext_lua_gpl::SiteLibrary).
 pub type SiteLibrary = libwikitext_lua_gpl::SiteLibrary<'static>;
 /// The concrete type used by the renderer for [`TitleLibrary`](libwikitext_lua_gpl::TitleLibrary).
-pub type TitleLibrary = libwikitext_lua_gpl::TitleLibrary<Arc<dyn DatabaseProvider>>;
+pub type TitleLibrary = libwikitext_lua_gpl::TitleLibrary<Arc<dyn DynDatabaseProvider>>;
 /// The concrete type used by the renderer for [`UriLibrary`](libwikitext_lua_gpl::UriLibrary).
-pub type UriLibrary = libwikitext_lua_gpl::UriLibrary<'static, Arc<dyn DatabaseProvider>>;
+pub type UriLibrary = libwikitext_lua_gpl::UriLibrary<'static, Arc<dyn DynDatabaseProvider>>;
 
 /// A cached Lua module.
 #[derive(Clone)]
@@ -288,7 +289,7 @@ fn memory_exceeded(state: &mut State<'_, '_, '_>) -> bool {
 /// * VM initialisation fails
 pub(super) fn new_vm<'config>(
     base_uri: &Url,
-    db: &Arc<dyn DatabaseProvider>,
+    db: &Arc<dyn DynDatabaseProvider>,
     parser: &Parser<'config>,
 ) -> Result<Lua, ExternError> {
     let mut vm = libwikitext_lua::new_vm_core()?;
@@ -300,7 +301,9 @@ pub(super) fn new_vm<'config>(
     // the lifetime of the VM.
     let (db, parser) = unsafe {
         (
-            core::mem::transmute::<&Arc<dyn DatabaseProvider>, &Arc<dyn DatabaseProvider>>(db),
+            core::mem::transmute::<&Arc<dyn DynDatabaseProvider>, &Arc<dyn DynDatabaseProvider>>(
+                db,
+            ),
             core::mem::transmute::<&Parser<'_>, &Parser<'static>>(parser),
         )
     };
@@ -353,7 +356,7 @@ fn preprocess(
 /// Resets the Lua VM for the given `article`.
 pub(super) fn reset_vm(
     vm: &mut Lua,
-    messages: &Messages<'_>,
+    messages: &Messages<'_, Arc<dyn DynDatabaseProvider>>,
     title: &Title,
     date: DateTime,
 ) -> Result<(), ExternError> {
@@ -361,8 +364,12 @@ pub(super) fn reset_vm(
     // violate.
     // SAFETY: The lifetime of these references are always at least as long as
     // the lifetime of the VM.
-    let messages =
-        unsafe { core::mem::transmute::<&Messages<'_>, &'static Messages<'static>>(messages) };
+    let messages = unsafe {
+        core::mem::transmute::<
+            &Messages<'_, Arc<dyn DynDatabaseProvider>>,
+            &'static Messages<'static, Arc<dyn DynDatabaseProvider>>,
+        >(messages)
+    };
 
     vm.try_enter(|ctx| {
         let mw_message = ctx.singleton::<Rootable![MessageLibrary]>();

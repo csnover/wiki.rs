@@ -5,7 +5,8 @@ use super::{
 use core::{cell::RefCell, fmt::Write as _};
 use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
-    db::{Article, DatabaseProvider, MockDatabase},
+    Messages,
+    db::{Article, DynDatabaseProvider, MockDatabase},
     decode_html,
     url::Url,
 };
@@ -442,7 +443,7 @@ fn load_articles(base_time: DateTime, db: &mut MockDatabase<'_>, chunks: &[Chunk
 
 fn print_debug(
     target: &str,
-    statics: &mut Statics<'_>,
+    statics: &mut Statics<'_, '_>,
     article: &Arc<Article>,
     show_pp_ast: bool,
     show_pp: bool,
@@ -451,7 +452,7 @@ fn print_debug(
     let pp_ast = show_pp_ast.then(|| statics.parser.preprocess(article.body(), false));
 
     let pp = (show_pp || show_ast)
-        .then(|| preprocess_article(statics, &MESSAGES, article, LoadMode::Module, false));
+        .then(|| preprocess_article(statics, article, LoadMode::Module, false));
 
     let ast = if show_ast && let Some(Ok(pp)) = &pp {
         Some((pp, statics.parser.parse(pp)))
@@ -759,6 +760,11 @@ fn render_test(
         Arc::get_mut(db).unwrap().insert(article.clone());
     }
 
+    let messages = Messages::new(
+        Arc::clone(db) as Arc<dyn DynDatabaseProvider>,
+        [("en", &*MESSAGES)],
+    );
+
     let mut statics = Statics::builder()
         .base_time(base_time)
         .base_uri(Url::from_static("http://example.org").unwrap())
@@ -772,7 +778,8 @@ fn render_test(
             ("tag", &TagTag as _),
             ("tåg", &TagTag as _),
         ]))
-        .db(Arc::clone(db) as Arc<dyn DatabaseProvider>)
+        .db(Arc::clone(db) as Arc<dyn DynDatabaseProvider>)
+        .messages(messages)
         .parser(db.config())
         .parser_fns(HashMap::from_iter([
             ("divtagpf", &DivTagPf as _),
@@ -800,7 +807,7 @@ fn render_test(
         before_ast,
     );
 
-    let result = render_article(&mut statics, &MESSAGES, &article, LoadMode::Module, false);
+    let result = render_article(&mut statics, &article, LoadMode::Module, false);
 
     if let Err(err) = &result {
         log::log!(target: target, log_level, "Render failed: {err}");
@@ -882,6 +889,7 @@ fn table_ws(html: &str) -> Cow<'_, str> {
 fn unpretty(html: &str) -> Cow<'_, str> {
     static REPLS: &[(&str, &str)] = &[
         ("<wbr>", "<wbr />"),
+        ("<hr/>", "<hr />"),
         ("<br>", "<br />"),
         ("<hr>", "<hr />"),
         ("‘", "'"),

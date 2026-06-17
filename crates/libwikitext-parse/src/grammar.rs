@@ -1476,7 +1476,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule html_start_tag() -> Token
     = name:html_tag_name()
       (space_nl()+ / &("/"? ">"))
-      attributes:html_attributes(<"/"? ">">)
+      attributes:html_attributes(<space_nl()* "/"? ">">)
       space_nl()*
       self_closing:"/"?
     {

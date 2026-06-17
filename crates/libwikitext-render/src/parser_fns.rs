@@ -9,8 +9,8 @@
 
 use super::{
     Document, Error, PluginResult, PluginState, Result, State,
-    expand_templates::ExpandMode,
-    extension_tags, preprocess_frame,
+    expand_templates::{ExpandMode, ExpandTemplates},
+    extension_tags,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     template::call_module,
@@ -22,21 +22,25 @@ use core::{
     str::FromStr,
 };
 use either::Either;
-use libmisc::{CowExt as _, to_lower, to_upper};
-use libphp_rs::{floatval, fuzzy_cmp, strtr};
+use icu_datetime::provider::{
+    names::{DatetimeNamesMonthGregorianV1, MonthNames},
+    semantic_skeletons::marker_attrs::{ABBR_STANDALONE, WIDE_STANDALONE},
+};
+use icu_provider::DataIdentifierBorrowed;
+use libmisc::{CowExt as _, to_ascii_lower, to_lower, to_upper};
+use libphp_rs::{floatval, fuzzy_cmp, intval, strtr};
 use libwikitext_common::{
     AnchorEncodeMode, anchor_encode,
     config::Configuration,
-    db::{Article, DatabaseProvider as _, Error as DatabaseError},
-    decode_html, format_date_mediawiki, format_message, format_number, format_raw_message,
-    lang_to_bcp47, make_url, normalize_section_name, parse_formatted_number,
+    db::{Article, DatabaseProvider as _, fetch},
+    decode_html, format_date_mediawiki, format_number, format_raw_message, lang_to_bcp47, make_url,
+    normalize_section_name, parse_formatted_number,
     title::{Namespace, Title},
     url::Url,
     url_encode,
 };
 use libwikitext_common_gpl::expr;
 use libwikitext_parse::{FileMap, Span, strip};
-use locale_rs::Locale;
 use regex::Regex;
 use std::{
     borrow::Cow,
@@ -949,6 +953,13 @@ mod string {
             config.languages.get(config.language)
         };
 
+        if language.is_none() {
+            state
+                .globals
+                .categories
+                .tracking(&state.statics.messages, "bad-language-code-category")?;
+        }
+
         if language.is_some_and(|language| language.is_rtl) {
             write!(out, "rtl")?;
         } else {
@@ -1060,37 +1071,56 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(which) = arguments.eval(state, 0)?.map(trim) {
-            // TODO: This is supposed to check for /lang first,
-            // then fall back to non-lang.
+            let message = state
+                .statics
+                .messages
+                .find_or_default([which.as_ref()], None, true)?;
+            let message = format_raw_message(&message, |key| {
+                let index = key.parse::<usize>().unwrap();
+                arguments.eval(state, index)
+            })?;
             let title = Title::new(
                 state.statics.db.config(),
-                &libphp_rs::ucfirst(&which),
+                &which,
                 Some(Namespace::MEDIAWIKI),
-            );
+            )?;
+            let sp = arguments.sp.chain(title, FileMap::new(&message), &[])?;
+            let root = state.statics.parser.preprocess(&sp.source, true)?;
+            ExpandTemplates::new(out, ExpandMode::Include).adopt_output(state, &sp, &root)?;
+        }
+        Ok(())
+    }
 
-            let message = match title.ok().map(|title| state.statics.db.get(&title)) {
-                Some(Ok(article)) => {
-                    // TODO: Is this supposed to follow redirects?
-                    // TODO: This should probably identify the frame by the
-                    // title instead of anonymous text.
-                    let message =
-                        preprocess_frame(state, arguments.sp, article.body(), ExpandMode::Normal)?;
-                    format_raw_message(&message, |key| {
-                        let index = key.parse::<usize>().unwrap();
-                        arguments.eval(state, index)
-                    })?
-                    .into_owned()
-                    .into()
+    /// `{{#language: code [|to code] }}`
+    pub fn language(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        let code = arguments
+            .eval(state, 0)?
+            .map_or(state.statics.db.config().language.into(), trim);
+        let to_code = arguments.eval(state, 1)?.map(trim);
+        let name = state
+            .statics
+            .db
+            .config()
+            .languages
+            .get(&to_ascii_lower(&code))
+            .map_or("", |lang| {
+                if let Some(to_code) = to_code {
+                    if to_code != "en" {
+                        log::warn!("What? There are languages beyond English?");
+                    }
+                    lang.name
+                } else {
+                    lang.autonym
                 }
-                None | Some(Err(DatabaseError::NotFound)) => {
-                    format_message(state.messages, [which], |key| {
-                        let index = key.parse::<usize>().unwrap();
-                        arguments.eval(state, index)
-                    })?
-                }
-                Some(Err(err)) => return Err(err)?,
-            };
-            write!(out, "{message}")?;
+            });
+        if name.is_empty() {
+            write!(out, "{}", lang_to_bcp47(&code))?;
+        } else {
+            write!(out, "{name}")?;
         }
         Ok(())
     }
@@ -1186,15 +1216,26 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let n = value
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-                .parse::<i32>()
-                .unwrap_or(0)
-                .abs();
-            // log::trace!("#plural: {value} = {n}");
-            let index = usize::from(n != 1);
-            if let Some(value) = arguments.eval(state, 1 + index)?.map(trim) {
+            // TODO: Retain decimals. The PHP parser treats as an int if the
+            // value is all ASCII digits, otherwise it treats it as a float.
+            // icu4x is annoying and gates `FromStr` behind a datagen feature
+            // for no reason.
+            let (n, n_str) = intval(&value, None).map_or((0, value.as_ref()), |(n, rest)| {
+                let len = value.len() - rest.len();
+                (n, &value[..len])
+            });
+
+            if let Some(value) = arguments.get(state, n_str)?.map(trim) {
                 write!(out, "{value}")?;
+            } else {
+                let locale = lang_to_bcp47(state.statics.db.config().language)
+                    .parse::<icu_locale::Locale>()?;
+                let rules = icu_plurals::PluralRules::try_new(locale.into(), <_>::default())?;
+                let index =
+                    usize::from(rules.category_for(n) as u8).min(arguments.len().saturating_sub(2));
+                if let Some(value) = arguments.eval(state, 1 + index)?.map(trim) {
+                    write!(out, "{value}")?;
+                }
             }
         }
 
@@ -1421,11 +1462,20 @@ mod time {
         }
 
         if let Some(date) = arguments.eval(state, 0)?.map(trim) {
-            let locale =
-                Locale::from_flexible(state.statics.db.config().language).unwrap_or(Locale::en);
-            if let Ok((y, m, d)) = simple_date::date(&date, &locale) {
+            let locale = state
+                .statics
+                .db
+                .config()
+                .language
+                .parse()
+                .unwrap_or(icu_locale::locale!("en"));
+
+            let wide_months = locale_months(&locale, WIDE_STANDALONE)?;
+            let abbr_months = locale_months(&locale, ABBR_STANDALONE)?;
+
+            if let Ok((y, m, d)) = simple_date::date(&date, wide_months, abbr_months) {
                 let m = u8::from(m);
-                let m_named = locale.months_wide()[usize::from(m - 1)];
+                let m_named = &wide_months[usize::from(m - 1)];
                 let y_iso = y.map_or(Year::None, Year::Iso);
                 let iso = format_args!("{y_iso}{m:02}-{d:02}");
 
@@ -1577,7 +1627,7 @@ mod time {
     // generate the output. But because the input is restricted to ISO 8601 or
     // named months, there is only ambiguity year vs day for years 1-31, and
     // otherwise the grammar is extremely simple.
-    peg::parser! {grammar simple_date(locale: &Locale) for str {
+    peg::parser! {grammar simple_date(wide: &zerovec::VarZeroVec<'_, str>, abbr: &zerovec::VarZeroVec<'_, str>) for str {
         pub rule date() -> (Option<i16>, Month, u8)
         = y:iso_year() "-" m:iso_month() "-" d:iso_day() { (Some(y), m, d) }
         / md:month_day() y:(year_space() y:year() { y })? { (y, md.0, md.1) }
@@ -1589,13 +1639,7 @@ mod time {
 
         rule month() -> Month
         = #{|input, pos| {
-            let months = locale
-                .months_wide()
-                .iter()
-                .chain(locale.months_abbreviated())
-                .enumerate();
-
-            for (n, month) in months {
+            for (n, month) in wide.iter().chain(abbr.iter()).enumerate() {
                 let input = input.get(pos..pos + month.len());
                 if input.is_some_and(|input| to_lower(input) == to_lower(month)) {
                     #[expect(clippy::cast_possible_truncation, reason = "guaranteed range")]
@@ -1976,6 +2020,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "dir" => string::dir,
     "formatnum" => string::format_number,
     "int" => string::interface_message,
+    "language" => string::language,
     "lc" => string::lc,
     "lcfirst" => string::lc_first,
     "padleft" => string::pad_left,
@@ -2113,12 +2158,7 @@ fn get_article(
 ) -> Result<Option<Arc<Article>>> {
     Ok(
         if let Some(title) = arguments.eval(state, index)?.map(trim) {
-            let title = Title::new(state.statics.db.config(), &title, None);
-            match title.ok().map(|title| state.statics.db.get(&title)) {
-                Some(Ok(article)) => Some(article),
-                None | Some(Err(DatabaseError::NotFound)) => None,
-                Some(Err(err)) => return Err(err.into()),
-            }
+            fetch(&state.statics.db, &title, None)?
         } else {
             state
                 .statics
@@ -2127,6 +2167,30 @@ fn get_article(
                 .then(|| Arc::clone(&state.globals.article))
         },
     )
+}
+
+/// Retrieves a list of month names for the given `locale` with the given
+/// `marker` variant.
+fn locale_months<'a>(
+    locale: &'a icu_locale::Locale,
+    marker: &icu_provider::DataMarkerAttributes,
+) -> Result<&'a zerovec::VarZeroVec<'a, str>> {
+    let data_locale = icu_locale::DataLocale::from(locale);
+    let MonthNames::Linear(months) =
+        icu_provider::DataProvider::<DatetimeNamesMonthGregorianV1>::load(
+            &icu_datetime::provider::Baked,
+            icu_provider::DataRequest {
+                id: DataIdentifierBorrowed::for_marker_attributes_and_locale(marker, &data_locale),
+                metadata: <_>::default(),
+            },
+        )?
+        .payload
+        .get_static()
+        .ok_or(icu_provider::DataErrorKind::Custom.with_str_context("expected baked data"))?
+    else {
+        unreachable!()
+    };
+    Ok(months)
 }
 
 /// Tries to match the given `alias` to any of the canonical representations

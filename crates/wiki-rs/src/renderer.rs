@@ -3,7 +3,8 @@
 use super::{Limits, db::Database};
 use libphp_rs::DateTime;
 use libwikitext_common::{
-    db::{Article, DatabaseProvider},
+    Messages,
+    db::{Article, DynDatabaseProvider},
     url::Url,
 };
 use libwikitext_data::MESSAGES;
@@ -95,12 +96,14 @@ impl r2d2::ManageConnection for Manager {
         })?;
         std::thread::spawn(move || {
             let config = db.config();
-            let db = Arc::clone(&db) as Arc<dyn DatabaseProvider>;
+            let db = Arc::clone(&db) as Arc<dyn DynDatabaseProvider>;
+            let messages = Messages::new(Arc::clone(&db), [("en", &*MESSAGES)]);
             let mut statics = Statics::builder()
                 .base_time(base_time)
                 .base_uri(base_uri)
                 .db(db)
                 .limits(limits.renderer)
+                .messages(messages)
                 .parser(config)
                 .template_cache(template_cache)
                 .paths(Paths {
@@ -116,7 +119,7 @@ impl r2d2::ManageConnection for Manager {
                         article,
                         load_mode,
                         redirect,
-                    } => render_article(&mut statics, &MESSAGES, &article, load_mode, redirect),
+                    } => render_article(&mut statics, &article, load_mode, redirect),
                     Command::Eval {
                         args,
                         code,
@@ -125,7 +128,6 @@ impl r2d2::ManageConnection for Manager {
                         page_name,
                     } => render_string(
                         &mut statics,
-                        &MESSAGES,
                         &page_name,
                         &code,
                         args.as_deref(),

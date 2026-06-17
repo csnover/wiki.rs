@@ -9,11 +9,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use core::num::NonZeroUsize;
-use libwikitext_common::{
-    db::{self, DatabaseProvider as _},
-    make_url,
-    title::Title,
-};
+use libwikitext_common::{db::DatabaseProvider as _, make_url, title::Title};
 use libwikitext_render::{Error as RenderError, EvalPp, LoadMode, RenderOutput};
 use rayon::{iter::ParallelIterator as _, slice::ParallelSliceMut as _};
 use sailfish::TemplateSimple;
@@ -28,10 +24,13 @@ use std::{
 pub(crate) enum Error {
     /// An article database error.
     #[error(transparent)]
-    Database(#[from] libwikitext_common::db::Error),
+    Database(#[from] super::db::Error),
     /// A source code viewer syntax string formatting error.
     #[error(transparent)]
     Fmt(#[from] core::fmt::Error),
+    /// An article was not found.
+    #[error("not found")]
+    NotFound,
     /// An renderer thread pool management error.
     #[error(transparent)]
     Pool(#[from] r2d2::Error),
@@ -64,20 +63,18 @@ pub(crate) enum Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Error::Database(error) => match error {
-                db::Error::NotFound => (StatusCode::NOT_FOUND, format!("{error}")),
-                db::Error::Backend(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            },
-            Error::Renderer(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::Template(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::Style(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::Source(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::Fmt(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::RenderTx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::RenderRx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::Pool(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Error::Title(error) => (StatusCode::BAD_REQUEST, format!("{error}")),
-            Error::ToStr(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
+            Self::Renderer(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::Template(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::Style(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::Source(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::Fmt(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::RenderTx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::RenderRx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::Pool(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
+            Self::Title(error) => (StatusCode::BAD_REQUEST, format!("{error}")),
+            Self::ToStr(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
         }
         .into_response()
     }
@@ -143,7 +140,9 @@ pub(crate) async fn article(
     }
 
     let title = Title::new(state.database.config(), &name, None)?;
-    let article = state.database.get(&title)?;
+    let Some(article) = state.database.get(&title)? else {
+        return Err(Error::NotFound);
+    };
 
     let redirect = redirect.as_deref() != Some("no");
     if redirect && article.redirect().is_some() {
@@ -542,7 +541,9 @@ pub(crate) async fn source(
     Query(SourceQuery { mode, include }): Query<SourceQuery>,
 ) -> Result<impl IntoResponse, Error> {
     let title = Title::new(state.database.config(), &name, None)?;
-    let article = state.database.get(&title).map_err(Error::Database)?;
+    let Some(article) = state.database.get(&title).map_err(Error::Database)? else {
+        return Err(Error::NotFound);
+    };
 
     let body = match mode {
         None | Some(SourceMode::Raw) => Cow::Borrowed(article.body()),

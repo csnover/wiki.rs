@@ -7,15 +7,145 @@ pub mod title;
 pub mod url;
 
 use core::{fmt::Write as _, iter};
+use db::DatabaseProvider;
 use html_escape::NAMED_ENTITIES;
 use libmisc::{CowExt as _, to_ascii_lower, to_ascii_upper};
 use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval, ucfirst};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 
+/// An i18n message library.
+pub struct Messages<'a, Db> {
+    /// The database from which extra messages can be retrieved.
+    db: Db,
+    /// The map from a MediaWiki language code to a precompiled dictionary.
+    dictionaries: HashMap<&'a str, &'a Dictionary<'a>>,
+}
+
+impl<'a, Db> Messages<'a, Db> {
+    /// Creates a new `Messages` with the given `db` and `dictionaries`.
+    pub fn new(db: Db, dictionaries: impl Into<HashMap<&'a str, &'a Dictionary<'a>>>) -> Self {
+        Self {
+            db,
+            dictionaries: dictionaries.into(),
+        }
+    }
+
+    /// Returns a reference to the extra messages database.
+    // TODO: This is only used to simplify the tracking category API, which is
+    // silly.
+    pub fn db(&self) -> &Db {
+        &self.db
+    }
+}
+
+impl<'a, Db> Messages<'a, Db>
+where
+    Db: DatabaseProvider,
+{
+    /// Returns a reference to the first message that exists with a
+    /// corresponding key from `keys` for the given MediaWiki language code
+    /// `lang`, or for the default language if `lang` is `None`.
+    ///
+    /// # Errors
+    ///
+    /// * the database broke
+    pub fn find<I, R>(
+        &self,
+        keys: I,
+        lang: Option<&str>,
+        use_db: bool,
+    ) -> Result<Option<Cow<'a, str>>, Db::Error>
+    where
+        I: IntoIterator<Item = R>,
+        R: AsRef<str> + Default,
+    {
+        for key in keys {
+            if let message @ Some(_) = self.get(key.as_ref(), lang, use_db)? {
+                return Ok(message);
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns a reference to the first message that exists with a
+    /// corresponding key from `keys` for the given MediaWiki language code
+    /// `lang`, or for the default language if `lang` is `None`.
+    ///
+    /// # Errors
+    ///
+    /// * the database broke
+    pub fn find_or_default<I, R>(
+        &self,
+        keys: I,
+        lang: Option<&str>,
+        use_db: bool,
+    ) -> Result<Cow<'a, str>, Db::Error>
+    where
+        I: IntoIterator<Item = R>,
+        R: AsRef<str> + Default,
+    {
+        let mut last = R::default();
+        for key in keys {
+            if let Some(message) = self.get(key.as_ref(), lang, use_db)? {
+                return Ok(message);
+            }
+            last = key;
+        }
+
+        let last = html_escape::encode_text(last.as_ref());
+        let last = strtr(&last, &[("\u{0338}", "&#x338;")]);
+        Ok(format!("⧼{last}⧽").into())
+    }
+
+    /// Returns a reference to the message with the corresponding `key` for the
+    /// given MediaWiki language code `lang`, or for the default language if
+    /// `lang` is `None`.
+    ///
+    /// # Errors
+    ///
+    /// * the database broke
+    pub fn get(
+        &self,
+        key: &str,
+        lang: Option<&str>,
+        use_db: bool,
+    ) -> Result<Option<Cow<'a, str>>, Db::Error> {
+        let content_language = self.db.config().language;
+        let lang = lang.unwrap_or(content_language);
+        // TODO: Get and use lang fallbacks configuration from config.
+
+        if use_db {
+            let db_key = to_upper_first(key);
+            let db_key = if lang == content_language {
+                db_key
+            } else {
+                Cow::Owned(format!("{db_key}/{lang}"))
+            };
+
+            if let message @ Some(_) =
+                db::fetch(&self.db, &db_key, Some(title::Namespace::MEDIAWIKI))?
+                    .map(|article| Cow::Owned(article.body().to_owned()))
+            {
+                return Ok(message);
+            }
+        }
+
+        Ok(if let Some(dict) = self.dictionaries.get(lang) {
+            let key = strtr(key, &[(" ", "_")]).map(to_lower_first);
+            dict.messages
+                .get(key.as_ref())
+                .map(|v| Cow::Borrowed(v.as_ref()))
+        } else {
+            None
+        })
+    }
+}
+
 /// An i18n message dictionary.
 #[derive(serde::Deserialize)]
-pub struct Messages<'a> {
+pub struct Dictionary<'a> {
     /// Dictionary metadata.
     #[serde(rename = "@metadata")]
     _metadata: serde::de::IgnoredAny,
@@ -24,13 +154,7 @@ pub struct Messages<'a> {
     messages: HashMap<&'a str, Cow<'a, str>>,
 }
 
-impl<'a> Messages<'a> {
-    /// Returns a reference to the message with the corresponding key.
-    #[must_use]
-    pub fn get(&'a self, key: &str) -> Option<&'a str> {
-        self.messages.get(key).map(Cow::as_ref)
-    }
-
+impl Dictionary<'_> {
     /// Merges `other` into `self`.
     #[must_use]
     pub fn merge(mut self, other: Self) -> Self {
@@ -246,35 +370,22 @@ pub fn format_date_mediawiki(
 /// # Errors
 ///
 /// * `callback` returns an error
-pub fn format_message<'o, 'n: 'o, F, I, R, E>(
-    messages: &'o Messages<'n>,
+pub fn format_message<'m, 'c, F, I, R, E, D>(
+    messages: &Messages<'m, D>,
+    lang: Option<&str>,
+    use_db: bool,
     keys: I,
     callback: F,
-) -> Result<Cow<'o, str>, E>
+) -> Result<Cow<'m, str>, E>
 where
-    R: AsRef<str> + Default,
+    F: FnMut(&str) -> Result<Option<Cow<'c, str>>, E>,
     I: IntoIterator<Item = R>,
-    F: FnMut(&str) -> Result<Option<Cow<'o, str>>, E>,
+    R: AsRef<str> + Default,
+    E: From<D::Error>,
+    D: DatabaseProvider,
 {
-    let mut last = R::default();
-    for key in keys {
-        if let Some(message) = messages
-            .get(key.as_ref())
-            .filter(|message| !matches!(*message, "" | "-"))
-        {
-            return format_raw_message(message, callback);
-        // TODO: This is not in the default MW dictionary, it is in some other
-        // dictionary from mediawiki-gadgets-ConvenientDiscussions, but that one
-        // is lowercase. This is used by 'Template:Ambox'
-        } else if key.as_ref() == "dot-separator" {
-            return Ok(Cow::Borrowed("&nbsp;<b>·</b>&#32;"));
-        }
-        last = key;
-    }
-
-    let last = html_escape::encode_text(last.as_ref());
-    let last = strtr(&last, &[("\u{0338}", "&#x338;")]);
-    Ok(format!("⧼{last}⧽").into())
+    let message = messages.find_or_default(keys, lang, use_db)?;
+    message.try_map(|message| format_raw_message(message, callback))
 }
 
 /// Formats a number similar to [`number_format`](https://php.net/number_format).
@@ -317,7 +428,7 @@ pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
 /// # Errors
 ///
 /// * `callback` returns an error
-pub fn format_raw_message<'a, E, F>(message: &'a str, mut callback: F) -> Result<Cow<'a, str>, E>
+pub fn format_raw_message<'a, E, F>(message: &str, mut callback: F) -> Result<Cow<'_, str>, E>
 where
     F: FnMut(&str) -> Result<Option<Cow<'a, str>>, E>,
 {

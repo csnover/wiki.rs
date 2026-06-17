@@ -552,54 +552,48 @@ fn render_timed_media<S: Sink + ?Sized>(
 /// Converts an image argument into a form suitable for use in an HTML
 /// attribute.
 fn to_attr(strip_markers: &StripMarkers, arg: &str) -> String {
-    use htmlparser::{ElementEnd, Token, Tokenizer};
+    use html5gum::{Token, Tokenizer};
 
     #[inline]
     fn spacelike(c: char) -> bool {
         c.is_ascii_whitespace()
     }
 
-    const BLOCK: phf::Set<&str> = phf::phf_set! {
-        "address", "article", "aside", "blockquote", "br", "canvas", "dd",
-        "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
-        "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "li",
-        "main", "nav","noscript", "ol", "output", "p", "pre", "section",
-        "table", "td", "tfoot", "th", "tr", "ul", "video"
+    const BLOCK: phf::Set<&[u8]> = phf::phf_set! {
+        b"address", b"article", b"aside", b"blockquote", b"br", b"canvas",
+        b"dd", b"div", b"dl", b"dt", b"fieldset", b"figcaption", b"figure",
+        b"footer", b"form", b"h1", b"h2", b"h3", b"h4", b"h5", b"h6", b"header",
+        b"hgroup", b"hr", b"li", b"main", b"nav", b"noscript", b"ol", b"output",
+        b"p", b"pre", b"section", b"table", b"td", b"tfoot", b"th", b"tr",
+        b"ul", b"video"
     };
 
     let arg = strip_markers.unstrip(arg);
     let mut out = String::new();
-    let mut in_skip = 0;
-    let mut is_block = false;
-    let mut opened_skip = false;
-    for token in Tokenizer::from(arg.as_ref()) {
+    let mut in_skip = 0_u32;
+    for token in Tokenizer::new_with_emitter(
+        arg.as_ref(),
+        html5gum::DefaultEmitter::<usize>::new_with_span(),
+    ) {
         match token {
-            Ok(Token::ElementStart { local, .. }) => {
-                opened_skip = matches!(local.as_str(), "script" | "style");
-                is_block = BLOCK.contains(local.as_str());
+            Ok(Token::StartTag(tag)) => {
+                if matches!(tag.name.as_ref(), b"script" | b"style") && !tag.self_closing {
+                    in_skip += 1;
+                }
+                if BLOCK.contains(tag.name.as_ref()) {
+                    out.push(' ');
+                }
             }
-            Ok(Token::ElementEnd { end, .. }) => match end {
-                ElementEnd::Open => {
-                    in_skip += u32::from(opened_skip);
-                    if is_block {
-                        out.push(' ');
-                    }
+            Ok(Token::EndTag(tag)) => {
+                if matches!(tag.name.as_ref(), b"script" | b"style") {
+                    in_skip = in_skip.saturating_sub(1);
                 }
-                ElementEnd::Close(.., local) => {
-                    if matches!(local.as_str(), "script" | "style") {
-                        in_skip = in_skip.saturating_sub(1);
-                    } else if BLOCK.contains(local.as_str()) {
-                        out.push(' ');
-                    }
+                if BLOCK.contains(tag.name.as_ref()) {
+                    out.push(' ');
                 }
-                ElementEnd::Empty => {
-                    if is_block {
-                        out.push(' ');
-                    }
-                }
-            },
-            Ok(Token::Text { text } | Token::Cdata { text, .. }) if in_skip == 0 => {
-                out += text.as_str();
+            }
+            Ok(Token::String(text)) if in_skip == 0 => {
+                out += &arg[text.span.start..text.span.end];
             }
             _ => {}
         }

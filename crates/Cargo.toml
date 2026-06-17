@@ -101,12 +101,14 @@ fancy-regex = "0.16"
 gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "5a7534b883b703f23cfb8c3cfdf033460aa77ea9", features = ["allocator-api2", "hashbrown"] }
 goldenfile = "1.9"
 html-escape = "0.2"
-htmlparser = "0.2"
+html5gum = "0.8.3"
+icu_datetime = { version = "2.2", features = ["compiled_data"] }
+icu_locale = "2.2"
+icu_plurals = { version = "2.2", features = ["compiled_data"] }
+icu_provider = "2.2"
 indexmap = { version = "2.12", features = ["serde"] }
 libmisc = { path = "libmisc" }
 libphp-rs = { path = "libphp-rs" }
-timelib-rs = { path = "timelib-rs" }
-vega2-rs = { path = "vega2-rs" }
 libwikitext-common = { path = "libwikitext-common" }
 libwikitext-common-gpl = { path = "libwikitext-common-gpl" }
 libwikitext-data = { path = "libwikitext-data" }
@@ -116,7 +118,6 @@ libwikitext-parse = { path = "libwikitext-parse" }
 libwikitext-parse-gpl = { path = "libwikitext-parse-gpl" }
 libwikitext-render = { path = "libwikitext-render" }
 libwikitext-render-gpl = { path = "libwikitext-render-gpl" }
-locale-rs = { version = "0.3", features = ["datetime"] }
 log = "0.4"
 math-core = "0.6"
 memchr = "2.7"
@@ -145,13 +146,16 @@ similar-asserts = "1.7"
 syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "html", "parsing", "regex-fancy", "yaml-load"] }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
+timelib-rs = { path = "timelib-rs" }
 tiny-skia = { version = "0.12", default-features = false, features = ["simd", "std"] }
 typed-builder = "0.23"
 tz-rs = { version = "0.7.1", features = [] }
 tzdb_data = "0.2"
 unicode-general-category = "1.1"
 unicode-normalization = "0.1"
+vega2-rs = { path = "vega2-rs" }
 wuff = "0.2"
+zerovec = "0.11"
 
 [profile.dev-fast]
 inherits = "dev"

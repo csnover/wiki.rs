@@ -19,14 +19,14 @@ use piccolo::{Stack, UserData};
 /// The main Lua support library.
 #[derive(gc_arena::Collect)]
 #[collect(require_static)]
-pub struct LuaEngine<Db: DatabaseProvider, Sp: HostFrame> {
+pub struct LuaEngine<Db, Sp> {
     /// The article database.
     pub(crate) db: RefCell<Option<Db>>,
     /// The stack frame of the current call.
     pub(crate) sp: RefCell<Option<Sp>>,
 }
 
-impl<Db: DatabaseProvider, Sp: HostFrame> Default for LuaEngine<Db, Sp> {
+impl<Db, Sp> Default for LuaEngine<Db, Sp> {
     fn default() -> Self {
         Self {
             db: <_>::default(),
@@ -35,7 +35,11 @@ impl<Db: DatabaseProvider, Sp: HostFrame> Default for LuaEngine<Db, Sp> {
     }
 }
 
-impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
+impl<Db, Sp> LuaEngine<Db, Sp>
+where
+    Db: DatabaseProvider,
+    Sp: HostFrame,
+{
     /// Returns a reference to the database.
     ///
     /// # Panics
@@ -67,7 +71,12 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
     }
 }
 
-impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
+impl<Db, Sp> LuaEngine<Db, Sp>
+where
+    Db: DatabaseProvider,
+    Sp: HostFrame,
+    for<'a> VmError<'a>: From<Db::Error>,
+{
     mw_unimplemented! {
         incrementExpensiveFunctionCount = increment_expensive_function_count,
     }
@@ -249,7 +258,8 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
         let title = title.to_str()?;
         let Some(article) = Title::new(db.config(), title, None)
             .ok()
-            .and_then(|title| db.get(&title).ok())
+            .and_then(|title| db.get(&title).transpose())
+            .transpose()?
         else {
             return Err(anyhow::anyhow!(
                 "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
@@ -286,7 +296,10 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
         let db = self.db();
         let title = Title::new(db.config(), name.to_str()?, Some(Namespace::MODULE));
 
-        if let Some(article) = title.ok().and_then(|title| db.get(&title).ok())
+        if let Some(article) = title
+            .ok()
+            .and_then(|title| db.get(&title).transpose())
+            .transpose()?
             && article.model() == "Scribunto"
         {
             Closure::load_with_env(
@@ -376,7 +389,12 @@ impl<Db: DatabaseProvider, Sp: HostFrame> LuaEngine<Db, Sp> {
     }
 }
 
-impl<Db: DatabaseProvider + 'static, Sp: HostFrame + 'static> MwInterface for LuaEngine<Db, Sp> {
+impl<Db, Sp> MwInterface for LuaEngine<Db, Sp>
+where
+    Db: DatabaseProvider + 'static,
+    Sp: HostFrame + 'static,
+    for<'a> VmError<'a>: From<Db::Error>,
+{
     const CODE: &'static [u8] = include_bytes!("./modules/mw.lua");
     const NAME: &'static str = "mw";
 

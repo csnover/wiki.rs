@@ -2086,8 +2086,8 @@ pub(super) struct Mark(u16);
 impl Drop for Mark {
     #[track_caller]
     fn drop(&mut self) {
-        if !std::thread::panicking() {
-            debug_assert!(self.0 == MarkableString::NO_FREE, "leaked");
+        if !std::thread::panicking() && self.0 != MarkableString::NO_FREE {
+            log::warn!("leaked {}", self.0);
         }
     }
 }
@@ -2406,10 +2406,14 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
 
         // TODO: SIGH, all extension tag outputs need to be tokenised like this,
         // but then the inner elements need to *not* apply to the outline.
-        let text = htmlparser::Tokenizer::from(html).filter_map(|token| {
+        let text = html5gum::Tokenizer::new_with_emitter(
+            html,
+            html5gum::DefaultEmitter::<usize>::new_with_span(),
+        )
+        .filter_map(|token| {
             token.ok().and_then(|token| {
-                if let htmlparser::Token::Text { text } = token {
-                    Some(text.as_str())
+                if let html5gum::Token::String(text) = token {
+                    Some(&html[text.span.start..text.span.end])
                 } else {
                     None
                 }

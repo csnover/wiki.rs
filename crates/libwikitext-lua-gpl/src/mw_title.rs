@@ -26,7 +26,7 @@ use std::borrow::Cow;
 /// The article support library.
 #[derive(gc_arena::Collect)]
 #[collect(require_static)]
-pub struct TitleLibrary<Db: DatabaseProvider> {
+pub struct TitleLibrary<Db> {
     /// The base URI to use when generating URLs to articles.
     base_uri: RefCell<Option<Url>>,
     /// The article database.
@@ -35,7 +35,7 @@ pub struct TitleLibrary<Db: DatabaseProvider> {
     this_title: Cell<Option<StashedTable>>,
 }
 
-impl<Db: DatabaseProvider> Default for TitleLibrary<Db> {
+impl<Db> Default for TitleLibrary<Db> {
     fn default() -> Self {
         Self {
             base_uri: <_>::default(),
@@ -45,7 +45,7 @@ impl<Db: DatabaseProvider> Default for TitleLibrary<Db> {
     }
 }
 
-impl<Db: DatabaseProvider> TitleLibrary<Db> {
+impl<Db> TitleLibrary<Db> {
     /// Returns a reference to the base URI.
     ///
     /// # Panics
@@ -92,7 +92,11 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
     }
 }
 
-impl<Db: DatabaseProvider> TitleLibrary<Db> {
+impl<Db> TitleLibrary<Db>
+where
+    Db: DatabaseProvider,
+    for<'a> VmError<'a>: From<Db::Error>,
+{
     mw_unimplemented! {
         getCategories = get_categories,
         getPageLangCode = get_page_lang_code,
@@ -138,12 +142,12 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         full_text: VmString<'_>,
     ) -> Result<Value<'gc>, VmError<'gc>> {
         log::trace!("mw.title.getContent({full_text:?})");
-        let title = Title::new(self.db().config(), full_text.to_str()?, None);
-        Ok(title
+        Ok(Title::new(self.db().config(), full_text.to_str()?, None)
             .ok()
-            .and_then(|title| self.db().get(&title).ok())
+            .and_then(|title| self.db().get(&title).transpose())
+            .transpose()?
             .map_or(Value::Nil, |article| {
-                Value::String(ctx.intern(article.body().as_bytes()))
+                ctx.intern(article.body().as_bytes()).into()
             }))
     }
 
@@ -157,7 +161,8 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         let db = self.db();
         let article = Title::new(db.config(), text.to_str()?, None)
             .ok()
-            .and_then(|title| db.get(&title).ok());
+            .and_then(|title| db.get(&title).transpose())
+            .transpose()?;
         let article = article.as_deref();
 
         Ok(table! {
@@ -359,7 +364,7 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
         // a table.
         let db = self.db();
         if let Ok(title) = Title::new(db.config(), text.to_str()?, None)
-            && let Ok(target) = db.get(&title)
+            && let Ok(Some(target)) = db.get(&title)
             && let Some(target) = &target.redirect()
             && let Ok(title) = Title::new(db.config(), target, None)
         {
@@ -370,7 +375,11 @@ impl<Db: DatabaseProvider> TitleLibrary<Db> {
     }
 }
 
-impl<Db: DatabaseProvider + 'static> MwInterface for TitleLibrary<Db> {
+impl<Db> MwInterface for TitleLibrary<Db>
+where
+    Db: DatabaseProvider + 'static,
+    for<'a> VmError<'a>: From<Db::Error>,
+{
     const CODE: &'static [u8] = include_bytes!("./modules/mw.title.lua");
     const NAME: &'static str = "mw.title";
 

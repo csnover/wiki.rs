@@ -1145,12 +1145,11 @@ pub(crate) struct Styles {
 
 impl Styles {
     /// Inserts CSS from the article given in `src` using an optional wrapper.
-    pub fn insert<Db: DatabaseProvider>(
-        &mut self,
-        db: &Db,
-        src: &str,
-        wrapper: Option<&str>,
-    ) -> Result<()> {
+    pub fn insert<Db>(&mut self, db: &Db, src: &str, wrapper: Option<&str>) -> Result<()>
+    where
+        Db: DatabaseProvider + ?Sized,
+        Error: From<Db::Error>,
+    {
         let key = if let Some(wrapper) = wrapper {
             format!("{src}{wrapper}")
         } else {
@@ -1162,7 +1161,7 @@ impl Styles {
         }
 
         if let Ok(title) = Title::new(db.config(), src, Some(Namespace::TEMPLATE))
-            && let Ok(css) = db.get(&title)
+            && let Some(css) = db.get(&title)?
         {
             if let Some(wrapper) = wrapper {
                 writeln!(self.text, "{wrapper} {{ {} }}", &css.body())?;
