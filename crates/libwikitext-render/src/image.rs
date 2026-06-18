@@ -20,6 +20,43 @@ use libwikitext_common::{
 use libwikitext_parse::{Argument, Spanned, Token};
 use std::borrow::Cow;
 
+/// Image dimensions.
+type Dims = (u32, u32);
+
+/// An image rendering strategy.
+#[derive(Clone, Debug)]
+pub(super) enum FrameKind {
+    /// Show the image with a frame. Is a frame a border? Who could say.
+    Frame,
+    /// Show the image with no frame.
+    Frameless,
+    /// Show the image as a thumbnail with a border and a caption underneath the
+    /// image, using the given optional `Title` for the actual thumbnail image.
+    Thumb(Option<Title>),
+}
+
+impl FrameKind {
+    /// Returns the Resource Description Framework type for an image.
+    fn rdfa_kind(&self) -> &str {
+        match self {
+            Self::Frame => "mw:File/Frame",
+            Self::Frameless => "mw:File/Frameless",
+            Self::Thumb(_) => "mw:File/Thumb",
+        }
+    }
+}
+
+/// An image link strategy.
+#[derive(Clone, Debug)]
+pub(super) enum Link<'a> {
+    /// Use the image title as the link.
+    Inherit,
+    /// Use no link.
+    None,
+    /// Use a custom link.
+    Custom(LinkKind<'a>),
+}
+
 /// Options for rendering a media node.
 #[expect(clippy::struct_excessive_bools, reason = "that is how many there are!")]
 #[derive(Clone, Debug)]
@@ -195,38 +232,103 @@ impl Options<'_> {
     }
 }
 
-/// An image link strategy.
-#[derive(Clone, Debug)]
-pub(super) enum Link<'a> {
-    /// Use the image title as the link.
-    Inherit,
-    /// Use no link.
-    None,
-    /// Use a custom link.
-    Custom(LinkKind<'a>),
-}
-
-/// An image rendering strategy.
-#[derive(Clone, Debug)]
-pub(super) enum FrameKind {
-    /// Show the image with a frame. Is a frame a border? Who could say.
-    Frame,
-    /// Show the image with no frame.
-    Frameless,
-    /// Show the image as a thumbnail with a border and a caption underneath the
-    /// image, using the given optional `Title` for the actual thumbnail image.
-    Thumb(Option<Title>),
-}
-
-impl FrameKind {
-    /// Returns the Resource Description Framework type for an image.
-    fn rdfa_kind(&self) -> &str {
-        match self {
-            Self::Frame => "mw:File/Frame",
-            Self::Frameless => "mw:File/Frameless",
-            Self::Thumb(_) => "mw:File/Thumb",
+/// Calculates the desired width and height for the image from the `options`
+/// with the given native width and height.
+// TODO: This is a garbage function with a garbage signature.
+fn calc_image_dims(
+    state: &mut State<'_, '_, '_>,
+    options: &Options<'_>,
+    (native_width, native_height): Dims,
+) -> Dims {
+    let (width, height) = if options.is_thumb() {
+        let thumb_width = state
+            .statics
+            .db
+            .config()
+            .thumb_limits
+            .first()
+            .copied()
+            .unwrap_or(180)
+            .min(native_width);
+        let thumb_height = round_div(thumb_width * native_height, native_width);
+        (thumb_width, thumb_height)
+    } else {
+        (native_width, native_height)
+    };
+    let (width, height) = if matches!(
+        options.frame,
+        Some(FrameKind::Thumb(Some(_)) | FrameKind::Frame)
+    ) {
+        (width, height)
+    } else {
+        match (options.width, options.height) {
+            (Some(width), Some(height)) => (width, height),
+            (Some(w), None) => (w, round_div(w * native_height, native_width)),
+            (None, Some(h)) => (round_div(h * native_width, native_height), h),
+            (None, None) => (width, height),
         }
+    };
+    (width, height)
+}
+
+/// Returns `true` if the string appears to be an absolute URL.
+// TODO: This is a hack for the test suite. At the least it should be using
+// `config.protocols`.
+#[inline]
+fn is_absolute_url(str: &str) -> bool {
+    str.starts_with("http://") || str.starts_with("https://")
+}
+
+/// Creates a URL to a title in the [media namespace].
+///
+/// [media namespace]: libwikitext_common::title::Namespace::MEDIA
+pub(super) fn make_media_url(base_uri: &Url, media_path: &str, text: &str) -> String {
+    use std::io::Write as _;
+    let mut prefix = [b'0'; 2];
+    let b = md5::compute(text.as_bytes())[0];
+    let _ = write!(&mut prefix[..], "{b:02x}");
+    // SAFETY: Guaranteed to be ASCII.
+    let prefix = unsafe { str::from_utf8_unchecked(&prefix[..]) };
+    let path = format_args!("{media_path}/{}/{}/{text}", &prefix[..1], &prefix);
+    if is_absolute_url(media_path) {
+        path.to_string()
+    } else {
+        make_url(base_uri, None, path, None, None)
     }
+}
+
+/// Generates HTML `src` and `srcset` attribute values for an image with the
+/// given `max_width` and `width`, base filename `base_name`, and original scale
+/// URL `src`.
+fn make_srcset(
+    state: &mut State<'_, '_, '_>,
+    max_width: u32,
+    width: u32,
+    base_name: &str,
+    src: &str,
+) -> (String, Option<String>) {
+    let thumb_src = make_media_url(
+        &state.statics.base_uri,
+        &format!("{}/thumb", state.statics.paths.media),
+        base_name,
+    );
+    let mut srcset = String::new();
+    for (mult, mult_name) in [(15, "1.5"), (20, "2")] {
+        let size = round_div(width * mult, 10);
+        if !srcset.is_empty() {
+            srcset += ", ";
+        }
+
+        if size >= max_width {
+            let _ = write!(srcset, "{src} {mult_name}x");
+            break;
+        }
+
+        let _ = write!(srcset, "{thumb_src}/{size}px-{base_name} {mult_name}x");
+    }
+
+    let src = format!("{thumb_src}/{width}px-{base_name}");
+    (src, (!srcset.is_empty()).then_some(srcset))
 }
 
 /// Parses [`Options`] from a media node.
@@ -260,6 +362,16 @@ pub(super) fn media_options<'s>(
     }
 
     Ok(options)
+}
+
+/// Gets the HTML tag associated with a kind of media.
+#[inline]
+fn media_tag_name(meta: FileMetadata) -> &'static str {
+    match meta {
+        FileMetadata::Audio => "audio",
+        FileMetadata::Image { .. } => "img",
+        FileMetadata::Video { .. } => "video",
+    }
 }
 
 /// Set an option on `options` from the given parameterised `arg` which matched
@@ -373,22 +485,94 @@ fn option_flag<'s>(options: &mut Options<'s>, argument: &'s Spanned<Argument>, v
     }
 }
 
-/// Creates a URL to a title in the [media namespace].
-///
-/// [media namespace]: libwikitext_common::title::Namespace::MEDIA
-pub(super) fn make_media_url(base_uri: &Url, media_path: &str, text: &str) -> String {
-    use std::io::Write as _;
-    let mut prefix = [b'0'; 2];
-    let b = md5::compute(text.as_bytes())[0];
-    let _ = write!(&mut prefix[..], "{b:02x}");
-    // SAFETY: Guaranteed to be ASCII.
-    let prefix = unsafe { str::from_utf8_unchecked(&prefix[..]) };
-    let path = format_args!("{media_path}/{}/{}/{text}", &prefix[..1], &prefix);
-    if is_absolute_url(media_path) {
-        path.to_string()
-    } else {
-        make_url(base_uri, None, path, None, None)
+/// Renders an image tag to `out` using `state` with the given `options` and
+/// native dimensions `native_height` and `native_width`.
+fn render_image<S: Sink + ?Sized>(
+    out: &mut S,
+    state: &mut State<'_, '_, '_>,
+    options: &Options<'_>,
+    native_dims: Dims,
+) {
+    let wrapper = if options.is_link() { "a" } else { "span" };
+    let (width, height) = calc_image_dims(state, options, native_dims);
+
+    out.tag_start(wrapper);
+    if let Some(link) = options.link() {
+        let href = link.to_string(
+            &LinkKindOptions {
+                base_uri: &state.statics.base_uri,
+                interwiki_map: &state.statics.db.config().interwiki_map,
+                paths: &state.statics.paths,
+            },
+            None,
+        );
+        let href = if matches!(options.link, Link::Inherit) {
+            href.split_once('#').map_or(href.as_str(), |(href, _)| href)
+        } else {
+            &href
+        };
+        out.tag_attribute_full("href", href);
+        if options.is_external_link() {
+            out.tag_attribute_full("rel", "nofollow");
+        } else if options.is_file_description() {
+            out.tag_attribute_full("class", "mw-file-description");
+        }
     }
+    if let Some(title_attr) = &options.link_title() {
+        out.tag_attribute_full("title", title_attr);
+    }
+    out.tag_start_end(wrapper);
+
+    out.tag_start("img");
+
+    let thumb = options.thumb();
+    let base_name = thumb.text_url();
+    let src = make_media_url(
+        &state.statics.base_uri,
+        state.statics.paths.media,
+        &base_name,
+    );
+    let (src, srcset) = if width < native_dims.0 {
+        make_srcset(state, native_dims.0, width, &base_name, &src)
+    } else {
+        (src, None)
+    };
+
+    if let Some(alt) = &options.alt() {
+        out.tag_attribute_full("alt", alt);
+    }
+    out.tag_attribute_full("src", &src);
+    out.tag_attribute_full("decoding", "async");
+    out.tag_attribute_full("width", &width.to_string());
+    out.tag_attribute_full("height", &height.to_string());
+
+    out.tag_attribute_start("class");
+    out.text("mw-file-element");
+    if options.upright.is_some() {
+        out.text(" mw-file-upright");
+    }
+    if let Some(class) = &options.class {
+        out.text(" ");
+        out.text(class);
+    }
+    out.tag_attribute_end("class");
+
+    if let Some(srcset) = srcset {
+        out.tag_attribute_full("srcset", &srcset);
+    }
+
+    if let Some(upright) = &options.upright {
+        out.tag_attribute_start("style");
+        out.text("--mw-file-upright:");
+        out.text(&upright.to_string());
+        out.text(";");
+        out.tag_attribute_end("style");
+    }
+
+    // This is a void tag so there is no `tag_end`
+    out.tag_start_end("img");
+
+    out.tag_end(wrapper);
 }
 
 /// Renders a media tag.
@@ -473,10 +657,13 @@ pub(super) fn render_media_with_options(
             }
             FileMetadata::Image { .. } => {
                 // TODO: Image with video thumb must use thumb of video
-                let Some(FileMetadata::Image { height, width } | FileMetadata::Video { height, width }) = thumb else {
+                let Some(
+                    FileMetadata::Image { height, width } | FileMetadata::Video { height, width },
+                ) = thumb
+                else {
                     panic!("should have an image or video thumb");
                 };
-                render_image(&mut out.next, state, options, height, width);
+                render_image(&mut out.next, state, options, (width, height));
             }
         }
     } else {
@@ -511,153 +698,6 @@ pub(super) fn render_media_with_options(
     out.next.tag_end(tag_name);
 
     Ok(())
-}
-
-/// Performs rounding division on `n`.
-#[inline]
-fn round_div(n: u32, d: u32) -> u32 {
-    let q = n / d;
-    let r = n % d;
-    q + u32::from(r << 1 >= d)
-}
-
-/// Renders an image tag to `out` using `state` with the given `options` and
-/// native dimensions `native_height` and `native_width`.
-fn render_image<S: Sink + ?Sized>(
-    out: &mut S,
-    state: &mut State<'_, '_, '_>,
-    options: &Options<'_>,
-    native_height: u32,
-    native_width: u32,
-) {
-    let wrapper = if options.is_link() { "a" } else { "span" };
-    let (width, height) = if options.is_thumb() {
-        let thumb_width = state
-            .statics
-            .db
-            .config()
-            .thumb_limits
-            .first()
-            .copied()
-            .unwrap_or(180)
-            .min(native_width);
-        let thumb_height = round_div(thumb_width * native_height, native_width);
-        (thumb_width, thumb_height)
-    } else {
-        (native_width, native_height)
-    };
-    let (width, height) = if matches!(
-        options.frame,
-        Some(FrameKind::Thumb(Some(_)) | FrameKind::Frame)
-    ) {
-        (width, height)
-    } else {
-        match (options.width, options.height) {
-            (Some(width), Some(height)) => (width, height),
-            (Some(w), None) => (w, round_div(w * native_height, native_width)),
-            (None, Some(h)) => (round_div(h * native_width, native_height), h),
-            (None, None) => (width, height),
-        }
-    };
-
-    out.tag_start(wrapper);
-    if let Some(link) = options.link() {
-        let href = link.to_string(
-            &LinkKindOptions {
-                base_uri: &state.statics.base_uri,
-                interwiki_map: &state.statics.db.config().interwiki_map,
-                paths: &state.statics.paths,
-            },
-            None,
-        );
-        let href = if matches!(options.link, Link::Inherit) {
-            href.split_once('#').map_or(href.as_str(), |(href, _)| href)
-        } else {
-            &href
-        };
-        out.tag_attribute_full("href", href);
-        if options.is_external_link() {
-            out.tag_attribute_full("rel", "nofollow");
-        } else if options.is_file_description() {
-            out.tag_attribute_full("class", "mw-file-description");
-        }
-    }
-    if let Some(title_attr) = &options.link_title() {
-        out.tag_attribute_full("title", title_attr);
-    }
-    out.tag_start_end(wrapper);
-
-    out.tag_start("img");
-
-    let thumb = options.thumb();
-    let base_name = thumb.text_url();
-    let src = make_media_url(
-        &state.statics.base_uri,
-        state.statics.paths.media,
-        &base_name,
-    );
-    let (src, srcset) = if width < native_width {
-        let thumb_src = make_media_url(
-            &state.statics.base_uri,
-            &format!("{}/thumb", state.statics.paths.media),
-            &base_name,
-        );
-        let mut srcset = String::new();
-        for (mult, mult_name) in [(15, "1.5"), (20, "2")] {
-            let size = round_div(width * mult, 10);
-            if !srcset.is_empty() {
-                srcset += ", ";
-            }
-
-            if size >= native_width {
-                let _ = write!(srcset, "{src} {mult_name}x");
-                break;
-            }
-
-            let _ = write!(srcset, "{thumb_src}/{size}px-{base_name} {mult_name}x");
-        }
-
-        let src = format!("{thumb_src}/{width}px-{base_name}");
-        (src, (!srcset.is_empty()).then_some(srcset))
-    } else {
-        (src, None)
-    };
-
-    if let Some(alt) = &options.alt() {
-        out.tag_attribute_full("alt", alt);
-    }
-    out.tag_attribute_full("src", &src);
-    out.tag_attribute_full("decoding", "async");
-    out.tag_attribute_full("width", &width.to_string());
-    out.tag_attribute_full("height", &height.to_string());
-
-    out.tag_attribute_start("class");
-    out.text("mw-file-element");
-    if options.upright.is_some() {
-        out.text(" mw-file-upright");
-    }
-    if let Some(class) = &options.class {
-        out.text(" ");
-        out.text(class);
-    }
-    out.tag_attribute_end("class");
-
-    if let Some(srcset) = srcset {
-        out.tag_attribute_full("srcset", &srcset);
-    }
-
-    if let Some(upright) = &options.upright {
-        out.tag_attribute_start("style");
-        out.text("--mw-file-upright:");
-        out.text(&upright.to_string());
-        out.text(";");
-        out.tag_attribute_end("style");
-    }
-
-    // This is a void tag so there is no `tag_end`
-    out.tag_start_end("img");
-
-    out.tag_end(wrapper);
 }
 
 /// Renders an audio or video tag.
@@ -710,21 +750,12 @@ fn render_timed_media<S: Sink + ?Sized>(
     out.tag_end(media_tag_name(media));
 }
 
-/// Returns `true` if the string appears to be an absolute URL.
-// TODO: This is a hack for the test suite. At the least it should be using
-// `config.protocols`.
+/// Divides `n` by `d`, rounding half toward positive infinity.
 #[inline]
-fn is_absolute_url(str: &str) -> bool {
-    str.starts_with("http://") || str.starts_with("https://")
-}
-
-/// Gets the HTML tag associated with a kind of media.
-fn media_tag_name(meta: FileMetadata) -> &'static str {
-    match meta {
-        FileMetadata::Audio => "audio",
-        FileMetadata::Image { .. } => "img",
-        FileMetadata::Video { .. } => "video",
-    }
+fn round_div(n: u32, d: u32) -> u32 {
+    let q = n / d;
+    let r = n % d;
+    q + u32::from(r << 1 >= d)
 }
 
 /// Converts an image argument into a form suitable for use in an HTML
