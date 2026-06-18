@@ -462,7 +462,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       e:(e:line_eol() !list_start() { e })?
     { c.into_iter().chain(iter::once(t)).chain(e.flatten()).collect() }
 
-    /// A minimumal unambiguous start of a list item.
+    /// A minimal unambiguous start of a list item.
     rule list_start()
     = comment_tag()* !table_hack_start() ['*'|'#'|';'|':']
 
