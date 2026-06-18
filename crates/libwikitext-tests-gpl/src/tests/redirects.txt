@@ -26,6 +26,8 @@ Template:1x
 #REDIRECT [[Main Page]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main Page</a></p>
 !! end
 
 !! test
@@ -34,6 +36,8 @@ Template:1x
 #REDIRECT [[Main_Page]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page" data-parsoid='{"src":"#REDIRECT ","a":{"href":"./Main_Page"},"sa":{"href":"Main_Page"}}'/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main_Page</a></p>
 !! end
 
 # Not a valid redirect in PHP (although perhaps it was, once upon a time)
@@ -46,6 +50,8 @@ parsoid=wt2html
 #REDIRECT [[<nowiki>[[Bar]]</nowiki>]]
 !! html/parsoid
 <ol><li>REDIRECT [[<span typeof="mw:Nowiki">[[Bar]]</span>]]</li></ol>
+!! html/wiki.rs
+<ol><li>REDIRECT [[[[Bar]]]]</li></ol>
 !! end
 
 !! test
@@ -54,6 +60,8 @@ parsoid=wt2html
 #REDIRECT [[{{1x|Foo}}bar]]
 !! html/parsoid
 <link about="#mwt2" typeof="mw:ExpandedAttrs" rel="mw:PageProp/redirect" href="./Foobar" data-parsoid='{"a":{"href":"./Foobar"},"sa":{"href":"{{1x|Foo}}bar"}}' data-mw='{"attribs":[[{"txt":"href"},{"html":"&lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&#39;{\"pi\":[[{\"k\":\"1\"}]]}&#39; data-mw=&#39;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"1x\",\"href\":\"./Template:1x\"},\"params\":{\"1\":{\"wt\":\"Foo\"}},\"i\":0}}]}&#39;>Foo&lt;/span>bar"}]]}'/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Foobar?action=edit&amp;redlink=1" class="new" title="Foobar (page does not exist)">Foobar</a></p>
 !! end
 
 !! test
@@ -77,6 +85,8 @@ parsoid=wt2html,html2html
 #REDIRECT:[[Main Page]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main Page</a></p>
 !! end
 
 !! test
@@ -93,6 +103,8 @@ parsoid=wt2html,html2html
 [[Main Page]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main Page</a></p>
 !! end
 
 !! test
@@ -105,6 +117,8 @@ parsoid=wt2html
 #REDIRECT [[Main Page|bar]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">bar</a></p>
 !! end
 
 !! test
@@ -115,6 +129,8 @@ parsoid=wt2html,wt2wt
 #REDIRECT [[Category:Foo]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Category:Foo"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Category:Foo?action=edit&amp;redlink=1" class="new" title="Category:Foo (page does not exist)">Category:Foo</a></p>
 !! end
 
 !! test
@@ -125,6 +141,8 @@ parsoid=wt2html
 #REDIRECT [[Category%3AFoo]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Category:Foo"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Category:Foo?action=edit&amp;redlink=1" class="new" title="Category:Foo (page does not exist)">Category:Foo</a></p>
 !! end
 
 !! test
@@ -133,6 +151,8 @@ Redirect to category page
 #REDIRECT [[:Category:Foo]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Category:Foo"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Category:Foo?action=edit&amp;redlink=1" class="new" title="Category:Foo (page does not exist)">Category:Foo</a></p>
 !! end
 
 !! test
@@ -141,6 +161,8 @@ Redirect to image page (1)
 #REDIRECT [[File:Wiki.png]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./File:Wiki.png"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/File:Wiki.png?action=edit&amp;redlink=1" class="new" title="File:Wiki.png (page does not exist)">File:Wiki.png</a></p>
 !! end
 
 !! test
@@ -149,6 +171,8 @@ Redirect to image page (2)
 #REDIRECT [[Image:Wiki.png]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./File:Wiki.png"  data-parsoid='{"src":"#REDIRECT ","a":{"href":"./File:Wiki.png"},"sa":{"href":"Image:Wiki.png"}}'/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/File:Wiki.png?action=edit&amp;redlink=1" class="new" title="File:Wiki.png (page does not exist)">Image:Wiki.png</a></p>
 !! end
 
 # html2wt disabled because wts serializes as "#REDIRECT [[:en:File:Wiki.png]]"
@@ -161,6 +185,8 @@ parsoid=wt2html,wt2wt,html2html
 #REDIRECT [[en:File:Wiki.png]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="//en.wikipedia.org/wiki/File:Wiki.png"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="//en.wikipedia.org/wiki/File:Wiki.png" class="extiw" title="en:File:Wiki.png">en:File:Wiki.png</a></p>
 !! end
 
 !! test
@@ -169,6 +195,8 @@ Redirect to language (2) (T104918)
 #REDIRECT [[:en:File:Wiki.png]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="//en.wikipedia.org/wiki/File:Wiki.png"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="//en.wikipedia.org/wiki/File:Wiki.png" class="extiw" title="en:File:Wiki.png">en:File:Wiki.png</a></p>
 !! end
 
 !! test
@@ -177,6 +205,8 @@ Redirect to interwiki (T104918)
 #REDIRECT [[meatball:File:Wiki.png]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="http://www.usemod.com/cgi-bin/mb.pl?File:Wiki.png"/>
+!! html/wiki.rs
+<p class="redirectText"><a href="http://www.usemod.com/cgi-bin/mb.pl?File:Wiki.png" class="extiw" title="meatball:File:Wiki.png">meatball:File:Wiki.png</a></p>
 !! end
 
 !! test
@@ -199,6 +229,10 @@ some text
 <p>some text</p>
 
 <ol data-parsoid='{}'><li data-parsoid='{}'>redirect <a rel="mw:WikiLink" href="./Main_Page" title="Main Page" data-parsoid='{"stx":"simple","a":{"href":"./Main_Page"},"sa":{"href":"Main Page"}}'>Main Page</a></li></ol>
+!! html/wiki.rs # This output matches the PHP parser
+<p>some text
+</p>
+<ol><li>redirect <a href="/wiki/Main_Page" title="Main Page">Main Page</a></li></ol>
 !! end
 
 !! test
@@ -225,6 +259,8 @@ parsoid=wt2html
 <ol><li>REDIRECT <a href="/wiki/Main_Page" title="Main Page">Main Page</a>==hi==</li></ol>
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/><!-- haha --><h2 id="hi">hi</h2>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main Page</a></p><h2 id="hi">hi</h2>
 !! end
 
 ## WikiContent::getRedirectTargetAndText() strips the redirect from text so,
@@ -240,6 +276,8 @@ parsoid=wt2html
 <ol><li>REDIRECT <a href="/wiki/Main_Page" title="Main Page">Main Page</a>----</li></ol>
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/><hr/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main Page</a></p><hr>
 !! end
 
 !! test
@@ -250,6 +288,8 @@ A newline
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Main_Page"/>
 <p>A newline</p>
+!! html/wiki.rs # In PHP, WikitextContentHandler strips all `\s` after a redirect, including newlines
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main Page</a></p><p>A newline</p>
 !! end
 
 !! test
@@ -264,6 +304,8 @@ A newline
 
 <p><br/>
 A newline</p>
+!! html/wiki.rs # In PHP, WikitextContentHandler strips all `\s` after a redirect, including newlines
+<p class="redirectText"><a href="/wiki/Main_Page" title="Main Page">Main Page</a></p><p>A newline</p>
 !! end
 
 !! test
@@ -284,6 +326,8 @@ Redirect containing double quotes and spaces
 #REDIRECT [[Cool "Gator"]]
 !! html/parsoid
 <link rel="mw:PageProp/redirect" href="./Cool_%22Gator%22" data-parsoid='{"src":"#REDIRECT ","a":{"href":"./Cool_%22Gator%22"},"sa":{"href":"Cool \"Gator\""}}'/>
+!! html/wiki.rs
+<p class="redirectText"><a href="/wiki/Cool_%22Gator%22?action=edit&amp;redlink=1" class="new" title="Cool “Gator” (page does not exist)">Cool “Gator”</a></p>
 !! end
 
 !! test

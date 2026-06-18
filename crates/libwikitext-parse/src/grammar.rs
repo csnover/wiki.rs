@@ -33,7 +33,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // In WikitextContentHandler, redirect is just sliced off the front
       // without any care for line position, which means that if there had been
       // more stuff on the redirect line, that more stuff becomes the first line
-    = rl:(r:redirect() l:line() { (r, balance_quotes(l)) })?
+      // even if it does not match `at_sol`
+    = rl:(r:redirect() l:(line() / eof() { vec![] }) { (r, balance_quotes(l)) })?
       t:(&at_sol() t:line() { balance_quotes(t) })*
     { reduce_tree(rl.into_iter().flat_map(|(r, l)| iter::once(r).chain(l)).chain(t.into_iter().flatten())) }
 
