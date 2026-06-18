@@ -516,8 +516,9 @@ fn load_articles(base_time: DateTime, db: &mut MockDatabase<'_>, chunks: &[Chunk
                 panic!("but no tests use this?!");
             }
             Chunk::Comment | Chunk::Line | Chunk::Hooks | Chunk::Test { .. } => {
-                // Hooks is used only by timedMediaHandlerParserTests and
-                // Line and Comment are just garbage
+                // Hooks is used only by timedMediaHandlerParserTests to signal
+                // to extensions that wiki.rs does not have to enable those
+                // tests, and Line and Comment are just garbage
             }
         }
     }

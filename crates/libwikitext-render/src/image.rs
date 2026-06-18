@@ -472,8 +472,9 @@ pub(super) fn render_media_with_options(
                 render_timed_media(&mut out.next, state, options, file);
             }
             FileMetadata::Image { .. } => {
-                let Some(FileMetadata::Image { height, width }) = thumb else {
-                    panic!("should have an image thumb");
+                // TODO: Image with video thumb must use thumb of video
+                let Some(FileMetadata::Image { height, width } | FileMetadata::Video { height, width }) = thumb else {
+                    panic!("should have an image or video thumb");
                 };
                 render_image(&mut out.next, state, options, height, width);
             }

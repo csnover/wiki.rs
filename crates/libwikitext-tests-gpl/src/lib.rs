@@ -35,7 +35,7 @@ test_from_file! {
     regressions => "regressions",
     table_fixups_parser_tests => "tableFixupsParserTests",
     tables => "tables",
-    // timed_media_handler_parser_tests => "timedMediaHandlerParserTests",
+    timed_media_handler_parser_tests => "timedMediaHandlerParserTests",
     wt_escaping => "wtEscaping",
 }
 
