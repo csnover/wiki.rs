@@ -14,7 +14,11 @@ use super::{
 use core::iter;
 use libmisc::{to_ascii_lower, to_lower};
 use libphp_rs::strtr;
-use libwikitext_common::config::BitMap;
+use libwikitext_common::{
+    config::BitMap,
+    title::{self, Namespace},
+    title_decode,
+};
 use peg::RuleResult;
 use std::collections::HashSet;
 use unicode_general_category::{GeneralCategory, get_general_category};
@@ -80,7 +84,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     / magic_link()
     / inline_in_tag()
 
-    /// Expressions allowed inside Wikitext tags.
+    /// Expressions allowed inside non-image Wikitext tags.
     rule inline_in_tag() -> Spanned<Token>
     = extension_tag()
     / html_tag()
@@ -441,7 +445,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       t:spanned(<
         bullets:spanned(<['*'|'#'|';'|':']+ {}>)
         space_s()*
-        content:(!rtrim_term() t:(inline_dd() / inline()) { t })*
+        content:(!rtrim_term() t:(inline_dd() / inline()) { t } / wikilink_category())*
         space_s()*
         // Keeping the eol inside the list item makes it easier to generate list
         // containers while streaming tokens because a newline inside of a list
@@ -726,28 +730,17 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///        ^^^^^^^^^^^^^^^
     /// ```
     pub rule gallery_image_options() -> Vec<Spanned<Argument>>
-    = spanned(<wikilink_argument_kv(<eolf() {}>)>) ** "|"
+    = spanned(<wikilink_argument_kv(<inline()>, <eolf() {}>)>) ** "|"
 
-    /// A wikilink.
+    /// A wikilink, category, or image.
     ///
     /// ```wikitext
     /// [[Link target|extra|arguments]]
     /// ```
     rule wikilink() -> Spanned<Token>
-    = spanned(<
-        prefix:wikilink_prefix()?
-        "[["
-        target:wikilink_target()
-        content:wikilink_content()
-        "]]"
-        trail:wikilink_trail()?
-        { Token::Link {
-            prefix: prefix.unwrap_or_default(),
-            content,
-            target,
-            trail: trail.unwrap_or_default(),
-        } }
-    >)
+    = wikilink_category()
+    / wikilink_image()
+    / wikilink_link()
       // The possibilities in this position are:
       //
       // "[[[" - A literal "[[" followed by maybe a Wikilink or external link
@@ -758,6 +751,101 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // Absent is the possibility that this could be a "[" and then a Wikilink
       // because the original parser ‘parsed’ by splitting the input on "[["
     / spanned(<"[" &"[" ("[" &"[")? { Token::Text }>)
+
+    /// A category wikilink.
+    ///
+    /// ```wikitext
+    /// [[Category:Target|Sort key]]
+    /// ```
+    ///
+    /// This has to be parsed separately from other Wikilinks because it has
+    /// a left-handed whitespace erasure rule.
+    rule wikilink_category() -> Spanned<Token>
+    = spanned(<
+        ("\n" space_nl()*)?
+        "[["
+        target:wikilink_category_target()
+        content:wikilink_content(<!"[[" t:inline_in_tag() { t }>)
+        "]]"
+        {
+            // TODO: Use a different token type
+            Token::Link {
+                prefix: <_>::default(),
+                content,
+                target,
+                trail: <_>::default(),
+            }
+        }
+    >)
+
+    /// The target of a category wikilink.
+    ///
+    /// ```wikitext
+    /// [[Category:Target|Sort key]]
+    ///   ^^^^^^^^^^^^^^^
+    /// ```
+    rule wikilink_category_target() -> Vec<Spanned<Token>>
+    = start:position!() t:wikilink_target()
+      // TODO: This also is supposed to apply to interlanguage titles.
+    #{|input, end| assert_namespace(o, input, start, end, Namespace::CATEGORY) }
+    { t }
+
+    /// An image wikilink.
+    ///
+    /// ```wikitext
+
+    /// ```
+    ///
+    /// This has to be parsed separately from other Wikilinks because the
+    /// content part is parsed differently.
+    rule wikilink_image() -> Spanned<Token>
+    = spanned(<
+        "[["
+        target:wikilink_image_target()
+        content:wikilink_content(<inline()>)
+        "]]"
+        {
+            // TODO: Use a different token type
+            Token::Link {
+                prefix: <_>::default(),
+                content,
+                target,
+                trail: <_>::default(),
+            }
+        }
+    >)
+
+    /// The target of an image wikilink.
+    ///
+    /// ```wikitext
+    /// [[File:Image.jpg|flag|caption]]
+    ///   ^^^^^^^^^^^^^^
+    /// ```
+    rule wikilink_image_target() -> Vec<Spanned<Token>>
+    = start:position!() t:wikilink_target()
+    #{|input, end| assert_namespace(o, input, start, end, Namespace::FILE) }
+    { t }
+
+    /// A wikilink.
+    ///
+    /// ```wikitext
+    /// [[Link target|extra|arguments]]
+    /// ```
+    rule wikilink_link() -> Spanned<Token>
+    = spanned(<
+        prefix:wikilink_prefix()?
+        "[["
+        target:wikilink_target()
+        content:wikilink_content(<!"[[" t:inline_in_tag() { t }>)
+        "]]"
+        trail:wikilink_trail()?
+        { Token::Link {
+            prefix: prefix.unwrap_or_default(),
+            content,
+            target,
+            trail: trail.unwrap_or_default(),
+        } }
+    >)
 
     /// Text preceding a Wikilink that should be absorbed into the start of
     /// the hyperlink.
@@ -787,13 +875,15 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[Link target|extra|arguments]]
     ///   ^^^^^^^^^^^
     /// ```
-    ///
-    /// Technically this is supposed to decode any percent-encoding before
-    /// checking for a URL scheme, but in practice it makes no sense that part
-    /// would be URL encoded, so hopefully nobody did that (lol).
+    // TODO: If it does not feel like death to get the root article name
+    // passed around everywhere, this could just create the final link title.
     rule wikilink_target() -> Vec<Spanned<Token>>
-    = (" " / "%20")* !url_scheme() t:wikilink_target_part()*
-    { reduce_tree(t) }
+    = s:spanned(<(" " / "%20")+ { Token::Text }>)?
+      // Technically this is supposed to decode any percent-encoding before
+      // checking for a URL scheme, but in practice it makes no sense that part
+      // would be URL encoded, so hopefully nobody did that (lol).
+      !url_scheme() t:wikilink_target_part()*
+    { reduce_tree(s.into_iter().chain(t)) }
 
     rule wikilink_target_part() -> Spanned<Token>
     = entity()
@@ -808,9 +898,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[Link target|extra|arguments]]
     ///               ^^^^^^^^^^^^^^^
     /// ```
-    rule wikilink_content() -> Vec<Spanned<Argument>>
+    rule wikilink_content(item: rule<Spanned<Token>>) -> Vec<Spanned<Argument>>
     = start:position!()
-      t:wikilink_argument()*
+      t:wikilink_argument(&item)*
       bracket:wikilink_content_end_bracket(start)?
     {?
         fn is_pipe_trick(args: &[Spanned<Argument>]) -> bool {
@@ -838,7 +928,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[target|numbered argument |key=value]]
     ///         ^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^
     /// ```
-    rule wikilink_argument() -> Spanned<Argument>
+    rule wikilink_argument(item: rule<Spanned<Token>>) -> Spanned<Argument>
       // Keeping the delimiter outside of the argument span allows the arguments
       // list to be glued back together into text in a generic way that applies
       // to all lists of spans, instead of requiring special work to extract the
@@ -847,9 +937,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = "|"
       t:spanned(<
         n:newline()
-        v:(&at_sol() t:wikilink_argument_line() { t })+
+        v:(&at_sol() t:wikilink_argument_line(&item) { t })+
         { make_argument(reduce_tree(iter::once(n).chain(v.into_iter().flatten())), None) }
-        / kv:wikilink_argument_kv(<"[[" / "|" / "]]">)?
+        / kv:wikilink_argument_kv(&item, <"|" / "]]">)?
         { kv.unwrap_or_default() }
       >)
     { t }
@@ -860,17 +950,17 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[target|numbered argument|key=value]]
     ///          ^^^^^^^^^^^^^^^^^ ^^^^^^^^^
     /// ```
-    rule wikilink_argument_kv(term: rule<()>) -> Argument
-    = key:wikilink_inline(<"=" / term()>)*
-      value:(d:spanned(<"=" { Token::Text }>) v:wikilink_inline(&term)* { (d, v) })?
+    rule wikilink_argument_kv(item: rule<Spanned<Token>>, term: rule<()>) -> Argument
+    = key:wikilink_inline(&item, <"=" / term()>)*
+      value:(d:spanned(<"=" { Token::Text }>) v:wikilink_inline(&item, &term)* { (d, v) })?
     { make_argument(key, value) }
 
     /// Inline expressions allowed in a Wikilink argument.
     ///
     /// More expressions are allowed when an argument breaks onto a new line;
     /// see `wikilink_argument_line`.
-    rule wikilink_inline(term: rule<()>) -> Spanned<Token>
-    = !("=" / term()) t:inline_in_tag()
+    rule wikilink_inline(item: rule<Spanned<Token>>, term: rule<()>) -> Spanned<Token>
+    = !("=" / term()) t:item()
     { t }
     / newline()
 
@@ -885,14 +975,14 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ----|arguments]]
     /// ^^^^
     /// ```
-    rule wikilink_argument_line() -> Vec<Spanned<Token>>
+    rule wikilink_argument_line(item: rule<Spanned<Token>>) -> Vec<Spanned<Token>>
     = comment_block()
     / t:table() ie:wikilink_after_table()?
     { reduce_tree(t.into_iter().chain(ie.into_iter().flatten())) }
     / hr_line()
     / c:(behavior_switch() / comment_tag())* h:heading() n:line_eol()
     { reduce_tree(c.into_iter().chain(iter::once(h)).chain(n)) }
-    / !"|" i:(!"]]" t:inline() { t })+ n:line_eol()
+    / !"|" i:(!"]]" t:item() { t })+ n:line_eol()
     { reduce_tree(i.into_iter().chain(n)) }
     / n:newline()
     { vec![n] }
@@ -985,6 +1075,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         "["
         target:external_link_target()
         unispace()*
+        // Wikilinks are allowed inside external links in the original parser
+        // because they are processed before external links and replaced by a
+        // placeholder which is allowed in the content position
         content:(!external_link_term() t:(wikilink() / inline_in_tag()) { t })*
         "]"
         { Token::ExternalLink { content: reduce_tree(content), target } }
@@ -2088,6 +2181,36 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule unispace()
     = [c if get_general_category(c) == GeneralCategory::SpaceSeparator]
 }}
+
+/// Asserts that the text at `&input[start..end]` is a match for a local
+/// namespace with the given `id`.
+fn assert_namespace(
+    o: &Parser<'_>,
+    input: &str,
+    start: usize,
+    end: usize,
+    id: i32,
+) -> RuleResult<()> {
+    // TODO: If it does not feel like death to get the root article name
+    // passed in here, this could just parse and emit the whole title right
+    // now instead of having to double-parse it.
+    let title = title_decode(&input[start..end]);
+    let is_match = title.find(':').is_some_and(|delim| {
+        let part = title::normalize(&title[..delim]);
+        let part = part.trim_matches(' ');
+
+        Namespace::find_by_name(o.config, part).is_some_and(|ns| ns.id == id)
+            || (id == Namespace::CATEGORY
+                && o.config
+                    .interlanguage_map
+                    .contains_key(&to_ascii_lower(part)))
+    });
+    if is_match {
+        RuleResult::Matched(end, ())
+    } else {
+        RuleResult::Failed
+    }
+}
 
 /// Balances text style tokens by decomposing the first ‘best’ bold style in a
 /// line into an italic style if there are odd numbers of both.

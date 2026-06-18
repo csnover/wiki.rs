@@ -71,7 +71,7 @@ impl TextLibrary {
         ctx: Context<'gc>,
         text: VmString<'gc>,
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        Ok(strip::kill(text.to_str()?).owned_or(text, |text| ctx.intern(text.as_bytes())))
+        Ok(strip::kill(text.to_str()?).owned_or_else(text, |text| ctx.intern(text.as_bytes())))
     }
 
     /// Replaces stripped `<nowiki>` tags with their original text and removes

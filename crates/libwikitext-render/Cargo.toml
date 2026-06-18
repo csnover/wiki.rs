@@ -31,6 +31,7 @@ libwikitext-lua-gpl.workspace = true
 libwikitext-parse.workspace = true
 log.workspace = true
 math-core.workspace = true
+md5.workspace = true
 memchr.workspace = true
 numerals.workspace = true
 peg.workspace = true

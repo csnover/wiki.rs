@@ -90,6 +90,7 @@ fn main() -> Result<(), DisplayError> {
         link_prefix,
         link_trail,
         magic_links,
+        thumb_limits,
     } = query.general;
 
     let image_hotlinking = if image_whitelist_enabled.is_none() && image_whitelist.is_some() {
@@ -198,6 +199,8 @@ fn main() -> Result<(), DisplayError> {
         .into_iter()
         .map(|(k, v)| quote!(#k => #v));
 
+    let thumb_limits = thumb_limits.into_iter().map(Literal::u32_unsuffixed);
+
     let variables = aliases_iter(&magic_words, query.variables, &trim_variable);
 
     let file: syn::File = syn::parse_quote! {
@@ -256,6 +259,7 @@ fn main() -> Result<(), DisplayError> {
                     #(#special_pages_canonical),*
                 },
             },
+            thumb_limits: &[ #(#thumb_limits),* ],
             valid_title_bytes: #legal_title_chars,
             variables: phf::phf_map! {
                 #(#variables),*
@@ -461,6 +465,8 @@ mod api {
         pub link_trail: Cow<'a, str>,
         #[serde(rename = "magiclinks")]
         pub magic_links: MagicLinks,
+        #[serde(rename = "thumblimits")]
+        pub thumb_limits: Vec<u32>,
     }
 
     #[derive(serde::Deserialize)]

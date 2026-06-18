@@ -120,6 +120,7 @@ libwikitext-render = { path = "libwikitext-render" }
 libwikitext-render-gpl = { path = "libwikitext-render-gpl" }
 log = "0.4"
 math-core = "0.6"
+md5 = "0.8"
 memchr = "2.7"
 minidom = "0.18"
 numerals = "0.1"

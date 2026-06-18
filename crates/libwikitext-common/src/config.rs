@@ -8,8 +8,10 @@
 use super::{regex_switch, title::Namespace};
 use core::fmt::Write as _;
 use fancy_regex::{Regex as FancyRegex, RegexBuilder as FancyRegexBuilder};
+use libmisc::CowExt as _;
 use phf::{Map, OrderedMap, Set};
 use regex::{Regex, bytes::Regex as BytesRegex};
+use std::borrow::Cow;
 
 /// Image hotlinking configuration.
 #[derive(Clone, Debug)]
@@ -142,6 +144,9 @@ pub struct ConfigurationSource {
     /// Registered special pages.
     pub special_pages: SpecialPages,
 
+    /// The image thumbnail breakpoint sizes.
+    pub thumb_limits: &'static [u32],
+
     /// The list of allowable bytes in an article title, in a format suitable
     /// for interpolation into a PHP PCRE character set pattern.
     pub valid_title_bytes: &'static str,
@@ -156,7 +161,7 @@ pub struct Configuration {
     /// A set of compiled regular expressions that match for protocols and magic
     /// links for escaping literal strings containing these patterns.
     pub escape_pattern: Option<Regex>,
-    /// A compiled regular expression that
+    /// A compiled regular expression that matches parameterised magic words.
     extra_words_pattern: ExtraWordsPattern,
     /// A compiled regular expression that matches link prefixes.
     ///
@@ -218,18 +223,26 @@ impl Configuration {
     /// Tries matching the given `alias` to one of the configured `extra_words`,
     /// returning the list of canonical names for the alias if it matches, and
     /// optionally a value if the `alias` was a parameterised alias.
-    #[must_use]
-    pub fn magic_word_matches<'a>(&self, alias: &'a str) -> Option<(&[&str], Option<&'a str>)> {
-        if let Some(canonical) = self.extra_words.get(alias).copied() {
-            Some((canonical, None))
+    ///
+    /// # Errors
+    ///
+    /// * returns the `alias` if no match
+    pub fn magic_word_matches<'a>(
+        &self,
+        alias: Cow<'a, str>,
+    ) -> Result<ExtraWordsMatch<'a, '_>, Cow<'a, str>> {
+        if let Some(canonical) = self.extra_words.get(&alias).copied() {
+            Ok((canonical, None))
         } else {
             let patterns = &self.extra_words_pattern.patterns;
-            let matches = patterns.matches(alias);
-            let index = matches.iter().next()?;
+            let matches = patterns.matches(&alias);
+            let Some(index) = matches.iter().next() else {
+                return Err(alias);
+            };
             let which = &self.extra_words_pattern.which[index];
             let canonical = &which.canonical;
             let arg_range = usize::from(which.prefix)..alias.len() - usize::from(which.suffix);
-            Some((canonical, Some(&alias[arg_range])))
+            Ok((canonical, Some(alias.map_ref(|alias| &alias[arg_range]))))
         }
     }
 }
@@ -330,6 +343,9 @@ pub struct ExtraWordsPattern {
     which: Vec<ExtraWordsValue>,
 }
 
+/// The type for a matching extra word.
+pub type ExtraWordsMatch<'a, 'b> = (&'b [&'b str], Option<Cow<'a, str>>);
+
 impl ExtraWordsPattern {
     /// Creates a new `ExtraWordsPattern`.
     fn new<'a, I>(extra_words: I) -> Self
@@ -340,7 +356,7 @@ impl ExtraWordsPattern {
 
         let res = param_words
             .clone()
-            .map(|(key, _)| regex::escape(key).replace("\\$1", ".*"));
+            .map(|(key, _)| format!("^{}", regex::escape(key).replace("\\$1", ".*")));
 
         let patterns = regex::RegexSetBuilder::new(res)
             .case_insensitive(true)

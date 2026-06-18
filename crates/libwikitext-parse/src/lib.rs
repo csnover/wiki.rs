@@ -1,6 +1,5 @@
 //! Wikitext parser.
 
-pub mod builder;
 mod codemap;
 mod grammar;
 pub mod helpers;
@@ -15,7 +14,8 @@ pub use inspectors::{inspect, inspect_one};
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
-    DEPRECATED_LANGUAGE_CODES, config::Configuration, lang_to_bcp47, regex_switch,
+    AnchorEncodeMode, DEPRECATED_LANGUAGE_CODES, config::Configuration, escape_id, lang_to_bcp47,
+    normalize_section_name, regex_switch,
 };
 pub use peg::str::LineCol;
 use regex::{Captures, Regex};
@@ -34,12 +34,15 @@ pub struct Parser<'config> {
     ///
     /// [1]: libwikitext_common::config::ConfigurationSource::behavior_switch_words
     bs: Regex,
+
     /// The configuration for the parser.
     config: &'config Configuration,
+
     /// The prefix search for [language conversion variants][1].
     ///
     /// [1]: libwikitext_common::config::ConfigurationSource::language_conversions
     lang: Regex,
+
     /// The prefix search for [redirects][1].
     ///
     /// [1]: libwikitext_common::config::ConfigurationSource::redirect_magic_words
@@ -94,6 +97,35 @@ impl<'config> Parser<'config> {
             lang,
             redirect,
         }
+    }
+
+    /// Extracts a section name from `source` and encodes it in a format
+    /// suitable for an element ID using the mode `mode`.
+    ///
+    /// # Errors
+    ///
+    /// * `source` cannot be parsed as a section name
+    pub fn anchor_encode<'a>(
+        &self,
+        source: &'a str,
+        mode: AnchorEncodeMode,
+    ) -> Result<Cow<'a, str>> {
+        let root = self.parse(source)?;
+        let text = borrow_fast(source, &root).map_or_else(
+            || {
+                // TODO: Technically this is supposed to not care about whether a
+                // link is a category or interwiki because the original code was
+                // so shitty it just tried to scoop out the insides of a link using
+                // yet more regular expressions.
+                let mut extractor =
+                    helpers::TextContent::new(self.config, false, source, String::new());
+                let _ = visit::Visitor::visit_tokens(&mut extractor, &root);
+                Cow::Owned(extractor.finish())
+            },
+            Cow::Borrowed,
+        );
+
+        Ok(text.map(normalize_section_name).map(|s| escape_id(s, mode)))
     }
 
     /// Returns the parser configuration.
@@ -670,6 +702,30 @@ pub enum TextStylePosition {
     Orphan = 3,
     /// The text style is immediately after a space.
     Space = 1,
+}
+
+/// Tries to borrow a text token from `source`.
+#[rustfmt::skip]
+#[inline]
+#[must_use]
+pub fn borrow_fast<'a>(source: &'a str, expr: &[Spanned<Token>]) -> Option<&'a str> {
+    if let [Spanned { span, node: Token::Text }] = expr {
+        Some(&source[span.into_range()])
+    } else {
+        None
+    }
+}
+
+/// Tries to borrow a text token from `source` or a generated token from `expr`.
+#[rustfmt::skip]
+#[inline]
+#[must_use]
+pub fn borrow_fastest<'a>(source: &'a str, expr: &'a [Spanned<Token>]) -> Option<&'a str> {
+    if let [Spanned { node: Token::Generated(s), .. }] = expr {
+        Some(s)
+    } else {
+        borrow_fast(source, expr)
+    }
 }
 
 /// Escapes the world, marauding, questioning what the hell kind of text format

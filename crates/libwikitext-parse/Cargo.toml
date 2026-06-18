@@ -1,6 +1,6 @@
 [package]
 name = "libwikitext-parse"
-description = "A Wikitext to AST parser (non-GPL parts)"
+description = "A Wikitext to AST parser"
 edition.workspace = true
 license.workspace = true
 version.workspace = true

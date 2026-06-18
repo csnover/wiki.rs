@@ -6307,7 +6307,7 @@ File with template filename
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File mw:ExpandedAttrs" data-mw='{"attribs":[[{"txt":"href"},{"html":"File:&lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&apos;{\"pi\":[[{\"k\":\"1\"}]]}&apos; data-mw=&apos;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"1x\",\"href\":\"./Template:1x\"},\"params\":{\"1\":{\"wt\":\"Foobar.jpg\"}},\"i\":0}}]}&apos;>Foobar.jpg&lt;/span>"}]]}'><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:{{1x|Foobar.jpg}}"}}' class="mw-file-element"/></a></span></p>
 !! html/wiki.rs
-<p><span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><span class="mw-file-element mw-broken-media">File:Foobar.jpg</span></a></span>
+<p><span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
 </p>
 !! end
 
@@ -7806,7 +7806,7 @@ parsoid=wt2html
 
 <link rel="mw:PageProp/Category" href="./Category:D" />
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Bar" />
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <ul><li>a</li>
 <li>b</li></ul>
 <dl><dd>c</dd></dl>
@@ -7827,7 +7827,7 @@ parsoid=wt2html
 
 <link rel="mw:PageProp/Category" href="./Category:Foo" />
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" />
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <ul><li>a
 <ul><li><ul><li><ul><li>b</li></ul></li></ul></li></ul></li></ul>
 !! end
@@ -7853,10 +7853,9 @@ parsoid=wt2html
 <ul><li>d</li></ul></li></ul>
 <link rel="mw:PageProp/Category" href="./Category:Foo" />
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" />
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <ul><li>a
-<ul><li>b
-</li></ul></li>
+<ul><li>b</li></ul></li>
 <li>c
 <ul><li>d</li></ul></li></ul>
 !! end
@@ -7875,7 +7874,7 @@ parsoid=wt2html
 !! html/parsoid
 <ul><li>a<link rel="mw:PageProp/Category" href="./Category:Foo" /></li>
 <li>b<link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" /></li></ul>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <ul><li>a</li>
 <li>b</li></ul>
 !! end
@@ -7893,7 +7892,7 @@ parsoid=wt2html
 <ul><li><span about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"a\n[[Category:Foo]]\n[[es:Foo]]"}},"i":0}}]}'>a
 </span><link rel="mw:PageProp/Category" href="./Category:Foo" about="#mwt1" /><span about="#mwt1">
 </span><link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" about="#mwt1"/></li></ul>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <ul><li>a</li></ul>
 !! end
 
@@ -7913,7 +7912,7 @@ parsoid=wt2html
 </span><link rel="mw:PageProp/Category" href="./Category:Bar" about="#mwt1" data-parsoid='{"stx":"simple","a":{"href":"./Category:Bar"},"sa":{"href":"Category:Bar"}}'/>
 <link rel="mw:PageProp/Category" href="./Category:Baz" data-parsoid='{"stx":"simple","a":{"href":"./Category:Baz"},"sa":{"href":"Category:Baz"}}'/>
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Baz" />
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <ul><li>a</li></ul>
 !! end
 
@@ -7931,7 +7930,7 @@ cats/langlinks: migrateTrailingSolTransparentLinks dom pass should not get tripp
 <link rel="mw:PageProp/Category" href="./Category:Bar" /><!--boo1--> <!--boo2-->
 <link rel="mw:PageProp/Category" href="./Category:Baz" /><!--boo3--> <!--boo4-->
 <link rel="mw:PageProp/Language" href="http://es.wikipedia.org/wiki/Foo" /><!--boo5--> <!--boo6-->
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <ul><li>a</li></ul>
 !! end
 
@@ -8608,11 +8607,6 @@ Media link
 <p><a rel="mw:MediaLink" href="http://example.com/images/3/3a/Foobar.jpg" resource="./Media:Foobar.jpg" title="Foobar.jpg">Media:Foobar.jpg</a>
 <a rel="mw:MediaLink" href="http://example.com/images/0/00/Video.ogv" resource="./Media:Video.ogv" title="Video.ogv">Media:Video.ogv</a>
 <a rel="mw:MediaLink" href="http://example.com/images/0/00/Video.ogv" resource="./Media:Video.ogv" title="Video.ogv" data-parsoid='{"a":{"resource":"./Media:Video.ogv"},"sa":{"resource":":Media:Video.ogv"}}'>Media:Video.ogv</a></p>
-!! html/wiki.rs
-<p><a href="http://example.com/images/3/3a/Foobar.jpg" class="new" title="Foobar.jpg (page does not exist)">Media:Foobar.jpg</a>
-<a href="http://example.com/images/3/3a/Video.ogv" class="new" title="Video.ogv (page does not exist)">Media:Video.ogv</a>
-<a href="http://example.com/images/3/3a/Video.ogv" class="new" title="Video.ogv (page does not exist)">Media:Video.ogv</a>
-</p>
 !! end
 
 !! test
@@ -8624,9 +8618,6 @@ Media link with text
 </p>
 !! html/parsoid
 <p><a rel="mw:MediaLink" href="http://example.com/images/3/3a/Foobar.jpg" resource="./Media:Foobar.jpg" title="Foobar.jpg">A neat file to look at</a></p>
-!! html/wiki.rs
-<p><a href="http://example.com/images/3/3a/Foobar.jpg" class="new" title="Foobar.jpg (page does not exist)">A neat file to look at</a>
-</p>
 !! end
 
 # This won't pass in standalone mode because we don't have redirect handling in our mock data access.
@@ -8736,9 +8727,6 @@ Media link with multiple options
 </p>
 !! html/parsoid
 <p><a rel="mw:MediaLink" href="http://example.com/images/3/3a/Foobar.jpg" resource="./Media:Foobar.jpg" title="Foobar.jpg">123|345</a></p>
-!! html/wiki.rs # TODO: Media storage support
-<p><a href="http://example.com/images/3/3a/Foobar.jpg" class="new" title="Media:Foobar.jpg (page does not exist)">123|345</a>
-</p>
 !! end
 
 !! test
@@ -13030,6 +13018,8 @@ parsoid=wt2html
 [[File:Foobar.jpg|« test »]]
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File" data-parsoid='{"optList":[{"ck":"caption","ak":"« test »"}]}' data-mw='{"caption":"«&lt;span typeof=\"mw:DisplaySpace\"> &lt;/span>test&lt;span typeof=\"mw:DisplaySpace\"> &lt;/span>»"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="« test »" data-parsoid="{}"><img alt="« test »" resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:Foobar.jpg"}}'/></a></span></p>
+!! html/wiki.rs
+<span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="« test »"><img alt="« test »" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" height="220" width="1941" class="mw-file-element"></a></span>
 !! end
 
 !! test
@@ -14256,12 +14246,16 @@ bar
 <table>
 <tbody><tr data-parsoid='{"autoInsertedStart":true}'><td data-parsoid='{}'><small data-parsoid='{"stx":"html","autoInsertedEnd":true}'>foo<small data-parsoid='{"stx":"html","autoInsertedEnd":true}'></small></small></td></tr>
 </tbody></table>
-!! html/wiki.rs
-<table><tr><td><small>foo
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
+<table>
+<tr>
+<td><small>foo
 <p>bar
 </p>
 </small></td></tr></table>
-<table><tr><td><small>foo<small>
+<table>
+<tr>
+<td><small>foo<small>
 </small></small></td></tr></table>
 !!end
 
@@ -14301,10 +14295,6 @@ Indented table with an empty td
 </td>
 <td>foo
 </td></tr></tbody></table>
-!! html/wiki.rs
-<table><tr><td>
-</td><td>foo
-</td></tr></table>
 !! end
 
 !! test
@@ -14328,11 +14318,6 @@ Indented table with blank lines in between (T85627)
  <p>
  <br /></p></td></tr>
  </tbody></table>
-!! html/wiki.rs
-<table><tr><td>foo
-<p><br>
-</p>
-</td></tr></table>
 !! end
 
 !!test
@@ -14433,9 +14418,9 @@ Multi-line image caption generated by templates with/without trailing newlines
 !! html/parsoid
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="34" width="300" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/450px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/600px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>foo\n<span about="#mwt9" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"A"}},"i":0}}]}'>A</span>\n<span about="#mwt10" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"B"}},"i":0}}]}'>B</span>\n<span about="#mwt11" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"C"}},"i":0}}]}'>C</span></figcaption></figure>
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="34" width="300" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/450px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/600px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>foo\n<span about="#mwt12" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"A"}},"i":0}}]}'>A</span>\n<span about="#mwt13" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"B"}},"i":0}}]}'>B</span>\n<span about="#mwt14" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"C"}},"i":0}}]}'>C</span>\n\n</figcaption></figure>
-!! html/wiki.rs
-<figure class="mw-halign-right"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img height="300" src="http://example.com/images/thumb/3/3a/Foobar.jpg" width="300"></a><figcaption>foo\nA\nB\nC</figcaption></figure>
-<figure class="mw-halign-right"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><img height="300" src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg" width="300"></a><figcaption>foo\nA\nB\nC\n\n</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg" decoding="async" width="300" height="300" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/450px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/600px-Foobar.jpg 2x"></a><figcaption>foo\nA\nB\nC</figcaption></figure>
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg" decoding="async" width="300" height="300" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/450px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/600px-Foobar.jpg 2x"></a><figcaption>foo\nA\nB\nC\n\n</figcaption></figure>
 !! end
 
 !! test
@@ -14766,6 +14751,10 @@ Properly encapsulate empty-content transclusions in fosterable positions
 <table about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":["&lt;table>\n",{"template":{"target":{"wt":"#if:","function":"if"},"params":{"1":{"wt":"\n&lt;td>foo&lt;/td>\n"}},"i":0}},"\n&lt;/table>"]}' data-parsoid='{"stx":"html","pi":[[{"k":"1"}]]}'>
 
 </table>
+!! html/wiki.rs # This output matches the PHP parser
+<table>
+
+</table>
 !! end
 
 ## No longer captures its original intention
@@ -14825,9 +14814,10 @@ parsoid=wt2html
 <figure class="mw-default-size mw-halign-right" typeof="mw:File" data-parsoid='{"fostered":true}'><a href="./File:Foobar.jpg" class="mw-file-description" title="123"><img alt="123" resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element"/></a><figcaption><div about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;div>123&lt;/div>"}},"i":0}}]}'>123</div></figcaption></figure><table>
 
 </table>
-!! html/wiki.rs # This output matches the PHP parser, except for the expected differences in figure HTML
-<figure class="mw-default-size mw-halign-right" typeof="mw:Error mw:File"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><span class="mw-file-element mw-broken-media"></span></a><figcaption><div>123</div></figcaption></figure>
-<table><tr><td></td></tr></table>
+!! html/wiki.rs # This output matches the PHP parser, minus the data- attributes
+<figure class="mw-default-size mw-halign-right" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="123"><img alt="123" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a><figcaption><div>123</div></figcaption></figure><table>
+
+<tr><td></td></tr></table>
 !! end
 
 !! article
@@ -16272,7 +16262,7 @@ parsoid=wt2html
 !! html/parsoid
 <p><span about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"hi"}},"i":0}}]}'>hi</span><a rel="mw:ExtLink nofollow" href="http://example.com" class="external text"></a><a rel="mw:WikiLink" href="./Ho" title="Ho" data-parsoid='{"stx":"simple","a":{"href":"./Ho"},"sa":{"href":"ho"},"misnested":true}'>ho</a></p>
 !! html/wiki.rs # This output matches the PHP parser
-<p>hi<a rel="nofollow" class="external text" href="http://example.com"></a><a href="/wiki/Ho" class="mw-disambig" title="Ho">ho</a>
+<p>hi<a rel="nofollow" class="external text" href="http://example.com"></a><a href="/wiki/Ho" title="Ho">ho</a>
 </p>
 !! end
 

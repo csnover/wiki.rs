@@ -6,7 +6,7 @@ use core::{cell::RefCell, fmt::Write as _};
 use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
     Messages,
-    db::{Article, DynDatabaseProvider, MockDatabase},
+    db::{Article, DynDatabaseProvider, FileMetadata, MockDatabase},
     decode_html,
     url::Url,
 };
@@ -235,6 +235,8 @@ pub(super) fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
 
     let (mut total, mut fails, mut skips) = (0, 0, 0);
 
+    load_files(&mut db);
+
     // Like everything in MediaWiki, multiple passes are *required* to parse the
     // test suite file correctly
     load_articles(base_time, &mut db, &tests.chunks);
@@ -307,6 +309,74 @@ pub(super) fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
     );
 }
 
+fn load_files(db: &mut MockDatabase<'_>) {
+    db.insert_file(
+        "Foobar.jpg",
+        FileMetadata::Image {
+            height: 220,
+            width: 1941,
+        },
+    );
+    db.insert_file(
+        "File & file.jpg",
+        FileMetadata::Image {
+            height: 220,
+            width: 1941,
+        },
+    );
+    db.insert_file(
+        "Thumb.png",
+        FileMetadata::Image {
+            height: 135,
+            width: 135,
+        },
+    );
+    db.insert_file(
+        "Foobar.svg",
+        FileMetadata::Image {
+            height: 180,
+            width: 240,
+        },
+    );
+    db.insert_file(
+        "Bad.jpg",
+        FileMetadata::Image {
+            height: 240,
+            width: 320,
+        },
+    );
+    db.insert_file(
+        "Hi-ho.jpg",
+        FileMetadata::Image {
+            height: 220,
+            width: 1941,
+        },
+    );
+    db.insert_file(
+        "Tall.jpg",
+        FileMetadata::Image {
+            height: 600,
+            width: 400,
+        },
+    );
+    db.insert_file(
+        "Video.ogv",
+        FileMetadata::Video {
+            height: 240,
+            width: 320,
+        },
+    );
+    db.insert_file("Audio.oga", FileMetadata::Audio);
+    db.insert_file(
+        "LoremIpsum.djvu",
+        FileMetadata::Image {
+            height: 3508,
+            width: 2480,
+        },
+    );
+}
+
+#[expect(clippy::too_many_lines, reason = "too many options")]
 fn check_skips(
     target: &str,
     name: &str,
@@ -332,6 +402,9 @@ fn check_skips(
         true
     } else if options.contains("preload") {
         log::warn!(target: target, "TODO {name}: preload not implemented");
+        true
+    } else if options.contains("thumbsize") {
+        log::warn!(target: target, "TODO {name}: thumbsize not implemented");
         true
     } else if options.get("styletag") == Some(true) {
         log::warn!(target: target, "TODO {name}: styletag not implemented");
@@ -378,6 +451,15 @@ fn check_skips(
         })
     {
         log::warn!(target: target, "TODO {name}: legacy encoding mode switching not implemented");
+        true
+    } else if config.contains("wgExternalLinkTarget") {
+        log::info!(target: target, "Skipping {name}: external link target is not implemented nor desired");
+        true
+    } else if config.contains("wgNoFollowLinks") {
+        log::info!(target: target, "Skipping {name}: no follow links is not implemented nor planned");
+        true
+    } else if config.contains("wgNoFollowDomainExceptions") {
+        log::info!(target: target, "Skipping {name}: no follow domain exceptions is not implemented nor planned");
         true
     } else if options.contains("disabled") {
         log::info!(target: target, "Skipping {name}: disabled");
@@ -554,7 +636,18 @@ fn check_test_results(
                     if fail && let Cow::Owned(expected_html) = unwrap_heading(&expected_html) {
                         heuristic = "unpretty + remove tbody + table ws + unwrap heading";
                         fail = expected_html != actual;
+
+                        if fail && let Cow::Owned(expected_html) = devoid(&expected_html) {
+                            heuristic =
+                                "unpretty + remove tbody + table ws + unwrap heading + devoid";
+                            fail = expected_html != actual;
+                        }
                     }
+                }
+
+                if fail && let Cow::Owned(expected_html) = devoid(&expected_html) {
+                    heuristic = "unpretty + remove tbody + devoid";
+                    fail = expected_html != actual;
                 }
 
                 if fail && let Cow::Owned(expected_html) = replace_url(&expected_html) {
@@ -585,6 +678,11 @@ fn check_test_results(
                 heuristic = "unpretty + unwrap heading";
                 fail = expected_html != actual;
 
+                if fail && let Cow::Owned(expected_html) = devoid(&expected_html) {
+                    heuristic = "unpretty + unwrap heading + devoid";
+                    fail = expected_html != actual;
+                }
+
                 if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
                     heuristic = "unpretty + unwrap heading + decode html";
                     fail = expected_html != actual;
@@ -599,6 +697,11 @@ fn check_test_results(
             if fail && let Cow::Owned(expected_html) = replace_url(expected_html) {
                 heuristic = "unpretty + replace url";
                 fail = expected_html != actual;
+
+                if fail && let Cow::Owned(expected_html) = devoid(&expected_html) {
+                    heuristic = "unpretty + replace url + devoid";
+                    fail = expected_html != actual;
+                }
             }
 
             if fail && let Cow::Owned(actual) = swap_magic_rel(&actual) {
@@ -788,7 +891,7 @@ fn render_test(
         .paths(Paths {
             article: "wiki",
             external: None,
-            media: "http://example.com/images/3/3a",
+            media: "http://example.com/images",
         })
         .build();
 
@@ -888,10 +991,6 @@ fn table_ws(html: &str) -> Cow<'_, str> {
 
 fn unpretty(html: &str) -> Cow<'_, str> {
     static REPLS: &[(&str, &str)] = &[
-        ("<wbr>", "<wbr />"),
-        ("<hr/>", "<hr />"),
-        ("<br>", "<br />"),
-        ("<hr>", "<hr />"),
         ("‘", "'"),
         ("’", "'"),
         ("“", "\""),

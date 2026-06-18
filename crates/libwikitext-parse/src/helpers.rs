@@ -1,7 +1,7 @@
 //! Wikitext parser helpers.
 
 use super::{
-    Argument, Configuration, InclusionMode, MagicLink, Span, Spanned, Token,
+    Argument, Configuration, InclusionMode, MagicLink, Span, Spanned, Token, borrow_fastest,
     visit::{Visitor, visit_link},
 };
 use core::fmt;
@@ -74,8 +74,8 @@ where
         // TODO: Actually evaluate the target (which requires making this helper
         // capable of evaluating wikitext, which is annoying).
         #[rustfmt::skip]
-        if let [Spanned { span, node: Token::Text }] = target
-            && let Ok(title) = Title::new(self.config, &self.source[span.into_range()], None)
+        if let Some(title) = borrow_fastest(self.source, target)
+            && let Ok(title) = Title::new(self.config, title, None)
             && title.is_category(self.config, self.from_talk_page) {
             return Ok(());
         };

@@ -144,9 +144,9 @@ use either::Either;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
-    AnchorEncodeMode, anchor_encode,
+    AnchorEncodeMode,
     db::DatabaseProvider,
-    decode_html, escape, escape_no_wiki,
+    decode_html, escape, escape_id, escape_no_wiki,
     title::{Namespace, Title},
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
@@ -783,8 +783,8 @@ impl References {
     /// Encodes forward and backward reference anchors for an ID.
     fn make_anchors(id: &str) -> (String, String) {
         (
-            anchor_encode(&format!("cite_ref-{id}"), AnchorEncodeMode::Html5).into_owned(),
-            anchor_encode(&format!("ref_{id}"), AnchorEncodeMode::Html5).into_owned(),
+            escape_id(&format!("cite_ref-{id}"), AnchorEncodeMode::Html5).into_owned(),
+            escape_id(&format!("ref_{id}"), AnchorEncodeMode::Html5).into_owned(),
         )
     }
 

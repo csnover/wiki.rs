@@ -1520,8 +1520,8 @@ __TOC__
 !! html/parsoid
 <meta property="mw:PageProp/toc" data-parsoid='{}'/>
 <h2 id="Image" data-parsoid='{}'>Image <span class="mw-default-size" typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"Image:foobar.jpg"}}' class="mw-file-element"/></a></span></h2>
-!! html/wiki.rs # When an image is missing, the output is different
-<h2 id="Image_File:Foobar.jpg">Image <span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/File:Foobar.jpg?action=edit&amp;redlink=1" class="new" title="File:Foobar.jpg (page does not exist)"><span class="mw-file-element mw-broken-media">File:Foobar.jpg</span></a></span></h2>
+!! html/wiki.rs
+<h2 id="Image">Image <span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span></h2>
 !! end
 
 !! test

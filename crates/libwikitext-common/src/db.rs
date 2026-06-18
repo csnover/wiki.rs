@@ -1,6 +1,10 @@
 //! Database traits and types.
 
-use super::{config::Configuration, lru_limiter::HeapUsageCalculator, title::Title};
+use super::{
+    config::Configuration,
+    lru_limiter::HeapUsageCalculator,
+    title::{Namespace, Title},
+};
 use indexmap::IndexSet;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 use time::UtcDateTime;
@@ -16,7 +20,8 @@ pub trait DatabaseProvider {
     /// Returns the configuration data for the database.
     fn config(&self) -> &Configuration;
 
-    /// Returns true if the database contains an article with the given title.
+    /// Returns true if the database contains an article or file with the given
+    /// title.
     fn contains(&self, title: &Title) -> bool;
 
     /// Gets an article with the given title from the database. The article will
@@ -35,6 +40,13 @@ pub trait DatabaseProvider {
 
     /// The total number of articles in the database.
     fn len(&self) -> usize;
+
+    /// Gets file metadata for the given title from the database.
+    ///
+    /// # Errors
+    ///
+    /// * The database implementation returns an error
+    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, Self::Error>;
 
     /// The site name from the database.
     fn name(&self) -> &str;
@@ -84,6 +96,13 @@ pub trait DynDatabaseProvider: private::Sealed {
     /// The total number of articles in the database.
     fn len(&self) -> usize;
 
+    /// Gets file metadata for the given title from the database.
+    ///
+    /// # Errors
+    ///
+    /// * The database implementation returns an error
+    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, BoxedDbError>;
+
     /// The site name from the database.
     fn name(&self) -> &str;
 
@@ -130,6 +149,11 @@ where
     }
 
     #[inline]
+    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, BoxedDbError> {
+        DatabaseProvider::metadata(self, title).map_err(|err| BoxedDbError(Box::new(err)))
+    }
+
+    #[inline]
     fn name(&self) -> &str {
         DatabaseProvider::name(self)
     }
@@ -166,6 +190,11 @@ impl DatabaseProvider for Arc<dyn DynDatabaseProvider> {
     #[inline]
     fn len(&self) -> usize {
         DynDatabaseProvider::len(self.as_ref())
+    }
+
+    #[inline]
+    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, Self::Error> {
+        DynDatabaseProvider::metadata(self.as_ref(), title)
     }
 
     #[inline]
@@ -397,13 +426,37 @@ impl HeapUsageCalculator for Article {
 }
 
 /// A fake database used for testing.
+#[derive(Debug)]
 pub struct MockDatabase<'config> {
     /// The mock articles.
     articles: HashMap<String, Arc<Article>>,
+    /// The mock files.
+    files: HashMap<String, FileMetadata>,
     /// The mock configuration.
     config: &'config Configuration,
     /// The mock configuration name.
     name: &'config str,
+}
+
+/// Media file metadata.
+#[derive(Clone, Copy, Debug)]
+pub enum FileMetadata {
+    /// Beeps and boops.
+    Audio,
+    /// A stolen soul.
+    Image {
+        /// Image height.
+        height: u32,
+        /// Image width.
+        width: u32,
+    },
+    /// Witchcraft, sometimes with added beeps and boops.
+    Video {
+        /// Video height.
+        height: u32,
+        /// Video width.
+        width: u32,
+    },
 }
 
 impl<'config> MockDatabase<'config> {
@@ -413,6 +466,7 @@ impl<'config> MockDatabase<'config> {
     pub fn new(name: &'config str, config: &'config Configuration) -> Self {
         Self {
             articles: <_>::default(),
+            files: <_>::default(),
             config,
             name,
         }
@@ -429,6 +483,15 @@ impl<'config> MockDatabase<'config> {
             .key()
             .to_owned();
         self.articles.insert(title.clone(), Arc::new(article));
+    }
+
+    /// Inserts a `file` to the database.
+    ///
+    /// # Panics
+    ///
+    /// * `title` is an invalid title
+    pub fn insert_file(&mut self, filename: &str, file: FileMetadata) {
+        self.files.insert(filename.to_owned(), file);
     }
 
     /// Removes an `article` with the given title from the database.
@@ -458,6 +521,8 @@ impl DatabaseProvider for MockDatabase<'_> {
     #[inline]
     fn contains(&self, title: &Title) -> bool {
         self.articles.contains_key(title.key())
+            || (matches!(title.namespace().id, Namespace::FILE | Namespace::MEDIA)
+                && self.files.contains_key(title.text()))
     }
 
     fn get(&self, title: &Title) -> Result<Option<Arc<Article>>, Self::Error> {
@@ -472,6 +537,16 @@ impl DatabaseProvider for MockDatabase<'_> {
     #[inline]
     fn name(&self) -> &str {
         self.name
+    }
+
+    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, Self::Error> {
+        Ok(
+            if matches!(title.namespace().id, Namespace::FILE | Namespace::MEDIA) {
+                self.files.get(title.text()).copied()
+            } else {
+                None
+            },
+        )
     }
 
     #[inline]

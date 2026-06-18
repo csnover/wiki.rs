@@ -443,6 +443,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             "Version" => "Version",
         },
     },
+    thumb_limits: &[180, 250, 400],
     valid_title_bytes: " %!\"$&'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+",
     variables: phf::phf_map! {
         "!" => "!",

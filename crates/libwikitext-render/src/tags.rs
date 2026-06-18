@@ -6,10 +6,10 @@ use super::{
 };
 use libmisc::CowExt as _;
 use libwikitext_common::{
-    AnchorEncodeMode, anchor_encode,
+    AnchorEncodeMode,
     config::{Configuration, ImageHotlinking},
     db::DatabaseProvider as _,
-    decode_html, make_url,
+    decode_html, escape_id, make_url,
     title::{Namespace, Title},
     url::Url,
     url_encode_sanitized,
@@ -133,7 +133,7 @@ pub(super) fn render_internal_link(
             out.next.tag_attribute_full("class", "mw-selflink-fragment");
             out.next.tag_attribute_full(
                 "href",
-                &format!("#{}", anchor_encode(fragment, AnchorEncodeMode::Html5)),
+                &format!("#{}", escape_id(fragment, AnchorEncodeMode::Html5)),
             );
         } else {
             out.next.tag_attribute_full("class", "mw-selflink selflink");
@@ -210,6 +210,9 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
                 {
                     out.tag_attribute_full("title", &message.replace("$1", title.key()));
                 }
+            } else if title.namespace().id == Namespace::MEDIA {
+                out.tag_attribute_full("class", "internal");
+                out.tag_attribute_full("title", title.text());
             } else if !title.prefixed_text().is_empty() {
                 if title.interwiki().is_some() {
                     out.tag_attribute_full("class", "extiw");
@@ -386,14 +389,14 @@ impl LinkKind<'_> {
                     } else if let Some(fragment) = title.fragment()
                         && !fragment.is_empty()
                     {
-                        format!("{url}#{}", anchor_encode(fragment, AnchorEncodeMode::Html5))
+                        format!("{url}#{}", escape_id(fragment, AnchorEncodeMode::Html5))
                     } else {
                         url
                     }
                 } else if title.prefixed_text().is_empty() {
                     format!(
                         "#{}",
-                        anchor_encode(
+                        escape_id(
                             title.fragment().unwrap_or_default(),
                             AnchorEncodeMode::Html5
                         )

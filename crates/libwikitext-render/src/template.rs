@@ -21,7 +21,7 @@ use libwikitext_common::{
     title::{Namespace, Title},
     title_decode, to_lower_first,
 };
-use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
+use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, borrow_fastest};
 use std::{borrow::Cow, pin::pin, sync::Arc, time::Instant};
 
 /// Templates that need to be spruced up a bit, but don’t have any hooks of
@@ -374,14 +374,7 @@ fn split_target<'tt>(
         // It is not good enough to just look for text nodes because there are
         // insane but legal constructions like `{{ {{#if:1|#if:}} 1|y|n }}`
         // (evaluates to "y").
-        #[rustfmt::skip]
-        let text = if let Spanned { span, node: Token::Text } = part {
-            Cow::Borrowed(&sp.source[span.into_range()])
-        } else if let Spanned { node: Token::Generated(text), .. } = part {
-            Cow::Borrowed(text.as_str())
-        } else {
-            sp.eval(state, core::slice::from_ref(part))?
-        };
+        let text = sp.eval(state, core::slice::from_ref(part))?;
 
         if let Some((lhs, mut rhs)) = text.split_once(':') {
             callee += lhs;
@@ -733,12 +726,11 @@ impl Surrogate<Error> for DbPrefetch {
         // the downside that you might click on a dead link.
         // TODO: Add a utility to rebuild the index so that binary search is
         // possible.
-        #[rustfmt::skip]
-        if let [ Spanned { node: Token::Text, span } ] = target
-            && let target = title_decode(&sp.source[span.into_range()])
-            && let Ok(title) = Title::new(state.statics.db.config(), &target, None) {
+        if let Some(title) = borrow_fastest(&sp.source, target)
+            && let Ok(title) = Title::new(state.statics.db.config(), &title_decode(title), None)
+        {
             self.links.insert(title);
-        };
+        }
 
         for argument in content {
             self.adopt_tokens(state, sp, &argument.content)?;

@@ -75,6 +75,7 @@ parsoid=wt2html,wt2wt,html2html
 Simple image redirect
 !! options
 parsoid=wt2html,wt2wt,html2html
+wiki-rs-expect-failure=[[TODO]]
 !! wikitext
 [[Image:Redirect to foobar.jpg]]
 !! html/php
@@ -160,6 +161,8 @@ Image caption with pipe entity
 
 !! test
 Bad images - basic functionality
+!! options
+wiki-rs-expect-failure=[[TODO]]
 !! wikitext
 [[File:Bad.jpg]]
 !! html/php
@@ -171,6 +174,8 @@ Bad images - basic functionality
 
 !! test
 Bad images - T18039: text after bad image disappears
+!! options
+wiki-rs-expect-failure=[[TODO]]
 !! wikitext
 Foo bar
 [[File:Bad.jpg]]
@@ -188,6 +193,8 @@ Bar foo</p>
 
 !! test
 Bad images - manualthumb
+!! options
+wiki-rs-expect-failure=[[TODO]]
 !! wikitext
 [[File:Foobar.jpg|thumbnail=Bad.jpg|Uh oh]]
 !! html/php
@@ -198,6 +205,8 @@ Bad images - manualthumb
 
 !! test
 Bad images - in gallery
+!! options
+wiki-rs-expect-failure=[[TODO]]
 !! wikitext
 <gallery>
 File:Bad.jpg
@@ -1076,6 +1085,13 @@ parsoid=wt2html,html2html
 <td> ha</td></tr>
 </tbody></table>
 </figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody, and whitespace, and data- attrs
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>
+<table class="123">
+<tr class="456">
+<td>ha
+</td></tr></table>
+</figcaption></figure>
 !! end
 
 !! test
@@ -1091,6 +1107,13 @@ Image with table with rows from templates in caption
 <table>
 <tbody about="#mwt4" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"{{!}} hi"}},"i":0}}]}'><tr><td> hi</td></tr></tbody>
 </table>
+</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody, and whitespace, and data- attrs
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>
+<table>
+<tr>
+<td>hi
+</td></tr></table>
 </figcaption></figure>
 !! end
 
@@ -1114,6 +1137,16 @@ Image with nested tables in caption
 </tbody></table></td></tr>
 </tbody></table>
 </figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody, and whitespace, and data- attrs
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>Foo<br>
+<table>
+<tr>
+<td>
+<table>
+<tr><td>z
+</td></tr></table>
+</td></tr></table>
+</figcaption></figure>
 !! end
 
 !! test
@@ -1131,6 +1164,12 @@ Image with heading and horizontal rule in caption
 <h3 id="Testing">Testing</h3>
 123
 <hr data-parsoid='{"extra_dashes":10}'/>
+</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, with different whitespace in the caption and no heading wrapper
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>
+<h3 id="Testing">Testing</h3>
+123
+<hr>
 </figcaption></figure>
 !! end
 
@@ -1363,6 +1402,7 @@ parsoid=wt2html,html2html
 Image: framed vector images are scaled to their default size AND have srcset
 !! options
 parsoid=wt2html,html2html
+wiki-rs-skip=[[svg rasteriser is not implemented or planned]]
 !! wikitext
 [[File:Foobar.svg|frame]]
 !! html/php
@@ -3449,6 +3489,12 @@ Image: Block level image should have \n before and after
 <p>123</p>
 <figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="17" width="150" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/225px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption></figcaption></figure>
 <p>456</p>
+!! html/wiki.rs # This output matches the PHP parser, minus data attributes
+<p>123
+</p>
+<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="150" height="18" class="mw-file-element"></a><figcaption></figcaption></figure>
+<p>456
+</p>
 !! end
 
 !! test
@@ -3481,6 +3527,8 @@ Image: upright option is ignored on inline and frame images (parsoid)
 [[File:Foobar.jpg|500x500px|upright=0.5|caption]]
 !! html/parsoid
 <p><span typeof="mw:File" data-mw='{"caption":"caption"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/500px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="57" width="500" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/750px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/1000px-Foobar.jpg 2x" class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus data attributes
+<span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="500" height="58" style="--mw-file-upright: 0.5" class="mw-file-element mw-file-upright"></a></span>
 !! end
 
 !! test
@@ -3809,6 +3857,18 @@ Table in figcaption nested in table
 </tbody></table>
 </figcaption></figure></td></tr>
 </tbody></table>
+!! html/wiki.rs # This output matches the PHP parser, except for tbody, whitespace, thumb href and srcset
+<table>
+<tbody><tr>
+<td>foo
+</td>
+<td><figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element"></a><figcaption>
+<table>
+<tr>
+<td>bar
+</td></tr></table>
+</figcaption></figure>
+</td></tr></table>
 !! end
 
 !! test

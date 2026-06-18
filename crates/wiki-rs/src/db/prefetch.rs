@@ -18,7 +18,7 @@ use super::{RawDatabase, Result, article::DatabaseNamespace, index::IndexEntry, 
 use indexmap::{IndexMap, IndexSet};
 use libwikitext_common::{
     config::Configuration,
-    db::{Article, DatabaseProvider},
+    db::{Article, DatabaseProvider, FileMetadata},
     title::Title,
 };
 use libwikitext_data::CONFIG;
@@ -227,6 +227,11 @@ impl DatabaseProvider for PrefetchableDatabase<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.db.len()
+    }
+
+    #[inline]
+    fn metadata(&self, _: &Title) -> Result<Option<FileMetadata>, Self::Error> {
+        Ok(None)
     }
 
     #[inline]

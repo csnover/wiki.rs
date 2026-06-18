@@ -13,8 +13,8 @@ use core::{
     marker::PhantomData,
 };
 use gc_arena::Rootable;
-use libwikitext_common::{AnchorEncodeMode, anchor_encode, db::DatabaseProvider};
-use libwikitext_parse::{Parser, helpers::TextContent, visit::Visitor as _};
+use libwikitext_common::{AnchorEncodeMode, db::DatabaseProvider};
+use libwikitext_parse::Parser;
 
 /// The URI support library.
 #[derive(gc_arena::Collect)]
@@ -46,23 +46,11 @@ where
         ctx: Context<'gc>,
         s: VmString<'gc>,
     ) -> Result<VmString<'gc>, VmError<'gc>> {
-        let s = s.to_str()?;
-
+        // log::trace!("stub: mw_uri.anchorEncode({s:?}) = {id}");
         let parser = Ref::filter_map(self.parser.borrow(), Option::as_ref)
             .map_err(|_| "missing parser".into_value(ctx))?;
-        let s = {
-            let root = parser.parse(s)?;
-            // TODO: Technically this is supposed to not care about whether a
-            // link is a category or interwiki because the original code was
-            // so shitty it just tried to scoop out the insides of a link using
-            // yet more regular expressions.
-            let mut extractor = TextContent::new(parser.config(), false, s, String::new());
-            let _ = extractor.visit_tokens(&root);
-            extractor.finish()
-        };
-
-        // log::trace!("stub: mw_uri.anchorEncode({s:?}) = {id}");
-        Ok(ctx.intern(anchor_encode(&s, AnchorEncodeMode::Html5).as_bytes()))
+        let s = parser.anchor_encode(s.to_str()?, AnchorEncodeMode::Html5)?;
+        Ok(ctx.intern(s.as_bytes()))
     }
 
     /// Gets the fully qualified canonical URL of an article with the given

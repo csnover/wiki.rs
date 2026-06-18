@@ -30,11 +30,11 @@ use icu_provider::DataIdentifierBorrowed;
 use libmisc::{CowExt as _, to_ascii_lower, to_lower, to_upper};
 use libphp_rs::{floatval, fuzzy_cmp, intval, strtr};
 use libwikitext_common::{
-    AnchorEncodeMode, anchor_encode,
+    AnchorEncodeMode,
     config::Configuration,
     db::{Article, DatabaseProvider as _, fetch},
     decode_html, format_date_mediawiki, format_number, format_raw_message, lang_to_bcp47, make_url,
-    normalize_section_name, parse_formatted_number,
+    parse_formatted_number,
     title::{Namespace, Title},
     url::Url,
     url_encode,
@@ -895,11 +895,13 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(text) = arguments.eval(state, 0)?.map(trim) {
-            let text = strip::kill(&text).map(normalize_section_name);
             write!(
                 out,
                 "{}",
-                super::anchor_encode(&text, AnchorEncodeMode::Html5)
+                state
+                    .statics
+                    .parser
+                    .anchor_encode(&text, AnchorEncodeMode::Html5)?
             )?;
         }
 
@@ -1053,7 +1055,9 @@ mod string {
             };
 
             let value = if flags.contains(Flags::REVERSE) {
-                strip::for_each_non_marker(&n, |s| parse_formatted_number(s).owned())
+                strip::for_each_non_marker(&n, |s| {
+                    parse_formatted_number(s).owned().map(Into::into)
+                })
             } else {
                 strip::for_each_non_marker(&n, format_part(flags))
             };

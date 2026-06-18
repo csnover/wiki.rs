@@ -172,32 +172,6 @@ pub enum AnchorEncodeMode {
     Legacy,
 }
 
-/// Encodes section heading text into a format suitable for use as a URL anchor.
-///
-/// This is equivalent to `escapeIdForAttribute`.
-#[must_use]
-pub fn anchor_encode(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
-    let id = &s[..s.floor_char_boundary(1024)];
-    match mode {
-        AnchorEncodeMode::Html5 => strtr(
-            id,
-            &[
-                ("\t", "_"),
-                ("\n", "_"),
-                ("\x0c", "_"),
-                ("\r", "_"),
-                (" ", "_"),
-            ],
-        ),
-        AnchorEncodeMode::Legacy => {
-            const ALPHABET: percent_encoding::AsciiSet =
-                libphp_rs::URL_ENCODE_ALPHABET.remove(b':');
-            Cow::from(percent_encoding::utf8_percent_encode(id, &ALPHABET))
-                .map(|id| strtr(id, &[(" ", "_"), ("%", ".")]))
-        }
-    }
-}
-
 /// Decodes HTML entities according to the Wikitext rules.
 pub fn decode_html(text: &str) -> Cow<'_, str> {
     const MAX_LEN: usize = {
@@ -286,6 +260,32 @@ pub fn escape(text: &str) -> Cow<'_, str> {
     ];
 
     strtr(text, REPLS)
+}
+
+/// Encodes section heading text into a format suitable for use as a URL anchor.
+///
+/// This is equivalent to `escapeIdForAttribute`.
+#[must_use]
+pub fn escape_id(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
+    let id = &s[..s.floor_char_boundary(1024)];
+    match mode {
+        AnchorEncodeMode::Html5 => strtr(
+            id,
+            &[
+                ("\t", "_"),
+                ("\n", "_"),
+                ("\x0c", "_"),
+                ("\r", "_"),
+                (" ", "_"),
+            ],
+        ),
+        AnchorEncodeMode::Legacy => {
+            const ALPHABET: percent_encoding::AsciiSet =
+                libphp_rs::URL_ENCODE_ALPHABET.remove(b':');
+            Cow::from(percent_encoding::utf8_percent_encode(id, &ALPHABET))
+                .map(|id| strtr(id, &[(" ", "_"), ("%", ".")]))
+        }
+    }
 }
 
 /// Escapes all Wikitext and HTML control sequences.
@@ -559,7 +559,7 @@ pub fn make_url<P: core::fmt::Display>(
     if let Some(fragment) = fragment
         && !fragment.is_empty()
     {
-        write!(url, "#{}", anchor_encode(fragment, AnchorEncodeMode::Html5)).unwrap();
+        write!(url, "#{}", escape_id(fragment, AnchorEncodeMode::Html5)).unwrap();
     }
     url
 }
@@ -658,8 +658,11 @@ where
 /// Decodes a possibly URL-encoded title from a Wikitext link target.
 #[must_use]
 pub fn title_decode(target: &str) -> Cow<'_, str> {
-    url_decode(target)
-        .borrowed_or(|target| strtr(&target, &[("<", "&lt;"), (">", "&gt;")]).into_owned())
+    url_decode(target).borrowed_or_else(|target| {
+        strtr(&target, &[("<", "&lt;"), (">", "&gt;")])
+            .owned()
+            .unwrap_or(target)
+    })
 }
 
 /// Converts the first letter in the string to Unicode lowercase, avoiding

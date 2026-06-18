@@ -1239,12 +1239,12 @@ While `S` is not the position of the end of the input:
 19. If the `Force Display` flag is clear and `Title` is not a
     [local interwiki](#title-glossary):
 
-    1. If `Title` is an [interwiki](#title-glossary) title, and the interwiki
-       magic configuration option is enabled, and the caller is not a talk page,
-       and the interwiki name is either a defined autonym or in the configured
-       list of interlanguage link prefixes, delete text immediately before `S`
-       that matches the regular expression `\n\s*$`, let `S` equal `E`, and
-       restart the loop; otherwise
+    1. If `Title` is an [interwiki](#title-glossary) title, and the
+       interlanguage magic configuration option is enabled, and the caller is
+       not a talk page, and the interwiki name is either a defined autonym or in
+       the configured list of interlanguage link prefixes, delete text
+       immediately before `S` that matches the regular expression `\n\s*$`, let
+       `S` equal `E`, and restart the loop; otherwise
     2. If the namespace of `Title` is `Category`, delete text immediately before
        `S` that matches the regular expression `\n\s*$`, let `S` equal `E`, and
        restart the loop; otherwise
@@ -1543,11 +1543,11 @@ Emits an enumeration with variants:
 19. If `Params` has a key `"class"`, push its value to `Classes`;
 20. Let `Class` be `Classes` joined into a string using the delimiter the space
     character;
-21. Let `Image` be an HTML element with the tag name `Wrapper`, `"class"` attribute
-    value `Class`, `"typeof"` attribute value `RDFa Type`, and body the
-    interpolation `"{Image}{Caption}"`;
-22. Replace all `'\n'` in `Image` with the space character;
-23. Emit `Image`.
+21. Let `Figure` be an HTML element with the tag name `Wrapper`, `"class"`
+    attribute value `Class`, `"typeof"` attribute value `RDFa Type`, and body
+    the interpolation `"{Image}{Caption}"`;
+22. Replace all `'\n'` in `Figure` with the space character;
+23. Emit `Figure`.
 
 ### Thumb HTML
 
@@ -1569,18 +1569,21 @@ Emits an enumeration with variants:
     2. If `Caption` is none, let `Caption` be the
        [prefixed](#title-glossary) text from `Title`.
 
-10. If `Params.vertAlign` is not none, append the interpolation
-    `"vertical-align: {Params.vertAlign};"` to `Style`;
+    Otherwise;
+
+10. If `Params.link` is not `NoLink`, let `Link Class` be
+    `"mw-file-description"`;
 11. If the value of `Params.class` is not none, append it to `Classes`;
-12. Let `Image` be an HTML element with tag name `"img"`, `alt` attribute value
-    `Params.alt` if is not none, `src` attribute value `Src`, `decoding`
-    attribute value `"async"`, `class` attribute value `Classes`, and `style`
-    attribute value `Style` if it is not empty;
+12. Let `Image` be an HTML element with tag name `"img"`, `"alt"` attribute
+    value `Params.alt` if is not none, `"src"` attribute value `Src`,
+    `"decoding"` attribute value `"async"`, `"class"` attribute value `Classes`,
+    and `"style"` attribute value `Style` if `Style` is not empty;
 13. If `Href` is none, let `Tag Name` be `"span"`, otherwise let `Tag Name` be
     `"a"`;
-14. Emit an HTML element with the tag name `Tag Name`, `href` attribute value
-    `Href` if `Href` is not none, `title` attribute value `Caption` if `Caption`
-    is not none, and body `Image`.
+14. Emit an HTML element with the tag name `Tag Name`, `"href"` attribute value
+    `Href` if `Href` is not none, `"title"` attribute value `Caption` if
+    `Caption` is not none, `"class"` attribute value `Link Class` if
+    `Link Class` is not none, and body `Image`.
 
 ### Image attribute
 

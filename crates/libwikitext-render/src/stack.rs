@@ -15,7 +15,7 @@ use core::{
 use libmisc::CowExt as _;
 use libwikitext_common::title::Title;
 use libwikitext_lua::{HostFrame, prelude::*};
-use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
+use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, borrow_fastest};
 use piccolo::StashedString;
 use std::{borrow::Cow, collections::HashMap, rc::Rc};
 
@@ -100,14 +100,9 @@ impl<'a> StackFrame<'a> {
         state: &mut State<'_, '_, '_>,
         expr: &'a [Spanned<Token>],
     ) -> Result<Cow<'a, str>> {
-        #[allow(clippy::allow_attributes, reason = "https://github.com/rust-lang/rust-clippy/issues/13358")]
-        #[allow(clippy::unnecessary_semicolon, reason = "i want rustfmt::skip and rust-lang/rust#15701 is not fixed yet")]
-        #[rustfmt::skip]
-        if let [Spanned { span, node: Token::Text }] = expr {
-            return Ok(Cow::Borrowed(&self.source[span.into_range()]));
-        } else if let [Spanned { node: Token::Generated(s), .. }] = expr {
+        if let Some(s) = borrow_fastest(&self.source, expr) {
             return Ok(Cow::Borrowed(s));
-        };
+        }
 
         let mut out = String::new();
         let mut evaluator = ExpandTemplates::new(

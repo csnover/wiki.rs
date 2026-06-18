@@ -16,43 +16,51 @@ where
     /// If `self` is borrowed, returns `self`. Otherwise, returns the result of
     /// calling `f` with the inner owned value.
     #[must_use]
-    fn borrowed_or<F>(self, other: F) -> Cow<'a, B>
+    fn borrowed_or_else<F>(self, other: F) -> Cow<'a, B>
     where
         F: FnOnce(<B as ToOwned>::Owned) -> <B as ToOwned>::Owned;
 
     /// Makes a new `Cow` for an optional component of the borrowed data,
     /// extending the borrow if `self` is borrowed.
     #[must_use]
-    fn filter_map<F>(self, f: F) -> Option<Self>
+    fn filter_map<F, U>(self, f: F) -> Option<Cow<'a, U>>
     where
-        F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, B>>,
-        Self: Sized;
+        F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, U>>,
+        U: 'a + ToOwned + ?Sized;
 
     /// Makes a new `Cow` using a `Cow`-returning callback. If `self` is
     /// `Cow::Borrowed` and `f` returns `Cow::Borrowed`, the borrow is extended.
     /// Otherwise, the result is moved (if owned) or converted to `Cow::Owned`
     /// (if borrowed).
     #[must_use]
-    fn map<F>(self, f: F) -> Self
+    fn map<F, U>(self, f: F) -> Cow<'a, U>
     where
-        F: for<'b> FnOnce(&'b B) -> Cow<'b, B>;
+        F: for<'b> FnOnce(&'b B) -> Cow<'b, U>,
+        U: 'a + ToOwned + ?Sized;
 
     /// Makes a new `Cow` using a reference-returning callback. If `self` is
     /// `Cow::Borrowed`, the borrow is extended. Otherwise, the result is
     /// converted to `Cow::Owned`.
     #[must_use]
-    fn map_ref<F>(self, f: F) -> Self
+    fn map_ref<F, U>(self, f: F) -> Cow<'a, U>
     where
-        F: for<'b> FnOnce(&'b B) -> &'b B;
+        F: for<'b> FnOnce(&'b B) -> &'b U,
+        U: 'a + ToOwned + ?Sized;
 
-    /// If `self` is owned, returns `Some(self)`. Otherwise, returns `None`.
+    /// If `self` is owned, returns the inner value of `self`. Otherwise,
+    /// returns `None`.
     #[must_use]
-    fn owned(self) -> Option<Cow<'static, B>>;
+    fn owned(self) -> Option<<B as ToOwned>::Owned>;
+
+    /// If `self` is borrowed, returns `other`. Otherwise, returns the inner
+    /// value of `self`.
+    #[must_use]
+    fn owned_or(self, other: <B as ToOwned>::Owned) -> <B as ToOwned>::Owned;
 
     /// If `self` is borrowed, returns `other`. Otherwise, returns the result of
     /// calling `f` with the inner owned value.
     #[must_use]
-    fn owned_or<F, T>(self, other: T, f: F) -> T
+    fn owned_or_else<F, T>(self, other: T, f: F) -> T
     where
         F: for<'b> FnOnce(<B as ToOwned>::Owned) -> T;
 
@@ -64,17 +72,17 @@ where
     /// # Errors
     ///
     /// * if the callback returns an error
-    fn try_map<F, E>(self, f: F) -> Result<Self, E>
+    fn try_map<F, U, E>(self, f: F) -> Result<Cow<'a, U>, E>
     where
-        Self: Sized,
-        F: for<'b> FnOnce(&'b B) -> Result<Cow<'b, B>, E>;
+        F: for<'b> FnOnce(&'b B) -> Result<Cow<'b, U>, E>,
+        U: 'a + ToOwned + ?Sized;
 }
 
 impl<'a, B> CowExt<'a, B> for Cow<'a, B>
 where
     B: 'a + ToOwned + ?Sized,
 {
-    fn borrowed_or<F>(self, other: F) -> Cow<'a, B>
+    fn borrowed_or_else<F>(self, other: F) -> Cow<'a, B>
     where
         F: FnOnce(<B as ToOwned>::Owned) -> <B as ToOwned>::Owned,
     {
@@ -84,10 +92,10 @@ where
         }
     }
 
-    fn filter_map<F>(self, f: F) -> Option<Self>
+    fn filter_map<F, U>(self, f: F) -> Option<Cow<'a, U>>
     where
-        F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, B>>,
-        Self: Sized,
+        F: for<'b> FnOnce(&'b B) -> Option<Cow<'b, U>>,
+        U: 'a + ToOwned + ?Sized,
     {
         match self {
             Cow::Borrowed(v) => f(v),
@@ -95,9 +103,10 @@ where
         }
     }
 
-    fn map<F>(self, f: F) -> Self
+    fn map<F, U>(self, f: F) -> Cow<'a, U>
     where
-        F: for<'b> FnOnce(&'b B) -> Cow<'b, B>,
+        F: for<'b> FnOnce(&'b B) -> Cow<'b, U>,
+        U: 'a + ToOwned + ?Sized,
     {
         match self {
             Cow::Borrowed(v) => f(v),
@@ -105,9 +114,10 @@ where
         }
     }
 
-    fn map_ref<F>(self, f: F) -> Self
+    fn map_ref<F, U>(self, f: F) -> Cow<'a, U>
     where
-        F: for<'b> FnOnce(&'b B) -> &'b B,
+        F: for<'b> FnOnce(&'b B) -> &'b U,
+        U: 'a + ToOwned + ?Sized,
     {
         match self {
             Cow::Borrowed(v) => Cow::Borrowed(f(v)),
@@ -115,14 +125,21 @@ where
         }
     }
 
-    fn owned(self) -> Option<Cow<'static, B>> {
+    fn owned(self) -> Option<<B as ToOwned>::Owned> {
         match self {
             Cow::Borrowed(_) => None,
-            Cow::Owned(o) => Some(Cow::Owned(o)),
+            Cow::Owned(o) => Some(o),
         }
     }
 
-    fn owned_or<F, T>(self, other: T, f: F) -> T
+    fn owned_or(self, other: <B as ToOwned>::Owned) -> <B as ToOwned>::Owned {
+        match self {
+            Cow::Borrowed(_) => other,
+            Cow::Owned(o) => o,
+        }
+    }
+
+    fn owned_or_else<F, T>(self, other: T, f: F) -> T
     where
         F: for<'b> FnOnce(<B as ToOwned>::Owned) -> T,
     {
@@ -132,10 +149,10 @@ where
         }
     }
 
-    fn try_map<F, E>(self, f: F) -> Result<Self, E>
+    fn try_map<F, U, E>(self, f: F) -> Result<Cow<'a, U>, E>
     where
-        Self: Sized,
-        F: for<'b> FnOnce(&'b B) -> Result<Cow<'b, B>, E>,
+        F: for<'b> FnOnce(&'b B) -> Result<Cow<'b, U>, E>,
+        U: 'a + ToOwned + ?Sized,
     {
         match self {
             Cow::Borrowed(v) => f(v),

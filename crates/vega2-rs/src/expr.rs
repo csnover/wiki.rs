@@ -1278,20 +1278,17 @@ mod built_ins {
         let replacement = items.get(2).map_or(<_>::default(), ValueExt::to_string);
 
         Ok(match pattern {
-            VmValue::Regex(regex, flags) => {
-                let result = if flags.contains('g') {
-                    regex.replace_all(&haystack, replacement)
+            VmValue::Regex(regex, flags) => haystack.map(|haystack| {
+                if flags.contains('g') {
+                    regex.replace_all(haystack, replacement)
                 } else {
-                    regex.replace(&haystack, replacement)
-                };
-                result.owned().unwrap_or(haystack)
-            }
-            pattern => {
+                    regex.replace(haystack, replacement)
+                }
+            }),
+            pattern => haystack.map(|haystack| {
                 let pattern = ValueExt::to_string(pattern);
-                strtr(&haystack, &[(&pattern, &replacement)])
-                    .owned()
-                    .unwrap_or(haystack)
-            }
+                strtr(haystack, &[(&pattern, &replacement)])
+            }),
         }
         .into())
     }

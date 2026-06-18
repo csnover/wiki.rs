@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
-    AnchorEncodeMode, anchor_encode, decode_html, normalize_section_name, title::normalize_fragment,
+    AnchorEncodeMode, decode_html, escape_id, normalize_section_name, title::normalize_fragment,
 };
 use libwikitext_parse::{HeadingLevel, TextStyle, VOID_TAGS};
 use regex::Regex;
@@ -373,7 +373,7 @@ impl<S: Sink + Markable> AttributeFilter<S> {
             } else {
                 next.text(" ");
             }
-            next.text(&anchor_encode(id, AnchorEncodeMode::Html5));
+            next.text(&escape_id(id, AnchorEncodeMode::Html5));
         }
     }
 
@@ -588,9 +588,7 @@ impl<S: Sink + Markable> Sink for AttributeFilter<S> {
                     Self::fixup_aria(&mut self.next, &value);
                 }
                 "class" => Self::fixup_class(&mut self.next, &value),
-                "id" => self
-                    .next
-                    .text(&anchor_encode(&value, AnchorEncodeMode::Html5)),
+                "id" => self.next.text(&escape_id(&value, AnchorEncodeMode::Html5)),
                 "style" => Self::fixup_style(&mut self.next, &value),
                 _ => self.next.text(&value),
             }
@@ -658,7 +656,9 @@ static ALLOWED_ATTRS: phf::Map<&str, &[&phf::Set<&str>]> = phf::phf_map! {
     ],
     "img" => &[
         &COMMON_ATTRS,
-        &phf::phf_set! { "alt", "height", "src", "srcset", "width" }
+        // For some reason, decoding is not in the Wikitext list, but it is
+        // allowed
+        &phf::phf_set! { "alt", "decoding", "height", "src", "srcset", "width" }
     ],
     "ins" | "del" => &[
         &COMMON_ATTRS,
@@ -2450,7 +2450,7 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
             } => {
                 let id = normalize_section_name(&self.id_buffer[start as usize..end as usize])
                     .map(normalize_fragment)
-                    .map(|id| anchor_encode(id, AnchorEncodeMode::Html5));
+                    .map(|id| escape_id(id, AnchorEncodeMode::Html5));
                 let id = outline
                     .push(level, self.html_buffer[html].trim_ascii(), &id)
                     .unwrap_or(&id);
@@ -2509,7 +2509,7 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
     #[inline]
     #[must_use]
     fn id_to_legacy(id: &str) -> Option<String> {
-        let legacy = anchor_encode(id, AnchorEncodeMode::Legacy);
+        let legacy = escape_id(id, AnchorEncodeMode::Legacy);
         (legacy != id).then(|| legacy.into_owned())
     }
 

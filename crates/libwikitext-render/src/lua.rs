@@ -583,7 +583,7 @@ fn unstrip(
                 }),
         };
 
-        Ok(ctx.stash(result.owned_or(text, |text| ctx.intern(text.as_bytes()))))
+        Ok(ctx.stash(result.owned_or_else(text, |text| ctx.intern(text.as_bytes()))))
     })
 }
 
