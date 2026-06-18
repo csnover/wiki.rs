@@ -36,6 +36,7 @@ test_from_file! {
     table_fixups_parser_tests => "tableFixupsParserTests",
     tables => "tables",
     timed_media_handler_parser_tests => "timedMediaHandlerParserTests",
+    wiki_rs => "wiki.rs",
     wt_escaping => "wtEscaping",
 }
 

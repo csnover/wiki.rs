@@ -1,0 +1,39 @@
+# Every failure causes a catastrophic backtrack, which will lead to O(n*n)
+# parsing if not prevented by some mechanism like caching (PEG) or marking
+# the tokens as exhausted (MediaWiki PHP)
+
+!! test
+Pathological extension tags
+!! wikitext
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+!! html/wiki.rs
+<p>&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;
+</p>
+!!end
+
+!! test
+Pathological Wikilink
+!! wikitext
+[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+!! html/wiki.rs
+<p>[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+</p>
+!!end
+
+!! test
+Pathological template
+!! wikitext
+{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+!! html/wiki.rs
+<p>{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+</p>
+!!end
+
+!! test
+Pathological language conversion
+!! wikitext
+-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{
+!! html/wiki.rs
+<p>-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{
+</p>
+!!end

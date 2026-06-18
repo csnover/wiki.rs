@@ -1812,6 +1812,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///
     /// -{ flag1 ; flag2 | from => variant : to ; }-
     /// ```
+    #[cache]
     rule language_tag() -> Spanned<Token>
     = &assert(o.config.language_conversion_enabled, "language conversion enabled")
       t:spanned(<
