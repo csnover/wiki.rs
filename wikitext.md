@@ -1068,7 +1068,7 @@ Finally:
 
 1. While `TD History` is not empty:
 
-    1. Pop `TD History`. If `true`, emit `"</td>\n"`;
+    1. Pop `TD History`. If `true`, emit `"</td>\n"`[^oopsbug];
     2. Pop `TR History`. If `true`, emit `"</tr>\n"`;
     3. Pop `Open TR History`. If not `true`, emit `"<tr><td></td></tr>\n"`.
     4. Emit `"</table>\n"`.
@@ -1076,6 +1076,10 @@ Finally:
 2. Remove any trailing `'\n'` from the output;
 3. If the entire output is `"<table>\n<tr><td></td></tr>\n</table>"`, clear the
     output.
+
+[^oopsbug]: This is a bug in the original parser since `TD History` may be true
+  for any of `["caption"|"td"|"th"]`. Otherwise compliant parsers might want to
+  emit the correct last tag instead.
 
 ### Parse attributes
 

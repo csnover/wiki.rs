@@ -3,11 +3,11 @@ use super::{
     parser::{Chunk, OPTION_TO_META, SectionText, Sections, Testfile},
 };
 use core::{cell::RefCell, fmt::Write as _};
+use libmisc::CowExt as _;
 use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
     Messages,
     db::{Article, DynDatabaseProvider, FileMetadata, MockDatabase},
-    decode_html,
     url::Url,
 };
 use libwikitext_data::MESSAGES;
@@ -193,7 +193,7 @@ impl PluginExtensionTag for TagTag {
         out.push_str("\narray (\n");
         for arg in args.iter(state) {
             let (name, value) = arg?;
-            write!(out, "  '{}' => ", escape_single_quote(&name))?;
+            write!(out, "  '{}' =&gt; ", escape_single_quote(&name))?;
             if let Some(value) = value {
                 writeln!(out, "'{}',", escape_single_quote(&value))?;
             } else {
@@ -663,9 +663,16 @@ fn check_test_results(
                         heuristic = "unpretty + remove tbody + styles + decode html";
                         fail = expected_html != actual;
                     }
-                } else if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                }
+
+                if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
                     heuristic = "unpretty + remove tbody + decode html";
                     fail = expected_html != actual;
+
+                    if fail && let Cow::Owned(expected_html) = devoid(&expected_html) {
+                        heuristic = "unpretty + remove tbody + decode html + devoid";
+                        fail = expected_html != actual;
+                    }
                 }
             }
 
@@ -933,6 +940,10 @@ fn render_test(
     }
 
     result.ok()
+}
+
+fn decode_html(html: &str) -> Cow<'_, str> {
+    strtr(html, &[("&gt;", "&amp;gt;"), ("&lt;", "&amp;lt;")]).map(libwikitext_common::decode_html)
 }
 
 fn devoid(html: &str) -> Cow<'_, str> {

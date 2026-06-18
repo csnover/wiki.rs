@@ -4,8 +4,7 @@ use super::{
     Error, LinkKind, Result, State, StripMarker,
     emitters::{
         Accumulator, AttributeFilter, Chain as _, DomTree, EmptyTagger, GrafEmitter, ListEmitter,
-        OutlineEmitter, PrettyText, Sink, TableEmitter, TableFoster, TemplateTagger,
-        TextStyleEmitter,
+        OutlineEmitter, PrettyText, Sink, TableFoster, TemplateTagger, TextStyleEmitter,
     },
     extension_tags,
     stack::StackFrame,
@@ -28,13 +27,24 @@ use libwikitext_parse::{
 use std::borrow::Cow;
 
 /// The chain of render nodes used to render the document.
-type RendererChain = TableEmitter<
-    AttributeFilter<
-        OutlineEmitter<
-            DomTree<TableFoster<GrafEmitter<TemplateTagger<EmptyTagger<PrettyText<Accumulator>>>>>>,
-        >,
+type RendererChain = AttributeFilter<
+    OutlineEmitter<
+        DomTree<TableFoster<GrafEmitter<TemplateTagger<EmptyTagger<PrettyText<Accumulator>>>>>>,
     >,
 >;
+
+/// A Wikitext table frame.
+#[derive(Debug, Default)]
+struct TableState {
+    /// If true, a Wikitext table row, header, or data token has been seen.
+    has_tbody: bool,
+    /// The tag name of the currently open table caption, header, or data tag.
+    last_tag: Option<&'static str>,
+    /// The half-parsed attributes for a pending table row.
+    tr_attrs: String,
+    /// If true, a `<tr>` has been emitted and needs to be closed.
+    tr_emitted: bool,
+}
 
 /// The root of a Wikitext document.
 #[derive(Debug)]
@@ -46,9 +56,11 @@ pub(crate) struct Document {
     in_include: Vec<InclusionMode>,
     /// The output sink.
     pub(super) next: RendererChain,
-    /// The stack of open HTML elements.
-    list_stack: Vec<ListEmitter>,
-    /// The [`TextStyle`] emitter.
+    /// The list emitter.
+    list_emitter: Option<ListEmitter>,
+    /// The Wikitext table emitters.
+    table_emitter: Vec<TableState>,
+    /// The [`TextStyle`] emitters.
     text_style_emitter: Vec<TextStyleEmitter>,
 }
 
@@ -58,12 +70,13 @@ impl Document {
         Self {
             fragment,
             in_include: <_>::default(),
-            next: TableEmitter::new(AttributeFilter::new(OutlineEmitter::new(DomTree::new(
-                TableFoster::new(GrafEmitter::new(TemplateTagger::new(EmptyTagger::new(
-                    PrettyText::new(Accumulator::new()),
+            next: AttributeFilter::new(OutlineEmitter::new(DomTree::new(TableFoster::new(
+                GrafEmitter::new(TemplateTagger::new(EmptyTagger::new(PrettyText::new(
+                    Accumulator::new(),
                 )))),
             )))),
-            list_stack: <_>::default(),
+            list_emitter: <_>::default(),
+            table_emitter: <_>::default(),
             text_style_emitter: vec![TextStyleEmitter::default()],
         }
     }
@@ -94,11 +107,58 @@ impl Document {
             .unwrap()
             .finish(&mut self.next);
 
-        for mut rest in self.list_stack.into_iter().rev() {
-            rest.finish(&mut self.next);
+        if let Some(mut list) = self.list_emitter {
+            list.finish(&mut self.next);
         }
 
-        self.next.finish(state)
+        for table in self.table_emitter {
+            if let Some(name) = table.last_tag {
+                self.next.tag_end(name);
+                self.next.new_line();
+            }
+            if table.tr_emitted {
+                self.next.tag_end("tr");
+                self.next.new_line();
+            }
+            if !table.has_tbody {
+                self.next.tag_start_full("tr");
+                self.next.tag_start_full("td");
+                self.next.tag_end("td");
+                self.next.tag_end("tr");
+                self.next.new_line();
+            }
+            self.next.tag_end("table");
+            self.next.new_line();
+        }
+
+        let result = self.next.finish(state);
+        // God, this is so fucking stupid
+        if result == "<table>\n<tr><td></td></tr>\n</table>" {
+            <_>::default()
+        } else {
+            result
+        }
+    }
+
+    /// Writes an HTML start tag with the given lowercase `name` and bag of
+    /// crap `attributes`.
+    fn write_start_tag(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        name: &str,
+        attributes: &str,
+    ) -> Result {
+        self.next.tag_start(name);
+        if !attributes.is_empty() {
+            let sp = sp.clone_with_source(FileMap::new(attributes));
+            let attributes = state.statics.parser.parse_attributes(&sp.source)?;
+            for attribute in attributes {
+                self.attribute(state, &sp, &attribute)?;
+            }
+        }
+        self.next.tag_start_end(name);
+        Ok(())
     }
 
     /// Writes the contents of a strip marker to the output.
@@ -110,7 +170,6 @@ impl Document {
                 // marker is actually empty, because the spec defines this
                 // code as running before strip markers are unstripped
                 self.next
-                    .next_mut()
                     .next_mut()
                     .next_mut()
                     .next_mut()
@@ -131,7 +190,6 @@ impl Document {
                     .next_mut()
                     .next_mut()
                     .next_mut()
-                    .next_mut()
                     .push(name.clone());
             }
             StripMarker::WikiRsSourceEnd(name) => {
@@ -141,10 +199,46 @@ impl Document {
                     .next_mut()
                     .next_mut()
                     .next_mut()
-                    .next_mut()
                     .pop(name);
             }
         }
+    }
+
+    /// Writes a Wikitext table caption, header, or data cell.
+    fn write_table_data(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        name: &'static str,
+        attributes: &[Spanned<Token>],
+    ) -> Result {
+        if let Some(table) = self.table_emitter.last_mut() {
+            if let Some(last) = table.last_tag.replace(name) {
+                self.next.tag_end(last);
+                self.next.new_line();
+            }
+            if name != "caption" {
+                let attrs = core::mem::take(&mut table.tr_attrs);
+                table.has_tbody = true;
+                if !table.tr_emitted {
+                    table.tr_emitted = true;
+                    self.write_start_tag(state, sp, "tr", &attrs)?;
+                    self.next.new_line();
+                }
+            }
+            self.adopt_start_tag(state, sp, span, name, attributes, false)?;
+        } else {
+            let end = attributes.first().map_or(span.end, |a| a.span.start);
+            self.next
+                .text(&sp.source[span.start as usize..end as usize]);
+            self.adopt_tokens(state, sp, attributes)?;
+            if let Some(last) = attributes.last() {
+                self.next
+                    .text(&sp.source[last.span.end as usize..span.end as usize]);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -426,6 +520,8 @@ impl Surrogate<Error> for Document {
             })
         }
 
+        // TODO: If the newline is just going to be ignored, why have it in the
+        // AST at all?
         let mut content = if let Some((last, content)) = content.split_last()
             && matches!(last.node, Token::NewLine)
         {
@@ -434,7 +530,15 @@ impl Surrogate<Error> for Document {
             content
         };
 
-        let mut list = self.list_stack.pop().unwrap_or_default();
+        // Taking the list from `self` is required to avoid borrowck errors.
+        // This is fine, since it is impossible for nested lists to exist. The
+        // only tokens that continue over a newline are image captions, and they
+        // defeat the block level algorithm by deleting newlines. The Wikitext
+        // table indent hack is something that happens on the table pass, and so
+        // also disappears before the block level algorithm runs. The block
+        // level algorithm implementation itself does not hold a stack which
+        // would allow for nesting.
+        let mut list = self.list_emitter.take().unwrap_or_default();
 
         if list.same(bullets) {
             list.emit_last(&mut self.next, bullets);
@@ -468,7 +572,7 @@ impl Surrogate<Error> for Document {
             .unwrap()
             .finish(&mut self.next);
 
-        self.list_stack.push(list);
+        self.list_emitter = Some(list);
         Ok(())
     }
 
@@ -549,7 +653,7 @@ impl Surrogate<Error> for Document {
             .last_mut()
             .unwrap()
             .finish(&mut self.next);
-        if let Some(mut list) = self.list_stack.pop() {
+        if let Some(mut list) = self.list_emitter.take() {
             list.finish(&mut self.next);
         }
         self.next.new_line();
@@ -657,20 +761,10 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Token>],
         _self_closing: bool,
     ) -> Result {
-        let name = to_ascii_lower(name);
-        self.next.tag_start(&name);
-
-        let source = sp
+        let attributes = sp
             .eval(state, attributes)?
             .map(|out| state.strip_markers.unstrip(out));
-        let sp = sp.clone_with_source(FileMap::new(&source));
-        let attributes = state.statics.parser.parse_attributes(&source)?;
-        for attribute in attributes {
-            self.attribute(state, &sp, &attribute)?;
-        }
-
-        self.next.tag_start_end(&name);
-        Ok(())
+        self.write_start_tag(state, sp, &to_ascii_lower(name), &attributes)
     }
 
     fn adopt_strip_marker(
@@ -688,6 +782,7 @@ impl Surrogate<Error> for Document {
         }
     }
 
+    #[inline]
     fn adopt_table_caption(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -695,14 +790,10 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Token>],
     ) -> Result {
-        if self.next.is_empty() {
-            self.next.text(&sp.source[span.into_range()]);
-        } else {
-            self.adopt_start_tag(state, sp, span, "caption", attributes, false)?;
-        }
-        Ok(())
+        self.write_table_data(state, sp, span, "caption", attributes)
     }
 
+    #[inline]
     fn adopt_table_data(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -710,15 +801,7 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Token>],
     ) -> Result {
-        if self.next.is_empty() {
-            self.next.text(&sp.source[span.into_range()]);
-        } else {
-            self.next.data();
-            // This relies on DOM error correction later in the chain to make
-            // sure the appropriate elements exist in the appropriate places
-            self.adopt_start_tag(state, sp, span, "td", attributes, false)?;
-        }
-        Ok(())
+        self.write_table_data(state, sp, span, "td", attributes)
     }
 
     fn adopt_table_end(
@@ -727,15 +810,27 @@ impl Surrogate<Error> for Document {
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
-        if self.next.is_empty() {
-            self.next.text(&sp.source[span.into_range()]);
-        } else {
-            self.next.end();
+        if let Some(table) = self.table_emitter.pop() {
+            if let Some(name) = table.last_tag {
+                self.next.tag_end(name);
+            }
+            if table.tr_emitted {
+                self.next.tag_end("tr");
+            }
+            if !table.has_tbody {
+                self.next.tag_start_full("tr");
+                self.next.tag_start_full("td");
+                self.next.tag_end("td");
+                self.next.tag_end("tr");
+            }
             self.next.tag_end("table");
+        } else {
+            self.next.text(&sp.source[span.into_range()]);
         }
         Ok(())
     }
 
+    #[inline]
     fn adopt_table_heading(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -743,15 +838,7 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Token>],
     ) -> Result {
-        if self.next.is_empty() {
-            self.next.text(&sp.source[span.into_range()]);
-        } else {
-            self.next.data();
-            // This relies on DOM error correction later in the chain to make
-            // sure the appropriate elements exist in the appropriate places
-            self.adopt_start_tag(state, sp, span, "th", attributes, false)?;
-        }
-        Ok(())
+        self.write_table_data(state, sp, span, "th", attributes)
     }
 
     fn adopt_table_row(
@@ -761,19 +848,23 @@ impl Surrogate<Error> for Document {
         span: Span,
         attributes: &[Spanned<Token>],
     ) -> Result {
-        if self.next.is_empty() {
-            let end = attributes
-                .first()
-                .map_or(span.end, |first| first.span.start);
-            let span = Span::new(span.start, end);
-            self.next.text(&sp.source[span.into_range()]);
-            self.adopt_tokens(state, sp, attributes)?;
+        if let Some(table) = self.table_emitter.last_mut() {
+            let attributes = sp
+                .eval(state, attributes)?
+                .map(|out| state.strip_markers.unstrip(out));
+            table.has_tbody = true;
+            table.tr_attrs = attributes.into_owned();
+            if let Some(name) = table.last_tag.take() {
+                self.next.tag_end(name);
+            }
+            if core::mem::take(&mut table.tr_emitted) {
+                self.next.tag_end("tr");
+            }
         } else {
-            self.next.row_start();
-            // This relies on DOM error correction later in the chain to make
-            // sure the appropriate elements exist in the appropriate places
-            self.adopt_start_tag(state, sp, span, "tr", attributes, false)?;
-            self.next.row_end();
+            let end = attributes.first().map_or(span.end, |a| a.span.start);
+            self.next
+                .text(&sp.source[span.start as usize..end as usize]);
+            self.adopt_tokens(state, sp, attributes)?;
         }
         Ok(())
     }
@@ -786,7 +877,7 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Token>],
     ) -> Result {
         self.adopt_start_tag(state, sp, span, "table", attributes, false)?;
-        self.next.start();
+        self.table_emitter.push(<_>::default());
         Ok(())
     }
 

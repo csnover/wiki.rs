@@ -146,7 +146,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         space_nl()*
         ":"?
         space_nl()*
-        link:wikilink()
+        link:wikilink_link()
         space_nl()*
         { Token::Redirect { link: Box::new(link) } }
     >)
@@ -732,7 +732,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     pub rule gallery_image_options() -> Vec<Spanned<Argument>>
     = spanned(<wikilink_argument_kv(<inline()>, <eolf() {}>)>) ** "|"
 
-    /// A wikilink, category, or image.
+    /// A wikilink, category, or image, or some text that looked like a Wikilink
+    /// but wasn’t.
     ///
     /// ```wikitext
     /// [[Link target|extra|arguments]]
@@ -1718,7 +1719,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ```
     rule attribute_value_quoted(item: rule<Spanned<Token>>, term: rule<()>) -> AttributeValue
     = start:spanned(<attribute_delimiter() t:['\''|'"'] { t }>)
-      value:(!(term() / [c if c == *start]) t:item() { t })*
+      value:(!(term() / [c if c == *start]) t:(item() / newline()) { t })*
       end:(
         &term() { None }
         / t:spanned(<[c if c == *start] { Token::Text }>) { Some(t) }

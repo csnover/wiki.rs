@@ -1887,7 +1887,7 @@ Don't break on | in extension attribute in template
 !! html/wiki.rs
 <pre>'ha'
 array (
-  'name' => 'hi|ho',
+  'name' =&gt; 'hi|ho',
 )
 </pre>
 !! html/parsoid
@@ -6892,7 +6892,7 @@ Templates: Ugly templates: 5. Template encapsulation test: Non-trivial overlap o
 <div about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"stx":"html","autoInsertedEnd":true,"pi":[[{"k":"1"}],[{"k":"1"}],[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;table>"}},"i":0}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;div>foo"}},"i":1}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;/table>"}},"i":2}}]}'>foo</div><span about="#mwt1">
 </span><table about="#mwt1">
 </table>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <div>foo
 </div><table>
 </table>
@@ -6910,7 +6910,7 @@ Templates: Ugly templates: 6. Template encapsulation test: Cyclical nesting of t
 <table about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;table>&lt;tr>&lt;td>&lt;table>"}},"i":0}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;div>"}},"i":1}},"\n",{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;/div>"}},"i":2}}]}' data-parsoid='{"stx":"html","autoInsertedEnd":true,"pi":[[{"k":"1"}],[{"k":"1"}],[{"k":"1"}]]}'><tbody><tr data-parsoid='{"stx":"html"}'><td data-parsoid='{"stx":"html"}'><div data-parsoid='{"stx":"html"}'>
 </div><table about="#mwt1" data-parsoid='{"stx":"html"}'>
 </table></td></tr></tbody></table>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
 <table><tr><td><div>
 </div><table>
 </table></td></tr></table>
@@ -8698,9 +8698,9 @@ Media link to nonexistent file (T3702)
 !! html/parsoid
 <p><a rel="mw:MediaLink" href="./Special:FilePath/No_such.jpg" resource="./Media:No_such.jpg" title="No such.jpg" typeof="mw:Error" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}' data-parsoid='{"a":{"resource":"./Media:No_such.jpg"},"sa":{"resource":"Media:No such.jpg"}}'>Media:No such.jpg</a>
 <a rel="mw:MediaLink" href="./Special:FilePath/No_such_file.jpg" resource="./Media:No_such_file.jpg" title="No such file.jpg" typeof="mw:Error" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}' data-parsoid='{"a":{"resource":"./Media:No_such_file.jpg"},"sa":{"resource":"Media:No_such file.jpg"}}'>Media:No_such file.jpg</a></p>
-!! html/wiki.rs # TODO: Media storage support
-<p><a href="http://example.com/images/3/3a/No_such.jpg" class="new" title="Media:No such.jpg (page does not exist)">Media:No such.jpg</a>
-<a href="http://example.com/images/3/3a/No_such_file.jpg" class="new" title="Media:No such file.jpg (page does not exist)">Media:No_such file.jpg</a>
+!! html/wiki.rs # TODO: Link to special path
+<p><a href="http://example.com/images/c/cb/No_such.jpg" class="new" title="Media:No such.jpg (page does not exist)">Media:No such.jpg</a>
+<a href="http://example.com/images/9/93/No_such_file.jpg" class="new" title="Media:No such file.jpg (page does not exist)">Media:No_such file.jpg</a>
 </p>
 !! end
 
@@ -9177,6 +9177,8 @@ Expansion of multi-line parser-functions in attribute values (T8255)
 <div style="background: #00FF00">-</div>
 !! html/parsoid+integrated
 <div style="background: #00FF00" about="#mwt2" typeof="mw:ExpandedAttrs" data-parsoid='{"stx":"html","a":{"style":"background: #00FF00"},"sa":{"style":"background: {{#if:1|#00FF00|#FF00FF}}"}}' data-mw='{"attribs":[[{"txt":"style"},{"html":"background: &lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&apos;{\"pi\":[[{\"k\":\"1\"},{\"k\":\"2\"}]]}&apos; data-mw=&apos;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"#if:1\",\"function\":\"if\"},\"params\":{\"1\":{\"wt\":\"#00FF00\"},\"2\":{\"wt\":\"#FF00FF\"}},\"i\":0}}]}&apos;>#00FF00&lt;/span>"}]]}'>-</div>
+!! html/wiki.rs # This output matches the PHP parser, but with prefixed styles
+<div style="--mw-output-background:#00FF00;">-</div>
 !! end
 
 !! test
@@ -9197,6 +9199,8 @@ Expansion of multi-line templates in attribute values (T8255 check 2)
 <div style="background: &#10;#00FF00">-</div>
 !! html
 <div style="background: &#10;#00FF00">-</div>
+!! html/wiki.rs # Style normalisation removes junk space
+<div style="--mw-output-background:#00FF00;">-</div>
 !! end
 
 # BlockLevelPass suppresses P-wrapping for tags whose names begin with
@@ -13018,8 +13022,9 @@ parsoid=wt2html
 [[File:Foobar.jpg|« test »]]
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File" data-parsoid='{"optList":[{"ck":"caption","ak":"« test »"}]}' data-mw='{"caption":"«&lt;span typeof=\"mw:DisplaySpace\"> &lt;/span>test&lt;span typeof=\"mw:DisplaySpace\"> &lt;/span>»"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="« test »" data-parsoid="{}"><img alt="« test »" resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:Foobar.jpg"}}'/></a></span></p>
-!! html/wiki.rs
-<span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="« test »"><img alt="« test »" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" height="220" width="1941" class="mw-file-element"></a></span>
+!! html/wiki.rs # This output matches the PHP parser, except guards the attribute output like Parsoid
+<p><span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="« test »"><img alt="« test »" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
+</p>
 !! end
 
 !! test
@@ -14195,10 +14200,6 @@ Empty table rows go away
 <td>there</td></tr>
 <tr class="foo mw-empty-elt"></tr>
 <tr class="mw-empty-elt"></tr>
-!! html/wiki.rs
-<table><tr><td>Hello
-</td><td>there
-</td></tr></table>
 !! end
 
 ###
@@ -14221,8 +14222,6 @@ RT-ed inter-element separators should be valid separators
 <table>
 <tbody class='mw-empty-elt'><tr class='mw-empty-elt' data-parsoid='{"startTagSrc":"|-","a":{"[[foo]]":null},"sa":{"[[foo]]":""}}'></tr>
 </tbody></table>
-!! html/wiki.rs
-<table></table>
 !!end
 
 # Parsoid-only test of a DOM pass
@@ -14406,8 +14405,6 @@ Empty TR followed by mixed-ws-comment line should RT correctly
 <tr class="mw-empty-elt">
 <!--c--> </tr><!--d-->
 </tbody></table>
-!! html/wiki.rs
-<table></table>
 !! end
 
 !!test
@@ -14663,9 +14660,8 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
-!! html/wiki.rs
-<p>foo</p><table><tr>
-<td>bar</td></tr></table>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
+<p>foo</p><table><tr><td>bar</td></tr></table>
 !! end
 
 ## Remex doesn't account for fostered content.
@@ -14814,7 +14810,7 @@ parsoid=wt2html
 <figure class="mw-default-size mw-halign-right" typeof="mw:File" data-parsoid='{"fostered":true}'><a href="./File:Foobar.jpg" class="mw-file-description" title="123"><img alt="123" resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element"/></a><figcaption><div about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;div>123&lt;/div>"}},"i":0}}]}'>123</div></figcaption></figure><table>
 
 </table>
-!! html/wiki.rs # This output matches the PHP parser, minus the data- attributes
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody and data- attributes
 <figure class="mw-default-size mw-halign-right" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="123"><img alt="123" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a><figcaption><div>123</div></figcaption></figure><table>
 
 <tr><td></td></tr></table>
@@ -14838,13 +14834,13 @@ parsoid=wt2wt
 
 hiho
 !! html/parsoid
-!! html/his output matches the PHP parser, except includes `<tr></tr>` in the output and does not insert a newline before the table
+!! html/wiki.rs # This output matches the PHP parser
 
 
 
 
-hiho<table>
-<tr></tr></table>
+
+hiho<table></table>
 !! end
 
 !! test
@@ -14859,13 +14855,14 @@ parsoid=wt2wt
 
 hiho
 !! html/parsoid
-!! html/wiki.rs # This output matches the PHP parser, except includes `<tr></tr>` in the output and does not insert a newline before the table
+!! html/wiki.rs # This output matches the PHP parser
+
 
 
  
 
-hiho<table>
-<tr></tr></table>
+hiho
+<table></table>
 !! end
 
 !!test

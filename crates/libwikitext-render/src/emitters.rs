@@ -354,7 +354,7 @@ enum FilterState {
 chainable!(AttributeFilter);
 
 impl<S: Sink + Markable> AttributeFilter<S> {
-    /// Creates a new `TableEmitter` chained to `next`.
+    /// Creates a new `AttributeFilter` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
             acc: <_>::default(),
@@ -904,11 +904,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
         if close_tags {
             while let Some(e) = self.stack.pop_if(|e| !e.can_parent(name)) {
-                let skip_newline = matches!(e.tag_name(), Some("td" | "th")) && name == "tr";
                 e.close(&mut self.next);
-                if !skip_newline {
-                    self.next.new_line();
-                }
             }
         }
 
@@ -916,7 +912,6 @@ impl<S: Sink> Sink for DomTree<S> {
             && !matches!(self.stack.last(), Some(Node::Tag(last)) if last == "tr")
         {
             self.tag_start_full("tr");
-            self.next.new_line();
         }
 
         if !VOID_TAGS.contains(name) {
@@ -1045,14 +1040,13 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
     fn tag_start(&mut self, name: &str) {
         self.clear();
         self.next.tag_start(name);
+        if matches!(name, "p" | "li" | "tr") {
+            self.last = Some(self.next.mark());
+        }
     }
 
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
-        if matches!(name, "p" | "li" | "tr") {
-            debug_assert!(self.last.is_none());
-            self.last = Some(self.next.mark());
-        }
         self.next.tag_start_end(name);
     }
 
@@ -3106,210 +3100,6 @@ impl<S: Sink> Sink for PrettyText<S> {
 
         if flushed != text.len() {
             self.next.text(&text[flushed..]);
-        }
-    }
-}
-
-/// Emits Wikitext tables as HTML.
-#[derive(Debug)]
-pub(super) struct TableEmitter<S: Sink + Markable> {
-    /// The output.
-    next: S,
-    /// The stack of currently open Wikitext tables.
-    stack: Vec<TableState>,
-}
-
-chainable!(TableEmitter);
-
-impl<S: Sink + Markable> TableEmitter<S> {
-    /// Creates a new `TableEmitter` chained to `next`.
-    pub fn new(next: S) -> Self {
-        Self {
-            next,
-            stack: <_>::default(),
-        }
-    }
-
-    /// Transitions the current table from a start state to an in-content state.
-    #[inline]
-    fn content(&mut self) {
-        if let Some(last @ TableState::Start) = self.stack.last_mut() {
-            *last = TableState::Content;
-        }
-    }
-
-    /// Transitions the current table to an in-data state.
-    pub fn data(&mut self) {
-        if let Some(last) = self.stack.last_mut() {
-            let last = core::mem::replace(last, TableState::Data);
-            if let TableState::Row(start, end) = last {
-                self.next.free_mark(start);
-                self.next.free_mark(end.unwrap());
-            }
-        }
-    }
-
-    /// Finishes the current table.
-    #[inline]
-    pub fn end(&mut self) {
-        if let Some(last) = self.stack.pop() {
-            last.finish(&mut self.next);
-        }
-    }
-
-    /// Returns true if there are no open Wikitext tables.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.stack.is_empty()
-    }
-
-    /// Transitions the current table to an in-row state.
-    pub fn row_start(&mut self) {
-        if let Some(last) = self.stack.last_mut() {
-            // Table rows that never saw any table data are supposed to pretend
-            // like they never existed in the first place
-            let last = core::mem::replace(last, TableState::Row(self.next.mark(), None));
-            if matches!(last, TableState::Row(..)) {
-                last.finish(&mut self.next);
-            }
-        }
-    }
-
-    /// Transitions the current table to an in-row state.
-    pub fn row_end(&mut self) {
-        if let Some(TableState::Row(_, end)) = self.stack.last_mut() {
-            debug_assert!(end.is_none());
-            *end = Some(self.next.mark());
-        }
-    }
-
-    /// Signals that the next table element is the start of a Wikitext table.
-    #[inline]
-    pub fn start(&mut self) {
-        self.stack.push(TableState::Start);
-    }
-}
-
-impl<S: Sink + Markable> Sink for TableEmitter<S> {
-    #[inline]
-    fn comment_end(&mut self) {
-        self.next.comment_end();
-    }
-
-    #[inline]
-    fn comment_start(&mut self) {
-        self.next.comment_start();
-    }
-
-    #[inline]
-    fn entity(&mut self, value: char, raw: &str) {
-        self.content();
-        self.next.entity(value, raw);
-    }
-
-    #[inline]
-    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
-        for table in self.stack.into_iter().rev() {
-            table.finish(&mut self.next);
-        }
-        self.next.finish(state)
-    }
-
-    #[inline]
-    fn new_line(&mut self) {
-        self.content();
-        self.next.new_line();
-    }
-
-    #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        self.content();
-        self.next.raw_html_block(html);
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        self.content();
-        self.next.raw_html_inline(html);
-    }
-
-    #[inline]
-    fn tag_attribute_end(&mut self, name: &str) {
-        self.next.tag_attribute_end(name);
-    }
-
-    #[inline]
-    fn tag_attribute_start(&mut self, name: &str) {
-        self.next.tag_attribute_start(name);
-    }
-
-    #[inline]
-    fn tag_end(&mut self, name: &str) {
-        self.content();
-        self.next.tag_end(name);
-    }
-
-    #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.content();
-        self.next.tag_end_unbalanced(name);
-    }
-
-    #[inline]
-    fn tag_start(&mut self, name: &str) {
-        self.content();
-        self.next.tag_start(name);
-    }
-
-    #[inline]
-    fn tag_start_end(&mut self, name: &str) {
-        self.next.tag_start_end(name);
-    }
-
-    #[inline]
-    fn text(&mut self, text: &str) {
-        self.content();
-        self.next.text(text);
-    }
-}
-
-/// Wikitext table parsing state.
-#[derive(Debug)]
-enum TableState {
-    /// Seen only a table start.
-    Start,
-    /// Seen any non-table content, including whitespace.
-    Content,
-    /// Seen a table row, but not data.
-    Row(Mark, Option<Mark>),
-    /// Seen a table data/header cell.
-    Data,
-}
-
-impl TableState {
-    /// Emits HTML to finish any incomplete table.
-    fn finish<S: Sink + Markable + ?Sized>(self, next: &mut S) {
-        // Confusingly, if a table started and then got no row, it is supposed
-        // to emit a full empty row, but if it got a row, and nothing else,
-        // then that is supposed to be *not* emitted. Normal.
-        match self {
-            Self::Content | Self::Start => {
-                next.tag_start_full("tr");
-                next.tag_start_full("td");
-                next.tag_end("td");
-                next.tag_end("tr");
-            }
-            Self::Row(start, end) => {
-                let end = end.unwrap();
-                next.with_marks([&start, &end], |[start, end], out| {
-                    if let (Some(start), Some(end)) = (start, end) {
-                        out.replace_range(start..end, "");
-                    }
-                });
-                next.free_mark(start);
-                next.free_mark(end);
-            }
-            Self::Data => {}
         }
     }
 }
