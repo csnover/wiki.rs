@@ -1,6 +1,6 @@
 [package]
 name = "libwikitext-render"
-description = "A Wikitext AST to HTML renderer (non-GPL parts)"
+description = "A Wikitext AST to HTML renderer"
 edition.workspace = true
 license.workspace = true
 version.workspace = true

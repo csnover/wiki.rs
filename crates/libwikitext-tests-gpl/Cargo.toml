@@ -1,6 +1,6 @@
 [package]
 name = "libwikitext-tests-gpl"
-description = "Tests for libwikitext (GPL parts)"
+description = "Tests for libwikitext"
 edition.workspace = true
 license = "GPL-2.0-or-later"
 version.workspace = true
@@ -9,9 +9,6 @@ version.workspace = true
 workspace = true
 
 [dependencies]
-peg.workspace = true
-serde_json.workspace = true
-serde_json_borrow.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true
@@ -23,7 +20,10 @@ libwikitext-parse.workspace = true
 libwikitext-render.workspace = true
 log.workspace = true
 memchr.workspace = true
+peg.workspace = true
 phf.workspace = true
 regex.workspace = true
+serde_json.workspace = true
+serde_json_borrow.workspace = true
 similar-asserts.workspace = true
 time.workspace = true
