@@ -3,8 +3,8 @@
 use super::{
     Error, LinkKind, Result, State, StripMarker,
     emitters::{
-        Accumulator, AttributeFilter, CategoryTrim, Chain as _, DomTree, EmptyTagger, GrafEmitter,
-        ListEmitter, OutlineEmitter, PrettyText, Sink, TableEmitter, TableFoster, TemplateTagger,
+        Accumulator, AttributeFilter, Chain as _, DomTree, EmptyTagger, GrafEmitter, ListEmitter,
+        OutlineEmitter, PrettyText, Sink, TableEmitter, TableFoster, TemplateTagger,
         TextStyleEmitter,
     },
     extension_tags,
@@ -30,12 +30,8 @@ use std::borrow::Cow;
 /// The chain of render nodes used to render the document.
 type RendererChain = TableEmitter<
     AttributeFilter<
-        CategoryTrim<
-            OutlineEmitter<
-                DomTree<
-                    TableFoster<GrafEmitter<TemplateTagger<EmptyTagger<PrettyText<Accumulator>>>>>,
-                >,
-            >,
+        OutlineEmitter<
+            DomTree<TableFoster<GrafEmitter<TemplateTagger<EmptyTagger<PrettyText<Accumulator>>>>>>,
         >,
     >,
 >;
@@ -62,11 +58,11 @@ impl Document {
         Self {
             fragment,
             in_include: <_>::default(),
-            next: TableEmitter::new(AttributeFilter::new(CategoryTrim::new(
-                OutlineEmitter::new(DomTree::new(TableFoster::new(GrafEmitter::new(
-                    TemplateTagger::new(EmptyTagger::new(PrettyText::new(Accumulator::new()))),
+            next: TableEmitter::new(AttributeFilter::new(OutlineEmitter::new(DomTree::new(
+                TableFoster::new(GrafEmitter::new(TemplateTagger::new(EmptyTagger::new(
+                    PrettyText::new(Accumulator::new()),
                 )))),
-            ))),
+            )))),
             list_stack: <_>::default(),
             text_style_emitter: vec![TextStyleEmitter::default()],
         }
@@ -119,7 +115,6 @@ impl Document {
                     .next_mut()
                     .next_mut()
                     .next_mut()
-                    .next_mut()
                     .force_content();
                 self.next.text(&decode_html(text));
             }
@@ -137,12 +132,10 @@ impl Document {
                     .next_mut()
                     .next_mut()
                     .next_mut()
-                    .next_mut()
                     .push(name.clone());
             }
             StripMarker::WikiRsSourceEnd(name) => {
                 self.next
-                    .next_mut()
                     .next_mut()
                     .next_mut()
                     .next_mut()
@@ -385,7 +378,6 @@ impl Surrogate<Error> for Document {
             // of the category list at the end of the page, the content-part of
             // a category is simply ignored.
             state.globals.categories.insert(&title);
-            self.next.next_mut().next_mut().clear();
             self.adopt_tokens(state, sp, prefix)?;
             self.adopt_tokens(state, sp, trail)?;
         } else if !force_link && title.is_local_file() {
