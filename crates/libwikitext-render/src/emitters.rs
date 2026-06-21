@@ -1,15 +1,15 @@
 //! HTML emitters for Wikitext fragments that require state management.
 
 use super::{
-    State,
+    State, StripMarker,
     document::{Attribute, Node},
     globals::Outline,
     tags::PHRASING_TAGS,
 };
 use core::fmt::{self, Write as _};
+use html5gum::emitters::callback::{CallbackEmitter, CallbackEvent};
 use indexmap::IndexMap;
 use libmisc::CowExt as _;
-use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode, decode_html, escape_id, normalize_section_name, title::normalize_fragment,
 };
@@ -111,11 +111,8 @@ pub(super) trait Sink {
     /// This is used for source-line-sensitive rules.
     fn new_line(&mut self);
 
-    /// Writes opaque block HTML content.
-    fn raw_html_block(&mut self, html: &str);
-
-    /// Writes opaque inline HTML content.
-    fn raw_html_inline(&mut self, html: &str);
+    /// Writes strip marker content.
+    fn strip_marker(&mut self, marker: &StripMarker);
 
     /// End a tag attribute with the given `name`.
     ///
@@ -270,17 +267,9 @@ impl Sink for Accumulator {
         self.inner.push('\n');
     }
 
-    fn raw_html_block(&mut self, html: &str) {
-        if self.in_attr {
-            self.inner.push_str(&strtr(html, &[("\"", "&quot;")]));
-        } else {
-            self.inner.push_str(html);
-        }
-    }
-
     #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        self.raw_html_block(html);
+    fn strip_marker(&mut self, _: &StripMarker) {
+        panic!("strip markers should be decomposed before now");
     }
 
     #[inline]
@@ -514,16 +503,9 @@ impl<S: Sink + Markable> Sink for AttributeFilter<S> {
     }
 
     #[inline]
-    fn raw_html_block(&mut self, html: &str) {
+    fn strip_marker(&mut self, marker: &StripMarker) {
         if self.state == FilterState::Idle {
-            self.next.raw_html_block(html);
-        }
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        if self.state == FilterState::Idle {
-            self.next.raw_html_inline(html);
+            self.next.strip_marker(marker);
         }
     }
 
@@ -770,6 +752,74 @@ impl<S: Sink> DomTree<S> {
         }
     }
 
+    /// Creates a new tokenizer.
+    #[inline]
+    fn tokenise(&mut self, html: &str) {
+        let mut in_attr = None::<String>;
+        let mut in_tag = None;
+        html5gum::Tokenizer::new_with_emitter(
+            html,
+            CallbackEmitter::new(|event: CallbackEvent<'_>, _: html5gum::Span<()>| {
+                match event {
+                    CallbackEvent::OpenStartTag { name } => {
+                        // SAFETY: This data comes from a `&str`.
+                        let name = unsafe { str::from_utf8_unchecked(name) };
+                        self.tag_start(name);
+                        in_tag = Some(name.to_owned());
+                    }
+                    CallbackEvent::AttributeName { name } => {
+                        if let Some(name) = &in_attr {
+                            self.tag_attribute_end(name);
+                        }
+                        // SAFETY: This data comes from a `&str`.
+                        let name = unsafe { str::from_utf8_unchecked(name) };
+                        self.tag_attribute_start(name);
+                        in_attr = Some(name.to_owned());
+                    }
+                    CallbackEvent::AttributeValue { value } => {
+                        // SAFETY: This data comes from a `&str`.
+                        let value = unsafe { str::from_utf8_unchecked(value) };
+                        self.text(&decode_html(value));
+                    }
+                    CallbackEvent::CloseStartTag { self_closing } => {
+                        if let Some(name) = in_attr.take() {
+                            self.tag_attribute_end(&name);
+                        }
+                        let name = in_tag.take().unwrap();
+                        self.tag_start_end(&name);
+                        if self_closing && !VOID_TAGS.contains(&name) {
+                            self.tag_end(&name);
+                        }
+                    }
+                    CallbackEvent::EndTag { name } => {
+                        // SAFETY: This data comes from a `&str`.
+                        let name = unsafe { str::from_utf8_unchecked(name) };
+                        self.tag_end(name);
+                    }
+                    CallbackEvent::String { value } => {
+                        // SAFETY: This data comes from a `&str`.
+                        let value = decode_html(unsafe { str::from_utf8_unchecked(value) });
+                        self.text(&value);
+                    }
+                    CallbackEvent::Comment { value } => {
+                        // SAFETY: This data comes from a `&str`.
+                        let value = decode_html(unsafe { str::from_utf8_unchecked(value) });
+                        self.comment_start();
+                        self.text(&value);
+                        self.comment_end();
+                    }
+                    CallbackEvent::Doctype { .. } => {}
+                    CallbackEvent::Error(error) => {
+                        log::warn!("Tokenizer error: {error}");
+                    }
+                }
+
+                None::<core::convert::Infallible>
+            }),
+        )
+        .finish();
+    }
+
     /// Tries closing all tags up to and including the nearest `name`. Returns
     /// `true` if some elements were closed.
     fn try_close(&mut self, name: &str) -> bool {
@@ -817,33 +867,15 @@ impl<S: Sink> Sink for DomTree<S> {
     }
 
     #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        if let Some(Node::Attribute(pos)) = self.stack.last() {
-            if *pos == Attribute::Name {
-                log::warn!("invalid HTML block in attribute position; ignoring");
-            } else {
-                log::warn!("invalid HTML block in attribute position; treating as text");
-                self.next.text(html);
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        match marker {
+            StripMarker::Block(html) | StripMarker::Inline(html) => {
+                self.tokenise(html);
             }
-        } else {
-            while let Some(e) = self.stack.pop_if(|e| !e.can_parent("div")) {
-                e.close(&mut self.next);
+            StripMarker::NoWiki(s) => self.next.text(s),
+            StripMarker::WikiRsSourceEnd(_) | StripMarker::WikiRsSourceStart(_) => {
+                self.next.strip_marker(marker)
             }
-            self.next.raw_html_block(html);
-        }
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        if let Some(Node::Attribute(pos)) = self.stack.last() {
-            if *pos == Attribute::Name {
-                log::warn!("invalid HTML block in attribute position; ignoring");
-            } else {
-                log::warn!("invalid HTML block in attribute position; treating as text");
-                self.next.text(html);
-            }
-        } else {
-            self.next.raw_html_inline(html);
         }
     }
 
@@ -993,19 +1025,11 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
     }
 
     #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        if html.bytes().any(|c| !c.is_ascii_whitespace()) {
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        if !marker.is_empty() {
             self.clear();
         }
-        self.next.raw_html_block(html);
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        if html.bytes().any(|c| !c.is_ascii_whitespace()) {
-            self.clear();
-        }
-        self.next.raw_html_inline(html);
+        self.next.strip_marker(marker);
     }
 
     #[inline]
@@ -1620,11 +1644,15 @@ impl<S: Sink + Markable> OutlineEmitter<S> {
         });
 
         for text in text {
-            self.html_buffer.push_str(text);
+            self.add_text(text);
+        }
+    }
 
-            if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
-                self.id_buffer.push_str(text);
-            }
+    fn add_text(&mut self, text: &str) {
+        self.html_buffer.push_str(text);
+
+        if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
+            self.id_buffer.push_str(text);
         }
     }
 
@@ -1809,15 +1837,17 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
     }
 
     #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        self.add_html(html);
-        self.next.raw_html_block(html);
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        self.add_html(html);
-        self.next.raw_html_inline(html);
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        match marker {
+            StripMarker::Block(html) | StripMarker::Inline(html) => {
+                self.add_html(html);
+            }
+            StripMarker::NoWiki(text) => {
+                self.add_text(text);
+            }
+            StripMarker::WikiRsSourceEnd(_) | StripMarker::WikiRsSourceStart(_) => {}
+        }
+        self.next.strip_marker(marker);
     }
 
     fn tag_attribute_end(&mut self, name: &str) {
@@ -2303,13 +2333,12 @@ impl<S: Sink> Sink for PrettyText<S> {
     }
 
     #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        self.next.raw_html_block(html);
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        self.next.raw_html_inline(html);
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        if let StripMarker::NoWiki(text) = marker {
+            self.text(&decode_html(text));
+        } else {
+            self.next.strip_marker(marker);
+        }
     }
 
     #[inline]
@@ -2381,12 +2410,6 @@ impl<S: Sink> Sink for PrettyText<S> {
             let second = iter.peek_nth(1).map(|(_, second)| *second);
             (first, second)
         }
-
-        // TODO:
-        // #[cfg(debug_assertions)]
-        // if text.contains(MARKER_PREFIX) {
-        //     return Err(Error::StripMarkerInText);
-        // }
 
         let mut chars = peeknth::sizedpeekn::<_, 2>(text.char_indices());
 
@@ -2531,13 +2554,9 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
     }
 
     #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        self.next.raw_html_block(html);
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        self.next.raw_html_inline(html);
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        log::warn!("TODO: TableFoster strip marker");
+        self.next.strip_marker(marker);
     }
 
     #[inline]
@@ -2642,8 +2661,8 @@ impl<S: Sink> TemplateTagger<S> {
     }
 
     /// Starts a template section for a template with the given `name`.
-    pub fn push(&mut self, name: String) {
-        self.tag_blocks.push((self.depth, name));
+    pub fn push(&mut self, name: &str) {
+        self.tag_blocks.push((self.depth, name.to_owned()));
     }
 }
 
@@ -2674,13 +2693,13 @@ impl<S: Sink> Sink for TemplateTagger<S> {
     }
 
     #[inline]
-    fn raw_html_block(&mut self, html: &str) {
-        self.next.raw_html_block(html);
-    }
-
-    #[inline]
-    fn raw_html_inline(&mut self, html: &str) {
-        self.next.raw_html_inline(html);
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        match marker {
+            StripMarker::WikiRsSourceEnd(name) => self.pop(name),
+            StripMarker::WikiRsSourceStart(name) => self.push(name),
+            _ => {}
+        }
+        self.next.strip_marker(marker);
     }
 
     #[inline]

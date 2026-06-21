@@ -1,10 +1,15 @@
 //! The root of a Wikitext document.
 
 use super::{
-    Error, LinkKind, Result, State, StripMarker, StripMarkers, emitters::{
+    Error, LinkKind, Result, State, StripMarker, StripMarkers,
+    emitters::{
         Accumulator, AttributeFilter, Chain as _, DomTree, EmptyTagger, ListEmitter,
         OutlineEmitter, PrettyText, Sink, TableFoster, TemplateTagger, TextStyleEmitter,
-    }, extension_tags, stack::StackFrame, surrogate::{self, Surrogate}, tags::{self, PHRASING_TAGS}
+    },
+    extension_tags,
+    stack::StackFrame,
+    surrogate::{self, Surrogate},
+    tags::{self, PHRASING_TAGS},
 };
 use crate::tags::ExternalLinkKind;
 use either::Either;
@@ -23,9 +28,7 @@ use std::borrow::Cow;
 
 /// The chain of render nodes used to render the document.
 type RendererChain = AttributeFilter<
-    OutlineEmitter<
-        DomTree<TemplateTagger<TableFoster<EmptyTagger<PrettyText<Accumulator>>>>>,
-    >,
+    OutlineEmitter<DomTree<TemplateTagger<TableFoster<EmptyTagger<PrettyText<Accumulator>>>>>>,
 >;
 
 /// A Wikitext table frame.
@@ -77,8 +80,8 @@ impl PendingGraf {
             Self::OpenGraf => next.tag_start_full("p"),
             Self::SplitGraf => {
                 next.tag_end("p");
-                next.tag_start_full("p")
-            },
+                next.tag_start_full("p");
+            }
         }
     }
 }
@@ -92,11 +95,9 @@ impl Document {
             in_blockquote: <_>::default(),
             in_include: <_>::default(),
             in_pre: <_>::default(),
-            next: AttributeFilter::new(OutlineEmitter::new(DomTree::new(
-                TemplateTagger::new(TableFoster::new(EmptyTagger::new(PrettyText::new(
-                    Accumulator::new(),
-                )))),
-            ))),
+            next: AttributeFilter::new(OutlineEmitter::new(DomTree::new(TemplateTagger::new(
+                TableFoster::new(EmptyTagger::new(PrettyText::new(Accumulator::new()))),
+            )))),
             last_graf: <_>::default(),
             list_emitter: <_>::default(),
             pending_p_tag: <_>::default(),
@@ -185,35 +186,6 @@ impl Document {
         Ok(())
     }
 
-    /// Writes the contents of a strip marker to the output.
-    fn write_strip_marker(&mut self, tag: &StripMarker) {
-        match tag {
-            StripMarker::NoWiki(text) => {
-                self.next.text(&decode_html(text));
-            }
-            StripMarker::Inline(text) => {
-                self.next.raw_html_inline(text);
-            }
-            StripMarker::Block(text) => {
-                self.next.raw_html_block(text);
-            }
-            StripMarker::WikiRsSourceStart(name) => {
-                self.next
-                    .next_mut()
-                    .next_mut()
-                    .next_mut()
-                    .push(name.clone());
-            }
-            StripMarker::WikiRsSourceEnd(name) => {
-                self.next
-                    .next_mut()
-                    .next_mut()
-                    .next_mut()
-                    .pop(name);
-            }
-        }
-    }
-
     /// Writes a Wikitext table caption, header, or data cell.
     fn write_table_data(
         &mut self,
@@ -251,21 +223,31 @@ impl Document {
         Ok(())
     }
 
-    fn pre_text<'a>(&self, strip_markers: &'a StripMarkers, source: &'a str, content: &[Spanned<Token>]) -> Option<(usize, &'a str)> {
-
+    fn pre_text<'a>(
+        &self,
+        strip_markers: &'a StripMarkers,
+        source: &'a str,
+        content: &[Spanned<Token>],
+    ) -> Option<(usize, &'a str)> {
         // Because the block level algorithm normally runs after general strip
         // markers are unstripped, they must also participate in the prefix
         // detection if they contain content.
         let (index, text) = content.iter().enumerate().find_map(|(index, token)| {
-            if let Spanned { span, node: Token::Text } = token {
+            if let Spanned {
+                span,
+                node: Token::Text,
+            } = token
+            {
                 Some((index, source[span.into_range()].strip_prefix(' ')))
             } else if let Token::StripMarker(key) = &token.node
-                && let Some(marker) = strip_markers.get(&source[key.into_range()]) {
+                && let Some(marker) = strip_markers.get(&source[key.into_range()])
+            {
                 match marker {
-                    StripMarker::Block(s) |
-                    StripMarker::Inline(s) => (!s.is_empty()).then(|| (index, s.strip_prefix(' '))),
+                    StripMarker::Block(s) | StripMarker::Inline(s) => {
+                        (!s.is_empty()).then(|| (index, s.strip_prefix(' ')))
+                    }
                     StripMarker::NoWiki(_) => Some((index, None)),
-                    _ => None
+                    _ => None,
                 }
             } else {
                 Some((index, None))
@@ -280,7 +262,11 @@ impl Document {
         })
     }
 
-    fn is_meta_line(&self, strip_markers: &StripMarkers, source: &str, content: &[Spanned<Token>]) -> bool {
+    fn is_meta_line(
+        strip_markers: &StripMarkers,
+        source: &str,
+        content: &[Spanned<Token>],
+    ) -> bool {
         let mut in_style = false;
         for token in content {
             if let Token::EndTag { name } = &token.node {
@@ -318,6 +304,10 @@ impl Document {
                 continue;
             }
 
+            if matches!(token.node, Token::NewLine | Token::Comment { .. }) {
+                continue;
+            }
+
             // Because this pass is supposed to behave as if general strip
             // markers were already unstripped, they have to be handled
             // specifically. wiki.rs extensions do not emit `<style>` or
@@ -330,8 +320,11 @@ impl Document {
             if let Token::StripMarker(key) = &token.node {
                 let key = &source[key.into_range()];
                 match strip_markers.get(key) {
-                    Some(StripMarker::Block(s) |
-                    StripMarker::Inline(s)) if !s.as_bytes().iter().all(u8::is_ascii_whitespace) => return false,
+                    Some(StripMarker::Block(s) | StripMarker::Inline(s))
+                        if !s.as_bytes().iter().all(u8::is_ascii_whitespace) =>
+                    {
+                        return false;
+                    }
                     Some(StripMarker::NoWiki(_)) => return false,
                     _ => {}
                 }
@@ -354,23 +347,32 @@ impl Document {
         self.in_pre = false;
     }
 
-    fn is_empty_line(&self, strip_markers: &StripMarkers, source: &str, content: &[Spanned<Token>]) -> bool {
+    fn is_empty_line(
+        strip_markers: &StripMarkers,
+        source: &str,
+        content: &[Spanned<Token>],
+    ) -> bool {
         for token in content {
-            if let Spanned { span, node: Token::Text } = token
-                && source[span.into_range()].bytes().any(|b| !b.is_ascii_whitespace())
+            if let Spanned {
+                span,
+                node: Token::Text,
+            } = token
+                && source[span.into_range()]
+                    .bytes()
+                    .any(|b| !b.is_ascii_whitespace())
             {
                 return false;
             } else if let Token::StripMarker(key) = &token.node
-                && let Some(marker) = strip_markers.get(&source[key.into_range()]) {
+                && let Some(marker) = strip_markers.get(&source[key.into_range()])
+            {
                 match marker {
-                    StripMarker::Block(s) |
-                    StripMarker::Inline(s) if !s.is_empty() => {
+                    StripMarker::Block(s) | StripMarker::Inline(s) if !s.is_empty() => {
                         return s.bytes().any(|b| !b.is_ascii_whitespace());
-                    },
+                    }
                     StripMarker::NoWiki(_) => return false,
                     _ => {}
                 }
-            } else {
+            } else if !matches!(token.node, Token::NewLine | Token::Comment { .. }) {
                 return false;
             }
         }
@@ -490,15 +492,7 @@ impl Surrogate<Error> for Document {
             content,
             true,
         )? {
-            Some(Either::Left(marker)) => {
-                if self.fragment {
-                    let strip_text = &mut String::new();
-                    state.strip_markers.push(strip_text, &name, marker);
-                    self.next.raw_html_inline(strip_text);
-                } else {
-                    self.write_strip_marker(&marker);
-                }
-            }
+            Some(Either::Left(marker)) => self.next.strip_marker(&marker),
             Some(Either::Right(_)) => todo!("this should never happen?"),
             None => {}
         }
@@ -824,19 +818,12 @@ impl Surrogate<Error> for Document {
     fn adopt_parameter(
         &mut self,
         _state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
+        _sp: &StackFrame<'_>,
+        _span: Span,
         _name: &[Spanned<Token>],
         _default: Option<&[Spanned<Token>]>,
     ) -> Result {
-        // 'Template:Human-centric' uses a parameter in an invalid way which
-        // causes it to be emitted as a literal inside of an HTML attribute
-        log::warn!(
-            "Unresolved parameter {} in output",
-            &sp.source[span.into_range()]
-        );
-        self.next.text(&sp.source[span.into_range()]);
-        Ok(())
+        panic!("templates should all be resolved by now");
     }
 
     fn adopt_line(
@@ -880,7 +867,8 @@ impl Surrogate<Error> for Document {
             self.in_pre |= pre_open_match && !pre_close_match;
             self.in_block_elem = !close_match;
         } else if !self.in_block_elem && !self.in_pre {
-            if let Some((index, pre_text)) = self.pre_text(&state.strip_markers, &sp.source, content)
+            if let Some((index, pre_text)) =
+                self.pre_text(&state.strip_markers, &sp.source, content)
             {
                 if self.last_graf != Some("pre") {
                     self.pending_p_tag = None;
@@ -892,11 +880,11 @@ impl Surrogate<Error> for Document {
                     self.next.text(pre_text);
                 }
                 start_at = index + 1;
-            } else if self.is_meta_line(&state.strip_markers, &sp.source, content) {
+            } else if Self::is_meta_line(&state.strip_markers, &sp.source, content) {
                 if self.pending_p_tag.take().is_some() {
                     self.end_p(false);
                 }
-            } else if self.is_empty_line(&state.strip_markers, &sp.source, content) {
+            } else if Self::is_empty_line(&state.strip_markers, &sp.source, content) {
                 if let Some(pending) = self.pending_p_tag.take() {
                     pending.emit(&mut self.next);
                     self.next.tag_start_full("br");
@@ -999,7 +987,7 @@ impl Surrogate<Error> for Document {
         marker: &str,
     ) -> Result {
         if let Some(tag) = state.strip_markers.get(marker) {
-            self.write_strip_marker(tag);
+            self.next.strip_marker(tag);
             Ok(())
         } else {
             Err(Error::StripMarker(marker.to_owned()))

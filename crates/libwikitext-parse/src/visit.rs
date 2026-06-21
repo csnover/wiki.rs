@@ -121,7 +121,12 @@ pub trait Visitor<'tt, E> {
 
     /// Visits a [`Token::Line`].
     #[inline]
-    fn visit_line(&mut self, span: Span, content: &'tt [Spanned<Token>], last: bool) -> Result<(), E> {
+    fn visit_line(
+        &mut self,
+        span: Span,
+        content: &'tt [Spanned<Token>],
+        last: bool,
+    ) -> Result<(), E> {
         visit_line(self, span, content, last)
     }
 

@@ -723,7 +723,9 @@ where
         Token::Parameter { name, default } => {
             surrogate.adopt_parameter(state, sp, token.span, name, default.as_deref())
         }
-        Token::Line { content, last } => surrogate.adopt_line(state, sp, token.span, content, *last),
+        Token::Line { content, last } => {
+            surrogate.adopt_line(state, sp, token.span, content, *last)
+        }
         Token::Redirect { link } => {
             let Spanned {
                 node:
