@@ -5180,8 +5180,6 @@ File:Foobar.jpg
 # hmm, fix this or just deprecate msgnw and document its behavior?
 !! test
 msgnw keyword
-!! options
-wiki-rs-expect-failure=[[msgnw is not implemented]]
 !! wikitext
 {{msgnw:MSGNW test}}
 !! html/php
@@ -6452,9 +6450,10 @@ Table cell with attribute before expanded attribute
 <table>
 <tbody><tr><td align="center" class="123" about="#mwt2" typeof="mw:ExpandedAttrs" data-mw='{"attribs":[[{"txt":"class","html":"&lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&apos;{\"pi\":[[]]}&apos; data-mw=&apos;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"attribute_from_template\",\"href\":\"./Template:Attribute_from_template\"},\"params\":{},\"i\":0}}]}&apos;>class=\"123\"&lt;/span>"},{"html":""}]]}'>456</td></tr>
 </tbody></table>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
 <table>
-<tr><td align="center" class="123">456
+<tr>
+<td align="center" class="123">456
 </td></tr></table>
 !! end
 
@@ -11823,8 +11822,6 @@ Don't fall for the self-closing div
 
 !! test
 MSGNW magic word
-!! options
-wiki-rs-expect-failure=[[msgnw is not implemented]]
 !! wikitext
 {{MSGNW:msg}}
 !! html/php

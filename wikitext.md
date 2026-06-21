@@ -2054,19 +2054,20 @@ For each [strip marker](#strip-marker) `M` in the input:
 
 For each line ending in `'\n'`:
 
-1. Let `Pre Open Match`, `Pre Close Match`, `In Pre`, `In Blockquote`,
-   `In Block Elem`, and `Line Start` be flags;
-2. Let `Pending P Tag` and `Last Prefix` be empty;
-3. <a name="bl3"></a>
+1. Let `Line Start` be the input line start flag[^blstart], defaulting to set;
+2. Let `Pre Open Match`, `Pre Close Match`, `In Pre`, `In Blockquote`,
+   and `In Block Elem` be flags;
+3. Let `Pending P Tag` and `Last Prefix` be empty;
+4. <a name="bl3"></a>
    Let `L` be the current line;
-4. If `Line Start` is clear:
+5. If `Line Start` is clear:
 
    1. Set `Line Start`;
    2. Emit `L` and restart from the [previous step](#bl3).
 
-5. Set `Pre Close Match` if `L` contains ASCII case-insensitive `"</pre"`;
-6. Set `Pre Open Match` if `L` contains ASCII case-insensitive `"<pre"`;
-7. If `In Pre` is set:
+6. Set `Pre Close Match` if `L` contains ASCII case-insensitive `"</pre"`;
+7. Set `Pre Open Match` if `L` contains ASCII case-insensitive `"<pre"`;
+8. If `In Pre` is set:
 
    1. Let `Prefix` and `Prefix 2` be empty;
    2. Let `T` equal `L`.
@@ -2079,7 +2080,7 @@ For each line ending in `'\n'`:
    3. Let `T` be the rest of the line after `Prefix`;
    4. Let `In Pre` equal `Pre Open Match`.
 
-8. If `Prefix` is not empty and `Prefix 2` equals `Last Prefix`:
+9. If `Prefix` is not empty and `Prefix 2` equals `Last Prefix`:
 
    1. Emit the [next item](#next-item) for the last character of `Prefix`;
    2. Let `Pending P Tag` be empty;
@@ -2095,46 +2096,46 @@ For each line ending in `'\n'`:
 
    Otherwise;
 
-9. If `Prefix` is not empty or `Last Prefix` is not empty:
+10. If `Prefix` is not empty or `Last Prefix` is not empty:
 
-   1. Let `Common Prefix Length` be the length of the initial sequence of
-      characters that are identical in both `Prefix` and `Last Prefix`;
-   2. For each character `I` in `Last Prefix` that is not in `Prefix`, in
-      right to left order, emit the result of [closing the list](#close-list)
-      for `I`;
-   3. If `Common Prefix Length` is not zero:
+    1. Let `Common Prefix Length` be the length of the initial sequence of
+       characters that are identical in both `Prefix` and `Last Prefix`;
+    2. For each character `I` in `Last Prefix` that is not in `Prefix`, in
+       right to left order, emit the result of [closing the list](#close-list)
+       for `I`;
+    3. If `Common Prefix Length` is not zero:
 
-      1. If the length of `Prefix` equals `Common Prefix Length`, emit the
-         [next item](#next-item) for the character at
-         `Prefix[Common Prefix Length - 1]`;
-      2. If `DT Open` is true and `Common Prefix Length` and the character at
-         `Prefix[Common Prefix Length - 1]` is `':'`, emit the
-         [next item](#next-item) for `':'`.
+       1. If the length of `Prefix` equals `Common Prefix Length`, emit the
+          [next item](#next-item) for the character at
+          `Prefix[Common Prefix Length - 1]`;
+       2. If `DT Open` is true and `Common Prefix Length` and the character at
+          `Prefix[Common Prefix Length - 1]` is `':'`, emit the
+          [next item](#next-item) for `':'`.
 
-   4. If `Last Prefix` is not empty and the length of `Prefix` is greater than
-      `Common Prefix Length`, emit `'\n'`;
-   5. For each character `I` in `Prefix` starting at `Common Prefix Length`,
-      from left to right:
+    4. If `Last Prefix` is not empty and the length of `Prefix` is greater than
+       `Common Prefix Length`, emit `'\n'`;
+    5. For each character `I` in `Prefix` starting at `Common Prefix Length`,
+       from left to right:
 
-      1. Emit the result of [opening the list](#open-list) for `I`;
-      2. If `I` is `';'`:
+       1. Emit the result of [opening the list](#open-list) for `I`;
+       2. If `I` is `';'`:
 
-         1. Let `P` be the result of [find colon no links](#find-colon-no-links)
-            for `T`;
-         2. If `P` is not none:
+          1. Let `P` be the result of [find colon no links](#find-colon-no-links)
+             for `T`;
+          2. If `P` is not none:
 
-            ※ This allows runs of `:` to be converted into multiple `<dd>`,
-              but only when the depth of the list is increasing, and should
-              probably be considered undefined behaviour.
+             ※ This allows runs of `:` to be converted into multiple `<dd>`,
+               but only when the depth of the list is increasing, and should
+               probably be considered undefined behaviour.
 
-            1. Let `T` be `T[P + 1..]`;
-            2. Emit the ASCII whitespace trimmed `T[..P]`;
-            3. Emit the [next item](#next-item) for `':'`.
+             1. Let `T` be `T[P + 1..]`;
+             2. Emit the ASCII whitespace trimmed `T[..P]`;
+             3. Emit the [next item](#next-item) for `':'`.
 
-   6. If `Prefix` is empty and `Last Prefix` is not empty, emit `'\n'`;
-   7. Let `Last Prefix` equal `Prefix 2`.
+    6. If `Prefix` is empty and `Last Prefix` is not empty, emit `'\n'`;
+    7. Let `Last Prefix` equal `Prefix 2`.
 
-10. If `Prefix` is empty:
+11. If `Prefix` is empty:
 
     1. Set `Open Match` if `T` contains an HTML start tag with a tag name
        matching the block list[^blockelem], or an HTML end tag with a tag name
@@ -2152,13 +2153,11 @@ For each line ending in `'\n'`:
           [closing paragraph](#close-paragraph);
        3. If `Pre Open Match` is set and `Pre Close Match` is clear, set
           `In Pre`;
-       4. For each case-insensitive match of the regular expression
-          `<(/?)blockquote[\s>]`:
-
-          1. Set `In Blockquote` if the matched tag was an open tag;
-          2. Let `BQ Offset` be the position after the match.
-
-       5. Set `In Block Elem` if `Close Match` is clear;
+       4. If the last case-insensitive match of the regular expression
+          `<(/?)blockquote[\s>]` in `T` is not none, clear `In Blockquote` if
+          the capture group is `"/"`, otherwise clear `In Blockquote`;
+       5. Set `In Block Elem` if `Close Match` is clear, otherwise clear
+          `In Block Elem`;
 
        Otherwise;
 
@@ -2197,7 +2196,7 @@ For each line ending in `'\n'`:
              1. Emit `Pending P Tag`;
              2. Emit `"<br>"`;
              3. Let `Pending P Tag` be empty;
-             4. Let `Last Paragraph` be `'p'`.
+             4. Let `Last Paragraph` be `"p"`.
 
              Otherwise;
 
@@ -2212,23 +2211,24 @@ For each line ending in `'\n'`:
 
           1. Emit `Pending P Tag`;
           2. Let `Pending P Tag` be empty;
-          3. Let `Last Paragraph` be `p`.
+          3. Let `Last Paragraph` be `"p"`.
 
           Otherwise;
 
-       7. If `Last Paragraph` is not `p`:
+       7. If `Last Paragraph` is not `"p"`:
 
           1. Emit the [closing paragraph](#close-paragraph);
           2. Emit `"<p>"`;
-          3. Let `Last Paragraph` be `'p'`.
+          3. Let `Last Paragraph` be `"p"`.
 
-11. If `Pre Close Match` is set and `In Pre` is set, clear `In Pre`;
-12. If `Pending P Tag` is empty:
+12. If `Pre Close Match` is set and `In Pre` is set, clear `In Pre`;
+13. If `Pending P Tag` is empty:
 
     1. If `Prefix` is empty:
 
        1. Emit `T`;
-       2. If `Not Last Line` is set or `Has Open Paragraph` is set, emit `'\n'`.
+       2. If `Not Last Line` is set or `Last Paragraph` is not empty, emit
+          `'\n'`.
 
        Otherwise;
 
@@ -2238,12 +2238,15 @@ After the last line:
 
 1. For each character `I` in `Prefix 2`, from right to left,
    emit the result of [closing the list](#close-list) for `I`;
-2. If `Prefix 2` is not empty and `Has Open Paragraph` is set, emit `'\n'`;
+2. If `Prefix 2` is not empty and `Last Paragraph` is not empty, emit `'\n'`;
 3. Emit the [closing paragraph](#close-paragraph) with `At The End` set.
 
 [^antiblockelem]: `["td"|"th"]`
 
 [^blockelem]: `["table"|"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"pre"|"p"|"ul"|"ol"|"dl"]`
+
+[^blstart]: This flag may be set when parsing Wikitext fragments in
+  the `#interwikilink` parser function and the `<indicator>` extension tag.
 
 [^excludedelem]: The MediaWiki algorithm also looks for tag names that start
                  with `mw:` or that match `meta property="mw:`. These are

@@ -119,6 +119,12 @@ pub trait Visitor<'tt, E> {
         visit_lang_variant(self, span, flags, variants)
     }
 
+    /// Visits a [`Token::Line`].
+    #[inline]
+    fn visit_line(&mut self, span: Span, content: &'tt [Spanned<Token>], last: bool) -> Result<(), E> {
+        visit_line(self, span, content, last)
+    }
+
     /// Visits a [`Token::Link`].
     #[inline]
     fn visit_link(
@@ -170,12 +176,6 @@ pub trait Visitor<'tt, E> {
         _default: Option<&'tt [Spanned<Token>]>,
     ) -> Result<(), E> {
         Ok(())
-    }
-
-    /// Visits a [`Token::Preformatted`].
-    #[inline]
-    fn visit_preformatted(&mut self, span: Span, content: &'tt [Spanned<Token>]) -> Result<(), E> {
-        visit_preformatted(self, span, content)
     }
 
     /// Visits a [`Token::Redirect`].
@@ -402,6 +402,24 @@ where
     Ok(())
 }
 
+/// Default implementation of [`Visitor::visit_line`].
+///
+/// # Errors
+///
+/// * A call to `visitor` returns an error
+#[inline]
+pub fn visit_line<'tt, V, E>(
+    visitor: &mut V,
+    _span: Span,
+    content: &'tt [Spanned<Token>],
+    _last: bool,
+) -> Result<(), E>
+where
+    V: Visitor<'tt, E> + ?Sized,
+{
+    visitor.visit_tokens(content)
+}
+
 /// Default implementation of [`Visitor::visit_link`].
 ///
 /// # Errors
@@ -463,23 +481,6 @@ where
     V: Visitor<'tt, E> + ?Sized,
 {
     visitor.visit_tokens(&output.root)
-}
-
-/// Default implementation of [`Visitor::visit_preformatted`].
-///
-/// # Errors
-///
-/// * A call to `visitor` returns an error
-#[inline]
-pub fn visit_preformatted<'tt, V, E>(
-    visitor: &mut V,
-    _span: Span,
-    content: &'tt [Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Visitor<'tt, E> + ?Sized,
-{
-    visitor.visit_tokens(content)
 }
 
 /// Default implementation of [`Visitor::visit_redirect`].
@@ -566,7 +567,7 @@ where
         Token::Parameter { name, default } => {
             visitor.visit_parameter(token.span, name, default.as_deref())
         }
-        Token::Preformatted { content } => visitor.visit_preformatted(token.span, content),
+        Token::Line { content, last } => visitor.visit_line(token.span, content, *last),
         Token::Redirect { link } => {
             let Spanned {
                 node:

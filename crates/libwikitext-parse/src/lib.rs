@@ -504,6 +504,13 @@ pub enum Token {
         /// Variants for the conversion.
         variants: Vec<LangVariant>,
     },
+    /// A line of source text.
+    Line {
+        /// The content of the line.
+        content: Vec<Spanned<Token>>,
+        /// If true, this is the last line of the source.
+        last: bool,
+    },
     /// An internal link.
     Link {
         /// The text content of the link. If this `Vec` is empty, a processed
@@ -533,11 +540,6 @@ pub enum Token {
         default: Option<Vec<Spanned<Token>>>,
         /// The parameter name.
         name: Vec<Spanned<Token>>,
-    },
-    /// A preformatted line.
-    Preformatted {
-        /// The content of the line.
-        content: Vec<Spanned<Token>>,
     },
     /// A redirect block.
     Redirect {

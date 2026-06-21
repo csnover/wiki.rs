@@ -30,13 +30,27 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// Parses all lines of a preprocessed Wikitext document.
     pub rule start() -> Vec<Spanned<Token>>
-      // In WikitextContentHandler, redirect is just sliced off the front
-      // without any care for line position, which means that if there had been
-      // more stuff on the redirect line, that more stuff becomes the first line
-      // even if it does not match `at_sol`
-    = rl:(r:redirect() l:(line() / eof() { vec![] }) { (r, balance_quotes(l)) })?
-      t:(&at_sol() t:line() { balance_quotes(t) })*
-    { reduce_tree(rl.into_iter().flat_map(|(r, l)| iter::once(r).chain(l)).chain(t.into_iter().flatten())) }
+    = first:spanned(<
+        // In WikitextContentHandler, redirect is just sliced off the front
+        // without any care for line position, which means that if there had
+        // been more stuff on the redirect line, that more stuff becomes the
+        // first line even if it does not match `at_sol`
+        r:redirect()
+        l:(line() / eof() { vec![] })
+        last:(&eof() { true } / { false })
+        {
+            let l = reduce_tree(balance_quotes(l));
+            let content = iter::once(r).chain(l).collect();
+            Token::Line { content, last }
+        }
+      >)?
+      rest:spanned(<
+        &at_sol()
+        t:line()
+        last:(&eof() { true } / { false })
+        { Token::Line { content: reduce_tree(balance_quotes(t)), last } }
+      >)*
+    { first.into_iter().chain(rest).collect() }
 
     /// Whole-line expressions.
     rule line() -> Vec<Spanned<Token>>
@@ -67,11 +81,6 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// start of a line.
     rule space_sensitive_line() -> Spanned<Token>
     = heading()
-      // TODO: pre and list should also parse successfully if there was a
-      // `general` strip marker at the start of the line that evaluates to empty
-      // string. pre should also parse if the `general` strip marker evaluates
-      // to something starting with a space character. Wooooooo.
-    / pre()
 
     /// An end of line token.
     rule line_eol() -> Option<Spanned<Token>>
@@ -442,6 +451,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// : Detail
     /// ```
     rule list() -> Vec<Spanned<Token>>
+      // TODO: list should also parse successfully if there was a `general`
+      // strip marker at the start of the line that evaluates to empty string.
     = c:comment_tag()*
       t:spanned(<
         bullets:spanned(<['*'|'#'|';'|':']+ {}>)
@@ -483,36 +494,6 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// not possible to easily disambiguate them in the grammar.
     rule inline_dd() -> Spanned<Token>
     = spanned(<space_s()* t:spanned(<":">) space_s()* { Token::InlineListItem }>)
-
-    /// A preformatted line.
-    ///
-    /// ```wikitext
-    /// ␠Preformatted text
-    /// ```
-    rule pre() -> Spanned<Token>
-      // This token may decay to plain text if it is in a fosterable position,
-      // or if it contains certain elements, or if it is surrounded by certain
-      // elements (p, blockquote), so the whole line has to be parsed as a token
-      // tree instead of optimising into a read of plain text
-    = spanned(<
-        // Keeping the final eol inside of this token helps to match the output
-        // of the MediaWiki parser, which emits a newline character before the
-        // `</pre>`. It would be equally or possibly more logical to only keep
-        // the eol between lines.
-        " " first:inline()+ e:line_eol()
-        rest:(
-            // TODO: The comment tag situation here is unfortunate because it
-            // creates a situation where it is very hard to decay this token.
-            // Probably, this should do a contortion like `list` and emit
-            // sequences of `<pre>`.
-            !table() c:comment_tag()* " " r:inline()* e:line_eol()
-            { c.into_iter().chain(r).chain(e) }
-        )*
-        end:spanned(<!at_sol() eof() { Token::NewLine }>)?
-        { Token::Preformatted {
-            content: reduce_tree(first.into_iter().chain(e).chain(rest.into_iter().flatten()).chain(end))
-        } }
-    >)
 
     ////////////
     // Tables //
@@ -962,7 +943,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// More expressions are allowed when an argument breaks onto a new line;
     /// see `wikilink_argument_line`.
     rule wikilink_inline(item: rule<Spanned<Token>>, term: rule<()>) -> Spanned<Token>
-    = !("=" / term()) t:item()
+    = !term() t:item()
     { t }
     / newline()
 
@@ -2737,7 +2718,7 @@ impl TextStyleBalancer<'_> {
                 Token::ExternalLink { content, .. }
                 | Token::Heading { content, .. }
                 | Token::ListItem { content, .. }
-                | Token::Preformatted { content } => {
+                | Token::Line { content, .. } => {
                     self.count(content);
                 }
                 Token::LangVariant { variants, .. } => {

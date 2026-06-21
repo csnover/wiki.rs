@@ -21,7 +21,7 @@ use libwikitext_common::{
     title::{Namespace, Title},
     title_decode, to_lower_first,
 };
-use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, borrow_fastest};
+use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, borrow_fastest, escape_all};
 use std::{borrow::Cow, pin::pin, sync::Arc, time::Instant};
 
 /// Templates that need to be spruced up a bit, but don’t have any hooks of
@@ -272,9 +272,11 @@ pub(super) fn render_template<'tt>(
             None
         }
 
-        Target::Template { arguments, callee } => {
-            call_template(&mut partial, state, sp, &callee, &arguments)?
-        }
+        Target::Template {
+            arguments,
+            callee,
+            raw,
+        } => call_template(&mut partial, state, sp, &callee, &arguments, raw)?,
 
         Target::Text => {
             return render_as_text(
@@ -337,6 +339,8 @@ enum Target<'tt> {
         arguments: Vec<Kv<'tt>>,
         /// The template to expand.
         callee: Title,
+        /// Expand the template as escaped Wikitext source code.
+        raw: bool,
     },
     /// The target looked like a template, but after further consideration, this
     /// is actually just plain text.
@@ -366,10 +370,12 @@ fn split_target<'tt>(
 ) -> Result<Target<'tt>, Error> {
     const SUBST: &str = "subst";
     const SAFESUBST: &str = "safesubst";
+    const MSGNW: &str = "msgnw";
 
     let mut callee = String::new();
     let mut rest = target.iter();
     let mut has_colon = false;
+    let mut raw = false;
     for part in rest.by_ref() {
         // It is not good enough to just look for text nodes because there are
         // insane but legal constructions like `{{ {{#if:1|#if:}} 1|y|n }}`
@@ -408,22 +414,24 @@ fn split_target<'tt>(
             // `{{subst:foo}}` | `{{{{{|subst:}}}bar}}`     | content of bar
             // `{{subst:foo}}` | `{{{{{|safesubst:}}}bar}}` | content of bar
             let config = state.statics.db.config();
-            let magic = config.extra_words.get(&to_lower(callee.trim_ascii()));
-            if magic.is_some_and(|candidates| candidates.contains(&SUBST)) {
-                // Since wiki.rs is never in save mode, subst will always just
-                // emit the original text
-                return Ok(Target::Text);
-            } else if magic.is_some_and(|candidates| candidates.contains(&SAFESUBST)) {
-                callee.clear();
+            if let Some(magic) = config.extra_words.get(&to_lower(callee.trim_ascii())) {
+                if magic.contains(&SUBST) {
+                    // Since wiki.rs is never in save mode, subst will always just
+                    // emit the original text
+                    return Ok(Target::Text);
+                } else if magic.contains(&SAFESUBST) || magic.contains(&MSGNW) {
+                    raw |= magic.contains(&MSGNW);
+                    callee.clear();
 
-                if let Some((lhs, rest)) = rhs.split_once(':') {
-                    // `safesubst:foo:...`
-                    callee += lhs;
-                    rhs = rest;
-                } else {
-                    // `safesubst:...`
-                    callee += rhs;
-                    continue;
+                    if let Some((lhs, rest)) = rhs.split_once(':') {
+                        // `safesubst:foo:...`
+                        callee += lhs;
+                        rhs = rest;
+                    } else {
+                        // `safesubst:...`
+                        callee += rhs;
+                        continue;
+                    }
                 }
             }
 
@@ -488,7 +496,11 @@ fn split_target<'tt>(
             };
             if let Ok(callee) = Title::new(state.statics.db.config(), &callee, Some(ns)) {
                 let arguments = arguments.iter().map(Kv::Argument).collect::<Vec<_>>();
-                Target::Template { callee, arguments }
+                Target::Template {
+                    callee,
+                    arguments,
+                    raw,
+                }
             } else {
                 Target::Text
             }
@@ -503,6 +515,7 @@ pub(crate) fn call_template(
     sp: &StackFrame<'_>,
     callee: &Title,
     arguments: &[Kv<'_>],
+    raw: bool,
 ) -> Result<Option<String>> {
     let mut template = state.statics.db.get(callee)?;
 
@@ -526,7 +539,15 @@ pub(crate) fn call_template(
 
     let Some(template) = template else {
         log::warn!("No template found for '{callee}'");
-        write!(out, "[[{}]]", callee.key())?;
+        if raw {
+            write!(
+                out,
+                "{}",
+                escape_all(state.statics.db.config(), &format!("[[:{}]]", callee.key()))
+            )?;
+        } else {
+            write!(out, "[[:{}]]", callee.key())?;
+        }
         return Ok(None);
     };
 
@@ -534,6 +555,15 @@ pub(crate) fn call_template(
         log::warn!("Template redirects failed for {callee}");
         return Ok(None);
     };
+
+    if raw {
+        write!(
+            out,
+            "{}",
+            escape_all(state.statics.db.config(), template.body())
+        )?;
+        return Ok(None);
+    }
 
     let resolved_title = Title::new(state.statics.db.config(), template.title(), None)?;
     let resolved_key = resolved_title.key();

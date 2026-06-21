@@ -1,15 +1,10 @@
 //! The root of a Wikitext document.
 
 use super::{
-    Error, LinkKind, Result, State, StripMarker,
-    emitters::{
-        Accumulator, AttributeFilter, Chain as _, DomTree, EmptyTagger, GrafEmitter, ListEmitter,
+    Error, LinkKind, Result, State, StripMarker, StripMarkers, emitters::{
+        Accumulator, AttributeFilter, Chain as _, DomTree, EmptyTagger, ListEmitter,
         OutlineEmitter, PrettyText, Sink, TableFoster, TemplateTagger, TextStyleEmitter,
-    },
-    extension_tags,
-    stack::StackFrame,
-    surrogate::{self, Surrogate},
-    tags::{self, PHRASING_TAGS},
+    }, extension_tags, stack::StackFrame, surrogate::{self, Surrogate}, tags::{self, PHRASING_TAGS}
 };
 use crate::tags::ExternalLinkKind;
 use either::Either;
@@ -29,7 +24,7 @@ use std::borrow::Cow;
 /// The chain of render nodes used to render the document.
 type RendererChain = AttributeFilter<
     OutlineEmitter<
-        DomTree<TableFoster<GrafEmitter<TemplateTagger<EmptyTagger<PrettyText<Accumulator>>>>>>,
+        DomTree<TemplateTagger<TableFoster<EmptyTagger<PrettyText<Accumulator>>>>>,
     >,
 >;
 
@@ -52,16 +47,40 @@ pub(crate) struct Document {
     /// If true, this [`Document`] is used to render a document fragment rather
     /// than a complete document.
     fragment: bool,
+    in_block_elem: bool,
+    in_blockquote: bool,
     /// The stack of inclusion control tags.
     in_include: Vec<InclusionMode>,
+    /// If true, inside a `<pre>` tag.
+    in_pre: bool,
     /// The output sink.
     pub(super) next: RendererChain,
+    last_graf: Option<&'static str>,
     /// The list emitter.
     list_emitter: Option<ListEmitter>,
+    pending_p_tag: Option<PendingGraf>,
     /// The Wikitext table emitters.
     table_emitter: Vec<TableState>,
     /// The [`TextStyle`] emitters.
     text_style_emitter: Vec<TextStyleEmitter>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum PendingGraf {
+    OpenGraf,
+    SplitGraf,
+}
+
+impl PendingGraf {
+    fn emit<S: Sink + ?Sized>(self, next: &mut S) {
+        match self {
+            Self::OpenGraf => next.tag_start_full("p"),
+            Self::SplitGraf => {
+                next.tag_end("p");
+                next.tag_start_full("p")
+            },
+        }
+    }
 }
 
 impl Document {
@@ -69,13 +88,18 @@ impl Document {
     pub(crate) fn new(fragment: bool) -> Self {
         Self {
             fragment,
+            in_block_elem: <_>::default(),
+            in_blockquote: <_>::default(),
             in_include: <_>::default(),
-            next: AttributeFilter::new(OutlineEmitter::new(DomTree::new(TableFoster::new(
-                GrafEmitter::new(TemplateTagger::new(EmptyTagger::new(PrettyText::new(
+            in_pre: <_>::default(),
+            next: AttributeFilter::new(OutlineEmitter::new(DomTree::new(
+                TemplateTagger::new(TableFoster::new(EmptyTagger::new(PrettyText::new(
                     Accumulator::new(),
                 )))),
-            )))),
+            ))),
+            last_graf: <_>::default(),
             list_emitter: <_>::default(),
+            pending_p_tag: <_>::default(),
             table_emitter: <_>::default(),
             text_style_emitter: vec![TextStyleEmitter::default()],
         }
@@ -165,16 +189,6 @@ impl Document {
     fn write_strip_marker(&mut self, tag: &StripMarker) {
         match tag {
             StripMarker::NoWiki(text) => {
-                // The mere presence of a strip marker needs to cause the
-                // GrafEmitter to decide that there is content, even if the
-                // marker is actually empty, because the spec defines this
-                // code as running before strip markers are unstripped
-                self.next
-                    .next_mut()
-                    .next_mut()
-                    .next_mut()
-                    .next_mut()
-                    .force_content();
                 self.next.text(&decode_html(text));
             }
             StripMarker::Inline(text) => {
@@ -188,14 +202,10 @@ impl Document {
                     .next_mut()
                     .next_mut()
                     .next_mut()
-                    .next_mut()
-                    .next_mut()
                     .push(name.clone());
             }
             StripMarker::WikiRsSourceEnd(name) => {
                 self.next
-                    .next_mut()
-                    .next_mut()
                     .next_mut()
                     .next_mut()
                     .next_mut()
@@ -239,6 +249,132 @@ impl Document {
             }
         }
         Ok(())
+    }
+
+    fn pre_text<'a>(&self, strip_markers: &'a StripMarkers, source: &'a str, content: &[Spanned<Token>]) -> Option<(usize, &'a str)> {
+
+        // Because the block level algorithm normally runs after general strip
+        // markers are unstripped, they must also participate in the prefix
+        // detection if they contain content.
+        let (index, text) = content.iter().enumerate().find_map(|(index, token)| {
+            if let Spanned { span, node: Token::Text } = token {
+                Some((index, source[span.into_range()].strip_prefix(' ')))
+            } else if let Token::StripMarker(key) = &token.node
+                && let Some(marker) = strip_markers.get(&source[key.into_range()]) {
+                match marker {
+                    StripMarker::Block(s) |
+                    StripMarker::Inline(s) => (!s.is_empty()).then(|| (index, s.strip_prefix(' '))),
+                    StripMarker::NoWiki(_) => Some((index, None)),
+                    _ => None
+                }
+            } else {
+                Some((index, None))
+            }
+        })?;
+
+        text.and_then(|text| {
+            let in_pre = self.last_graf == Some("pre")
+                || content.len() > index
+                || text.bytes().any(|b| !b.is_ascii_whitespace());
+            (in_pre && !self.in_blockquote).then_some((index, text))
+        })
+    }
+
+    fn is_meta_line(&self, strip_markers: &StripMarkers, source: &str, content: &[Spanned<Token>]) -> bool {
+        let mut in_style = false;
+        for token in content {
+            if let Token::EndTag { name } = &token.node {
+                let name = to_ascii_lower(&source[name.into_range()]);
+                if in_style && name == "style" {
+                    in_style = false;
+                    continue;
+                }
+                return false;
+            }
+
+            if in_style {
+                continue;
+            }
+
+            if let Token::StartTag { name, .. } = &token.node {
+                let name = to_ascii_lower(&source[name.into_range()]);
+                if name == "style" {
+                    in_style = true;
+                    continue;
+                } else if name != "link" {
+                    return false;
+                }
+            }
+
+            if let Spanned {
+                span,
+                node: Token::Text,
+            } = token
+                && source[span.into_range()]
+                    .as_bytes()
+                    .iter()
+                    .all(u8::is_ascii_whitespace)
+            {
+                continue;
+            }
+
+            // Because this pass is supposed to behave as if general strip
+            // markers were already unstripped, they have to be handled
+            // specifically. wiki.rs extensions do not emit `<style>` or
+            // `<link>` tags, so they can be treated as opaque blobs of HTML
+            // for the purpose of this algorithm.
+            // TODO: Probably this whole thing should be in the emitter chain,
+            // but the way this stupid algorithm works requires an entire line
+            // to be buffered before it knows what to do at the start of the
+            // line. So there is literally no good place to put it.
+            if let Token::StripMarker(key) = &token.node {
+                let key = &source[key.into_range()];
+                match strip_markers.get(key) {
+                    Some(StripMarker::Block(s) |
+                    StripMarker::Inline(s)) if !s.as_bytes().iter().all(u8::is_ascii_whitespace) => return false,
+                    Some(StripMarker::NoWiki(_)) => return false,
+                    _ => {}
+                }
+            }
+
+            return false;
+        }
+
+        // A `<style>` with no `</style>` is not a valid meta line
+        !in_style
+    }
+
+    fn end_p(&mut self, finishing: bool) {
+        if let Some(graf) = self.last_graf.take() {
+            self.next.tag_end(graf);
+            if !finishing {
+                self.next.new_line();
+            }
+        }
+        self.in_pre = false;
+    }
+
+    fn is_empty_line(&self, strip_markers: &StripMarkers, source: &str, content: &[Spanned<Token>]) -> bool {
+        for token in content {
+            if let Spanned { span, node: Token::Text } = token
+                && source[span.into_range()].bytes().any(|b| !b.is_ascii_whitespace())
+            {
+                return false;
+            } else if let Token::StripMarker(key) = &token.node
+                && let Some(marker) = strip_markers.get(&source[key.into_range()]) {
+                match marker {
+                    StripMarker::Block(s) |
+                    StripMarker::Inline(s) if !s.is_empty() => {
+                        return s.bytes().any(|b| !b.is_ascii_whitespace());
+                    },
+                    StripMarker::NoWiki(_) => return false,
+                    _ => {}
+                }
+            } else {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -318,7 +454,9 @@ impl Surrogate<Error> for Document {
         _span: Span,
         name: &str,
     ) -> Result {
-        self.next.tag_end(&to_ascii_lower(name));
+        let name = to_ascii_lower(name);
+        self.in_pre &= name != "pre";
+        self.next.tag_end(&name);
         Ok(())
     }
 
@@ -505,7 +643,7 @@ impl Surrogate<Error> for Document {
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         bullets: &str,
         content: &[Spanned<Token>],
     ) -> Result {
@@ -518,6 +656,11 @@ impl Surrogate<Error> for Document {
             term.map_or((content, None), |pos| {
                 (&content[..pos], Some(&content[pos + 1..]))
             })
+        }
+
+        if self.in_pre {
+            self.next.text(&sp.source[span.into_range()]);
+            return Ok(());
         }
 
         // TODO: If the newline is just going to be ignored, why have it in the
@@ -696,16 +839,95 @@ impl Surrogate<Error> for Document {
         Ok(())
     }
 
-    fn adopt_preformatted(
+    fn adopt_line(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         content: &[Spanned<Token>],
+        last: bool,
     ) -> Result {
-        self.next.tag_start_full("pre");
-        self.adopt_tokens(state, sp, content)?;
-        self.next.tag_end("pre");
+        let mut pre_open_match = false;
+        let mut pre_close_match = false;
+        let mut open_match = false;
+        let mut close_match = false;
+        let mut start_at = 0;
+        for token in content {
+            if let Token::StartTag { name, .. } = &token.node {
+                let name = to_ascii_lower(&sp.source[name.into_range()]);
+                pre_open_match |= name == "pre";
+                open_match |= ALWAYS_TAG.contains(&name) || BLOCK_TAG.contains(&name);
+                close_match |= NEVER_TAG.contains(&name);
+                self.in_blockquote |= name == "blockquote";
+            } else if let Token::EndTag { name } = &token.node {
+                let name = to_ascii_lower(&sp.source[name.into_range()]);
+                pre_close_match |= name == "pre";
+                open_match |= ALWAYS_TAG.contains(&name);
+                close_match |= NEVER_TAG.contains(&name) || ANTI_BLOCK_TAG.contains(&name);
+                self.in_blockquote &= name != "blockquote";
+            }
+        }
+
+        if self.in_pre {
+            self.next.text(&sp.source[span.into_range()]);
+        }
+
+        if open_match || close_match {
+            self.pending_p_tag = None;
+            if !self.in_pre || pre_open_match {
+                self.end_p(false);
+            }
+            self.in_pre |= pre_open_match && !pre_close_match;
+            self.in_block_elem = !close_match;
+        } else if !self.in_block_elem && !self.in_pre {
+            if let Some((index, pre_text)) = self.pre_text(&state.strip_markers, &sp.source, content)
+            {
+                if self.last_graf != Some("pre") {
+                    self.pending_p_tag = None;
+                    self.end_p(false);
+                    self.next.tag_start_full("pre");
+                    self.last_graf = Some("pre");
+                }
+                if self.pending_p_tag.is_none() {
+                    self.next.text(pre_text);
+                }
+                start_at = index + 1;
+            } else if self.is_meta_line(&state.strip_markers, &sp.source, content) {
+                if self.pending_p_tag.take().is_some() {
+                    self.end_p(false);
+                }
+            } else if self.is_empty_line(&state.strip_markers, &sp.source, content) {
+                if let Some(pending) = self.pending_p_tag.take() {
+                    pending.emit(&mut self.next);
+                    self.next.tag_start_full("br");
+                    self.last_graf = Some("p");
+                } else if self.last_graf != Some("p") {
+                    self.end_p(false);
+                    self.pending_p_tag = Some(PendingGraf::OpenGraf);
+                } else {
+                    self.pending_p_tag = Some(PendingGraf::SplitGraf);
+                }
+            } else if let Some(pending) = self.pending_p_tag.take() {
+                pending.emit(&mut self.next);
+                self.last_graf = Some("p");
+            } else if self.last_graf != Some("p") {
+                self.end_p(false);
+                self.next.tag_start_full("p");
+                self.last_graf = Some("p");
+            }
+        }
+
+        if pre_close_match {
+            self.in_pre = false;
+        }
+
+        if self.pending_p_tag.is_none() {
+            self.adopt_tokens(state, sp, &content[start_at..])?;
+            if !last || self.last_graf.is_some() {
+                self.next.new_line();
+            }
+        }
+
         Ok(())
     }
 
@@ -761,10 +983,12 @@ impl Surrogate<Error> for Document {
         attributes: &[Spanned<Token>],
         _self_closing: bool,
     ) -> Result {
+        let name = to_ascii_lower(name);
+        self.in_pre |= name == "pre";
         let attributes = sp
             .eval(state, attributes)?
             .map(|out| state.strip_markers.unstrip(out));
-        self.write_start_tag(state, sp, &to_ascii_lower(name), &attributes)
+        self.write_start_tag(state, sp, &name, &attributes)
     }
 
     fn adopt_strip_marker(
@@ -1014,6 +1238,26 @@ impl Node {
         }
     }
 }
+
+/// HTML tags which start a new block when they are encountered as either a
+/// start or end tag.
+static ALWAYS_TAG: phf::Set<&str> = phf::phf_set! {
+    "caption", "dd", "dt", "li", "tr"
+};
+
+/// HTML tags which terminate a block when they are encountered as an end tag.
+static ANTI_BLOCK_TAG: phf::Set<&str> = phf::phf_set! { "td", "th" };
+
+/// HTML tags which start a new block when they are encountered as start tags.
+static BLOCK_TAG: phf::Set<&str> = phf::phf_set! {
+    "h1", "h2", "h3", "h4", "h5", "h6", "ol", "p", "pre", "table", "ul"
+};
+
+/// HTML tags which terminate a block when they are encountered as start or end
+/// tags.
+static NEVER_TAG: phf::Set<&str> = phf::phf_set! {
+    "aside", "blockquote", "center", "div", "figure", "hr"
+};
 
 /// Tags with restricted allowable children.
 static PARENTS: phf::Map<&str, &[&str]> = phf::phf_map! {

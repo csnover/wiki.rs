@@ -135,7 +135,7 @@ fn expand_template(
             ))?;
         };
         let mut result = String::new();
-        call_template(&mut result, state, sp, &title, &arguments)?;
+        call_template(&mut result, state, sp, &title, &arguments, false)?;
         Ok(state
             .statics
             .vm

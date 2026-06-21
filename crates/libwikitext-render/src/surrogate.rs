@@ -189,6 +189,19 @@ pub(crate) trait Surrogate<E> {
         adopt_lang_variant(self, state, sp, span, flags, variants)
     }
 
+    /// Visits a [`Token::Line`].
+    #[inline]
+    fn adopt_line(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        content: &[Spanned<Token>],
+        last: bool,
+    ) -> Result<(), E> {
+        adopt_line(self, state, sp, span, content, last)
+    }
+
     /// Visits a [`Token::Link`].
     #[inline]
     #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
@@ -263,18 +276,6 @@ pub(crate) trait Surrogate<E> {
         _default: Option<&[Spanned<Token>]>,
     ) -> Result<(), E> {
         Ok(())
-    }
-
-    /// Visits a [`Token::Preformatted`].
-    #[inline]
-    fn adopt_preformatted(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        content: &[Spanned<Token>],
-    ) -> Result<(), E> {
-        adopt_preformatted(self, state, sp, span, content)
     }
 
     /// Visits a [`Token::Redirect`].
@@ -551,6 +552,22 @@ where
     Ok(())
 }
 
+/// Default implementation of [`Surrogate::adopt_line`].
+#[inline]
+pub fn adopt_line<V, E>(
+    surrogate: &mut V,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    _span: Span,
+    content: &[Spanned<Token>],
+    _last: bool,
+) -> Result<(), E>
+where
+    V: Surrogate<E> + ?Sized,
+{
+    surrogate.adopt_tokens(state, sp, content)
+}
+
 /// Default implementation of [`Surrogate::adopt_link`].
 #[inline]
 #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
@@ -606,21 +623,6 @@ where
     V: Surrogate<E> + ?Sized,
 {
     surrogate.adopt_tokens(state, sp, &output.root)
-}
-
-/// Default implementation of [`Surrogate::adopt_preformatted`].
-#[inline]
-pub fn adopt_preformatted<V, E>(
-    surrogate: &mut V,
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-    _span: Span,
-    content: &[Spanned<Token>],
-) -> Result<(), E>
-where
-    V: Surrogate<E> + ?Sized,
-{
-    surrogate.adopt_tokens(state, sp, content)
 }
 
 /// Default implementation of [`Surrogate::adopt_redirect`].
@@ -721,9 +723,7 @@ where
         Token::Parameter { name, default } => {
             surrogate.adopt_parameter(state, sp, token.span, name, default.as_deref())
         }
-        Token::Preformatted { content } => {
-            surrogate.adopt_preformatted(state, sp, token.span, content)
-        }
+        Token::Line { content, last } => surrogate.adopt_line(state, sp, token.span, content, *last),
         Token::Redirect { link } => {
             let Spanned {
                 node:

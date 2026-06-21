@@ -15,7 +15,7 @@ list of all the options you can use with wiki.rs to change how it works for you.
 
 ## Why did you do this?! #######################################################
 
-Many great people, most of whom are also quite smart and cool, have been talking
+Many great people, lots of whom are also quite smart and cool, have been talking
 about how useful it would be if they could quickly read whatever might be inside
 a MediaWiki database dump, given that quite a few sites that run on MediaWiki do
 provide them. Alas, most of the readers which already supported this format were
@@ -41,14 +41,17 @@ wiki.rs and its dependencies are written entirely in Rust. This makes it at once
 the trendiest wiki dump reader of the year and also the coolest wiki dump reader
 of the year. But mostly it means never having to deal with awful C dependencies,
 or PHP engines, or Java runtimes. You do need to bring your own web browser, but
-it seems strongly implausible that you don’t already have at least one of those.
+since it is weird to not already have at least one of those, this seems alright?
 
 ### wiki.rs supports all Wikitext features #####################################
 
-wiki.rs supports Wikitext templates, parser functions, extension tags, and comes
-with a Lua engine written in pure Rust, so it will render all of the things that
-you expect to see, like info boxes, and nav boxes, and message boxes, and all of
-the other boxes. So many boxes. Maybe we can edit some of these out during post…
+Wikitext is a less of a text file format and more of a cautionary tale about how
+badly things can go when you don’t know what you are doing, but think you can do
+it using regular expressions, and then your project becomes super popular and it
+can’t ever be fixed. wiki.rs implements all of the irregular grammars, the wacky
+artistic interpretations of HTML, and the many parser functions & extension tags
+needed just to render basic things one expects to see like message boxes and nav
+boxes and info boxes. So many boxes… maybe we can edit some of them out in post…
 
 ### wiki.rs is beautiful, maybe? ###############################################
 
