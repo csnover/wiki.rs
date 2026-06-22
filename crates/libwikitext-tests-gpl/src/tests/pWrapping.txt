@@ -59,6 +59,8 @@ x
 !! html/parsoid
 <span about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"stx":"html","pi":[[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"&lt;span>&lt;div>x&lt;/div>&lt;/span>"}},"i":0}}]}'><div>x</div></span>
 <p>x</p>
+!! html/wiki.rs # This output matches the PHP parser
+<span><div>x</div></span>
 !! end
 
 !! test
@@ -192,6 +194,9 @@ a [[Category:A1]] [[Category:A2]]
 !! html/parsoid
 <p>a</p>
 <link rel="mw:PageProp/Category" href="./Category:A1"/> <link rel="mw:PageProp/Category" href="./Category:A2"/> <link rel="mw:PageProp/Category" href="./Category:A3"/> <link rel="mw:PageProp/Category" href="./Category:A4"/>
+!! html/wiki.rs # This output matches the PHP parser
+<p>a  
+</p>
 !! end
 
 !! test
@@ -202,6 +207,9 @@ parsoid=wt2html
 [[Category:A1]]a
 !! html/parsoid
 <link rel="mw:PageProp/Category" href="./Category:A1"/><p>a</p>
+!! html/wiki.rs # This output matches the PHP parser
+<p>a
+</p>
 !! end
 
 !! test
@@ -339,6 +347,12 @@ parsoid=wt2html,html2html
 <tbody><tr><td>hi</td></tr>
 <tr class="mw-empty-elt"></tr>
 </tbody></table><p> ho</p>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
+<table>
+<tr>
+<td>hi
+</td></tr>
+</table><p> ho</p>
 !! end
 
 !! test
