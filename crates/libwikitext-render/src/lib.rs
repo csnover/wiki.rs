@@ -13,7 +13,7 @@ mod surrogate;
 mod tags;
 mod template;
 
-use core::{cell::RefCell, fmt, time::Duration};
+use core::{fmt, time::Duration};
 use document::Document;
 use expand_templates::{ExpandMode, ExpandTemplates};
 pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
@@ -36,7 +36,6 @@ use stack::{Kv, StackFrame};
 use std::{
     borrow::Cow,
     collections::HashMap,
-    rc::Rc,
     sync::{Arc, PoisonError, RwLock},
 };
 use surrogate::Surrogate;
@@ -261,7 +260,8 @@ fn render(
     prefetcher.adopt_tokens(&mut state, &sp, &root)?;
     prefetcher.finish(&mut state);
 
-    let mut renderer = Document::new(false, &state.globals.outline);
+    let mut outline = <_>::default();
+    let mut renderer = Document::new(false, &mut outline);
     renderer.adopt_tokens(&mut state, &sp, &root)?;
     let content = renderer.finish();
 
@@ -295,7 +295,7 @@ fn render(
         categories: state.globals.categories,
         content,
         indicators: state.globals.indicators,
-        outline: Rc::try_unwrap(state.globals.outline).unwrap().into_inner(),
+        outline,
         styles: state.globals.styles.text,
     })
 }
@@ -672,8 +672,6 @@ struct ArticleState {
     external_link_ordinal: u32,
     /// Indicator icons for the `<indicator>` extension tag.
     indicators: globals::Indicators,
-    /// Table of contents.
-    outline: Rc<RefCell<globals::Outline>>,
     /// Collected references for the `<ref>` and `<references>` extension tags.
     references: extension_tags::References,
     /// Labelled section transclusion sections.
@@ -695,7 +693,6 @@ impl ArticleState {
             categories: <_>::default(),
             external_link_ordinal: <_>::default(),
             indicators: <_>::default(),
-            outline: <_>::default(),
             references: <_>::default(),
             sections: <_>::default(),
             styles: <_>::default(),

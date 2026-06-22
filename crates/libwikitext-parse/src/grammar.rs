@@ -68,7 +68,12 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///   ^^^^^^^^^^^^^
     /// ```
     rule line_after_table() -> Vec<Spanned<Token>>
-    = !at_sol() i:inline()* e:line_eol() { reduce_tree(i.into_iter().chain(e)) }
+    = !at_sol()
+      i:inline()*
+      // In the original parser, any line starting with `|}` would have a
+      // forced newline at the end
+      e:spanned(<eolf() { Token::NewLine }>)
+    { reduce_tree(i.into_iter().chain(iter::once(e))) }
 
     /// Whole-line expressions that either require or reject whitespace at the
     /// start of a line.
@@ -450,29 +455,40 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       t:spanned(<
         bullets:spanned(<['*'|'#'|';'|':']+ {}>)
         space_s()*
-        content:(!rtrim_term() t:(inline_dd() / inline()) { t } / wikilink_category())*
-        space_s()*
-        // Keeping the eol inside the list item makes it easier to generate list
-        // containers while streaming tokens because a newline inside of a list
-        // item means that the list is continuing, where a newline outside of
-        // a list item means that the list has ended
-        // TODO: This is ugly and bad, actually.
-        e:list_continuation()?
+        content:list_part()*
+        e:list_eol()
         { Token::ListItem {
             bullets: bullets.span,
-            content: reduce_tree(reduce_dd(content).into_iter().chain(e.into_iter().flatten())),
+            content: reduce_tree(reduce_dd(content).into_iter().chain(e)),
         } }
       >)
-      e:(e:line_eol() !list_start() { e })?
-    { c.into_iter().chain(iter::once(t)).chain(e.flatten()).collect() }
+      e:line_eol()?
+    { c.into_iter().chain(iter::once(t)).chain(e.into_iter().flatten()).collect() }
+
+    /// A part of the content part of a list item.
+    ///
+    /// ```wikitext
+    /// * Unordered
+    ///   ^^^^^^^^^
+    /// # Ordered
+    ///   ^^^^^^^
+    /// ; Term
+    ///   ^^^^
+    /// : Detail
+    ///   ^^^^^^
+    /// ```
+    rule list_part() -> Spanned<Token>
+    = !rtrim_term() t:(inline_dd() / inline()) { t }
+    / wikilink_category()
+
+    /// The end of a list item. If `Some`, the next line is also a list item.
+    rule list_eol() -> Option<Spanned<Token>>
+    = t:spanned(<space_s()* nl() &list_start() { Token::NewLine }>) { Some(t) }
+    / space_s()* { None }
 
     /// A minimal unambiguous start of a list item.
     rule list_start()
     = comment_tag()* !table_hack_start() ['*'|'#'|';'|':']
-
-    // TODO: Docs
-    rule list_continuation() -> Option<Spanned<Token>>
-    = e:rtrim_eol() &list_start() { e }
 
     /// An inline definition detail.
     ///
@@ -512,7 +528,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// The list of possible table expressions.
     rule table_part() -> Vec<Spanned<Token>>
-    = table_hack_start()
+    = table_hack()
     / t:table_end() { vec![t] }
     / table_single()
     / table_caption()
@@ -532,26 +548,31 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ::{| k="v" ␤
     /// ^^^^^^^^^^^^
     /// ```
-    rule table_hack_start() -> Vec<Spanned<Token>>
+    rule table_hack() -> Vec<Spanned<Token>>
     = first:spanned(<
         space_s()*
-        bullets:spanned(<":"+ {}>)
-        first:table_start()
+        bf:table_hack_start()
         e:line_eol()
         content:(!table_hack_end() t:line() { t })*
         term:table_hack_end()
-        { Token::ListItem {
-            bullets: bullets.span,
-            content: iter::once(first)
+        {
+            let (bullets, first) = bf;
+            let content = iter::once(first)
                 .chain(e)
                 .chain(content.into_iter().flatten())
                 .chain(term)
-                .collect(),
-        } }
+                .collect();
+            Token::ListItem { bullets, content }
+        }
       >)
       rest:(!rtrim_term() t:inline() { t })*
       space_s()*
     { reduce_tree(iter::once(first).chain(rest)) }
+
+    rule table_hack_start() -> (Span, Spanned<Token>)
+    = bullets:spanned(<":"+ {}>)
+      first:table_start()
+    { (bullets.span, first) }
 
     /// The end of the indented table hack.
     ///
@@ -649,7 +670,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         where F: Fn(Vec<Spanned<Token>>) -> Token
     = first:table_cell(first_start, &rest_start)
       rest:table_cell(&rest_start, &rest_start)*
-      end:rtrim_eol()
+      end:table_cells_eol()
     { reduce_tree(iter::once(first)
         .chain(rest)
         .flat_map(|(start, attributes, rest)| {
@@ -658,6 +679,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         })
         .chain(end))
     }
+
+    /// The end of a line of table cells.
+    rule table_cells_eol() -> Option<Spanned<Token>>
+    = t:spanned(<space_s()* newline() { Token::NewLine }>) { Some(t) }
+    / space_s()* eof() { None }
 
     /// A single table cell with optional attributes and content.
     ///
@@ -684,11 +710,6 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       >)
       body:(!(space_s()* (term() / nl())) t:inline() { t })*
     { (sa.span, sa.node.unwrap_or_default(), body) }
-
-    /// The end of a table line.
-    rule rtrim_eol() -> Option<Spanned<Token>>
-    = t:spanned(<rtrim_term() { Token::NewLine }>) { Some(t) }
-    / eof() { None }
 
     /// A termination rule for right-side ASCII whitespace trimming expressions.
     rule rtrim_term()
@@ -2710,8 +2731,7 @@ impl TextStyleBalancer<'_> {
                 }
                 Token::ExternalLink { content, .. }
                 | Token::Heading { content, .. }
-                | Token::ListItem { content, .. }
-                | Token::Line { content, .. } => {
+                | Token::ListItem { content, .. } => {
                     self.count(content);
                 }
                 Token::LangVariant { variants, .. } => {

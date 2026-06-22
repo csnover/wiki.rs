@@ -189,19 +189,6 @@ pub(crate) trait Surrogate<E> {
         adopt_lang_variant(self, state, sp, span, flags, variants)
     }
 
-    /// Visits a [`Token::Line`].
-    #[inline]
-    fn adopt_line(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        span: Span,
-        content: &[Spanned<Token>],
-        last: bool,
-    ) -> Result<(), E> {
-        adopt_line(self, state, sp, span, content, last)
-    }
-
     /// Visits a [`Token::Link`].
     #[inline]
     #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
@@ -552,22 +539,6 @@ where
     Ok(())
 }
 
-/// Default implementation of [`Surrogate::adopt_line`].
-#[inline]
-pub fn adopt_line<V, E>(
-    surrogate: &mut V,
-    state: &mut State<'_, '_, '_>,
-    sp: &StackFrame<'_>,
-    _span: Span,
-    content: &[Spanned<Token>],
-    _last: bool,
-) -> Result<(), E>
-where
-    V: Surrogate<E> + ?Sized,
-{
-    surrogate.adopt_tokens(state, sp, content)
-}
-
 /// Default implementation of [`Surrogate::adopt_link`].
 #[inline]
 #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
@@ -722,9 +693,6 @@ where
         Token::NewLine => surrogate.adopt_new_line(state, sp, token.span),
         Token::Parameter { name, default } => {
             surrogate.adopt_parameter(state, sp, token.span, name, default.as_deref())
-        }
-        Token::Line { content, last } => {
-            surrogate.adopt_line(state, sp, token.span, content, *last)
         }
         Token::Redirect { link } => {
             let Spanned {

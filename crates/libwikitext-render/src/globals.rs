@@ -1,6 +1,6 @@
 //! Collections for semi-structured article data.
 
-use core::fmt::{self, Write as _};
+use core::fmt;
 use libmisc::to_ascii_lower;
 use libwikitext_common::{
     Messages,
@@ -11,7 +11,8 @@ use libwikitext_common::{
 };
 use libwikitext_parse::HeadingLevel;
 use std::{
-    collections::{BTreeSet, HashMap, hash_map::Entry},
+    borrow::Cow,
+    collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -116,7 +117,7 @@ pub struct Outline {
     entries: Vec<OutlineEntry>,
     /// A map from a base anchor ID to the next free suffix for that base ID.
     /// Used to ensure globally unique case-insensitive heading IDs.
-    ids: HashMap<String, u32>,
+    ids: HashSet<String>,
 }
 
 /// An outline entry.
@@ -163,39 +164,13 @@ impl Outline {
         self.entries.len()
     }
 
-    /// Pushes a new entry to the outline at the given heading level. If the
-    /// given ID conflicted with an existing one, a new unique ID is returned.
-    pub(super) fn push<'a>(
-        &'a mut self,
-        level: HeadingLevel,
-        html: &str,
-        id: &str,
-    ) -> Option<&'a str> {
+    /// Pushes a new entry to the outline at the given heading level.
+    pub(super) fn push(&mut self, level: HeadingLevel, html: &str, id: &str) {
         let pos = self.buffer.len();
         self.buffer.push_str(html);
 
         let id_pos = self.buffer.len();
-        let lower = to_ascii_lower(id);
-        let conflict = if let Some(mut suffix) = self.ids.get(lower.as_ref()).copied() {
-            let id = loop {
-                match self.ids.entry(format!("{lower}_{suffix}")) {
-                    Entry::Occupied(_) => {
-                        suffix += 1;
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert_entry(1);
-                        break format!("{id}_{suffix}");
-                    }
-                }
-            };
-            *self.ids.get_mut(lower.as_ref()).unwrap() = suffix;
-            let _ = write!(self.buffer, "{id}");
-            true
-        } else {
-            self.ids.insert(lower.into_owned(), 2);
-            self.buffer.push_str(id);
-            false
-        };
+        self.buffer.push_str(id);
 
         self.entries.push(OutlineEntry {
             html_len: u16::try_from(html.len()).unwrap(),
@@ -203,8 +178,21 @@ impl Outline {
             level,
             pos: u32::try_from(pos).unwrap(),
         });
+    }
 
-        conflict.then(|| &self.buffer[id_pos..])
+    /// Inserts and returns a unique ID for the given `id`.
+    pub(super) fn unique_id<'a>(&mut self, id: &'a str) -> Cow<'a, str> {
+        let lower = to_ascii_lower(id);
+        if self.ids.contains(lower.as_ref()) {
+            let mut suffix = 2;
+            while !self.ids.insert(format!("{lower}_{suffix}")) {
+                suffix += 1;
+            }
+            Cow::Owned(format!("{id}_{suffix}"))
+        } else {
+            self.ids.insert(lower.into_owned());
+            Cow::Borrowed(id)
+        }
     }
 }
 

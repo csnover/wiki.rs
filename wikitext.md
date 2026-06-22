@@ -2021,9 +2021,9 @@ For each balanced HTML tag in the input with a tag name
       6. URL encode the string using the MediaWiki anchor encoding
          rules[^urlencode].
 
-4. Let `F` be the ASCII case-folded `ID`;
-5. Let `S` be the value from `Used IDs` for the key `F`;
-6. If `S` is not none:
+3. Let `F` be the ASCII lowercase case-folded `ID`;
+4. Let `S` be the value from `Used IDs` for the key `F`;
+5. If `S` is not none:
 
    1. Let `C` be `F`;
    2. While `C` is a key in `Used IDs`:

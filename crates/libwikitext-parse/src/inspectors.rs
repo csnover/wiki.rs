@@ -283,14 +283,6 @@ impl fmt::Debug for TokenInspector<'_> {
                         .map(|variant| LangVariantInspector(self.0, variant)),
                 )
                 .finish(),
-            Token::Line { content, last } => f
-                .debug_struct(&span_name("Line", self.0, self.1))
-                .field(
-                    "content",
-                    &VInspector::<TokenInspector<'_>>(self.0, content),
-                )
-                .field("last", &last)
-                .finish(),
             Token::Link {
                 content,
                 prefix,

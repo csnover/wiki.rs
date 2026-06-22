@@ -1790,6 +1790,14 @@ Lead
 <div class="mw-heading mw-heading2"><h2 id="Section_3">Section 3</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=3" title="Edit section: Section 3">edit</a><span class="mw-editsection-bracket">]</span></span></div>
 <div class="mw-heading mw-heading2"><h2 id="Section_4">Section 4</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=4" title="Edit section: Section 4">edit</a><span class="mw-editsection-bracket">]</span></span></div>
 <div class="mw-heading mw-heading2"><h2 id="Section_5">Section 5</h2><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=5" title="Edit section: Section 5">edit</a><span class="mw-editsection-bracket">]</span></span></div>
+!! html/wiki.rs # This output matches the PHP parser with __NOTOC__
+<p>Lead
+</p>
+<h2 id="Section_1">Section 1</h2>
+<h2 id="Section_2">Section 2</h2>
+<h2 id="Section_3">Section 3</h2>
+<h2 id="Section_4">Section 4</h2>
+<h2 id="Section_5">Section 5</h2>
 !! end
 
 ###
@@ -2381,6 +2389,17 @@ blah
 <p>intro</p>
 </section><section data-mw-section-id="2"><h2 id="page_h2">page h2</h2>
 <p>blah</p></section>
+!! html/wiki.rs # This output matches the PHP parser, minus the TOC and wrappers
+<p><span>
+</span></p>
+<h2 id="spantag_h2">spantag h2</h2>
+
+<h2 id="template_h2">template h2</h2>
+<p>intro
+</p>
+<h2 id="page_h2">page h2</h2>
+<p>blah
+</p>
 !! metadata/php
 Sections:
  h2 index: toclevel:1 number:1 title:NULL off:NULL anchor/linkAnchor:template_h2 line:template h2
@@ -2602,7 +2621,8 @@ parsoid=wt2html,html2html
 <table style="__TOC__"></table>
 !! html/wiki.rs # This output matches the PHP parser using heuristics
 <h2 id="a">a</h2>
-<table style="__TOC__"><tr><td></td></tr>
+<table style="__TOC__">
+<tr><td></td></tr>
 </table>
 !! end
 

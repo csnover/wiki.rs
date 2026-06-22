@@ -13,7 +13,6 @@ use super::{
     tags::{self, PHRASING_TAGS},
 };
 use crate::{emitters::Chain as _, tags::ExternalLinkKind};
-use core::cell::RefCell;
 use either::Either;
 use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
@@ -26,33 +25,21 @@ use libwikitext_parse::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
     MagicLink, Output, Span, Spanned, TextStyle, Token, VOID_TAGS,
 };
-use std::{borrow::Cow, rc::Rc};
+use std::borrow::Cow;
 
 /// The chain of render nodes used to render the document.
-type RendererChain = AttributeFilter<
+type RendererChain<'a> = AttributeFilter<
     OutlineEmitter<
+        'a,
         GrafEmitter<
             DomTree<TemplateTagger<TableFoster<PWrapper<EmptyTagger<PrettyText<Accumulator>>>>>>,
         >,
     >,
 >;
 
-/// A Wikitext table frame.
-#[derive(Debug, Default)]
-struct TableState {
-    /// If true, a Wikitext table row, header, or data token has been seen.
-    has_tbody: bool,
-    /// The tag name of the currently open table caption, header, or data tag.
-    last_tag: Option<&'static str>,
-    /// The half-parsed attributes for a pending table row.
-    tr_attrs: String,
-    /// If true, a `<tr>` has been emitted and needs to be closed.
-    tr_emitted: bool,
-}
-
 /// The root of a Wikitext document.
 #[derive(Debug)]
-pub(crate) struct Document {
+pub(crate) struct Document<'a> {
     /// If true, this [`Document`] is used to render a document fragment rather
     /// than a complete document.
     fragment: bool,
@@ -61,7 +48,7 @@ pub(crate) struct Document {
     /// If true, inside a `<pre>` tag.
     in_pre: bool,
     /// The output sink.
-    pub(super) next: RendererChain,
+    pub(super) next: RendererChain<'a>,
     /// The list emitter.
     list_emitter: Option<ListEmitter>,
     /// The Wikitext table emitters.
@@ -70,9 +57,9 @@ pub(crate) struct Document {
     text_style_emitter: Vec<TextStyleEmitter>,
 }
 
-impl Document {
+impl<'a> Document<'a> {
     /// Creates a new [`Document`].
-    pub(crate) fn new(fragment: bool, outline: &Rc<RefCell<Outline>>) -> Self {
+    pub(crate) fn new(fragment: bool, outline: &'a mut Outline) -> Self {
         Self {
             fragment,
             in_include: <_>::default(),
@@ -119,23 +106,8 @@ impl Document {
             list.finish(&mut self.next);
         }
 
-        for table in self.table_emitter {
-            if let Some(name) = table.last_tag {
-                self.next.tag_end(name);
-                self.next.new_line();
-            }
-            if table.tr_emitted {
-                self.next.tag_end("tr");
-                self.next.new_line();
-            }
-            if !table.has_tbody {
-                self.next.tag_start_full("tr");
-                self.next.tag_start_full("td");
-                self.next.tag_end("td");
-                self.next.tag_end("tr");
-                self.next.new_line();
-            }
-            self.next.tag_end("table");
+        for table in self.table_emitter.into_iter().rev() {
+            table.finish(&mut self.next, true);
             self.next.new_line();
         }
 
@@ -207,7 +179,7 @@ impl Document {
     }
 }
 
-impl Surrogate<Error> for Document {
+impl Surrogate<Error> for Document<'_> {
     fn adopt_autolink(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -479,15 +451,13 @@ impl Surrogate<Error> for Document {
             })
         }
 
+        // TODO: The `in_pre` condition needs to be emitting all the tokens
+        // instead of just taking the line as text
         if self.in_pre {
             self.next.text(&sp.source[span.into_range()]);
             return Ok(());
         }
 
-        self.next.next_mut().next_mut().set_in_list(true);
-
-        // TODO: If the newline is just going to be ignored, why have it in the
-        // AST at all?
         let mut content = if let Some((last, content)) = content.split_last()
             && matches!(last.node, Token::NewLine)
         {
@@ -504,7 +474,12 @@ impl Surrogate<Error> for Document {
         // also disappears before the block level algorithm runs. The block
         // level algorithm implementation itself does not hold a stack which
         // would allow for nesting.
-        let mut list = self.list_emitter.take().unwrap_or_default();
+        let mut list = if let Some(list) = self.list_emitter.take() {
+            list
+        } else {
+            self.next.next_mut().next_mut().set_in_list(true);
+            <_>::default()
+        };
 
         if list.same(bullets) {
             list.emit_last(&mut self.next, bullets);
@@ -538,7 +513,6 @@ impl Surrogate<Error> for Document {
             .unwrap()
             .finish(&mut self.next);
 
-        self.next.next_mut().next_mut().set_in_list(false);
         self.list_emitter = Some(list);
         Ok(())
     }
@@ -622,8 +596,11 @@ impl Surrogate<Error> for Document {
             .finish(&mut self.next);
         if let Some(mut list) = self.list_emitter.take() {
             list.finish(&mut self.next);
+            self.next.new_line();
+            self.next.next_mut().next_mut().set_in_list(false);
+        } else {
+            self.next.new_line();
         }
-        self.next.new_line();
         Ok(())
     }
 
@@ -654,17 +631,6 @@ impl Surrogate<Error> for Document {
         _default: Option<&[Spanned<Token>]>,
     ) -> Result {
         panic!("templates should all be resolved by now");
-    }
-
-    fn adopt_line(
-        &mut self,
-        state: &mut State<'_, '_, '_>,
-        sp: &StackFrame<'_>,
-        _span: Span,
-        content: &[Spanned<Token>],
-        _last: bool,
-    ) -> Result {
-        self.adopt_tokens(state, sp, content)
     }
 
     fn adopt_redirect(
@@ -771,19 +737,7 @@ impl Surrogate<Error> for Document {
         span: Span,
     ) -> Result {
         if let Some(table) = self.table_emitter.pop() {
-            if let Some(name) = table.last_tag {
-                self.next.tag_end(name);
-            }
-            if table.tr_emitted {
-                self.next.tag_end("tr");
-            }
-            if !table.has_tbody {
-                self.next.tag_start_full("tr");
-                self.next.tag_start_full("td");
-                self.next.tag_end("td");
-                self.next.tag_end("tr");
-            }
-            self.next.tag_end("table");
+            table.finish(&mut self.next, false);
         } else {
             self.next.text(&sp.source[span.into_range()]);
         }
@@ -972,6 +926,41 @@ impl Node {
             Node::Attribute(_) => None,
             Node::Tag(name) => Some(name),
         }
+    }
+}
+
+/// A Wikitext table frame.
+#[derive(Debug, Default)]
+struct TableState {
+    /// If true, a Wikitext table row, header, or data token has been seen.
+    has_tbody: bool,
+    /// The tag name of the currently open table caption, header, or data tag.
+    last_tag: Option<&'static str>,
+    /// The half-parsed attributes for a pending table row.
+    tr_attrs: String,
+    /// If true, a `<tr>` has been emitted and needs to be closed.
+    tr_emitted: bool,
+}
+
+impl TableState {
+    /// Finishes a table frame.
+    fn finish<S: Sink + ?Sized>(self, next: &mut S, last: bool) {
+        if let Some(name) = self.last_tag {
+            next.tag_end(name);
+        }
+        if self.tr_emitted {
+            next.tag_end("tr");
+        }
+        if !self.has_tbody {
+            next.tag_start_full("tr");
+            next.tag_start_full("td");
+            next.tag_end("td");
+            next.tag_end("tr");
+            if last {
+                next.new_line();
+            }
+        }
+        next.tag_end("table");
     }
 }
 

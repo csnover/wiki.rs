@@ -20,7 +20,7 @@ use std::{borrow::Cow, sync::LazyLock};
 
 /// Renders an external web site link.
 pub(super) fn render_external_link(
-    out: &mut Document,
+    out: &mut Document<'_>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &[Spanned<Token>],
@@ -118,7 +118,7 @@ fn should_render_hotlink(config: &Configuration, target: &str) -> bool {
 /// Renders an internal link.
 #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
 pub(super) fn render_internal_link(
-    out: &mut Document,
+    out: &mut Document<'_>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &str,

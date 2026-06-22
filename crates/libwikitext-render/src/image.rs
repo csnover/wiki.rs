@@ -577,7 +577,7 @@ fn render_image<S: Sink + ?Sized>(
 
 /// Renders a media tag.
 pub(super) fn render_media(
-    out: &mut Document,
+    out: &mut Document<'_>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     title: Title,
@@ -589,7 +589,7 @@ pub(super) fn render_media(
 
 /// Renders a media tag using the given media options.
 pub(super) fn render_media_with_options(
-    out: &mut Document,
+    out: &mut Document<'_>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     options: &Options<'_>,

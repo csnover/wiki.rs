@@ -386,7 +386,8 @@ fn gallery(
             options.height = Some(height);
         }
 
-        let mut inner = Document::new(true, &state.globals.outline);
+        let mut outline = <_>::default();
+        let mut inner = Document::new(true, &mut outline);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
         write!(out, r#"<li class="gallerybox">{}</li>"#, inner.finish())?;
     }
@@ -439,7 +440,8 @@ fn indicator(
         .transpose()?;
 
     if let Some(image) = image {
-        let mut out = Document::new(true, &state.globals.outline);
+        let mut outline = <_>::default();
+        let mut out = Document::new(true, &mut outline);
         out.adopt_token(state, &sp, image)?;
         let indicator = out.finish();
         state.globals.indicators.insert(name.to_string(), indicator);
@@ -1321,7 +1323,8 @@ fn eval_string(
     let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse(&sp.source)?;
-    let mut out = Document::new(!unstrip, &state.globals.outline);
+    let mut outline = <_>::default();
+    let mut out = Document::new(!unstrip, &mut outline);
     out.adopt_tokens(state, &sp, &root)?;
     Ok(out.finish())
 }

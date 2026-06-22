@@ -63,6 +63,8 @@ impl PluginExtensionTag for DivTagPf {
             if raw {
                 Cow::Borrowed(body)
             } else {
+                // TODO: This is supposed to be half-parsed, stopping at
+                // GrafEmitter
                 Cow::Owned(args.eval(state, body, raw_html)?)
             }
         } else {
@@ -543,7 +545,7 @@ fn print_debug(
         log::info!(target: target, "PP AST: {:?}", inspect(&FileMap::new(article.body()), &pp_ast.root));
     }
 
-    if let Some(Ok(pp)) = &pp {
+    if show_pp && let Some(Ok(pp)) = &pp {
         log::info!(target: target, "PP:\n{pp}");
     }
 
@@ -807,7 +809,7 @@ fn check_test_results(
                     );
                     fail = true;
                 }
-                if expected.line != actual.html {
+                if expected.line != unpretty(actual.html) {
                     log::log!(
                         target: target,
                         log_level,
@@ -1011,6 +1013,7 @@ fn unpretty(html: &str) -> Cow<'_, str> {
 fn unwrap_heading(html: &str) -> Cow<'_, str> {
     static RE_PHP_HEADING: LazyLock<Regex> = LazyLock::new(|| {
         RegexBuilder::new(r#"^<div class="mw-heading mw-heading\d">(.*?)(?:<span class="mw-editsection"><span class="mw-editsection-bracket">\[</span><a href="[^"]+" title="[^"]+">edit</a><span class="mw-editsection-bracket">]</span></span>)?</div>$"#)
+            .dot_matches_new_line(true)
             .multi_line(true)
             .build()
             .unwrap()

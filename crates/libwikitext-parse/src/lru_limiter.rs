@@ -70,7 +70,6 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             Token::Autolink(content)
             | Token::Heading { content, .. }
             | Token::ListItem { content, .. }
-            | Token::Line { content, .. }
             | Token::StartTag {
                 attributes: content,
                 ..
