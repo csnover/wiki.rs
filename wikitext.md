@@ -2155,7 +2155,7 @@ For each line ending in `'\n'`:
           `In Pre`;
        4. If the last case-insensitive match of the regular expression
           `<(/?)blockquote[\s>]` in `T` is not none, clear `In Blockquote` if
-          the capture group is `"/"`, otherwise clear `In Blockquote`;
+          the capture group is `"/"`, otherwise set `In Blockquote`;
        5. Set `In Block Elem` if `Close Match` is clear, otherwise clear
           `In Block Elem`;
 
@@ -2179,9 +2179,8 @@ For each line ending in `'\n'`:
 
           Otherwise;
 
-       4. If `T` contains only tags with tag names `["style"|"link"]`,
-          optionally separated by whitespace, optionally with trailing
-          whitespace:
+       4. If `T` starts with one or more matches of a complete HTML tag with tag
+          name `["style"|"link"]`, each optionally trailed by ASCII whitespace:
 
           1. If `Pending P Tag` is not empty, emit the
              [closing paragraph](#close-paragraph) and let `Pending P Tag` be

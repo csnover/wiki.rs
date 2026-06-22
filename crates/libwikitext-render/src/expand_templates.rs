@@ -162,6 +162,17 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         Ok(())
     }
 
+    #[inline]
+    fn adopt_new_line(
+        &mut self,
+        _state: &mut State<'_, '_, '_>,
+        _sp: &StackFrame<'_>,
+        _span: Span,
+    ) -> Result {
+        self.out.push('\n');
+        Ok(())
+    }
+
     fn adopt_output(
         &mut self,
         state: &mut State<'_, '_, '_>,

@@ -1,12 +1,12 @@
 //! HTML emitters for Wikitext fragments that require state management.
 
 use super::{
-    State, StripMarker,
+    StripMarker,
     document::{Attribute, Node},
     globals::Outline,
     tags::PHRASING_TAGS,
 };
-use core::fmt::{self, Write as _};
+use core::{cell::RefCell, fmt, num::NonZeroU32};
 use html5gum::emitters::callback::{CallbackEmitter, CallbackEvent};
 use indexmap::IndexMap;
 use libmisc::CowExt as _;
@@ -15,7 +15,7 @@ use libwikitext_common::{
 };
 use libwikitext_parse::{HeadingLevel, TextStyle, VOID_TAGS};
 use regex::Regex;
-use std::{borrow::Cow, collections::HashSet, sync::LazyLock};
+use std::{borrow::Cow, collections::HashSet, rc::Rc, sync::LazyLock};
 
 /// An intermediate sink.
 pub(super) trait Chain: Sink {
@@ -104,7 +104,7 @@ pub(super) trait Sink {
     fn entity(&mut self, value: char, raw: &str);
 
     /// Finish processing input.
-    fn finish(self, state: &mut State<'_, '_, '_>) -> String;
+    fn finish(self) -> String;
 
     /// A source newline.
     ///
@@ -144,18 +144,6 @@ pub(super) trait Sink {
     ///                                              ^^^^^^
     /// ```
     fn tag_end(&mut self, name: &str);
-
-    // TODO: This is a hack to get `GrafEmitter` to respond correctly when a
-    // tag is removed. Maybe the order of composition is wrong, and
-    // `GrafEmitter` actually just needs to go before `DomTree` to work
-    // correctly?
-    /// An end tag with the given `name` without a corresponding start tag.
-    ///
-    /// ```html
-    /// text&#8253;<!-- comment --></tag>
-    ///                            ^^^^^^
-    /// ```
-    fn tag_end_unbalanced(&mut self, name: &str);
 
     /// Start a tag with the given `name`.
     ///
@@ -209,6 +197,28 @@ impl Accumulator {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Extracts a string slice containing the entire accumulator.
+    #[inline]
+    fn as_str(&self) -> &str {
+        &self.inner.inner
+    }
+
+    /// Returns the length of the accumulator string, in bytes.
+    #[inline]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Wikitext ≥2**32 is impossible"
+    )]
+    fn len(&self) -> u32 {
+        self.inner.inner.len() as u32
+    }
+
+    /// Truncates the accumulator at `pos`.
+    #[inline]
+    fn truncate(&mut self, pos: u32) {
+        self.inner.inner.truncate(pos as usize);
+    }
 }
 
 impl Markable for Accumulator {
@@ -258,7 +268,7 @@ impl Sink for Accumulator {
     }
 
     #[inline]
-    fn finish(self, _: &mut State<'_, '_, '_>) -> String {
+    fn finish(self) -> String {
         self.inner.into_inner()
     }
 
@@ -296,9 +306,6 @@ impl Sink for Accumulator {
     }
 
     #[inline]
-    fn tag_end_unbalanced(&mut self, _: &str) {}
-
-    #[inline]
     fn tag_start(&mut self, name: &str) {
         self.inner.push('<');
         self.inner.push_str(name);
@@ -311,7 +318,14 @@ impl Sink for Accumulator {
 
     #[inline]
     fn text(&mut self, text: &str) {
-        self.inner.push_str(text);
+        for c in text.chars() {
+            match c {
+                '<' => self.inner.push_str("&lt;"),
+                '"' if self.in_attr => self.inner.push_str("&quot;"),
+                '&' => self.inner.push_str("&amp;"),
+                c => self.inner.push(c),
+            }
+        }
     }
 }
 
@@ -491,8 +505,8 @@ impl<S: Sink + Markable> Sink for AttributeFilter<S> {
     }
 
     #[inline]
-    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
-        self.next.finish(state)
+    fn finish(self) -> String {
+        self.next.finish()
     }
 
     #[inline]
@@ -529,11 +543,6 @@ impl<S: Sink + Markable> Sink for AttributeFilter<S> {
     #[inline]
     fn tag_end(&mut self, name: &str) {
         self.next.tag_end(name);
-    }
-
-    #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -752,74 +761,6 @@ impl<S: Sink> DomTree<S> {
         }
     }
 
-    /// Creates a new tokenizer.
-    #[inline]
-    fn tokenise(&mut self, html: &str) {
-        let mut in_attr = None::<String>;
-        let mut in_tag = None;
-        html5gum::Tokenizer::new_with_emitter(
-            html,
-            CallbackEmitter::new(|event: CallbackEvent<'_>, _: html5gum::Span<()>| {
-                match event {
-                    CallbackEvent::OpenStartTag { name } => {
-                        // SAFETY: This data comes from a `&str`.
-                        let name = unsafe { str::from_utf8_unchecked(name) };
-                        self.tag_start(name);
-                        in_tag = Some(name.to_owned());
-                    }
-                    CallbackEvent::AttributeName { name } => {
-                        if let Some(name) = &in_attr {
-                            self.tag_attribute_end(name);
-                        }
-                        // SAFETY: This data comes from a `&str`.
-                        let name = unsafe { str::from_utf8_unchecked(name) };
-                        self.tag_attribute_start(name);
-                        in_attr = Some(name.to_owned());
-                    }
-                    CallbackEvent::AttributeValue { value } => {
-                        // SAFETY: This data comes from a `&str`.
-                        let value = unsafe { str::from_utf8_unchecked(value) };
-                        self.text(&decode_html(value));
-                    }
-                    CallbackEvent::CloseStartTag { self_closing } => {
-                        if let Some(name) = in_attr.take() {
-                            self.tag_attribute_end(&name);
-                        }
-                        let name = in_tag.take().unwrap();
-                        self.tag_start_end(&name);
-                        if self_closing && !VOID_TAGS.contains(&name) {
-                            self.tag_end(&name);
-                        }
-                    }
-                    CallbackEvent::EndTag { name } => {
-                        // SAFETY: This data comes from a `&str`.
-                        let name = unsafe { str::from_utf8_unchecked(name) };
-                        self.tag_end(name);
-                    }
-                    CallbackEvent::String { value } => {
-                        // SAFETY: This data comes from a `&str`.
-                        let value = decode_html(unsafe { str::from_utf8_unchecked(value) });
-                        self.text(&value);
-                    }
-                    CallbackEvent::Comment { value } => {
-                        // SAFETY: This data comes from a `&str`.
-                        let value = decode_html(unsafe { str::from_utf8_unchecked(value) });
-                        self.comment_start();
-                        self.text(&value);
-                        self.comment_end();
-                    }
-                    CallbackEvent::Doctype { .. } => {}
-                    CallbackEvent::Error(error) => {
-                        log::warn!("Tokenizer error: {error}");
-                    }
-                }
-
-                None::<core::convert::Infallible>
-            }),
-        )
-        .finish();
-    }
-
     /// Tries closing all tags up to and including the nearest `name`. Returns
     /// `true` if some elements were closed.
     fn try_close(&mut self, name: &str) -> bool {
@@ -854,11 +795,11 @@ impl<S: Sink> Sink for DomTree<S> {
     }
 
     #[inline]
-    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
+    fn finish(mut self) -> String {
         for e in self.stack.drain(..).rev() {
             e.close(&mut self.next);
         }
-        self.next.finish(state)
+        self.next.finish()
     }
 
     #[inline]
@@ -868,15 +809,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker) {
-        match marker {
-            StripMarker::Block(html) | StripMarker::Inline(html) => {
-                self.tokenise(html);
-            }
-            StripMarker::NoWiki(s) => self.next.text(s),
-            StripMarker::WikiRsSourceEnd(_) | StripMarker::WikiRsSourceStart(_) => {
-                self.next.strip_marker(marker)
-            }
-        }
+        self.next.strip_marker(marker);
     }
 
     #[inline]
@@ -903,15 +836,9 @@ impl<S: Sink> Sink for DomTree<S> {
                 self.next.tag_start_full("p");
                 self.next.tag_end("p");
             } else {
-                self.next.tag_end_unbalanced(name);
-                log::warn!("TODO: <{name}> tag mismatch requires error recovery logic");
+                log::warn!("TODO: <{name}> tag mismatch required error recovery logic");
             }
         }
-    }
-
-    #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -970,10 +897,12 @@ impl<S: Sink> Sink for DomTree<S> {
 /// Marks elements containing only whitespace.
 #[derive(Debug)]
 pub(super) struct EmptyTagger<S: Sink> {
-    /// The position of the attribute list for a potentially empty element.
-    last: Option<Mark>,
+    /// The tag name of a potentially empty element.
+    last: Option<&'static str>,
     /// The output.
     next: S,
+    /// The whitespace buffer for a potentially empty element.
+    ws_buffer: String,
 }
 
 chainable!(EmptyTagger);
@@ -984,14 +913,22 @@ impl<S: Sink + Markable> EmptyTagger<S> {
         Self {
             last: <_>::default(),
             next,
+            ws_buffer: <_>::default(),
         }
     }
 
-    /// Clears the empty tag mark.
-    #[inline]
-    fn clear(&mut self) {
+    /// Writes the buffered tag to the next sink.
+    fn flush(&mut self) {
         if let Some(last) = self.last.take() {
-            self.next.free_mark(last);
+            self.next.tag_start_full(last);
+            let ws = self.ws_buffer.drain(..);
+            let mut ws = ws.as_str();
+            while let Some((text, rest)) = ws.split_once('\n') {
+                self.next.text(text);
+                self.next.new_line();
+                ws = rest;
+            }
+            self.next.text(ws);
         }
     }
 }
@@ -1009,25 +946,29 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
-        self.clear();
+        self.flush();
         self.next.entity(value, raw);
     }
 
     #[inline]
-    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+    fn finish(self) -> String {
         debug_assert!(self.last.is_none());
-        self.next.finish(state)
+        self.next.finish()
     }
 
     #[inline]
     fn new_line(&mut self) {
-        self.next.new_line();
+        if self.last.is_some() {
+            self.ws_buffer += "\n";
+        } else {
+            self.next.new_line();
+        }
     }
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker) {
         if !marker.is_empty() {
-            self.clear();
+            self.flush();
         }
         self.next.strip_marker(marker);
     }
@@ -1039,48 +980,545 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
-        self.clear();
+        if let Some(last) = self.last.take() {
+            self.next.tag_start(last);
+            debug_assert!(self.ws_buffer.is_empty());
+        }
         self.next.tag_attribute_start(name);
     }
 
     fn tag_end(&mut self, name: &str) {
         if let Some(last) = self.last.take() {
-            self.next.with_marks([&last], |[last], out| {
-                if let Some(last) = last {
-                    out.insert_str(last, r#" class="mw-empty-elt""#);
-                }
-            });
-            self.next.free_mark(last);
+            debug_assert_eq!(name, last);
+            self.next.tag_start(last);
+            self.next.tag_attribute_full("class", "mw-empty-elt");
+            self.next.tag_start_end(last);
+            self.next.text(self.ws_buffer.drain(..).as_str());
         }
         self.next.tag_end(name);
     }
 
     #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
-    }
-
-    #[inline]
     fn tag_start(&mut self, name: &str) {
-        self.clear();
-        self.next.tag_start(name);
-        if matches!(name, "p" | "li" | "tr") {
-            self.last = Some(self.next.mark());
+        self.flush();
+        if let Some(name) = phf::phf_set!("p", "li", "tr").get_key(name) {
+            self.last = Some(*name);
+        } else {
+            self.next.tag_start(name);
         }
     }
 
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
-        self.next.tag_start_end(name);
+        if self.last.is_none() {
+            self.next.tag_start_end(name);
+        }
     }
 
     #[inline]
     fn text(&mut self, text: &str) {
         if text.bytes().any(|c| !c.is_ascii_whitespace()) {
-            self.clear();
+            self.flush();
         }
-        self.next.text(text);
+        if self.last.is_some() {
+            self.ws_buffer += text;
+        } else {
+            self.next.text(text);
+        }
     }
+}
+
+/// Implicit paragraphs (grafs) emitter. Implicit grafs may be runs of plain
+/// text, which will be wrapped by `<p>`, or runs of plain text prefixed by a
+/// single space, which will be wrapped by `<pre>`.
+///
+/// The processing rules, like everything in Wikitext, are absolutely insane
+/// nonsense. Just look at this:
+///
+/// ```html
+/// <div>a
+/// <span>b
+/// c
+/// d</span></div>e
+/// f
+/// g
+/// ```
+///
+/// is supposed to become:
+///
+/// ```html
+/// <div>a
+/// <p><span>b
+/// c
+/// </span></p> <!-- wtf is this, that is not where the `</span>` was?! -->
+/// d</div><p>e
+/// </p><p>f
+/// g
+/// </p>
+/// ```
+///
+/// In MW, graf wrapping responsibilities are split between both
+/// `Parser\BlockLevelPass` *and* `Tidy\RemexCompatMunger` (or, in Parsoid,
+/// `DOM\Processors\PWrap`), presumably just to make it nearly impossible for
+/// any one developer to understand how anything works.
+#[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "should care, don’t care. hate this code"
+)]
+pub(super) struct GrafEmitter<S: Sink + Markable> {
+    /// The next line buffer.
+    buffer: Accumulator,
+    /// If true, the line contains an end tag which triggers a graf state
+    /// transition.
+    close_match: bool,
+    /// The currently active graf.
+    current: GrafState,
+    /// If true, the document is currently inside a graf block.
+    in_block: bool,
+    /// If true, the document is currently inside an explicitly defined
+    /// `<blockquote>`.
+    in_blockquote: bool,
+    /// If true, the document is currently inside a list.
+    in_list: bool,
+    /// If true, the document is currently inside an explicitly defined `<pre>`.
+    in_pre: bool,
+    /// State tracking for lines that may contain only `<style>` and `<link>`
+    /// tags.
+    meta_line: GrafMetaLine,
+    /// The output.
+    next: S,
+    /// If true, the line contains a start tag which triggers a graf state
+    /// transition.
+    open_match: bool,
+    /// The next graf to emit.
+    pending: GrafPendingState,
+    /// If true, the line contains a `</pre>`.
+    pre_close_match: bool,
+    /// If true, the line contains a `<pre>`.
+    pre_open_match: bool,
+}
+
+impl<S: Sink + Markable> GrafEmitter<S> {
+    /// Creates a new `GrafEmitter` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            buffer: <_>::default(),
+            close_match: <_>::default(),
+            current: <_>::default(),
+            in_block: <_>::default(),
+            in_blockquote: <_>::default(),
+            in_list: <_>::default(),
+            in_pre: <_>::default(),
+            meta_line: <_>::default(),
+            next,
+            open_match: <_>::default(),
+            pending: <_>::default(),
+            pre_close_match: <_>::default(),
+            pre_open_match: <_>::default(),
+        }
+    }
+
+    /// Emits the end of a graf to the output.
+    fn close(&mut self, finishing: bool) {
+        self.in_pre = false;
+        match core::mem::take(&mut self.current) {
+            GrafState::None => return,
+            GrafState::Graf => self.next.tag_end("p"),
+            GrafState::Pre => self.next.tag_end("pre"),
+        }
+        if !finishing {
+            self.next.new_line();
+        }
+    }
+
+    /// Finishes processing of a line of source text.
+    fn end_line(&mut self, last_line: bool) {
+        if self.open_match || self.close_match {
+            self.pending = GrafPendingState::None;
+            if !self.in_pre || self.pre_open_match {
+                self.close(false);
+            }
+            if self.pre_open_match {
+                self.in_pre = !self.pre_close_match;
+            }
+            self.in_block = !self.close_match;
+        } else if !self.in_block && !self.in_pre {
+            if self.is_pre_line() {
+                if self.current != GrafState::Pre {
+                    self.pending = GrafPendingState::None;
+                    self.close(false);
+                    self.next.tag_start_full("pre");
+                    self.current = GrafState::Pre;
+                }
+                self.next
+                    .text(&core::mem::take(&mut self.buffer).as_str()[1..]);
+            } else if self.meta_line == GrafMetaLine::Yes {
+                if self.pending != GrafPendingState::None {
+                    self.close(false);
+                    self.pending = GrafPendingState::None;
+                }
+            } else if self
+                .buffer
+                .as_str()
+                .bytes()
+                .all(|b| b.is_ascii_whitespace())
+            {
+                if let Some(new_state) = self.pending.emit(&mut self.next) {
+                    self.next.tag_start_full("br");
+                    self.current = new_state;
+                } else if self.current != GrafState::Graf {
+                    self.close(false);
+                    self.pending = GrafPendingState::Open;
+                } else {
+                    self.pending = GrafPendingState::Split;
+                }
+            } else if let Some(new_state) = self.pending.emit(&mut self.next) {
+                self.current = new_state;
+            } else if self.current != GrafState::Graf {
+                self.close(false);
+                self.next.tag_start_full("p");
+                self.current = GrafState::Graf;
+            }
+        }
+
+        if self.pending == GrafPendingState::None {
+            tokenise(&mut self.next, core::mem::take(&mut self.buffer).as_str());
+            if !last_line || self.current != GrafState::None {
+                self.next.new_line();
+            }
+        }
+
+        self.pre_open_match = <_>::default();
+        self.pre_close_match = <_>::default();
+        self.open_match = <_>::default();
+        self.close_match = <_>::default();
+        self.meta_line = <_>::default();
+    }
+
+    /// Returns true if the currently buffered line should be treated like a
+    /// preformatted line.
+    fn is_pre_line(&self) -> bool {
+        !self.in_blockquote
+            && self.buffer.as_str().strip_prefix(' ').is_some_and(|text| {
+                self.current == GrafState::Pre || text.bytes().any(|b| !b.is_ascii_whitespace())
+            })
+    }
+
+    /// Tells the `GrafEmitter` whether a Wikitext list is being processed.
+    pub(super) fn set_in_list(&mut self, in_list: bool) {
+        self.pending = GrafPendingState::None;
+        self.in_list = in_list;
+    }
+}
+
+chainable!(GrafEmitter);
+
+impl<S: Sink + Markable> Sink for GrafEmitter<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        if self.in_list {
+            self.next.comment_end();
+        } else {
+            self.buffer.comment_end();
+        }
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        if self.in_list {
+            self.next.comment_start();
+        } else {
+            self.buffer.comment_start();
+        }
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        if self.in_list {
+            self.next.entity(value, raw);
+        } else {
+            self.meta_line = GrafMetaLine::No;
+            self.buffer.entity(value, raw);
+        }
+    }
+
+    fn finish(mut self) -> String {
+        if !self.in_list {
+            self.end_line(true);
+        }
+        self.close(true);
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        if self.in_list {
+            self.next.new_line();
+        } else {
+            self.end_line(false);
+        }
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        if !self.in_list {
+            match marker {
+                StripMarker::General(_) => {
+                    panic!("general strip marker should be decomposed already")
+                }
+                StripMarker::NoWiki(_) => {
+                    self.meta_line = GrafMetaLine::No;
+                }
+                _ => {}
+            }
+        }
+        self.next.strip_marker(marker);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        if self.in_list {
+            self.next.tag_attribute_end(name);
+        } else {
+            self.buffer.tag_attribute_end(name);
+        }
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        if self.in_list {
+            self.next.tag_attribute_start(name);
+        } else {
+            self.buffer.tag_attribute_start(name);
+        }
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        if self.in_list {
+            self.next.tag_end(name);
+        } else {
+            self.open_match |= ALWAYS_TAG.contains(name) || ANTI_BLOCK_TAG.contains(name);
+            self.close_match |= NEVER_TAG.contains(name) || BLOCK_TAG.contains(name);
+            self.in_blockquote &= name != "blockquote";
+            self.pre_close_match |= name == "pre";
+            self.meta_line.update_tag_end(name);
+            self.buffer.tag_end(name);
+        }
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        if self.in_list {
+            self.next.tag_start(name);
+        } else {
+            self.open_match |= ALWAYS_TAG.contains(name) || BLOCK_TAG.contains(name);
+            self.close_match |= NEVER_TAG.contains(name) || ANTI_BLOCK_TAG.contains(name);
+            self.pre_open_match |= name == "pre";
+            self.in_blockquote |= name == "blockquote";
+            self.meta_line.update_tag_start(name);
+            self.buffer.tag_start(name);
+        }
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        if self.in_list {
+            self.next.tag_start_end(name);
+        } else {
+            self.buffer.tag_start_end(name);
+        }
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        if self.in_list {
+            self.next.text(text);
+        } else {
+            self.meta_line.update_text(text);
+            self.buffer.text(text);
+        }
+    }
+}
+
+/// Graf meta line state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum GrafMetaLine {
+    /// At the start of the line. The next thing must be a `<style>` or `<link>`
+    /// to be a meta line.
+    #[default]
+    Start,
+    /// Womp womp. Definitely not a meta line.
+    No,
+    /// Got a `<style>` tag. There must eventually be a `</style>`, or this is
+    /// not a meta line.
+    InStyle,
+    /// Got a `<style>` or `<link>`. The next thing must be a `<style>` or
+    /// `<link>` or ASCII whitespace or a newline to be a meta line.
+    Yes,
+}
+impl GrafMetaLine {
+    /// Update the state for an HTML end tag with the given `name`.
+    fn update_tag_end(&mut self, name: &str) {
+        if name != "style" || *self != Self::InStyle {
+            *self = Self::No;
+        } else {
+            *self = Self::Yes;
+        }
+    }
+
+    /// Update the state for an HTML start tag with the given `name`.
+    fn update_tag_start(&mut self, name: &str) {
+        if name == "style" {
+            // `<style><style>` is stupid, but legal
+            if *self != Self::No {
+                *self = Self::InStyle;
+            }
+        } else if name == "link" {
+            if *self == Self::Start {
+                *self = Self::Yes;
+            }
+        } else {
+            *self = Self::No;
+        }
+    }
+
+    /// Update the state for the given `text`.
+    fn update_text(&mut self, text: &str) {
+        if *self == Self::Start
+            || (*self == Self::Yes && text.bytes().any(|b| !b.is_ascii_whitespace()))
+        {
+            *self = Self::No;
+        }
+    }
+}
+
+/// Graf emitter pending output state.
+///
+/// This is used when the production of a line is ambiguous and cannot be
+/// resolved until a subsequent line can offer disambiguation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum GrafPendingState {
+    /// Emitting nothing.
+    #[default]
+    None,
+    /// Maybe this line should be a graf.
+    Open,
+    /// Maybe this line should be a break between two grafs.
+    Split,
+}
+
+impl GrafPendingState {
+    /// Emits `self` to `next`, returning a new `GrafState` if something was
+    /// emitted.
+    fn emit<S: Sink + ?Sized>(&mut self, next: &mut S) -> Option<GrafState> {
+        match self {
+            Self::None => None,
+            Self::Open => {
+                next.tag_start_full("p");
+                *self = Self::None;
+                Some(GrafState::Graf)
+            }
+            Self::Split => {
+                next.tag_end("p");
+                next.tag_start_full("p");
+                *self = Self::None;
+                Some(GrafState::Graf)
+            }
+        }
+    }
+}
+
+/// Graf emitter state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum GrafState {
+    /// Emitting nothing.
+    #[default]
+    None,
+    /// Emitting a normal graf (`<p>`).
+    Graf,
+    /// Emitting a preformatted graf (`<pre>`).
+    Pre,
+}
+
+/// HTML tags which start a new block when they are encountered as either a
+/// start or end tag.
+static ALWAYS_TAG: phf::Set<&str> = phf::phf_set! {
+    "caption", "dd", "dt", "li", "tr"
+};
+
+/// HTML tags which terminate a block when they are encountered as an end tag.
+static ANTI_BLOCK_TAG: phf::Set<&str> = phf::phf_set! { "td", "th" };
+
+/// HTML tags which start a new block when they are encountered as start tags.
+static BLOCK_TAG: phf::Set<&str> = phf::phf_set! {
+    "h1", "h2", "h3", "h4", "h5", "h6", "ol", "p", "pre", "table", "ul"
+};
+
+/// HTML tags which terminate a block when they are encountered as start or end
+/// tags.
+static NEVER_TAG: phf::Set<&str> = phf::phf_set! {
+    "aside", "blockquote", "center", "div", "figure", "hr"
+};
+
+/// Tokenises the given `html` and sends it to `next`.
+fn tokenise<S: Sink + ?Sized>(next: &mut S, html: &str) {
+    let mut in_attr = None::<String>;
+    let mut in_tag = None;
+    let emitter = CallbackEmitter::new(|event: CallbackEvent<'_>, _: html5gum::Span<()>| {
+        match event {
+            CallbackEvent::OpenStartTag { name } => {
+                // SAFETY: This data comes from a `&str`.
+                let name = unsafe { str::from_utf8_unchecked(name) };
+                next.tag_start(name);
+                in_tag = Some(name.to_owned());
+            }
+            CallbackEvent::AttributeName { name } => {
+                if let Some(name) = &in_attr {
+                    next.tag_attribute_end(name);
+                }
+                // SAFETY: This data comes from a `&str`.
+                let name = unsafe { str::from_utf8_unchecked(name) };
+                next.tag_attribute_start(name);
+                in_attr = Some(name.to_owned());
+            }
+            CallbackEvent::AttributeValue { value } | CallbackEvent::String { value } => {
+                // SAFETY: This data comes from a `&str`.
+                let value = unsafe { str::from_utf8_unchecked(value) };
+                next.text(value);
+            }
+            CallbackEvent::CloseStartTag { self_closing } => {
+                if let Some(name) = in_attr.take() {
+                    next.tag_attribute_end(&name);
+                }
+                let name = in_tag.take().unwrap();
+                next.tag_start_end(&name);
+                if self_closing && !VOID_TAGS.contains(&name) {
+                    next.tag_end(&name);
+                }
+            }
+            CallbackEvent::EndTag { name } => {
+                // SAFETY: This data comes from a `&str`.
+                let name = unsafe { str::from_utf8_unchecked(name) };
+                next.tag_end(name);
+            }
+            CallbackEvent::Comment { value } => {
+                // SAFETY: This data comes from a `&str`.
+                let value = unsafe { str::from_utf8_unchecked(value) };
+                next.comment_start();
+                next.text(value);
+                next.comment_end();
+            }
+            CallbackEvent::Doctype { .. } => {}
+            CallbackEvent::Error(error) => {
+                log::warn!("Tokenizer error: {error}");
+            }
+        }
+
+        None::<core::convert::Infallible>
+    });
+    html5gum::Tokenizer::new_with_emitter(html, emitter).finish();
 }
 
 /// List emitter.
@@ -1578,488 +2016,475 @@ impl fmt::Write for MarkableString {
 /// contribute to the document outline, it is necessary to collect the outline
 /// information by consuming HTML instead of Wikitext nodes. MediaWiki also
 /// allows a subset of HTML to be injected to the outline.
-///
-/// This implementation tries to avoid redoing work by taking already-processed
-/// HTML directly from the corresponding processed document HTML.
 #[derive(Debug)]
 pub(super) struct OutlineEmitter<S: Sink + Markable> {
-    /// Pending outline entries.
-    entries: Vec<OutlineEmitterEntry>,
-    /// The HTML string buffer for this emitter.
-    html_buffer: String,
-    /// The ID string buffer for this emitter.
-    id_buffer: String,
+    /// The buffer for the outline entry.
+    buffer: Vec<OutlineEntry>,
+
+    /// If true, processing a strip marker.
+    ///
+    /// The IDs of heading tags inside of strip markers are supposed to be fixed
+    /// up, but they are not supposed to be go in the outline.
+    in_strip_marker: bool,
+
     /// The output.
     next: S,
-    /// The currently processing heading.
+
+    /// The global outline.
+    outline: Rc<RefCell<Outline>>,
+
+    /// The emitter state.
     state: OutlineEmitterState,
 }
 
 impl<S: Sink + Markable> OutlineEmitter<S> {
-    /// The list of tags allowed in outlines.
-    ///
-    /// This list comes from Parsoid `Wt2Html\DOM\Handlers\Headings`.
-    const ALLOWED_TAGS: phf::Set<&str> = phf::phf_set! {
-        "b", "bdi", "i", "q", "s", "span", "strike", "sub", "sup"
-    };
-
-    /// HTML ID attribute prefix.
-    const PREFIX: &str = r#" id=""#;
-
-    /// HTML ID attribute suffix.
-    const SUFFIX: &str = r#"""#;
-
     /// Creates a new `OutlineEmitter` chained to `next`.
-    pub fn new(next: S) -> Self {
+    pub fn new(outline: &Rc<RefCell<Outline>>, next: S) -> Self {
         Self {
-            entries: <_>::default(),
-            html_buffer: <_>::default(),
-            id_buffer: <_>::default(),
+            buffer: <_>::default(),
+            in_strip_marker: <_>::default(),
             next,
+            outline: Rc::clone(outline),
             state: <_>::default(),
         }
     }
 
-    /// Adds text content from an opaque blob of HTML to the currently
-    /// processing outline entry.
-    fn add_html(&mut self, html: &str) {
-        if self.state.tag.is_none() || self.state.in_attrs {
-            return;
-        }
-
-        // TODO: SIGH, all extension tag outputs need to be tokenised like this,
-        // but then the inner elements need to *not* apply to the outline.
-        let text = html5gum::Tokenizer::new_with_emitter(
-            html,
-            html5gum::DefaultEmitter::<usize>::new_with_span(),
-        )
-        .filter_map(|token| {
-            token.ok().and_then(|token| {
-                if let html5gum::Token::String(text) = token {
-                    Some(&html[text.span.start..text.span.end])
-                } else {
-                    None
-                }
-            })
-        });
-
-        for text in text {
-            self.add_text(text);
-        }
-    }
-
+    /// Adds the given `text` to the currently processing outline entry.
     fn add_text(&mut self, text: &str) {
-        self.html_buffer.push_str(text);
-
-        if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
-            self.id_buffer.push_str(text);
+        if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.text(text);
+            outline.entry_html.text(text);
+            if self.state == OutlineEmitterState::Body
+                && let OutlineId::Implicit(id) = &mut outline.id
+            {
+                id.push_str(text);
+            } else if self.state == OutlineEmitterState::StartId
+                && let OutlineId::Explicit(id) = &mut outline.id
+            {
+                id.push_str(text);
+            }
         }
     }
 
-    /// Emits an outline entry with the given `level`, `html`, and `id` to
-    /// `outline`.
-    fn emit_entry(
-        &mut self,
-        outline: &mut Outline,
-        level: HeadingLevel,
-        html: core::ops::Range<usize>,
-        id: OutlineEmitterEntryId,
-        body_pos: Mark,
-    ) {
-        // TODO: Because HTML5 anchor mode normalises some characters that the
-        // legacy mode does not, work needs to be done to make sure that those
-        // characters in legacy ID are actually emitted if things do not match.
-        let legacy = match id {
-            OutlineEmitterEntryId::Implicit {
-                start,
-                end,
-                out_pos,
-            } => {
-                let id = normalize_section_name(&self.id_buffer[start as usize..end as usize])
-                    .map(normalize_fragment)
-                    .map(|id| escape_id(id, AnchorEncodeMode::Html5));
-                let id = outline
-                    .push(level, self.html_buffer[html].trim_ascii(), &id)
-                    .unwrap_or(&id);
-                let legacy = Self::id_to_legacy(id);
-                self.next.with_marks([&out_pos], |[out_pos], out| {
-                    if let Some(out_pos) = out_pos {
-                        let attr = Self::id_to_attr(id);
-                        out.insert_str(out_pos, &attr);
-                    }
-                });
-                self.next.free_mark(out_pos);
-                legacy
-            }
-            OutlineEmitterEntryId::Explicit { start, end } => {
-                let legacy = self.next.with_marks([&start, &end], |[start, end], out| {
-                    let (Some(start), Some(end)) = (start, end) else {
-                        return None;
-                    };
-                    let id =
-                        decode_html(&out[start + Self::PREFIX.len()..end - Self::SUFFIX.len()]);
-                    if let Some(id) = outline.push(level, self.html_buffer[html].trim_ascii(), &id)
-                    {
-                        out.replace_range(start..end, &Self::id_to_attr(id));
-                        Self::id_to_legacy(id)
-                    } else {
-                        Self::id_to_legacy(&id)
-                    }
-                });
-                self.next.free_mark(start);
-                self.next.free_mark(end);
-                legacy
-            }
+    /// Saves the given `entry` to the global outline and emits the buffered
+    /// HTML to the next sink.
+    fn save_entry(&mut self, entry: OutlineEntry) {
+        let id = entry.id.into_inner();
+        let id = normalize_section_name(&id).map(normalize_fragment);
+        let mut outlines = self.outline.borrow_mut();
+        let override_id = if dbg!(self.in_strip_marker) {
+            eprintln!("SKIPPING {id}");
+            // Headings in strip markers are not supposed to go to the outline
+            None
+        } else {
+            eprintln!("pushing {id}");
+            outlines.push(entry.level, entry.entry_html.finish().trim_ascii(), &id)
         };
+        let mut html = entry.document_html.finish();
 
-        if let Some(legacy) = legacy {
-            self.next.with_marks([&body_pos], |[body_pos], out| {
-                if let Some(body_pos) = body_pos {
-                    let attr = Self::id_to_attr(&legacy);
-                    out.insert_str(body_pos, &format!("<span{attr}></span>"));
-                }
-            });
+        let id = override_id.unwrap_or(&id);
+        let html_id = escape_id(id, AnchorEncodeMode::Html5);
+        let legacy_id = escape_id(id, AnchorEncodeMode::Legacy);
+
+        debug_assert!(entry.body_start > entry.id_start);
+
+        if html_id != legacy_id {
+            html.insert_str(
+                entry.body_start as usize,
+                &format!(
+                    r#"<span id="{}"></span>"#,
+                    encode_double_quoted_attribute(&legacy_id)
+                ),
+            );
         }
 
-        self.next.free_mark(body_pos);
-    }
-
-    /// Converts an unencoded ID string to an HTML string.
-    #[inline]
-    #[must_use]
-    fn id_to_attr(id: &str) -> String {
-        let id = html_escape::encode_double_quoted_attribute(id);
-        format!("{}{id}{}", Self::PREFIX, Self::SUFFIX)
-    }
-
-    /// Returns the legacy ID for an entry if it is different from the HTML5 ID.
-    #[inline]
-    #[must_use]
-    fn id_to_legacy(id: &str) -> Option<String> {
-        let legacy = escape_id(id, AnchorEncodeMode::Legacy);
-        (legacy != id).then(|| legacy.into_owned())
-    }
-
-    /// Records an entry with the given `level` to be emitted to the global
-    /// outline when the emitter is finished.
-    fn save_entry(&mut self, level: HeadingLevel) {
-        debug_assert_eq!(Some(level), self.state.tag);
-        debug_assert!(self.state.stack.is_empty());
-
-        let state = core::mem::take(&mut self.state);
-        let id = match state.id {
-            OutlineEmitterStateId::Undefined => unreachable!(),
-            OutlineEmitterStateId::Explicit { start, end } => {
-                let end = end.unwrap_or_else(|| self.next.mark());
-                OutlineEmitterEntryId::Explicit { start, end }
-            }
-            OutlineEmitterStateId::Implicit {
-                id_pos: start,
-                out_pos,
-            } => {
-                let end = u16::try_from(self.id_buffer.len()).unwrap();
-                OutlineEmitterEntryId::Implicit {
-                    out_pos,
-                    start,
-                    end,
-                }
-            }
-        };
-        self.entries.push(OutlineEmitterEntry {
-            body_pos: state.body_pos.unwrap(),
-            html: state.html,
-            id,
-            level,
-        });
-
-        if let Some(pos) = state.dir {
-            self.next.free_mark(pos);
+        if override_id.is_some()
+            && let Some(end) = entry.id_end
+        {
+            html.replace_range(entry.id_start as usize..u32::from(end) as usize, &html_id);
+        } else if entry.id_end.is_none() {
+            html.insert_str(
+                entry.id_start as usize,
+                &format!(r#" id="{}""#, encode_double_quoted_attribute(&html_id)),
+            );
         }
+        tokenise(&mut self.next, &html);
     }
 }
 
 chainable!(OutlineEmitter);
 
 impl<S: Sink + Markable> Sink for OutlineEmitter<S> {
-    #[inline]
     fn comment_end(&mut self) {
-        self.next.comment_end();
+        if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.comment_end();
+            outline.entry_html.comment_end();
+        } else {
+            self.next.comment_end();
+        }
     }
 
-    #[inline]
     fn comment_start(&mut self) {
-        self.next.comment_start();
+        if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.comment_start();
+            outline.entry_html.comment_start();
+        } else {
+            self.next.comment_start();
+        }
     }
 
     fn entity(&mut self, value: char, raw: &str) {
-        if self.state.tag.is_none() || self.state.in_attrs {
+        if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.entity(value, raw);
+            outline.entry_html.entity(value, raw);
+            if self.state == OutlineEmitterState::Body
+                && let OutlineId::Implicit(id) = &mut outline.id
+            {
+                id.push(value);
+            } else if self.state == OutlineEmitterState::StartId
+                && let OutlineId::Explicit(id) = &mut outline.id
+            {
+                id.push(value);
+            }
+        } else {
             self.next.entity(value, raw);
-            return;
-        }
-
-        let start = self.next.mark();
-        self.next.entity(value, raw);
-        self.next.with_marks([&start], |[pos], out| {
-            self.html_buffer
-                .push_str(pos.map_or("", |start| &out[start..]));
-        });
-        self.next.free_mark(start);
-
-        if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
-            self.id_buffer.push_str(raw);
         }
     }
 
     #[inline]
-    fn finish(mut self, state: &mut State<'_, '_, '_>) -> String {
-        debug_assert!(self.state.body_pos.is_none());
-        debug_assert!(self.state.dir.is_none());
-        debug_assert!(self.state.tag.is_none());
-        let mut entries = core::mem::take(&mut self.entries).into_iter().peekable();
-        while let Some(entry) = entries.next() {
-            let next_html = entries
-                .peek()
-                .map_or(self.html_buffer.len(), |next| next.html as usize);
-            self.emit_entry(
-                &mut state.globals.outline,
-                entry.level,
-                entry.html as usize..next_html,
-                entry.id,
-                entry.body_pos,
-            );
-        }
-        self.next.finish(state)
+    fn finish(self) -> String {
+        debug_assert!(self.buffer.is_empty());
+        self.next.finish()
     }
 
-    #[inline]
     fn new_line(&mut self) {
-        self.next.new_line();
+        if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.new_line();
+            outline.entry_html.new_line();
+        } else {
+            self.next.new_line();
+        }
     }
 
-    #[inline]
     fn strip_marker(&mut self, marker: &StripMarker) {
         match marker {
-            StripMarker::Block(html) | StripMarker::Inline(html) => {
-                self.add_html(html);
+            // Even if this is not processing any heading, tokenising is needed
+            // by subsequent sinks, so just do it here always
+            StripMarker::General(html) => {
+                self.in_strip_marker = true;
+                eprintln!("start");
+                tokenise(self, dbg!(html));
+                eprintln!("end");
+                self.in_strip_marker = false;
             }
             StripMarker::NoWiki(text) => {
-                self.add_text(text);
+                if self.buffer.is_empty() {
+                    self.next.strip_marker(marker);
+                } else {
+                    self.add_text(&decode_html(text));
+                }
             }
-            StripMarker::WikiRsSourceEnd(_) | StripMarker::WikiRsSourceStart(_) => {}
+            StripMarker::WikiRsSourceEnd(_) | StripMarker::WikiRsSourceStart(_) => {
+                if let Some(outline) = self.buffer.last_mut() {
+                    outline.document_html.strip_marker(marker);
+                } else {
+                    self.next.strip_marker(marker);
+                }
+            }
         }
-        self.next.strip_marker(marker);
     }
 
     fn tag_attribute_end(&mut self, name: &str) {
-        self.next.tag_attribute_end(name);
-
-        if matches!(self.state.stack.last(), Some(tag) if tag.name == "span")
-            && name == "dir"
-            && let Some(dir) = self.state.dir.take()
-        {
-            self.next.with_marks([&dir], |[dir], out| {
-                let value = dir.map_or("", |dir| &out[dir..]);
-                if value.len() > " dir".len() {
-                    self.html_buffer.push_str(value);
-                }
-            });
-            self.next.free_mark(dir);
-        } else if self.state.in_entry_attrs && name == "id" {
-            let OutlineEmitterStateId::Explicit { end, .. } = &mut self.state.id else {
-                panic!("attributes all goofed up")
-            };
-            *end = Some(self.next.mark());
+        if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.tag_attribute_end(name);
+            outline.entry_html.tag_attribute_end(name);
+            if self.state == OutlineEmitterState::StartId {
+                outline.id_end = NonZeroU32::new(outline.document_html.len());
+                self.state = OutlineEmitterState::Start;
+            } else if self.state == OutlineEmitterState::StartAttr {
+                self.state = OutlineEmitterState::Start;
+            } else {
+                self.state = OutlineEmitterState::Body;
+            }
+        } else {
+            self.next.tag_attribute_end(name);
         }
     }
 
     fn tag_attribute_start(&mut self, name: &str) {
-        if matches!(self.state.stack.last(), Some(tag) if tag.name == "span") && name == "dir" {
-            self.state.dir = Some(self.next.mark());
-        } else if self.state.in_entry_attrs && name == "id" {
-            self.state.id = OutlineEmitterStateId::Explicit {
-                start: self.next.mark(),
-                end: None,
-            };
+        if let Some(outline) = self.buffer.last_mut() {
+            if self.state == OutlineEmitterState::Start {
+                if name == "id" {
+                    self.state = OutlineEmitterState::StartId;
+                    outline.id = OutlineId::Explicit(<_>::default());
+                    outline.id_start = outline.document_html.len();
+                } else {
+                    self.state = OutlineEmitterState::StartAttr;
+                }
+            } else {
+                self.state = OutlineEmitterState::BodyAttr;
+            }
+            outline.document_html.tag_attribute_start(name);
+            outline.entry_html.tag_attribute_start(name);
+        } else {
+            self.next.tag_attribute_start(name);
         }
-        self.next.tag_attribute_start(name);
     }
 
     fn tag_end(&mut self, name: &str) {
-        self.next.tag_end(name);
+        if let Some(mut outline) = self.buffer.pop_if(|state| state.level.tag_name() == name) {
+            outline.document_html.tag_end(name);
+            self.save_entry(outline);
+        } else if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.tag_end(name);
+            outline.entry_html.tag_end(name);
+        } else {
+            self.next.tag_end(name);
+        }
+    }
 
-        if let Some(tag) = self.state.stack.pop_if(|tag| tag.name == name) {
-            if tag.open_end == self.html_buffer.len() {
-                self.html_buffer.truncate(tag.open_start);
-            } else {
-                let _ = write!(self.html_buffer, "</{name}>");
+    fn tag_start(&mut self, name: &str) {
+        if let Ok(level) = name.parse() {
+            let mut outline = OutlineEntry::new(level);
+            outline.document_html.tag_start(name);
+            self.buffer.push(outline);
+            self.state = OutlineEmitterState::Start;
+        } else if let Some(outline) = self.buffer.last_mut() {
+            outline.document_html.tag_start(name);
+            outline.entry_html.tag_start(name);
+        } else {
+            self.next.tag_start(name);
+        }
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        if let Some(outline) = self.buffer.last_mut() {
+            if self.state == OutlineEmitterState::Start && outline.id_end.is_none() {
+                outline.id_start = outline.document_html.len();
             }
-        } else if let Ok(level) = name.parse() {
-            self.save_entry(level);
+            outline.document_html.tag_start_end(name);
+            if self.state == OutlineEmitterState::Start {
+                outline.body_start = outline.document_html.len();
+                self.state = OutlineEmitterState::Body;
+            } else {
+                outline.entry_html.tag_start_end(name);
+            }
+        } else {
+            self.next.tag_start_end(name);
         }
     }
 
     #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
-    }
-
-    fn tag_start(&mut self, name: &str) {
-        self.next.tag_start(name);
-
-        if let Ok(level) = name.parse() {
-            if self.state.tag.is_some() {
-                todo!("invalid heading tag nesting");
-            }
-            self.state.tag = Some(level);
-            self.state.html = u32::try_from(self.html_buffer.len()).unwrap();
-            self.state.in_entry_attrs = true;
-        } else if self.state.tag.is_some()
-            && let Some(name) = Self::ALLOWED_TAGS.get_key(name)
-        {
-            self.state.stack.push(OutlineEmitterTag {
-                name,
-                open_start: self.html_buffer.len(),
-                open_end: self.html_buffer.len(),
-            });
-            let _ = write!(self.html_buffer, "<{name}");
-        }
-
-        self.state.in_attrs = true;
-    }
-
-    fn tag_start_end(&mut self, name: &str) {
-        if let Some(tag) = self.state.stack.last_mut()
-            && tag.name == name
-        {
-            self.html_buffer.push('>');
-            tag.open_end = self.html_buffer.len();
-        } else if self.state.in_entry_attrs
-            && matches!(self.state.id, OutlineEmitterStateId::Undefined)
-        {
-            self.state.id = OutlineEmitterStateId::Implicit {
-                out_pos: self.next.mark(),
-                id_pos: u16::try_from(self.id_buffer.len()).unwrap(),
-            };
-        }
-        self.state.in_attrs = false;
-        self.next.tag_start_end(name);
-        if self.state.in_entry_attrs {
-            self.state.body_pos = Some(self.next.mark());
-            self.state.in_entry_attrs = false;
-        }
-    }
-
     fn text(&mut self, text: &str) {
-        if self.state.tag.is_none() || self.state.in_attrs {
+        if self.buffer.is_empty() {
             self.next.text(text);
-            return;
-        }
-
-        let start = self.next.mark();
-        self.next.text(text);
-        self.next.with_marks([&start], |[pos], out| {
-            self.html_buffer
-                .push_str(pos.map_or("", |start| &out[start..]));
-        });
-        self.next.free_mark(start);
-
-        if matches!(self.state.id, OutlineEmitterStateId::Implicit { .. }) {
-            self.id_buffer.push_str(text);
+        } else {
+            self.add_text(text);
         }
     }
 }
 
-/// A fully resolved outline entry, pending insertion to the article outline.
+/// The state of an `OutlineEmitter`.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+enum OutlineEmitterState {
+    /// In a new `<hN>` start tag.
+    Start,
+    /// In a new `<hN>` stat tag attribute.
+    StartAttr,
+    /// In the `id` attribute of a new `<hN>` start tag.
+    StartId,
+    /// In some other tag state.
+    #[default]
+    Body,
+    /// In an attribute for some other tag.
+    BodyAttr,
+}
+
+/// An outline entry.
 #[derive(Debug)]
-struct OutlineEmitterEntry {
-    /// The inner position of the heading’s start tag in the output.
-    body_pos: Mark,
-    /// The start position of the outline entry HTML in the HTML string buffer.
-    html: u32,
-    /// The position of the ID in the output.
-    id: OutlineEmitterEntryId,
-    /// The heading level.
+struct OutlineEntry {
+    /// The position immediately after the heading tag in the document HTML.
+    body_start: u32,
+    /// The accumulator for the heading tag to be emitted to the document
+    /// output.
+    document_html: Accumulator,
+    /// The accumulator for the outline entry to be emitted to the outline.
+    entry_html: OutlineEntryBody,
+    /// The plain text anchor ID for the outline.
+    id: OutlineId,
+    /// The start position of the ID in the document HTML.
+    id_start: u32,
+    /// The end position of the ID in the document HTML. If `None`, the ID was
+    /// implicit, and needs to be inserted.
+    id_end: Option<NonZeroU32>,
+    /// The level of the heading tag.
     level: HeadingLevel,
 }
 
-/// A fully resolved outline anchor ID.
+impl OutlineEntry {
+    /// Creates a new `OutlineEntry`.
+    fn new(level: HeadingLevel) -> Self {
+        Self {
+            body_start: <_>::default(),
+            document_html: <_>::default(),
+            entry_html: <_>::default(),
+            id: <_>::default(),
+            id_start: <_>::default(),
+            id_end: <_>::default(),
+            level,
+        }
+    }
+}
+
+/// Accumulates the HTML for an outline entry, filtering tags (but not their
+/// contents) and most tag attributes.
 #[derive(Debug)]
-enum OutlineEmitterEntryId {
-    /// An explicit ID given by the `id` attribute of the heading.
-    Explicit {
-        /// The start position of the ID in the output.
-        start: Mark,
-        /// The end position of the ID in the output.
-        end: Mark,
-    },
-    /// An implicit ID generated from the text of the heading.
-    Implicit {
-        /// The start position of the generated ID in the ID string buffer.
-        start: u16,
-        /// The end position of the generated ID in the ID string buffer.
-        end: u16,
-        /// The position where the ID should be inserted in the output.
-        out_pos: Mark,
-    },
+struct OutlineEntryBody {
+    /// The last tag’s inner body position. Used to detect empty tags.
+    body_pos: u32,
+    /// The accumulator for the outline entry.
+    buffer: PrettyText<Accumulator>,
+    /// The filter counter.
+    filtering: u8,
+    /// If true, processing a `<span>` start tag.
+    in_span: bool,
+    /// The last tag’s outer start position. Used to truncate empty tags.
+    start_pos: u32,
 }
 
-/// An in-progress heading for the outline.
-#[derive(Debug, Default)]
-struct OutlineEmitterState {
-    /// The position of the start of the heading tag inner HTML.
-    body_pos: Option<Mark>,
-    /// The position of the `dir` attribute of a span element.
-    dir: Option<Mark>,
-    /// The start position for the HTML to emit to the table of contents in the
-    /// HTML buffer.
-    html: u32,
-    /// The ID of the current outline entry.
-    id: OutlineEmitterStateId,
-    /// If true, the emitter is currently processing attributes of some element.
-    in_attrs: bool,
-    /// If true, the emitter is currently processing the attributes of the root
-    /// element of the outline entry.
-    in_entry_attrs: bool,
-    /// The stack of open inner HTML elements.
-    stack: Vec<OutlineEmitterTag>,
-    /// The current level.
-    tag: Option<HeadingLevel>,
+impl OutlineEntryBody {
+    /// The list of tags allowed in outlines.
+    ///
+    /// This list comes from Parsoid `Wt2Html\DOM\Handlers\Headings`.
+    const ALLOWED_TAGS: phf::Set<&str> = phf::phf_set! {
+        "b", "bdi", "i", "q", "s", "span", "strike", "sub", "sup"
+    };
 }
 
-/// An anchor ID.
-#[derive(Debug, Default)]
-enum OutlineEmitterStateId {
-    /// Indeterminate.
-    #[default]
-    Undefined,
-    /// Use an existing ID.
-    Explicit {
-        /// The start position of the `id` attribute in the output.
-        start: Mark,
-        /// The end position of the `id` attribute in the output. `None` if the
-        /// attribute has not been closed yet.
-        end: Option<Mark>,
-    },
-    /// Generate an ID from the given text.
-    Implicit {
-        /// The output position for the eventual `id` attribute.
-        out_pos: Mark,
-        /// The start position of the ID text in the ID buffer.
-        id_pos: u16,
-    },
+impl Default for OutlineEntryBody {
+    fn default() -> Self {
+        Self {
+            body_pos: <_>::default(),
+            buffer: PrettyText::new(<_>::default()),
+            filtering: <_>::default(),
+            in_span: <_>::default(),
+            start_pos: <_>::default(),
+        }
+    }
 }
 
-/// An HTML tag in the outline.
+impl Sink for OutlineEntryBody {
+    #[inline]
+    fn comment_end(&mut self) {}
+
+    #[inline]
+    fn comment_start(&mut self) {}
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        if self.filtering == 0 {
+            self.buffer.entity(value, raw);
+        }
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.buffer.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        // Because the legacy ID mode is sensitive to newline characters, this
+        // has to be emitted, even though it is nonsensical in the normal
+        // context of an outline entry
+        if self.filtering == 0 {
+            self.buffer.new_line();
+        }
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, _: &StripMarker) {
+        panic!("strip markers should not be sent here");
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        if self.in_span && name == "dir" {
+            self.buffer.tag_attribute_end(name);
+        } else {
+            self.filtering -= 1;
+        }
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        if self.in_span && name == "dir" {
+            self.buffer.tag_attribute_start(name);
+        } else {
+            self.filtering += 1;
+        }
+    }
+
+    fn tag_end(&mut self, name: &str) {
+        if Self::ALLOWED_TAGS.contains(name) {
+            if self.body_pos == self.buffer.next_mut().len() {
+                // Empty tags are filtered out
+                self.buffer.next_mut().truncate(self.start_pos);
+            } else {
+                self.buffer.tag_end(name);
+            }
+        }
+    }
+
+    fn tag_start(&mut self, name: &str) {
+        if Self::ALLOWED_TAGS.contains(name) {
+            self.start_pos = self.buffer.next_mut().len();
+            self.buffer.tag_start(name);
+            self.in_span = name == "span";
+        } else {
+            self.filtering += 1;
+        }
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        if Self::ALLOWED_TAGS.contains(name) {
+            self.buffer.tag_start_end(name);
+            self.body_pos = self.buffer.next_mut().len();
+        } else {
+            self.filtering -= 1;
+        }
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        if self.filtering == 0 {
+            self.buffer.text(text);
+        }
+    }
+}
+
+/// An outline entry ID.
 #[derive(Debug)]
-struct OutlineEmitterTag {
-    /// The HTML tag name.
-    name: &'static str,
-    /// The position of the start of the last start tag. Used to filter empty
-    /// tags from the outline output.
-    open_start: usize,
-    /// The position of the end of the last start tag. Used to filter empty
-    /// tags from the outline output.
-    open_end: usize,
+enum OutlineId {
+    /// The ID is generated implicitly from the body of the heading.
+    Implicit(String),
+    /// The ID is taken explicitly from an `id` attribute.
+    Explicit(String),
+}
+
+impl OutlineId {
+    /// Consumes the `OutlineId`, returning the string value.
+    fn into_inner(self) -> String {
+        match self {
+            Self::Implicit(s) | Self::Explicit(s) => s,
+        }
+    }
+}
+
+impl Default for OutlineId {
+    fn default() -> Self {
+        Self::Implicit(<_>::default())
+    }
 }
 
 /// Text style emitter.
@@ -2187,6 +2612,132 @@ impl TextStyleEmitter {
         *self = Self::None;
     }
 }
+
+/// Wraps bare text content in the root and in `<blockquote>` elements with a
+/// `<p>`.
+#[derive(Debug)]
+pub(super) struct PWrapper<S: Sink> {
+    /// The current DOM depth.
+    depth: u8,
+    /// If true, inside a p-wrapper.
+    in_p: bool,
+    /// The output.
+    next: S,
+}
+
+chainable!(PWrapper);
+
+impl<S: Sink> PWrapper<S> {
+    /// Creates a new `PWrapper` chained to `next`.
+    pub fn new(next: S) -> Self {
+        Self {
+            depth: <_>::default(),
+            in_p: <_>::default(),
+            next,
+        }
+    }
+
+    fn change_state(&mut self, name: &str) {
+        if INLINE.contains(name) {
+            self.enter_p();
+        } else if self.in_p {
+            self.next.tag_end("p");
+            self.in_p = false;
+        }
+    }
+
+    fn enter_p(&mut self) {
+        if self.depth == 0 && !self.in_p {
+            self.in_p = true;
+            self.next.tag_start_full("p");
+        }
+    }
+}
+
+impl<S: Sink> Sink for PWrapper<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.next.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.next.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.enter_p();
+        self.next.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(mut self) -> String {
+        if self.in_p {
+            self.next.tag_end("p");
+        }
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.next.new_line();
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        self.next.strip_marker(marker);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.next.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.next.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.next.tag_end(name);
+        self.depth -= 1;
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.change_state(name);
+        self.next.tag_start(name);
+        self.depth += 1;
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        self.next.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.enter_p();
+        self.next.text(text);
+    }
+}
+
+static FORMATTING: phf::Set<&str> = phf::phf_set! {
+    "a"
+    |"b"|"big"|"code"|"em"|"font"|"i"|"nobr"|"s"|"small"|"strike"|"strong"|"tt"
+    |"u"
+};
+
+static INLINE: phf::Set<&str> = phf::phf_set! {
+    "a"|"abbr"
+    |"acronym"|"applet"|"audio"|"b"|"basefont"|"bdi"|"bdo"|"big"|"br"|"button"
+    |"cite"|"code"|"data"|"del"|"dfn"|"em"|"font"|"i"|"iframe"|"img"|"input"
+    |"ins"|"kbd"|"label"|"legend"|"map"|"mark"|"object"|"param"|"q"|"rb"|"rbc"
+    |"rp"|"rt"|"rtc"|"ruby"|"s"|"samp"|"select"|"small"|"source"|"span"|"strike"
+    |"strong"|"sub"|"sup"|"textarea"|"time"|"track"|"tt"|"u"|"var"|"video"
+    |"wbr"
+};
 
 /// Converts runs of text to typographically beautiful HTML.
 #[derive(Debug)]
@@ -2322,8 +2873,8 @@ impl<S: Sink> Sink for PrettyText<S> {
     }
 
     #[inline]
-    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
-        self.next.finish(state)
+    fn finish(self) -> String {
+        self.next.finish()
     }
 
     #[inline]
@@ -2366,11 +2917,6 @@ impl<S: Sink> Sink for PrettyText<S> {
             self.push_char(' ');
         }
         self.next.tag_end(name);
-    }
-
-    #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -2543,9 +3089,9 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
     }
 
     #[inline]
-    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
+    fn finish(self) -> String {
         debug_assert!(self.stack.is_empty());
-        self.next.finish(state)
+        self.next.finish()
     }
 
     #[inline]
@@ -2585,11 +3131,6 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
             debug_assert!(last.interstitial.is_none());
             last.interstitial = Some(self.next.mark());
         }
-    }
-
-    #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -2683,8 +3224,8 @@ impl<S: Sink> Sink for TemplateTagger<S> {
     }
 
     #[inline]
-    fn finish(self, state: &mut State<'_, '_, '_>) -> String {
-        self.next.finish(state)
+    fn finish(self) -> String {
+        self.next.finish()
     }
 
     #[inline]
@@ -2718,11 +3259,6 @@ impl<S: Sink> Sink for TemplateTagger<S> {
             self.depth -= 1;
         }
         self.next.tag_end(name);
-    }
-
-    #[inline]
-    fn tag_end_unbalanced(&mut self, name: &str) {
-        self.next.tag_end_unbalanced(name);
     }
 
     #[inline]
@@ -2790,6 +3326,7 @@ macro_rules! chainable {
 }
 
 use chainable;
+use html_escape::encode_double_quoted_attribute;
 
 #[cfg(test)]
 mod tests {

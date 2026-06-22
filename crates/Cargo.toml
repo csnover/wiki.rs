@@ -101,7 +101,7 @@ fancy-regex = "0.16"
 gc-arena = { git = "https://github.com/kyren/gc-arena", rev = "5a7534b883b703f23cfb8c3cfdf033460aa77ea9", features = ["allocator-api2", "hashbrown"] }
 goldenfile = "1.9"
 html-escape = "0.2"
-html5gum = "0.8.3"
+html5gum = "0.8.4"
 icu_datetime = { version = "2.2", features = ["compiled_data"] }
 icu_locale = "2.2"
 icu_plurals = { version = "2.2", features = ["compiled_data"] }

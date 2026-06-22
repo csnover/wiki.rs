@@ -38,7 +38,7 @@ impl PluginExtensionTag for AsideTag {
         _: PluginTagArgs<'_, '_, '_>,
     ) -> PluginResult<OutputMode> {
         write!(out, "<aside>Some aside content</aside>")?;
-        Ok(OutputMode::Block)
+        Ok(OutputMode::Html)
     }
 }
 
@@ -69,11 +69,7 @@ impl PluginExtensionTag for DivTagPf {
             <_>::default()
         };
         write!(out, "<{tag}>{content}</{tag}>")?;
-        Ok(if tag == "div" {
-            OutputMode::Block
-        } else {
-            OutputMode::Inline
-        })
+        Ok(OutputMode::Html)
     }
 }
 
@@ -125,7 +121,7 @@ impl PluginExtensionTag for PWrapTest {
         _: PluginTagArgs<'_, '_, '_>,
     ) -> PluginResult<OutputMode> {
         write!(out, "<!--CMT--><style>p{{}}</style>")?;
-        Ok(OutputMode::Inline)
+        Ok(OutputMode::Html)
     }
 }
 
@@ -139,7 +135,7 @@ impl PluginExtensionTag for SealTag {
         _: PluginTagArgs<'_, '_, '_>,
     ) -> PluginResult<OutputMode> {
         write!(out, "<span></span>")?;
-        Ok(OutputMode::Inline)
+        Ok(OutputMode::Html)
     }
 }
 
@@ -201,7 +197,7 @@ impl PluginExtensionTag for TagTag {
             }
         }
         write!(out, ")\n</pre>")?;
-        Ok(OutputMode::Block)
+        Ok(OutputMode::Html)
     }
 }
 

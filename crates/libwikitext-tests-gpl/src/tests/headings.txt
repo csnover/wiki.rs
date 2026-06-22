@@ -2324,6 +2324,17 @@ blah
 !! metadata
 Sections:
  h2 index:1 toclevel:1 number:1 title:Parser_test off:69 anchor/linkAnchor:page_h2 line:page h2
+!! html/wiki.rs # This output matches the PHP parser, minus the TOC and heading wrappers
+<p>foo
+<span>
+</span></p>
+<h2 id="spantag_h2">spantag h2</h2>
+<p>intro
+</p>
+
+<h2 id="page_h2">page h2</h2>
+<p>blah
+</p>
 !! end
 
 !! test
@@ -2589,9 +2600,10 @@ parsoid=wt2html,html2html
 !! html/parsoid
 <h2 id="a">a</h2>
 <table style="__TOC__"></table>
-!! html/wiki.rs # This output matches the PHP parser using heuristics, except for the whitespace
+!! html/wiki.rs # This output matches the PHP parser using heuristics
 <h2 id="a">a</h2>
-<table style="__TOC__"><tr><td></td></tr></table>
+<table style="__TOC__"><tr><td></td></tr>
+</table>
 !! end
 
 

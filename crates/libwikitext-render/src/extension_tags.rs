@@ -353,7 +353,7 @@ fn gallery(
         write!(
             out,
             r#"<div class="gallerycaption">{}</div>"#,
-            text_run(state, &caption)
+            text_run(&caption)
         )?;
     }
 
@@ -386,17 +386,13 @@ fn gallery(
             options.height = Some(height);
         }
 
-        let mut inner = Document::new(true);
+        let mut inner = Document::new(true, &state.globals.outline);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
-        write!(
-            out,
-            r#"<li class="gallerybox">{}</li>"#,
-            inner.finish(state)
-        )?;
+        write!(out, r#"<li class="gallerybox">{}</li>"#, inner.finish())?;
     }
     write!(out, "</ul>")?;
 
-    Ok(OutputMode::Block)
+    Ok(OutputMode::Html)
 }
 
 /// The `<graph>` extension tag.
@@ -410,7 +406,7 @@ fn graph(
     let result = vega2_rs::spec_to_svg(arguments.body(), state.statics.base_time)
         .map_err(|err| Error::Extension(Box::new(err)))?;
     write!(out, "{result}")?;
-    Ok(OutputMode::Block)
+    Ok(OutputMode::Html)
 }
 
 /// The `<indicator>` extension tag.
@@ -443,9 +439,9 @@ fn indicator(
         .transpose()?;
 
     if let Some(image) = image {
-        let mut out = Document::new(true);
+        let mut out = Document::new(true, &state.globals.outline);
         out.adopt_token(state, &sp, image)?;
-        let indicator = out.finish(state);
+        let indicator = out.finish();
         state.globals.indicators.insert(name.to_string(), indicator);
     }
 
@@ -475,7 +471,7 @@ fn map_frame(
         ],
     );
     write!(out, "<pre>{body}</pre>")?;
-    Ok(OutputMode::Block)
+    Ok(OutputMode::Html)
 }
 
 /// The `<math>` extension tag.
@@ -494,12 +490,12 @@ fn math(
     // * 'block' wraps "{\displaystyle{latex}}"
     // * 'inline' wraps "{\textstyle{latex}}"
     // * 'linebreak' is also an option, wraps "\[{latex}\]"
-    let (output, mode) = if let Some(value) = arguments.get(state, "display")?
+    let mode = if let Some(value) = arguments.get(state, "display")?
         && value == "block"
     {
-        (OutputMode::Block, math_core::MathDisplay::Block)
+        math_core::MathDisplay::Block
     } else {
-        (OutputMode::Inline, math_core::MathDisplay::Inline)
+        math_core::MathDisplay::Inline
     };
 
     let config = math_core::MathCoreConfig {
@@ -523,7 +519,7 @@ fn math(
         }
     }
 
-    Ok(output)
+    Ok(OutputMode::Html)
 }
 
 /// The `<nowiki>` extension tag.
@@ -596,7 +592,7 @@ fn poem(
     let body = state.strip_markers.unstrip(&body);
     write!(out, "{body}")?;
 
-    Ok(OutputMode::Block)
+    Ok(OutputMode::Html)
 }
 
 /// The `<pre>` extension tag.
@@ -672,7 +668,7 @@ fn pre(
         .unwrap_or(&body);
 
     write!(out, ">{body}</pre>")?;
-    Ok(OutputMode::Block)
+    Ok(OutputMode::Html)
 }
 
 /// A reference key.
@@ -880,7 +876,7 @@ fn r#ref(
             out,
             r##"<span class="reference" id="{from}"><a href="#{to}">{id}</a></span>"##
         )?;
-        OutputMode::Inline
+        OutputMode::Html
     } else {
         OutputMode::Empty
     })
@@ -947,7 +943,7 @@ fn references(
                 }
             }
             write!(out, "</ol>")?;
-            OutputMode::Block
+            OutputMode::Html
         } else {
             OutputMode::Empty
         },
@@ -1026,13 +1022,13 @@ fn syntax_highlight(
         themes.themes["InspiredGitHub"].clone()
     });
 
-    let (mode, tag, attrs) = if arguments.get(state, "inline")?.is_some() {
-        (OutputMode::Inline, "code", "")
+    let (tag, attrs) = if arguments.get(state, "inline")?.is_some() {
+        ("code", "")
     } else {
         // Because this might get dumped into a `<pre>` (see the `pre` function
         // for more detailed and thrilling commentary about this), make it a
         // `<div>` like how the MW extension does it.
-        (OutputMode::Block, "div", r#" role="code""#)
+        ("div", r#" role="code""#)
     };
 
     // TODO: `line`, `start`, `linelinks`, `highlight`, `class`, `style`, and
@@ -1065,7 +1061,7 @@ fn syntax_highlight(
     }
 
     write!(out, "</{tag}>")?;
-    Ok(mode)
+    Ok(OutputMode::Html)
 }
 
 /// The `<templatedata>` extension tag.
@@ -1086,7 +1082,7 @@ fn template_data(
         ],
     );
     write!(out, "<pre>{body}</pre>")?;
-    Ok(OutputMode::Block)
+    Ok(OutputMode::Html)
 }
 
 /// The `<timeline>` extension tag.
@@ -1131,7 +1127,7 @@ fn timeline(
         .map_err(|err| Error::Extension(Box::new(err)))?;
         write!(out, r#"<figure class="wiki-rs-timeline">{result}</figure>"#)?;
     }
-    Ok(OutputMode::Block)
+    Ok(OutputMode::Html)
 }
 
 /// Collected template style data.
@@ -1223,12 +1219,10 @@ static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
 /// The output mode of an extension tag.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OutputMode {
-    /// The extension tag outputs one or more block-level elements.
-    Block,
     /// The extension tag outputs nothing directly.
     Empty,
-    /// The extension tag outputs one or more phrasing elements.
-    Inline,
+    /// The extension tag outputs HTML.
+    Html,
     /// The extension tag outputs plain text.
     Nowiki,
     /// The extension tag outputs its unprocessed self.
@@ -1300,7 +1294,7 @@ pub(super) fn render_extension_tag(
             "&lt;{callee}&gt;{}&lt;/{callee}&gt;",
             html_escape::encode_text(&decode_html(body.unwrap_or("")))
         )?;
-        OutputMode::Block
+        OutputMode::Html
     } else {
         // Any arbitrary tag name can be passed to the `#tag` parser function
         // and then expect that a tag will be emitted as if the equivalent
@@ -1309,9 +1303,8 @@ pub(super) fn render_extension_tag(
     };
 
     Ok(match mode {
-        OutputMode::Block => Some(Either::Left(StripMarker::Block(out))),
         OutputMode::Empty => None,
-        OutputMode::Inline => Some(Either::Left(StripMarker::Inline(out))),
+        OutputMode::Html => Some(Either::Left(StripMarker::General(out))),
         OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out))),
         OutputMode::Raw => Some(Either::Right(out)),
     })
@@ -1328,9 +1321,9 @@ fn eval_string(
     let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse(&sp.source)?;
-    let mut out = Document::new(!unstrip);
+    let mut out = Document::new(!unstrip, &state.globals.outline);
     out.adopt_tokens(state, &sp, &root)?;
-    Ok(out.finish(state))
+    Ok(out.finish())
 }
 
 /// Re-emits an extension tag.

@@ -130,9 +130,9 @@ impl PluginFnArgs<'_, '_, '_> {
         };
         let sp = self.0.sp.clone_with_source(FileMap::new(&source));
         let root = state.0.statics.parser.parse(&sp.source)?;
-        let mut out = Document::new(fragment);
+        let mut out = Document::new(fragment, &state.0.globals.outline);
         out.adopt_tokens(state.0, &sp, &root)?;
-        Ok(Some(out.finish(state.0).into()))
+        Ok(Some(out.finish().into()))
     }
 
     /// Returns true if there are no arguments.

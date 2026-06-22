@@ -904,7 +904,7 @@ pub fn normalize(text: &str) -> Cow<'_, str> {
 /// `Parser::normalizeSectionName`.
 #[must_use]
 pub fn normalize_fragment(text: &str) -> Cow<'_, str> {
-    decode_html(text).map(|text| super::normalize_whitespace::<false>(text, trimmable, spacelike))
+    super::normalize_whitespace::<false>(text, trimmable, spacelike)
 }
 
 /// Returns `true` if `text` contains any upward path traversal parts.

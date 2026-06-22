@@ -30,27 +30,20 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// Parses all lines of a preprocessed Wikitext document.
     pub rule start() -> Vec<Spanned<Token>>
-    = first:spanned(<
+    = first:(
         // In WikitextContentHandler, redirect is just sliced off the front
         // without any care for line position, which means that if there had
         // been more stuff on the redirect line, that more stuff becomes the
         // first line even if it does not match `at_sol`
         r:redirect()
         l:(line() / eof() { vec![] })
-        last:(&eof() { true } / { false })
-        {
-            let l = reduce_tree(balance_quotes(l));
-            let content = iter::once(r).chain(l).collect();
-            Token::Line { content, last }
-        }
-      >)?
-      rest:spanned(<
-        &at_sol()
-        t:line()
-        last:(&eof() { true } / { false })
-        { Token::Line { content: reduce_tree(balance_quotes(t)), last } }
-      >)*
-    { first.into_iter().chain(rest).collect() }
+        { iter::once(r).chain(reduce_tree(balance_quotes(l))) }
+      )?
+      rest:(&at_sol() t:line() { reduce_tree(balance_quotes(t)) })*
+    {
+        let rest = rest.into_iter().flatten();
+        first.into_iter().flatten().chain(rest).collect()
+    }
 
     /// Whole-line expressions.
     rule line() -> Vec<Spanned<Token>>

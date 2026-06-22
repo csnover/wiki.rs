@@ -13,7 +13,7 @@ mod surrogate;
 mod tags;
 mod template;
 
-use core::{fmt, time::Duration};
+use core::{cell::RefCell, fmt, time::Duration};
 use document::Document;
 use expand_templates::{ExpandMode, ExpandTemplates};
 pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
@@ -36,6 +36,7 @@ use stack::{Kv, StackFrame};
 use std::{
     borrow::Cow,
     collections::HashMap,
+    rc::Rc,
     sync::{Arc, PoisonError, RwLock},
 };
 use surrogate::Surrogate;
@@ -260,9 +261,9 @@ fn render(
     prefetcher.adopt_tokens(&mut state, &sp, &root)?;
     prefetcher.finish(&mut state);
 
-    let mut renderer = Document::new(false);
+    let mut renderer = Document::new(false, &state.globals.outline);
     renderer.adopt_tokens(&mut state, &sp, &root)?;
-    let content = renderer.finish(&mut state);
+    let content = renderer.finish();
 
     let mut timings = state.timing.into_iter().collect::<Vec<_>>();
     timings.sort_by(|(_, (_, a)), (_, (_, b))| b.cmp(a));
@@ -294,7 +295,7 @@ fn render(
         categories: state.globals.categories,
         content,
         indicators: state.globals.indicators,
-        outline: state.globals.outline,
+        outline: Rc::try_unwrap(state.globals.outline).unwrap().into_inner(),
         styles: state.globals.styles.text,
     })
 }
@@ -618,10 +619,8 @@ impl StripMarkers {
 /// A strip marker.
 #[derive(Debug)]
 pub(crate) enum StripMarker {
-    /// A strip marker containing block-level elements.
-    Block(String),
-    /// A strip marker containing only phrasing content.
-    Inline(String),
+    /// A strip marker containing general HTML.
+    General(String),
     /// A strip marker containing only phrasing content from a `<nowiki>` tag.
     NoWiki(String),
     /// A strip marker containing a wiki.rs-specific template source end marker.
@@ -643,7 +642,7 @@ impl core::ops::Deref for StripMarker {
     fn deref(&self) -> &Self::Target {
         match self {
             StripMarker::WikiRsSourceStart(_) | StripMarker::WikiRsSourceEnd(_) => "",
-            StripMarker::Block(s) | StripMarker::Inline(s) | StripMarker::NoWiki(s) => s,
+            StripMarker::General(s) | StripMarker::NoWiki(s) => s,
         }
     }
 }
@@ -674,7 +673,7 @@ struct ArticleState {
     /// Indicator icons for the `<indicator>` extension tag.
     indicators: globals::Indicators,
     /// Table of contents.
-    outline: globals::Outline,
+    outline: Rc<RefCell<globals::Outline>>,
     /// Collected references for the `<ref>` and `<references>` extension tags.
     references: extension_tags::References,
     /// Labelled section transclusion sections.
@@ -711,9 +710,9 @@ impl ArticleState {
 /// art. We are not savages here today.
 // TODO: This sucks, do something better.
 #[inline]
-fn text_run(state: &mut State<'_, '_, '_>, text: &str) -> String {
+fn text_run(text: &str) -> String {
     use emitters::Sink as _;
     let mut emitter = emitters::PrettyText::new(emitters::Accumulator::new());
     emitter.text(text);
-    emitter.finish(state)
+    emitter.finish()
 }
