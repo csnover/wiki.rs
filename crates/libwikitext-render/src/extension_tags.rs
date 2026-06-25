@@ -132,6 +132,7 @@
 use super::{
     Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
     document::Document,
+    emitters::{Accumulator, AttributeFilter, Sink as _},
     image::{self, FrameKind},
     preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
@@ -149,7 +150,7 @@ use libwikitext_common::{
     decode_html, escape, escape_id, escape_no_wiki,
     title::{Namespace, Title},
 };
-use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token};
+use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, strip};
 use numerals::roman::Roman;
 use regex::{Regex, RegexBuilder};
 use std::{
@@ -612,7 +613,11 @@ fn pre(
             .unwrap()
     });
 
-    write!(out, "<pre")?;
+    // TODO: This should not be doing this quite like this. `&mut String` should
+    // be allowed as a sink output or something. And this filter should be put
+    // somewhere other than emitters, probably.
+    let mut attrs = AttributeFilter::new(Accumulator::new());
+    attrs.tag_start("pre");
     for attribute in arguments.iter() {
         let value = attribute.value(state, arguments.sp)?;
         let name = attribute
@@ -628,15 +633,15 @@ fn pre(
             && ((value.starts_with('"') && value.ends_with('"'))
                 || (value.starts_with('\'') && value.ends_with('\'')))
         {
-            value[1..value.len() - 1].to_string().into()
+            &value[1..value.len() - 1]
         } else {
-            value
+            value.as_ref()
         };
 
-        // TODO: This is supposed to strip markers and use a whitelist of valid
-        // attribute names.
-        write!(out, r#" {name}="{}""#, strtr(&value, &[("\"", "&quot;")]))?;
+        attrs.tag_attribute_full(&name, &strip::kill(value));
     }
+    attrs.tag_start_end("pre");
+    write!(out, "{}", attrs.finish())?;
 
     let process_wikitext = arguments.get(state, "format")?.as_deref() == Some("wikitext");
 
@@ -659,17 +664,7 @@ fn pre(
     };
 
     let body = state.strip_markers.unstrip(&body);
-
-    // TODO: No idea what does this in MediaWiki. BlockLevelPass? Right now
-    // `GrafEmitter` does not see the elements from extension tags so it is not
-    // able to use its `in_pre` logic to suppress whitespace in the output.
-    // Unclear whether this is what it is. (Narrator: It was not.)
-    let body = body
-        .strip_prefix('\n')
-        .and_then(|body| (!body.starts_with('\n')).then_some(body))
-        .unwrap_or(&body);
-
-    write!(out, ">{body}</pre>")?;
+    write!(out, "{body}</pre>")?;
     Ok(OutputMode::Html)
 }
 

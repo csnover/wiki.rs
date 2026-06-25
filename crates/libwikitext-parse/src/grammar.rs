@@ -1565,14 +1565,19 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ```
     rule html_start_tag() -> Token
     = name:html_tag_name()
-      (space_nl()+ / &("/"? ">"))
-      attributes:html_attributes(<space_nl()* "/"? ">">)
+      (space_nl()+ / &(html_self_close()? ">"))
+      attributes:html_attributes(<space_nl()* html_self_close()? ">">)
       space_nl()*
-      self_closing:"/"?
+      self_closing:html_self_close()?
     {
         let self_closing = self_closing.is_some() | VOID_TAGS.contains(&to_ascii_lower(*name));
         Token::StartTag { attributes, name: name.span, self_closing }
     }
+
+    /// Self-closing tag marker. Wikitext allows space here, but this is illegal
+    /// in HTML.
+    rule html_self_close() -> ()
+    = "/" inline_space()*
 
     /// The inside of an allowed HTML5 end tag.
     ///

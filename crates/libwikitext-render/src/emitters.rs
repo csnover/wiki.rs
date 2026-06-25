@@ -730,6 +730,94 @@ static COMMON_ATTRS: phf::Set<&str> = phf::phf_set! {
     "typeof",
 };
 
+/// An emitter debugger.
+#[allow(
+    clippy::allow_attributes,
+    dead_code,
+    reason = "this is debugging infrastructure"
+)]
+#[derive(Debug)]
+pub(super) struct Debugger<S: Sink> {
+    /// The output.
+    next: S,
+}
+
+#[allow(
+    clippy::allow_attributes,
+    dead_code,
+    reason = "this is debugging infrastructure"
+)]
+impl<S: Sink> Debugger<S> {
+    /// Creates a new `Debugger` which emits to `next`.
+    pub fn new(next: S) -> Self {
+        Self { next }
+    }
+}
+
+chainable!(Debugger);
+
+#[expect(clippy::print_stderr, reason = "this is debugging infrastructure")]
+impl<S: Sink> Sink for Debugger<S> {
+    fn comment_end(&mut self) {
+        eprint!("-->");
+        self.next.comment_end();
+    }
+
+    fn comment_start(&mut self) {
+        eprint!("<!--");
+        self.next.comment_start();
+    }
+
+    fn entity(&mut self, value: char, raw: &str) {
+        eprint!("{raw:?}");
+        self.next.entity(value, raw);
+    }
+
+    fn finish(self) -> String {
+        self.next.finish()
+    }
+
+    fn new_line(&mut self) {
+        eprintln!();
+        self.next.new_line();
+    }
+
+    fn strip_marker(&mut self, marker: &StripMarker) {
+        eprint!("{marker:?}");
+        self.next.strip_marker(marker);
+    }
+
+    fn tag_attribute_end(&mut self, name: &str) {
+        eprint!("\"");
+        self.next.tag_attribute_end(name);
+    }
+
+    fn tag_attribute_start(&mut self, name: &str) {
+        eprint!(" {name}=\"");
+        self.next.tag_attribute_start(name);
+    }
+
+    fn tag_end(&mut self, name: &str) {
+        eprint!("</{name}>");
+        self.next.tag_end(name);
+    }
+
+    fn tag_start(&mut self, name: &str) {
+        eprint!("<{name}");
+        self.next.tag_start(name);
+    }
+
+    fn tag_start_end(&mut self, name: &str) {
+        eprint!(">");
+        self.next.tag_start_end(name);
+    }
+
+    fn text(&mut self, text: &str) {
+        eprint!("{text:?}");
+        self.next.text(text);
+    }
+}
+
 /// Balances the DOM tree using the HTML5 tree construction algorithm(ish).
 #[derive(Debug)]
 pub(super) struct DomTree<S: Sink> {
@@ -819,7 +907,6 @@ impl<S: Sink> DomTree<S> {
             // The top of the stack was the tag, which is a formatting tag, but
             // somehow there is no corresponding formatting tag in the list of
             // formatting tags?
-            eprintln!("close 1 {tag:?}");
             e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
             return;
         }
@@ -831,7 +918,6 @@ impl<S: Sink> DomTree<S> {
                 // No corresponding formatting tag after the last marker means
                 // this is either a rogue end tag which will be suppressed, or
                 // the corresponding start node is in a scope outside the marker
-                eprintln!("close 2 {tag:?}");
                 self.tag_end_default(tag);
                 return;
             };
@@ -867,7 +953,6 @@ impl<S: Sink> DomTree<S> {
                 // of its children are getting closed. Any formatting elements
                 // after this one will be reopened by `reformat` later.
                 for e in self.stack.drain(stack_index..).rev() {
-                    eprintln!("close 3 {e:?}");
                     e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
                 }
                 self.remove_format(format_index);
@@ -889,6 +974,11 @@ impl<S: Sink> DomTree<S> {
 
             // 4.12..4.13.
             for inner in 1.. {
+                if node_index == 0 {
+                    log::warn!("Ran out of nodes");
+                    return;
+                }
+
                 // 4.13.2.
                 node_index -= 1;
                 let node = self.stack[node_index];
@@ -920,7 +1010,6 @@ impl<S: Sink> DomTree<S> {
                 } else {
                     // 4.13.5.
                     let e = self.stack.remove(node_index);
-                    eprintln!("close 4 {e:?}");
                     e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
                     continue;
                 }
@@ -973,9 +1062,7 @@ impl<S: Sink> DomTree<S> {
     /// at entire chunks of of interstitial content and then move it without any
     /// extra allocations and without pessimising the whole thing.
     #[inline]
-    const fn foster() -> bool {
-        EMIT
-    }
+    const fn foster() {}
 
     /// Truncates the list of formatting elements before the rightmost marker.
     fn clear_formatting(&mut self) {
@@ -1205,7 +1292,7 @@ impl<S: Sink> DomTree<S> {
     }
 
     /// Inserts a new end `tag` in the “in body” insertion mode.
-    fn tag_end_body(&mut self, tag: Tag) -> bool {
+    fn tag_end_body(&mut self, tag: Tag) {
         match tag {
             Tag::Address
             | Tag::Aside
@@ -1227,12 +1314,37 @@ impl<S: Sink> DomTree<S> {
                     self.form_index = None;
                 }
                 if self.stack.iter().rfind(|node| **node == tag).is_some() {
+                    self.implied_end(None);
                     // The spec pops all implied end tags first to track errors,
                     // but this implementation does not need to track errors
                     self.pop_inclusive(|node| *node == tag);
-                    EMIT
-                } else {
-                    SUPPRESS
+                }
+            }
+            Tag::Br => {
+                if self.tag_start_body(tag) {
+                    self.next.tag_start_full("br");
+                }
+            }
+            Tag::Dd | Tag::Dt => {
+                // The spec pops implied end tags first to track errors,
+                // but this implementation does not need to track errors
+                self.pop_in_scope(|node| *node == tag, Tag::is_general_scope);
+            }
+            tag if tag.is_heading() => {
+                // The spec pops all implied end tags first to track errors,
+                // but this implementation does not need to track errors
+                self.pop_in_scope(|node| node.is_heading(), Tag::is_general_scope);
+            }
+            Tag::Li => {
+                // The spec pops implied end tags first to track errors,
+                // but this implementation does not need to track errors
+                self.pop_in_scope(|node| *node == tag, Tag::is_list_item_scope);
+            }
+            Tag::Object => {
+                // The spec pops all implied end tags first to track errors,
+                // but this implementation does not need to track errors
+                if self.pop_in_scope(|node| *node == tag, Tag::is_general_scope) {
+                    self.clear_formatting();
                 }
             }
             Tag::P => {
@@ -1240,47 +1352,16 @@ impl<S: Sink> DomTree<S> {
                     self.tag_start_full("p");
                 }
                 self.close_p();
-                EMIT
-            }
-            Tag::Dd | Tag::Dt | Tag::Li => {
-                if self.pop_in_scope(|node| *node == tag, Tag::is_list_item_scope) {
-                    // The spec pops implied end tags first to track errors,
-                    // but this implementation does not need to track errors
-                    EMIT
-                } else {
-                    SUPPRESS
-                }
-            }
-            tag if tag.is_heading() => {
-                if self.pop_in_scope(|node| node.is_heading(), Tag::is_general_scope) {
-                    // The spec pops all implied end tags first to track errors,
-                    // but this implementation does not need to track errors
-                    EMIT
-                } else {
-                    SUPPRESS
-                }
             }
             tag if tag.is_formatting() => {
                 self.adopt(tag);
-                SUPPRESS
             }
-            Tag::Object => {
-                if self.pop_in_scope(|node| *node == tag, Tag::is_general_scope) {
-                    // The spec pops all implied end tags first to track errors,
-                    // but this implementation does not need to track errors
-                    self.clear_formatting();
-                    EMIT
-                } else {
-                    SUPPRESS
-                }
-            }
-            Tag::Br => self.tag_start_body(tag),
             tag => self.tag_end_default(tag),
         }
     }
 
     /// Inserts a new end `tag` in the “in caption” insertion mode.
-    fn tag_end_caption(&mut self, tag: Tag) -> bool {
+    fn tag_end_caption(&mut self, tag: Tag) {
         if matches!(tag, Tag::Caption | Tag::Table) {
             if self.pop_in_scope(|node| *node == Tag::Caption, Tag::is_table_scope) {
                 // The spec pops all implied end tags first to track errors,
@@ -1288,123 +1369,88 @@ impl<S: Sink> DomTree<S> {
                 self.clear_formatting();
                 self.mode = DomMode::Table;
                 if tag == Tag::Table {
-                    self.tag_end_table(tag)
-                } else {
-                    EMIT
+                    self.tag_end_table(tag);
                 }
-            } else {
-                SUPPRESS
             }
-        } else if tag.is_table_item() {
-            SUPPRESS
-        } else {
-            self.tag_end_body(tag)
+        } else if !tag.is_table_item() {
+            self.tag_end_body(tag);
         }
     }
 
     /// Inserts a new end `tag` in the “in cell” insertion mode.
-    fn tag_end_cell(&mut self, tag: Tag) -> bool {
+    fn tag_end_cell(&mut self, tag: Tag) {
         if matches!(tag, Tag::Td | Tag::Th) {
             if self.pop_in_scope(|node| *node == tag, Tag::is_table_scope) {
                 // The spec pops all implied end tags first to track errors,
                 // but this implementation does not need to track errors
                 self.clear_formatting();
                 self.mode = DomMode::Row;
-                EMIT
-            } else {
-                SUPPRESS
             }
         } else if tag.is_table_fosterable()
             && self.in_scope(|node| *node == tag, Tag::is_table_scope)
         {
             self.close_cell();
-            self.tag_end_row(tag)
-        } else if tag.is_table_item() {
-            SUPPRESS
-        } else {
-            self.tag_end_body(tag)
+            self.tag_end_row(tag);
+        } else if !tag.is_table_item() {
+            self.tag_end_body(tag);
         }
     }
 
     /// Inserts a new end `tag` in the “in column group” insertion mode.
-    fn tag_end_colgroup(&mut self, tag: Tag) -> bool {
+    fn tag_end_colgroup(&mut self, tag: Tag) {
         if tag != Tag::Col && self.pop_one(|node| *node == Tag::Colgroup) {
             self.mode = DomMode::Table;
-            if tag == Tag::Colgroup {
-                EMIT
-            } else {
-                self.tag_end_table(tag)
+            if tag != Tag::Colgroup {
+                self.tag_end_table(tag);
             }
-        } else {
-            SUPPRESS
         }
     }
 
     /// The fallback implementation for inserting a new end `tag`.
-    fn tag_end_default(&mut self, tag: Tag) -> bool {
-        if self.pop_in_scope(|node| *node == tag, Tag::is_special) {
-            // The spec pops implied end tags first to track errors, but this
-            // implementation does not need to track errors
-            EMIT
-        } else {
-            SUPPRESS
-        }
+    fn tag_end_default(&mut self, tag: Tag) {
+        // The spec pops implied end tags first to track errors, but this
+        // implementation does not need to track errors
+        self.pop_in_scope(|node| *node == tag, Tag::is_special);
     }
 
     /// Inserts a new end `tag` in the “in row” insertion mode.
-    fn tag_end_row(&mut self, tag: Tag) -> bool {
+    fn tag_end_row(&mut self, tag: Tag) {
         if tag.is_table_fosterable() {
             if tag.is_table_body() && !self.in_scope(|node| *node == tag, Tag::is_table_scope) {
-                SUPPRESS
             } else if self.pop_in_scope(|node| *node == Tag::Tr, Tag::is_table_scope) {
                 self.mode = DomMode::TableBody;
-                if tag == Tag::Tr {
-                    EMIT
-                } else {
-                    self.tag_end_table_body(tag)
+                if tag != Tag::Tr {
+                    self.tag_end_table_body(tag);
                 }
-            } else {
-                SUPPRESS
             }
-        } else if tag.is_table_item() {
-            SUPPRESS
-        } else {
-            self.tag_end_table(tag)
+        } else if !tag.is_table_item() {
+            self.tag_end_table(tag);
         }
     }
 
     /// Inserts a new end `tag` in the “in table” insertion mode.
-    fn tag_end_table(&mut self, tag: Tag) -> bool {
+    fn tag_end_table(&mut self, tag: Tag) {
         if tag == Tag::Table {
             if self.pop_in_scope(|node| *node == Tag::Table, Tag::is_table_scope) {
                 self.reset_mode();
-                EMIT
-            } else {
-                SUPPRESS
             }
-        } else if tag.is_table_item() {
-            SUPPRESS
-        } else {
-            Self::foster()
+        } else if !tag.is_table_item() {
+            Self::foster();
+            self.tag_end_body(tag);
         }
     }
 
     /// Inserts a new end `tag` in the “in table body” insertion mode.
-    fn tag_end_table_body(&mut self, tag: Tag) -> bool {
+    fn tag_end_table_body(&mut self, tag: Tag) {
         if tag == Tag::Table || tag.is_table_body() {
             if self.pop_in_scope(|node| *node == tag, Tag::is_table_scope) {
                 self.mode = DomMode::Table;
                 if tag == Tag::Table {
                     self.reset_mode();
                 }
-                EMIT
-            } else {
-                SUPPRESS
             }
-        } else if tag.is_table_item() {
-            SUPPRESS
-        } else {
-            self.tag_end_table(tag)
+        } else if !tag.is_table_item() {
+            self.tag_end_table(tag);
         }
     }
 
@@ -1506,12 +1552,12 @@ impl<S: Sink> DomTree<S> {
                 EMIT
             }
             Tag::Pre | Tag::Textarea => {
-                self.ignore_next_newline = true;
                 // For `<textarea>` the spec says to switch to RCDATA but this
                 // is not a tokeniser
                 if tag == Tag::Pre {
                     self.close_p();
                 }
+                self.ignore_next_newline = true;
                 self.stack.push(tag.into());
                 EMIT
             }
@@ -1696,7 +1742,8 @@ impl<S: Sink> DomTree<S> {
                 // The spec says that hidden inputs are not supposed to be
                 // fostered but this is a needless complexity for this
                 // implementation
-                Self::foster()
+                Self::foster();
+                self.tag_start_body(tag)
             }
             Tag::Form => {
                 // The spec says that form in a table is supposed to cause
@@ -1705,7 +1752,10 @@ impl<S: Sink> DomTree<S> {
                 // emit anything
                 SUPPRESS
             }
-            _ => Self::foster(),
+            _ => {
+                Self::foster();
+                self.tag_start_body(tag)
+            }
         }
     }
 
@@ -1847,7 +1897,7 @@ impl<S: Sink> Sink for DomTree<S> {
             DomMode::TableBody => self.tag_end_table_body(tag),
             DomMode::Row => self.tag_end_row(tag),
             DomMode::Cell => self.tag_end_cell(tag),
-        };
+        }
     }
 
     #[inline]
@@ -1860,9 +1910,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
         let tag = Tag::new(name, &mut self.custom_tags);
 
-        let emit = self.tag_start_any(tag);
-
-        if emit {
+        if self.tag_start_any(tag) {
             self.in_attr = true;
             self.next.tag_start(name);
         } else {
@@ -2508,7 +2556,7 @@ fn tokenise<S: Sink + ?Sized>(next: &mut S, html: &str) {
             CallbackEvent::AttributeValue { value } | CallbackEvent::String { value } => {
                 // SAFETY: This data comes from a `&str`.
                 let value = unsafe { str::from_utf8_unchecked(value) };
-                next.text(value);
+                flush_ws(next, value);
             }
             CallbackEvent::CloseStartTag { self_closing } => {
                 if let Some(name) = in_attr.take() {
@@ -4717,7 +4765,6 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
-        eprint!("{value}");
         self.next.entity(value, raw);
     }
 
@@ -4728,7 +4775,6 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn new_line(&mut self) {
-        eprintln!("\\n");
         self.next.new_line();
     }
 
@@ -4744,19 +4790,16 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn tag_attribute_end(&mut self, name: &str) {
-        eprint!("\"");
         self.next.tag_attribute_end(name);
     }
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
-        eprint!(" {name}=\"");
         self.next.tag_attribute_start(name);
     }
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        eprintln!("</{name}>");
         if !VOID_TAGS.contains(name) {
             self.depth -= 1;
         }
@@ -4765,12 +4808,10 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
-        eprint!("<{name}");
         self.next.tag_start(name);
     }
 
     fn tag_start_end(&mut self, name: &str) {
-        eprintln!(">");
         if !PHRASING_TAGS.contains(name) {
             // It is possible that a template starts in an ambiguous position
             // where the output of its first tag results in some other elements
@@ -4803,7 +4844,6 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn text(&mut self, text: &str) {
-        eprint!("{text}");
         self.next.text(text);
     }
 }
