@@ -10,7 +10,7 @@ use super::{
     globals::Outline,
     stack::StackFrame,
     surrogate::{self, Surrogate},
-    tags::{self, PHRASING_TAGS},
+    tags,
 };
 use crate::{emitters::Chain as _, tags::ExternalLinkKind};
 use either::Either;
@@ -23,7 +23,7 @@ use libwikitext_common::{
 };
 use libwikitext_parse::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
-    MagicLink, Output, Span, Spanned, TextStyle, Token, VOID_TAGS,
+    MagicLink, Output, Span, Spanned, TextStyle, Token,
 };
 use std::borrow::Cow;
 
@@ -852,83 +852,6 @@ impl Surrogate<Error> for Document<'_> {
     }
 }
 
-/// An HTML attribute state.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(super) enum Attribute {
-    /// In the name part.
-    Name,
-    /// In the value part.
-    Value,
-}
-
-/// An HTML tree node.
-#[derive(Debug)]
-pub(super) enum Node {
-    /// An HTML attribute.
-    Attribute(Attribute),
-    /// An HTML tag.
-    Tag(Cow<'static, str>),
-}
-
-impl Node {
-    /// Whether this element can parent the element with the given lowercase tag
-    /// name.
-    pub(super) fn can_parent(&self, tag: &str) -> bool {
-        match self {
-            Node::Tag(parent) => {
-                if VOID_TAGS.contains(parent) {
-                    panic!("void tag on element stack")
-                } else if let Some(children) = PARENTS.get(parent) {
-                    children.contains(&tag)
-                } else if matches!(parent.as_ref(), "td" | "th" | "caption") {
-                    !matches!(tag, "tr" | "td" | "th" | "caption")
-                } else if parent == "span" && tag == "div" {
-                    // 'Template:Infobox element' thinks it can put a div in a
-                    // span. And technically it works in browsers, even though
-                    // it is illegal in HTML.
-                    true
-                } else if parent == "p" || PHRASING_TAGS.contains(parent) {
-                    PHRASING_TAGS.contains(tag)
-                } else if matches!(tag, "dt" | "dd") {
-                    // Technically it is supposed to be only allowed in
-                    // `<dl>` or `<dl><div>` but Wikitext is not compliant and
-                    // only cares about these tags not being themselves
-                    matches!(parent.as_ref(), "div" | "dl")
-                } else if tag == "li" {
-                    // Technically `<li>` is supposed to be only parented by
-                    // `<menu>` `<ol>` `<ul>` but Wikitext is not compliant and
-                    // only cares about these tags not being themselves. (There
-                    // are unit tests that explicitly allow `<dd><li>`.)
-                    tag != parent
-                } else {
-                    // `parent` must be an unrestricted block element
-                    true
-                }
-            }
-            Node::Attribute(_) => unreachable!(),
-        }
-    }
-
-    /// Writes the terminator for this element to the given output.
-    pub(super) fn close<S: Sink>(self, next: &mut S) {
-        match self {
-            Node::Attribute(_) => {}
-            Node::Tag(name) => {
-                debug_assert!(!VOID_TAGS.contains(&name));
-                next.tag_end(&name);
-            }
-        }
-    }
-
-    /// The tag name for this node.
-    pub(super) fn tag_name(&self) -> Option<&str> {
-        match self {
-            Node::Attribute(_) => None,
-            Node::Tag(name) => Some(name),
-        }
-    }
-}
-
 /// A Wikitext table frame.
 #[derive(Debug, Default)]
 struct TableState {
@@ -963,14 +886,3 @@ impl TableState {
         next.tag_end("table");
     }
 }
-
-/// Tags with restricted allowable children.
-static PARENTS: phf::Map<&str, &[&str]> = phf::phf_map! {
-    // Tables are ‘allowed’ to hold td/th because the tr will be implicitly
-    // inserted
-    "table" => &["caption", "td", "th", "tr"],
-    "tr" => &["td", "th"],
-    "dl" => &["dd", "dt"],
-    "ol" => &["li"],
-    "ul" => &["li"]
-};

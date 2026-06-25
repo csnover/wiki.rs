@@ -49,6 +49,7 @@ syntect.workspace = true
 thiserror.workspace = true
 time.workspace = true
 typed-builder.workspace = true
+uncased.workspace = true
 unicode-general-category.workspace = true
 vega2-rs.workspace = true
 zerovec.workspace = true

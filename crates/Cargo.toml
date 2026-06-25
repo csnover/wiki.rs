@@ -128,7 +128,7 @@ peeknth = { version = "0.3", features = ["peekdn"] }
 peg = { git = "https://github.com/csnover/rust-peg.git", rev = "c6f3b978d4896dd7e7f3cf19146a3429a67e7c15" }
 # urlencoding is smaller, but percent-encoding is already a sub-dependency
 percent-encoding = "2"
-phf = { version = "0.13.1", features = ["macros"] }
+phf = { version = "0.13.1", features = ["macros", "uncased"] }
 piccolo = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
 piccolo-util = { git = "https://github.com/csnover/piccolo.git", rev = "4d90ec3ed1d87ce21f026fe0c45ef1122d2f4336" }
 pico-args = "0.5"
@@ -152,6 +152,7 @@ tiny-skia = { version = "0.12", default-features = false, features = ["simd", "s
 typed-builder = "0.23"
 tz-rs = { version = "0.7.1", features = [] }
 tzdb_data = "0.2"
+uncased = "0.9"
 unicode-general-category = "1.1"
 unicode-normalization = "0.1"
 vega2-rs = { path = "vega2-rs" }

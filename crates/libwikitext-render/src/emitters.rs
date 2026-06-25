@@ -1,15 +1,13 @@
 //! HTML emitters for Wikitext fragments that require state management.
 
-use super::{
-    StripMarker,
-    document::{Attribute, Node},
-    globals::Outline,
-    tags::PHRASING_TAGS,
+use super::{StripMarker, globals::Outline, tags::PHRASING_TAGS};
+use core::{
+    fmt,
+    num::{NonZeroU8, NonZeroU32},
 };
-use core::{fmt, num::NonZeroU32};
 use html_escape::encode_double_quoted_attribute;
 use html5gum::emitters::callback::{CallbackEmitter, CallbackEvent};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode, decode_html, escape_id, normalize_section_name, title::normalize_fragment,
@@ -17,6 +15,7 @@ use libwikitext_common::{
 use libwikitext_parse::{HeadingLevel, TextStyle, VOID_TAGS};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashSet, sync::LazyLock};
+use uncased::{Uncased, UncasedStr};
 
 /// An intermediate sink.
 pub(super) trait Chain: Sink {
@@ -731,40 +730,1011 @@ static COMMON_ATTRS: phf::Set<&str> = phf::phf_set! {
     "typeof",
 };
 
-/// Balances the DOM tree.
+/// Balances the DOM tree using the HTML5 tree construction algorithm(ish).
 #[derive(Debug)]
 pub(super) struct DomTree<S: Sink> {
+    /// The set of tags not matching any known HTML5 tag.
+    custom_tags: IndexSet<Uncased<'static>>,
+    /// If true, filtering out an invalid start tag.
+    filtering: bool,
+    /// The index of the rightmost `<form>` element in [`Self::stack`].
+    form_index: Option<u8>,
+    /// The stack of active formatting elements.
+    // TODO: This is supposed to retain the attributes.
+    format: Vec<TagNode>,
+    /// If true, filter out the next newline token.
+    ignore_next_newline: bool,
+    /// If true, currently in an HTML start tag.
+    in_attr: bool,
+    /// The index of the rightmost marker in [`Self::format`].
+    marker_index: Option<u8>,
+    /// The current parser mode.
+    mode: DomMode,
     /// The output.
     next: S,
+    /// The index of the rightmost `<p>` in [`Self::stack`].
+    p_index: Option<u8>,
     /// The stack of currently open nodes.
-    stack: Vec<Node>,
+    stack: Vec<TagNode>,
+}
+
+/// Emit the tag to the next sink.
+const EMIT: bool = true;
+
+/// Discard the tag instead of emitting it.
+const SUPPRESS: bool = false;
+
+/// An HTML5 tree construction mode. Modes which are not salient to this
+/// fragment parsing implementation are omitted.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum DomMode {
+    /// The “in body” insertion mode.
+    #[default]
+    Body,
+    /// The “in caption” insertion mode.
+    Caption,
+    /// The “in cell” insertion mode.
+    Cell,
+    /// The “in column group” insertion mode.
+    ColumnGroup,
+    /// The “in row” insertion mode.
+    Row,
+    /// The “in table” insertion mode.
+    Table,
+    /// The “in table body” insertion mode.
+    TableBody,
 }
 
 chainable!(DomTree);
 
 impl<S: Sink> DomTree<S> {
-    /// Returns a new `DomTree` which emits to `next`.
+    /// Creates a new `DomTree` which emits to `next`.
     #[inline]
     pub fn new(next: S) -> Self {
         Self {
+            custom_tags: <_>::default(),
+            filtering: <_>::default(),
+            form_index: <_>::default(),
+            format: <_>::default(),
+            ignore_next_newline: <_>::default(),
+            in_attr: <_>::default(),
+            marker_index: <_>::default(),
+            mode: <_>::default(),
             next,
+            p_index: <_>::default(),
             stack: <_>::default(),
         }
     }
 
-    /// Tries closing all tags up to and including the nearest `name`. Returns
-    /// `true` if some elements were closed.
-    fn try_close(&mut self, name: &str) -> bool {
-        // TODO: Any `<a>` elements that were drained need to be restored.
-        // Which means that there needs to be another component that tracks
-        // those specifically.
-        if let Some(pair) = self.stack.iter().rposition(|e| e.tag_name() == Some(name)) {
-            for e in self.stack.drain(pair..).rev() {
-                e.close(&mut self.next);
+    /// Runs the “adoption agency algorithm”, either for a formatting end `tag`,
+    /// or for a start `<nobr>`.
+    fn adopt(&mut self, tag: Tag) {
+        // TODO: This ends up being O(n) but could be O(1) if `self.format` had
+        // a counter table.
+        // 2.
+        if let Some(e) = self
+            .stack
+            .pop_if(|node| *node == tag && !self.format.contains(&tag.into()))
+        {
+            // The top of the stack was the tag, which is a formatting tag, but
+            // somehow there is no corresponding formatting tag in the list of
+            // formatting tags?
+            eprintln!("close 1 {tag:?}");
+            e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
+            return;
+        }
+
+        // 3..4.2.
+        for _ in 0..8 {
+            // 4.3. `format_index` is the index of the corresponding start tag.
+            let Some(format_index) = self.format_index(|node| *node == tag) else {
+                // No corresponding formatting tag after the last marker means
+                // this is either a rogue end tag which will be suppressed, or
+                // the corresponding start node is in a scope outside the marker
+                eprintln!("close 2 {tag:?}");
+                self.tag_end_default(tag);
+                return;
+            };
+
+            // 4.5. Scope checked scan goes first because it will do less, so is
+            // faster.
+            // `stack_index` is the index of the start tag to be adopted in the
+            // stack.
+            let Some(stack_index) = self.index_in_scope(|node| *node == tag, Tag::is_general_scope)
+            else {
+                // If there is no corresponding start tag in scope, then
+                // there is nothing to do right now
+
+                // 4.4.
+                if !self.stack.contains(&tag.into()) {
+                    // Actually, there was no corresponding start tag in *any*
+                    // scope, so the formatting tag must have been implicitly
+                    // closed and goes now to the soylent factory, rip
+                    self.remove_format(format_index);
+                }
+
+                return;
+            };
+
+            // 4.7. The “topmost node … lower in the stack than the formatting
+            // element … in the special category”. And of course “lower” means
+            // to the right, not lower index.
+            let Some(max) = self.stack[stack_index + 1..]
+                .iter()
+                .position(|node| node.is_special())
+            else {
+                // 4.8. There wasn’t any “furthest block”, so this tag and all
+                // of its children are getting closed. Any formatting elements
+                // after this one will be reopened by `reformat` later.
+                for e in self.stack.drain(stack_index..).rev() {
+                    eprintln!("close 3 {e:?}");
+                    e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
+                }
+                self.remove_format(format_index);
+                return;
+            };
+
+            // 4.9.
+            // In the spec language, there would always be a common element
+            // because there would always be a root `<html>`. Since this is an
+            // insertion point, it can just point to the stack element index.
+            let common = stack_index;
+
+            // 4.10.
+            let mut bookmark = format_index;
+
+            // 4.11.
+            let mut node_index = max;
+            let mut last_node_index = max;
+
+            // 4.12..4.13.
+            for inner in 1.. {
+                // 4.13.2.
+                node_index -= 1;
+                let node = self.stack[node_index];
+
+                // 4.13.3.
+                if node == tag {
+                    break;
+                }
+
+                // 4.13.4.
+                let mut format_index = self.format.iter().rposition(|fmt_node| *fmt_node == node);
+
+                if inner > 3
+                    && let Some(index) = format_index.take()
+                {
+                    self.remove_format(index);
+                }
+
+                if let Some(index) = format_index {
+                    // 4.13.6. “[clone] `node` … [and] replace the entry … in
+                    // [formatting and the stack with the clone] … and let
+                    // `node` be the [clone]”
+
+                    // 4.13.7. “move the bookmark … to be immediately after the
+                    // new node”
+                    if last_node_index == max {
+                        bookmark = index + 1;
+                    }
+                } else {
+                    // 4.13.5.
+                    let e = self.stack.remove(node_index);
+                    eprintln!("close 4 {e:?}");
+                    e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
+                    continue;
+                }
+
+                // 4.13.8. “append `lastNode` to `node`”, which means nothing
+                // for the first loop, only for the subsequent loops does this
+                // cause a change? WHY IS THIS ALGORITHM SO BAD?
+                // <b><a></b><c> <d>
+                //           ^^^ ^^^ lastNode
+                //          node
+                log::warn!(concat!(
+                    "TODO: Go back in time and insert tags such that",
+                    " `last_node` is inside `node`"
+                ));
+
+                // 4.13.9.
+                last_node_index = node_index;
+            }
+
+            // 4.14. “insert `last_node` … at `common`”. Because `last_node` is
+            // the node after the corresponding formatting start tag, this is
+            // equivalent to doing something less insane TODO
+
+            // Normally this would do content fostering if the mode had been
+            // “in table” at the time of the insertion, but that is handled
+            // separately, so this just does the normal insert
+            // self.stack.insert(common, tag.into());
+
+            // 4.15..4.17. These steps are all just injecting a single
+            // formatting start tag in between the `max` and the children of
+            // `max`
+            // self.stack.insert(max, tag.into());
+
+            // 4.18. This just shifts the position of the formatting element in
+            // to reflect the new reality
+            // if bookmark != format_index {
+            //     self.format[format_index..bookmark].rotate_left(1);
+            // }
+        }
+    }
+
+    /// Returns the index of the first item in [`Self::format`] after the
+    /// rightmost marker.
+    fn after_marker(&self) -> usize {
+        self.marker_index.map_or(0, |index| usize::from(index) + 1)
+    }
+
+    /// A marker for fostered content in the algorithm. Actual fostering is done
+    /// more clearly and efficiently by the `TableFoster` sink, which can look
+    /// at entire chunks of of interstitial content and then move it without any
+    /// extra allocations and without pessimising the whole thing.
+    #[inline]
+    const fn foster() -> bool {
+        EMIT
+    }
+
+    /// Truncates the list of formatting elements before the rightmost marker.
+    fn clear_formatting(&mut self) {
+        if let Some(index) = self.marker_index.take() {
+            let Some(TagNode::Marker(marker)) = self.format.drain(usize::from(index)..).next()
+            else {
+                panic!("a marker should always point to the next marker");
+            };
+            self.marker_index = marker.map(|index| u8::from(index) - 1);
+        } else {
+            self.format.clear();
+        }
+    }
+
+    /// Closes the nearest table cell element.
+    fn close_cell(&mut self) {
+        // The spec pops all implied end tags first to track errors, but this
+        // implementation does not need to track errors
+        self.pop_inclusive(|node| matches!(node.tag(), Some(Tag::Td | Tag::Th)));
+        self.clear_formatting();
+        self.mode = DomMode::Row;
+    }
+
+    /// Closes the nearest `<p>` element “in button scope”, if one exists.
+    #[inline]
+    fn close_p(&mut self) {
+        // The spec pops all implied end tags first to track errors, but
+        // this implementation does not need to track errors
+        self.pop_in_scope(|node| *node == Tag::P, Tag::is_button_scope);
+    }
+
+    /// Performs special fixups for nested `<a>` tags.
+    fn fixup_anchor(&mut self, tag: Tag) {
+        if self.format_index(|node| *node == tag).is_some() {
+            self.adopt(tag);
+            // “remove that element from the list of active formatting elements
+            // and the stack of open elements if the adoption agency algorithm
+            // didn’t already remove it (it might not have if the element is not
+            // in table scope)” suggests some ability to identify the same
+            // element in both stacks by identity after a mutation, which is not
+            // possible here. the spec suggests in §13.3 that anchors are
+            // allowed to nest in the case of fostering, until they are
+            // serialised, then they are not. Since this is a serialiser it
+            // should be the case that these things never nest.
+            if let Some(index) = self.format.iter().rposition(|node| *node == tag) {
+                self.remove_format(index);
+            }
+            self.pop_in_scope(|node| *node == tag, |_| false);
+        }
+    }
+
+    /// Finds the index of the rightmost item in [`Self::format`] that matches
+    /// the given predicate, ending at the rightmost marker.
+    fn format_index(&self, predicate: impl FnMut(&TagNode) -> bool) -> Option<usize> {
+        let min = self.after_marker();
+        self.format[min..]
+            .iter()
+            .rposition(predicate)
+            .map(|index| min + index)
+    }
+
+    /// Pop all elements on the stack with implied end tags except for `except`.
+    fn implied_end(&mut self, except: Option<Tag>) {
+        while let Some(e) = self.stack.pop_if(|node| node.is_implied_close(except)) {
+            e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
+        }
+    }
+
+    /// Returns the index of an element matching the given `predicate` on the
+    /// stack of open elements in the scope given by `scope`, or `None` if there
+    /// is no such element.
+    #[inline]
+    fn in_scope(
+        &self,
+        predicate: impl FnMut(&TagNode) -> bool,
+        scope: impl FnMut(Tag) -> bool,
+    ) -> bool {
+        self.index_in_scope(predicate, scope).is_some()
+    }
+
+    /// Returns the index of an element matching the given `predicate` on the
+    /// stack of open elements in the scope given by `scope`, or `None` if there
+    /// is no such element.
+    fn index_in_scope(
+        &self,
+        mut predicate: impl FnMut(&TagNode) -> bool,
+        mut scope: impl FnMut(Tag) -> bool,
+    ) -> Option<usize> {
+        for (index, node) in self.stack.iter().enumerate().rev() {
+            #[rustfmt::skip]
+            if predicate(node) {
+                return Some(index);
+            } else if let Some(tag) = node.tag() && scope(tag) {
+                break;
+            };
+        }
+        None
+    }
+
+    /// Closes all elements up to `predicate`.
+    fn pop_exclusive(&mut self, mut predicate: impl FnMut(&mut TagNode) -> bool) {
+        while let Some(e) = self.stack.pop_if(|node| !predicate(node)) {
+            e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
+        }
+    }
+
+    /// Closes all elements up to and including `predicate` if a match exists in
+    /// the scope given by `scope`, returning `true` if elements were closed.
+    fn pop_in_scope(
+        &mut self,
+        predicate: impl FnMut(&TagNode) -> bool,
+        scope: impl FnMut(Tag) -> bool,
+    ) -> bool {
+        if let Some(index) = self.index_in_scope(predicate, scope) {
+            for e in self.stack.drain(index..).rev() {
+                e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
             }
             true
         } else {
             false
+        }
+    }
+
+    /// Closes all elements up to and including `predicate`.
+    fn pop_inclusive(&mut self, predicate: impl FnMut(&mut TagNode) -> bool) {
+        self.pop_exclusive(predicate);
+        if let Some(e) = self.stack.pop() {
+            e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
+        }
+    }
+
+    /// Closes the element at the end of the stack if it matches `predicate`,
+    /// returning `true` if the element was closed.
+    fn pop_one(&mut self, predicate: impl FnOnce(&mut TagNode) -> bool) -> bool {
+        if let Some(e) = self.stack.pop_if(predicate) {
+            e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Pushes a tag to the “list of active formatting elements”.
+    fn push_format(&mut self, tag: Tag) {
+        // “If there are already three … remove the earliest”
+        let min = self.after_marker();
+        let mut iter = self.format[min..]
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| (*node == tag).then_some(index));
+        let first = iter.next();
+        if iter.count() == 2 {
+            self.format.remove(min + first.unwrap());
+        }
+
+        self.format.push(tag.into());
+    }
+
+    /// Pushes a marker to the “list of active formatting elements”.
+    fn push_marker(&mut self) {
+        let node = TagNode::Marker(next_index(&mut self.marker_index, self.format.len()));
+        self.format.push(node);
+    }
+
+    /// Pushes an indexed `<p>` tag to the stack. This is an optimisation.
+    fn push_p(&mut self) {
+        let node = TagNode::P(next_index(&mut self.p_index, self.stack.len()));
+        self.stack.push(node);
+    }
+
+    /// Reopens any formatting elements which were closed due to element
+    /// splitting.
+    fn reformat(&mut self) {
+        // TODO: This is O(n^2), but could be made O(n) by having a tag count
+        // table for the stack.
+        let Some(first_missing) = self.format_index(|node| !self.stack.contains(node)) else {
+            return;
+        };
+
+        for tag in &self.format[first_missing..] {
+            let name = tag.name(&self.custom_tags).expect("named tag");
+            // TODO: This is actually supposed to retain all of the attributes
+            // too :-(
+            self.next.tag_start_full(name.as_str());
+            self.stack.push(*tag);
+        }
+    }
+
+    /// Removes a formatting item at the given `index`, correcting the marker
+    /// pointer chain if needed.
+    fn remove_format(&mut self, index: usize) {
+        self.format.remove(index);
+        if let Some(next) = &mut self.marker_index
+            && usize::from(*next) > index
+        {
+            *next -= 1;
+            let mut marker = usize::from(*next);
+            while let TagNode::Marker(Some(next)) = &mut self.format[marker]
+                && let old = u8::from(*next)
+                && usize::from(old) > index
+            {
+                let new = old - 1;
+                *next = NonZeroU8::new(new).unwrap();
+                marker = new.into();
+            }
+        }
+    }
+
+    /// Slowly recalculates the current insertion mode according to what
+    /// elements are on the stack.
+    fn reset_mode(&mut self) {
+        let mode = self
+            .stack
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, node)| match node.tag() {
+                Some(Tag::Td | Tag::Th) if index != 0 => Some(DomMode::Cell),
+                Some(Tag::Tr) => Some(DomMode::Row),
+                Some(Tag::Tbody | Tag::Tfoot | Tag::Thead) => Some(DomMode::TableBody),
+                Some(Tag::Caption) => Some(DomMode::Caption),
+                Some(Tag::Table) => Some(DomMode::Table),
+                _ => None,
+            });
+
+        self.mode = mode.unwrap_or(DomMode::Body);
+    }
+
+    /// Inserts a new end `tag` in the “in body” insertion mode.
+    fn tag_end_body(&mut self, tag: Tag) -> bool {
+        match tag {
+            Tag::Address
+            | Tag::Aside
+            | Tag::Blockquote
+            | Tag::Button
+            | Tag::Center
+            | Tag::Details
+            | Tag::Div
+            | Tag::Dl
+            | Tag::Figcaption
+            | Tag::Figure
+            | Tag::Form
+            | Tag::Ol
+            | Tag::Pre
+            | Tag::Select
+            | Tag::Summary
+            | Tag::Ul => {
+                if tag == Tag::Form {
+                    self.form_index = None;
+                }
+                if self.stack.iter().rfind(|node| **node == tag).is_some() {
+                    // The spec pops all implied end tags first to track errors,
+                    // but this implementation does not need to track errors
+                    self.pop_inclusive(|node| *node == tag);
+                    EMIT
+                } else {
+                    SUPPRESS
+                }
+            }
+            Tag::P => {
+                if !self.in_scope(|node| *node == tag, Tag::is_button_scope) {
+                    self.tag_start_full("p");
+                }
+                self.close_p();
+                EMIT
+            }
+            Tag::Dd | Tag::Dt | Tag::Li => {
+                if self.pop_in_scope(|node| *node == tag, Tag::is_list_item_scope) {
+                    // The spec pops implied end tags first to track errors,
+                    // but this implementation does not need to track errors
+                    EMIT
+                } else {
+                    SUPPRESS
+                }
+            }
+            tag if tag.is_heading() => {
+                if self.pop_in_scope(|node| node.is_heading(), Tag::is_general_scope) {
+                    // The spec pops all implied end tags first to track errors,
+                    // but this implementation does not need to track errors
+                    EMIT
+                } else {
+                    SUPPRESS
+                }
+            }
+            tag if tag.is_formatting() => {
+                self.adopt(tag);
+                SUPPRESS
+            }
+            Tag::Object => {
+                if self.pop_in_scope(|node| *node == tag, Tag::is_general_scope) {
+                    // The spec pops all implied end tags first to track errors,
+                    // but this implementation does not need to track errors
+                    self.clear_formatting();
+                    EMIT
+                } else {
+                    SUPPRESS
+                }
+            }
+            Tag::Br => self.tag_start_body(tag),
+            tag => self.tag_end_default(tag),
+        }
+    }
+
+    /// Inserts a new end `tag` in the “in caption” insertion mode.
+    fn tag_end_caption(&mut self, tag: Tag) -> bool {
+        if matches!(tag, Tag::Caption | Tag::Table) {
+            if self.pop_in_scope(|node| *node == Tag::Caption, Tag::is_table_scope) {
+                // The spec pops all implied end tags first to track errors,
+                // but this implementation does not need to track errors
+                self.clear_formatting();
+                self.mode = DomMode::Table;
+                if tag == Tag::Table {
+                    self.tag_end_table(tag)
+                } else {
+                    EMIT
+                }
+            } else {
+                SUPPRESS
+            }
+        } else if tag.is_table_item() {
+            SUPPRESS
+        } else {
+            self.tag_end_body(tag)
+        }
+    }
+
+    /// Inserts a new end `tag` in the “in cell” insertion mode.
+    fn tag_end_cell(&mut self, tag: Tag) -> bool {
+        if matches!(tag, Tag::Td | Tag::Th) {
+            if self.pop_in_scope(|node| *node == tag, Tag::is_table_scope) {
+                // The spec pops all implied end tags first to track errors,
+                // but this implementation does not need to track errors
+                self.clear_formatting();
+                self.mode = DomMode::Row;
+                EMIT
+            } else {
+                SUPPRESS
+            }
+        } else if tag.is_table_fosterable()
+            && self.in_scope(|node| *node == tag, Tag::is_table_scope)
+        {
+            self.close_cell();
+            self.tag_end_row(tag)
+        } else if tag.is_table_item() {
+            SUPPRESS
+        } else {
+            self.tag_end_body(tag)
+        }
+    }
+
+    /// Inserts a new end `tag` in the “in column group” insertion mode.
+    fn tag_end_colgroup(&mut self, tag: Tag) -> bool {
+        if tag != Tag::Col && self.pop_one(|node| *node == Tag::Colgroup) {
+            self.mode = DomMode::Table;
+            if tag == Tag::Colgroup {
+                EMIT
+            } else {
+                self.tag_end_table(tag)
+            }
+        } else {
+            SUPPRESS
+        }
+    }
+
+    /// The fallback implementation for inserting a new end `tag`.
+    fn tag_end_default(&mut self, tag: Tag) -> bool {
+        if self.pop_in_scope(|node| *node == tag, Tag::is_special) {
+            // The spec pops implied end tags first to track errors, but this
+            // implementation does not need to track errors
+            EMIT
+        } else {
+            SUPPRESS
+        }
+    }
+
+    /// Inserts a new end `tag` in the “in row” insertion mode.
+    fn tag_end_row(&mut self, tag: Tag) -> bool {
+        if tag.is_table_fosterable() {
+            if tag.is_table_body() && !self.in_scope(|node| *node == tag, Tag::is_table_scope) {
+                SUPPRESS
+            } else if self.pop_in_scope(|node| *node == Tag::Tr, Tag::is_table_scope) {
+                self.mode = DomMode::TableBody;
+                if tag == Tag::Tr {
+                    EMIT
+                } else {
+                    self.tag_end_table_body(tag)
+                }
+            } else {
+                SUPPRESS
+            }
+        } else if tag.is_table_item() {
+            SUPPRESS
+        } else {
+            self.tag_end_table(tag)
+        }
+    }
+
+    /// Inserts a new end `tag` in the “in table” insertion mode.
+    fn tag_end_table(&mut self, tag: Tag) -> bool {
+        if tag == Tag::Table {
+            if self.pop_in_scope(|node| *node == Tag::Table, Tag::is_table_scope) {
+                self.reset_mode();
+                EMIT
+            } else {
+                SUPPRESS
+            }
+        } else if tag.is_table_item() {
+            SUPPRESS
+        } else {
+            Self::foster()
+        }
+    }
+
+    /// Inserts a new end `tag` in the “in table body” insertion mode.
+    fn tag_end_table_body(&mut self, tag: Tag) -> bool {
+        if tag == Tag::Table || tag.is_table_body() {
+            if self.pop_in_scope(|node| *node == tag, Tag::is_table_scope) {
+                self.mode = DomMode::Table;
+                if tag == Tag::Table {
+                    self.reset_mode();
+                }
+                EMIT
+            } else {
+                SUPPRESS
+            }
+        } else if tag.is_table_item() {
+            SUPPRESS
+        } else {
+            self.tag_end_table(tag)
+        }
+    }
+
+    /// Inserts a new start `tag` in the mode defined by [`Self::mode`].
+    fn tag_start_any(&mut self, tag: Tag) -> bool {
+        match self.mode {
+            DomMode::Body => self.tag_start_body(tag),
+            DomMode::Table => self.tag_start_table(tag),
+            DomMode::Caption => self.tag_start_caption(tag),
+            DomMode::ColumnGroup => self.tag_start_colgroup(tag),
+            DomMode::TableBody => self.tag_start_table_body(tag),
+            DomMode::Row => self.tag_start_row(tag),
+            DomMode::Cell => self.tag_start_cell(tag),
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in body” insertion mode.
+    #[expect(clippy::too_many_lines, reason = "complaints go to WHATWG")]
+    fn tag_start_body(&mut self, tag: Tag) -> bool {
+        match tag {
+            tag if tag.is_head_item() => self.tag_start_head(tag),
+
+            Tag::Br | Tag::Img | Tag::Wbr => {
+                self.reformat();
+                EMIT
+            }
+            Tag::Button => {
+                // The spec pops implied end tags first, but this does not
+                // seem to make sense since these would all be closed anyway
+                // on the way to the button element and it is already a
+                // parse error
+                self.pop_in_scope(|node| *node == tag, Tag::is_general_scope);
+                self.reformat();
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Dd | Tag::Dt | Tag::Li => {
+                // The spec pops implied end tags first to track errors,
+                // but this implementation does not need to track errors
+                if tag == Tag::Li {
+                    self.pop_in_scope(|node| *node == tag, Tag::is_list_special);
+                } else {
+                    self.pop_in_scope(|node| node.is_dl_item(), Tag::is_list_special);
+                }
+                self.close_p();
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Form => {
+                if self.form_index.is_none() {
+                    self.form_index = Some(self.stack.len().try_into().unwrap());
+                    self.close_p();
+                    self.stack.push(tag.into());
+                    EMIT
+                } else {
+                    SUPPRESS
+                }
+            }
+            tag if tag.is_heading() => {
+                self.close_p();
+                self.pop_one(|node| node.is_heading());
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Hr => {
+                self.close_p();
+                // For `<hr>` in `<select>`
+                if self.in_scope(|node| *node == Tag::Select, Tag::is_general_scope) {
+                    self.implied_end(None);
+                }
+                EMIT
+            }
+            Tag::Iframe => {
+                // For `<iframe>` the spec says to switch to “generic raw text
+                // parsing algorithm” but this is not a tokeniser
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Input => {
+                self.pop_in_scope(|node| *node == Tag::Select, Tag::is_general_scope);
+                self.reformat();
+                EMIT
+            }
+            Tag::Object => {
+                self.reformat();
+                self.push_marker();
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Option | Tag::Optgroup => {
+                if self.in_scope(|node| *node == Tag::Select, Tag::is_general_scope) {
+                    let except = (tag == Tag::Option).then_some(Tag::Optgroup);
+                    self.implied_end(except);
+                } else {
+                    self.pop_one(|node| *node == Tag::Option);
+                }
+                self.reformat();
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Pre | Tag::Textarea => {
+                self.ignore_next_newline = true;
+                // For `<textarea>` the spec says to switch to RCDATA but this
+                // is not a tokeniser
+                if tag == Tag::Pre {
+                    self.close_p();
+                }
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Select if self.pop_in_scope(|node| *node == tag, Tag::is_general_scope) => {
+                SUPPRESS
+            }
+            Tag::Select => {
+                self.reformat();
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Table => {
+                self.close_p();
+                self.mode = DomMode::Table;
+                self.stack.push(tag.into());
+                EMIT
+            }
+            tag if tag.is_body_block() => {
+                self.close_p();
+                if tag == Tag::P {
+                    self.push_p();
+                } else {
+                    self.stack.push(tag.into());
+                }
+                EMIT
+            }
+            tag if tag.is_formatting() => {
+                if tag == Tag::A {
+                    self.fixup_anchor(tag);
+                } else if tag == Tag::Nobr
+                    && self.in_scope(|node| *node == tag, Tag::is_general_scope)
+                {
+                    self.reformat();
+                    self.adopt(tag);
+                }
+                self.reformat();
+                self.push_format(tag);
+                self.stack.push(tag.into());
+                EMIT
+            }
+            tag if tag.is_ruby_item() => {
+                if self.in_scope(|node| *node == Tag::Ruby, Tag::is_general_scope) {
+                    let except = matches!(tag, Tag::Rp | Tag::Rtc).then_some(Tag::Rtc);
+                    self.implied_end(except);
+                }
+                self.stack.push(tag.into());
+                EMIT
+            }
+            tag if tag.is_table_item() => SUPPRESS,
+            _ => {
+                self.reformat();
+                self.stack.push(tag.into());
+                EMIT
+            }
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in caption” insertion mode.
+    fn tag_start_caption(&mut self, tag: Tag) -> bool {
+        if tag.is_table_item() {
+            if self.pop_in_scope(|node| *node == Tag::Caption, Tag::is_table_scope) {
+                self.clear_formatting();
+                self.mode = DomMode::Table;
+                self.tag_start_table(tag)
+            } else {
+                SUPPRESS
+            }
+        } else {
+            self.tag_start_body(tag)
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in cell” insertion mode.
+    fn tag_start_cell(&mut self, tag: Tag) -> bool {
+        if tag.is_table_item() {
+            self.close_cell();
+            self.tag_start_row(tag)
+        } else {
+            self.tag_start_body(tag)
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in column group” insertion mode.
+    fn tag_start_colgroup(&mut self, tag: Tag) -> bool {
+        if tag == Tag::Col {
+            EMIT
+        } else if self.pop_one(|node| *node == Tag::Colgroup) {
+            self.mode = DomMode::Table;
+            self.tag_start_table(tag)
+        } else {
+            SUPPRESS
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in head” insertion mode.
+    fn tag_start_head(&mut self, tag: Tag) -> bool {
+        match tag {
+            Tag::Basefont | Tag::Link | Tag::Meta => EMIT,
+            Tag::Title => {
+                // This is supposed to use the RCDATA element parsing algorithm,
+                // but since the tokeniser has already done its thing, just
+                // treat it like a normal whatever
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Style => {
+                // This is supposed to use the generic raw text element parsing
+                // algorithm, but since the tokeniser has already done its
+                // thing, just treat it like a normal whatever
+                self.stack.push(tag.into());
+                EMIT
+            }
+            _ => panic!("should never get here"),
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in row” insertion mode.
+    fn tag_start_row(&mut self, tag: Tag) -> bool {
+        if matches!(tag, Tag::Td | Tag::Th) {
+            self.pop_exclusive(|node| *node == Tag::Tr);
+            self.mode = DomMode::Cell;
+            self.push_marker();
+            self.stack.push(tag.into());
+            EMIT
+        } else if tag.is_table_item() {
+            if self.pop_in_scope(|node| *node == Tag::Tr, Tag::is_table_scope) {
+                self.mode = DomMode::TableBody;
+                self.tag_start_table_body(tag)
+            } else {
+                SUPPRESS
+            }
+        } else {
+            self.tag_start_table(tag)
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in table” insertion mode.
+    fn tag_start_table(&mut self, tag: Tag) -> bool {
+        match tag {
+            Tag::Caption => {
+                self.pop_exclusive(|node| *node == Tag::Table);
+                self.mode = DomMode::Caption;
+                self.push_marker();
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Colgroup => {
+                self.pop_exclusive(|node| *node == Tag::Table);
+                self.mode = DomMode::ColumnGroup;
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Col => {
+                self.pop_exclusive(|node| *node == Tag::Table);
+                self.next.tag_start_full("colgroup");
+                self.stack.push(Tag::Colgroup.into());
+                self.mode = DomMode::ColumnGroup;
+                self.tag_start_colgroup(tag)
+            }
+            Tag::Tbody | Tag::Tfoot | Tag::Thead => {
+                self.pop_exclusive(|node| *node == Tag::Table);
+                self.mode = DomMode::TableBody;
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Td | Tag::Th | Tag::Tr => {
+                self.pop_exclusive(|node| *node == Tag::Table);
+                self.stack.push(TagNode::ImplicitTbody);
+                self.mode = DomMode::TableBody;
+                self.tag_start_table_body(tag)
+            }
+            Tag::Table => {
+                if self.pop_in_scope(|node| *node == Tag::Table, Tag::is_table_scope) {
+                    self.reset_mode();
+                    self.tag_start_any(tag)
+                } else {
+                    SUPPRESS
+                }
+            }
+            Tag::Style => self.tag_start_head(tag),
+            Tag::Input => {
+                // The spec says that hidden inputs are not supposed to be
+                // fostered but this is a needless complexity for this
+                // implementation
+                Self::foster()
+            }
+            Tag::Form => {
+                // The spec says that form in a table is supposed to cause
+                // the form pointer to be set, but then to not emit anything
+                // to the output. For a serialiser, this just means to not
+                // emit anything
+                SUPPRESS
+            }
+            _ => Self::foster(),
+        }
+    }
+
+    /// Inserts a new start `tag` in the “in table body” insertion mode.
+    fn tag_start_table_body(&mut self, tag: Tag) -> bool {
+        match tag {
+            Tag::Tr => {
+                self.pop_exclusive(|node| node.is_table_body());
+                self.mode = DomMode::Row;
+                self.stack.push(tag.into());
+                EMIT
+            }
+            Tag::Td | Tag::Th => {
+                self.pop_exclusive(|node| node.is_table_body());
+                self.mode = DomMode::Row;
+                self.next.tag_start_full("tr");
+                self.stack.push(Tag::Tr.into());
+                self.tag_start_row(tag)
+            }
+            tag if tag.is_table_item() => {
+                if self.in_scope(|node| node.is_table_body(), Tag::is_table_scope) {
+                    self.pop_exclusive(|node| *node == Tag::Table);
+                    self.mode = DomMode::Table;
+                    self.tag_start_table(tag)
+                } else {
+                    SUPPRESS
+                }
+            }
+            _ => self.tag_start_table(tag),
         }
     }
 }
@@ -772,117 +1742,167 @@ impl<S: Sink> DomTree<S> {
 impl<S: Sink> Sink for DomTree<S> {
     #[inline]
     fn comment_end(&mut self) {
+        if self.filtering {
+            return;
+        }
+
         self.next.comment_end();
+        if !self.in_attr {
+            self.ignore_next_newline = false;
+        }
     }
 
     #[inline]
     fn comment_start(&mut self) {
+        if self.filtering {
+            return;
+        }
+
         self.next.comment_start();
+        if !self.in_attr {
+            self.ignore_next_newline = false;
+        }
     }
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
-        self.next.entity(value, raw);
+        if self.filtering {
+            return;
+        }
+
+        if self.in_attr {
+            self.next.entity(value, raw);
+        } else {
+            if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
+                self.reformat();
+            }
+            self.next.entity(value, raw);
+            self.ignore_next_newline = false;
+        }
     }
 
     #[inline]
     fn finish(mut self) -> String {
         for e in self.stack.drain(..).rev() {
-            e.close(&mut self.next);
+            e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
         }
         self.next.finish()
     }
 
     #[inline]
     fn new_line(&mut self) {
-        self.next.new_line();
+        if self.filtering {
+            return;
+        }
+
+        if self.in_attr {
+            self.next.new_line();
+        } else if self.ignore_next_newline {
+            self.ignore_next_newline = false;
+        } else {
+            if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
+                self.reformat();
+            }
+            self.next.new_line();
+        }
     }
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker) {
+        if self.filtering {
+            return;
+        }
+
         self.next.strip_marker(marker);
+        if !self.in_attr {
+            self.ignore_next_newline = false;
+        }
     }
 
     #[inline]
     fn tag_attribute_end(&mut self, name: &str) {
-        if let Some(Node::Attribute(pos)) = self.stack.last_mut() {
-            *pos = Attribute::Name;
+        if !self.filtering {
+            self.next.tag_attribute_end(name);
         }
-        self.next.tag_attribute_end(name);
     }
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
-        if let Some(Node::Attribute(pos)) = self.stack.last_mut() {
-            *pos = Attribute::Value;
+        if !self.filtering {
+            self.next.tag_attribute_start(name);
         }
-        self.next.tag_attribute_start(name);
     }
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        if !self.try_close(name) {
-            if name == "p" {
-                // Why????
-                self.next.tag_start_full("p");
-                self.next.tag_end("p");
-            } else {
-                log::warn!("TODO: <{name}> tag mismatch required error recovery logic");
-            }
-        }
+        self.ignore_next_newline = false;
+
+        let tag = Tag::new(name, &mut self.custom_tags);
+
+        match self.mode {
+            DomMode::Body => self.tag_end_body(tag),
+            DomMode::Table => self.tag_end_table(tag),
+            DomMode::Caption => self.tag_end_caption(tag),
+            DomMode::ColumnGroup => self.tag_end_colgroup(tag),
+            DomMode::TableBody => self.tag_end_table_body(tag),
+            DomMode::Row => self.tag_end_row(tag),
+            DomMode::Cell => self.tag_end_cell(tag),
+        };
     }
 
     #[inline]
-    fn tag_start(&mut self, name: &str) {
-        if name == "a" {
-            self.try_close(name);
+    fn tag_start(&mut self, mut name: &str) {
+        self.ignore_next_newline = false;
+
+        if name.eq_ignore_ascii_case("image") {
+            name = "img";
         }
 
-        // Normally, receiving a new start tag should close any tags which cause
-        // it to be in an invalid position in the DOM. This is especially
-        // important for wikitable markup because wikitable children are
-        // implicitly closed by the production of a new wikitable element.
-        // However, there is one case where elements should be allowed to be
-        // placed in an illegal position: when table-row templates get things
-        // like 'Template:Tfd' applied to them, this will try to put non-table
-        // content into the table, and this content is supposed to be fostered
-        // out of the table later instead of ending the table.
-        let close_tags = !matches!(
-            self.stack.last(),
-            Some(node @ Node::Tag(last))
-            if (last == "table" || last == "tr") && *last != name && !node.can_parent(name));
+        let tag = Tag::new(name, &mut self.custom_tags);
 
-        if close_tags {
-            while let Some(e) = self.stack.pop_if(|e| !e.can_parent(name)) {
-                e.close(&mut self.next);
-            }
-        }
+        let emit = self.tag_start_any(tag);
 
-        if matches!(name, "td" | "th")
-            && !matches!(self.stack.last(), Some(Node::Tag(last)) if last == "tr")
-        {
-            self.tag_start_full("tr");
+        if emit {
+            self.in_attr = true;
+            self.next.tag_start(name);
+        } else {
+            self.filtering = true;
         }
-
-        if !VOID_TAGS.contains(name) {
-            self.stack.push(Node::Tag(name.to_owned().into()));
-        }
-        self.stack.push(Node::Attribute(Attribute::Name));
-        self.next.tag_start(name);
     }
 
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
-        self.stack
-            .pop_if(|node| matches!(node, Node::Attribute(_)))
-            .expect("attribute node");
-        self.next.tag_start_end(name);
+        if self.filtering {
+            self.filtering = false;
+        } else {
+            self.in_attr = false;
+            self.next.tag_start_end(name);
+        }
     }
 
     #[inline]
     fn text(&mut self, text: &str) {
-        self.next.text(text);
+        if self.filtering {
+            return;
+        }
+
+        if self.in_attr {
+            self.next.text(text);
+        } else {
+            if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
+                self.reformat();
+            }
+            self.next.text(text);
+            self.ignore_next_newline = false;
+        }
     }
+}
+
+/// Takes a value from `index`, returning a niche-optimised `Option<NonZeroU8>`.
+fn next_index(index: &mut Option<u8>, next: usize) -> Option<NonZeroU8> {
+    index
+        .replace(next.try_into().unwrap())
+        .and_then(|n| NonZeroU8::new(n + 1))
 }
 
 /// Marks elements containing only whitespace.
@@ -2675,7 +3695,7 @@ impl<S: Sink> Sink for PWrapper<S> {
     }
 
     fn tag_start(&mut self, name: &str) {
-        if INLINE.contains(name) {
+        if Tag::known(name).is_some_and(Tag::is_inline) {
             self.enter_p();
         } else {
             self.exit_p();
@@ -2705,19 +3725,507 @@ impl<S: Sink> Sink for PWrapper<S> {
     }
 }
 
-static FORMATTING: phf::Set<&str> = phf::phf_set! {
-    "a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike",
-    "strong", "tt", "u"
-};
+/// A DOM pseudo-node.
+#[derive(Clone, Copy, Debug, Eq)]
+enum TagNode {
+    /// An HTML tag.
+    Html(Tag),
+    /// An implicit `<tbody>` that is not being emitted because it is a waste.
+    ImplicitTbody,
+    /// A marker on the “list of active formatting elements”.
+    Marker(Option<NonZeroU8>),
+    /// An optimised `<p>` element that holds a niche-optimised index of the
+    /// previous `<p>` element in [`DomTree::stack`], if any.
+    P(Option<NonZeroU8>),
+}
 
-static INLINE: phf::Set<&str> = phf::phf_set! {
-    "a", "abbr", "acronym", "applet", "audio", "b", "basefont", "bdi", "bdo",
-    "big", "br", "button", "cite", "code", "data", "del", "dfn", "em", "font",
-    "i", "iframe", "img", "input", "ins", "kbd", "label", "legend", "map",
-    "mark", "object", "param", "q", "rb", "rbc", "rp", "rt", "rtc", "ruby", "s",
-    "samp", "select", "small", "source", "span", "strike", "strong", "sub",
-    "sup", "textarea", "time", "track", "tt", "u", "var", "video", "wbr"
-};
+impl From<Tag> for TagNode {
+    #[inline]
+    fn from(tag: Tag) -> Self {
+        Self::Html(tag)
+    }
+}
+
+impl PartialEq<Tag> for TagNode {
+    #[inline]
+    fn eq(&self, other: &Tag) -> bool {
+        self.tag() == Some(*other)
+    }
+}
+
+impl TagNode {
+    /// Emits the close tag for this node to `next`, using the given set of
+    /// `custom` tag names, and updating the `next_index` if applicable.
+    fn close<S: Sink + ?Sized>(
+        self,
+        next: &mut S,
+        custom: &IndexSet<Uncased<'static>>,
+        next_index: &mut Option<u8>,
+    ) {
+        if let Some(name) = self.name(custom) {
+            debug_assert!(!VOID_TAGS.contains(name.as_str()));
+            next.tag_end(name.as_str());
+            if let Self::P(next) | Self::Marker(next) = self {
+                *next_index = next.map(|index| u8::from(index) - 1);
+            }
+        }
+    }
+
+    /// Returns the tag name of this node, or `None` if this is an anonymous
+    /// marker node.
+    fn name<'a>(self, custom: &'a IndexSet<Uncased<'static>>) -> Option<&'a UncasedStr> {
+        match self {
+            Self::Html(tag) => Some(tag.as_str(custom)),
+            Self::ImplicitTbody | Self::Marker(_) => None,
+            Self::P(_) => Some(UncasedStr::new("p")),
+        }
+    }
+
+    /// Returns true if this is a definition list child.
+    #[inline]
+    fn is_dl_item(self) -> bool {
+        self.tag().is_some_and(Tag::is_dl_item)
+    }
+
+    /// Returns true if this is an HTML heading node.
+    #[inline]
+    fn is_heading(self) -> bool {
+        self.tag().is_some_and(Tag::is_heading)
+    }
+
+    /// Returns true if this node has an implied end tag, `except` not that one.
+    #[inline]
+    fn is_implied_close(self, except: Option<Tag>) -> bool {
+        self.tag()
+            .is_some_and(|tag| tag.is_implied_end() && Some(tag) != except)
+    }
+
+    /// Returns true if this is a “special category” node.
+    #[inline]
+    fn is_special(self) -> bool {
+        self.tag().is_some_and(Tag::is_special)
+    }
+
+    /// Returns true if this is a `<table>` direct child.
+    #[inline]
+    fn is_table_body(self) -> bool {
+        self.tag().is_some_and(Tag::is_table_body)
+    }
+
+    /// Returns the corresponding HTML5 tag for this node, or `None` if this is
+    /// an anonymous marker node.
+    fn tag(self) -> Option<Tag> {
+        match self {
+            Self::Html(tag) => Some(tag),
+            Self::ImplicitTbody => Some(Tag::Tbody),
+            Self::Marker(_) => None,
+            Self::P(_) => Some(Tag::P),
+        }
+    }
+}
+
+impl PartialEq for TagNode {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Html(lhs), Self::Html(rhs)) => lhs == rhs,
+            (Self::Marker(_), Self::Marker(_)) | (Self::P(_), Self::P(_)) => true,
+            (Self::Html(tag), Self::P(_)) | (Self::P(_), Self::Html(tag)) => *tag == Tag::P,
+            (Self::Html(tag), Self::ImplicitTbody) | (Self::ImplicitTbody, Self::Html(tag)) => {
+                *tag == Tag::Tbody
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Generates the `Tag` enum and lookup table for known HTML5 tag names.
+macro_rules! tags {
+    ($($tag:literal => $id:ident),* $(,)?) => {
+        /// An HTML tag.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        enum Tag {
+            $($id,)*
+            /// A custom tag index.
+            Custom(u8),
+        }
+
+        /// The lookup table for known HTML tags.
+        static KNOWN_TAGS: phf::Map<&UncasedStr, Tag> = phf::phf_map! {
+            $(UncasedStr::new($tag) => Tag::$id,)*
+        };
+
+        impl Tag {
+            /// Returns the tag as a string.
+            fn as_str<'a>(self, custom: &'a IndexSet<Uncased<'static>>) -> &'a UncasedStr {
+                match self {
+                    $(Self::$id => UncasedStr::new($tag),)*
+                    Self::Custom(index) => custom.get_index(index.into()).unwrap(),
+                }
+            }
+        }
+    }
+}
+
+// The list of tags used here is the list of allowed Wikitext tags, plus tags
+// that are special in the HTML5 tree construction algorithm and are emitted by
+// extension tags
+tags! {
+    "a" => A, "abbr" => Abbr, "acronym" => Acronym, "address" => Address, "annotation-xml" => AnnotationXml, "aside" => Aside, "audio" => Audio,
+    "b" => B, "basefont" => Basefont, "bdi" => Bdi, "bdo" => Bdo, "big" => Big, "button" => Button,
+    "blockquote" => Blockquote, "br" => Br,
+    "caption" => Caption, "center" => Center, "cite" => Cite, "code" => Code, "col" => Col, "colgroup" => Colgroup,
+    "data" => Data, "dd" => Dd, "del" => Del, "desc" => Desc, "details" => Details, "dfn" => Dfn, "div" => Div, "dl" => Dl, "dt" => Dt,
+    "em" => Em,
+    "figcaption" => Figcaption, "figure" => Figure, "font" => Font, "foreignObject" => ForeignObject, "form" => Form,
+    "h1" => H1, "h2" => H2, "h3" => H3, "h4" => H4, "h5" => H5, "h6" => H6, "hr" => Hr,
+    "i" => I, "iframe" => Iframe, "img" => Img, "input" => Input, "ins" => Ins,
+    "kbd" => Kbd,
+    "label" => Label, "legend" => Legend, "li" => Li, "link" => Link,
+    "map" => Map, "mark" => Mark, "math" => Math, "meta" => Meta, "mi" => Mi, "mo" => Mo, "mn" => Mn, "ms" => Ms, "mtext" => Mtext,
+    "nobr" => Nobr,
+    "object" => Object, "ol" => Ol, "optgroup" => Optgroup, "option" => Option,
+    "p" => P, "param" => Param, "pre" => Pre,
+    "q" => Q,
+    "rb" => Rb, "rbc" => Rbc, "rp" => Rp, "rt" => Rt, "rtc" => Rtc, "ruby" => Ruby,
+    "s" => S, "samp" => Samp, "select" => Select, "small" => Small, "source" => Source, "span" => Span, "strike" => Strike, "strong" => Strong, "sub" => Sub, "summary" => Summary, "sup" => Sup, "style" => Style, "svg" => Svg,
+    "table" => Table, "tbody" => Tbody, "td" => Td, "textarea" => Textarea, "tfoot" => Tfoot, "th" => Th, "thead" => Thead, "time" => Time, "title" => Title, "tr" => Tr, "track" => Track, "tt" => Tt,
+    "u" => U, "ul" => Ul,
+    "var" => Var, "video" => Video,
+    "wbr" => Wbr,
+}
+
+impl Tag {
+    /// Create a new `Tag` for the known `name`, or `None` if `name` is not
+    /// a known HTML5 tag.
+    #[inline]
+    fn known(name: &str) -> Option<Self> {
+        KNOWN_TAGS.get(name.into()).copied()
+    }
+
+    /// Creates a new `Tag` with the given `name`. If the name is not a known
+    /// HTML5 tag, a custom tag will be used or created in `custom`.
+    fn new(name: &str, custom: &mut IndexSet<Uncased<'static>>) -> Self {
+        if let Some(tag) = Self::known(name) {
+            tag
+        } else if let Some(index) = custom.get_index_of(UncasedStr::new(name)) {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "if there are more than u8::MAX custom tags, this would have panicked during the insert"
+            )]
+            Tag::Custom(index as u8)
+        } else {
+            let index = custom.len();
+            custom.insert(Uncased::from_borrowed(name).into_owned());
+            Tag::Custom(index.try_into().unwrap())
+        }
+    }
+
+    /// Returns true if this is a block-level start tag. (This is not a defined
+    /// category in HTML5, just a long list of ad-hoc tag names.)
+    #[inline]
+    fn is_body_block(self) -> bool {
+        matches!(
+            self,
+            Self::Address
+                | Self::Aside
+                | Self::Center
+                | Self::Details
+                | Self::Div
+                | Self::Dl
+                | Self::Figcaption
+                | Self::Figure
+                | Self::Ol
+                | Self::P
+                | Self::Summary
+                | Self::Ul
+        )
+    }
+
+    /// Returns true if this is an “element in button scope”.
+    #[inline]
+    fn is_button_scope(self) -> bool {
+        self.is_general_scope() || matches!(self, Self::Button)
+    }
+
+    /// Returns true if this is a definition list item.
+    #[inline]
+    fn is_dl_item(self) -> bool {
+        matches!(self, Self::Dd | Self::Dt)
+    }
+
+    /// Returns true if this is a tag in the HTML5 formatting category.
+    #[inline]
+    fn is_formatting(self) -> bool {
+        matches!(
+            self,
+            Self::A
+                | Self::B
+                | Self::Big
+                | Self::Code
+                | Self::Em
+                | Self::Font
+                | Self::I
+                | Self::Nobr
+                | Self::S
+                | Self::Small
+                | Self::Strike
+                | Self::Strong
+                | Self::Tt
+                | Self::U
+        )
+    }
+
+    /// Returns true if this is an “element in scope”.
+    #[inline]
+    fn is_general_scope(self) -> bool {
+        // Ignoring applet, html, marquee, and template
+        matches!(
+            self,
+            Self::AnnotationXml
+                | Self::Caption
+                | Self::Desc
+                | Self::ForeignObject
+                | Self::Mi
+                | Self::Mo
+                | Self::Mn
+                | Self::Ms
+                | Self::Mtext
+                | Self::Object
+                | Self::Select
+                | Self::Table
+                | Self::Td
+                | Self::Th
+                | Self::Title
+        )
+    }
+
+    /// Returns true if this is a `<head>` item.
+    #[inline]
+    fn is_head_item(self) -> bool {
+        matches!(
+            self,
+            Self::Basefont | Self::Link | Self::Meta | Self::Style | Self::Title
+        )
+    }
+
+    /// Returns true if this is a heading element.
+    #[inline]
+    fn is_heading(self) -> bool {
+        matches!(
+            self,
+            Self::H1 | Self::H2 | Self::H3 | Self::H4 | Self::H5 | Self::H6
+        )
+    }
+
+    /// Returns true if this is a tag with an implied end tag.
+    #[inline]
+    fn is_implied_end(self) -> bool {
+        matches!(
+            self,
+            Self::Dd
+                | Self::Dt
+                | Self::Li
+                | Self::Optgroup
+                | Self::Option
+                | Self::P
+                | Self::Rb
+                | Self::Rp
+                | Self::Rt
+                | Self::Rtc
+        )
+    }
+
+    /// Returns true if this is an “inline” tag, according to MediaWiki’s
+    /// `RemexCompatMunger`.
+    fn is_inline(self) -> bool {
+        matches!(
+            self,
+            Self::A
+                | Self::Abbr
+                | Self::Acronym
+                | Self::Audio
+                | Self::B
+                | Self::Basefont
+                | Self::Bdi
+                | Self::Bdo
+                | Self::Big
+                | Self::Br
+                | Self::Button
+                | Self::Cite
+                | Self::Code
+                | Self::Data
+                | Self::Del
+                | Self::Dfn
+                | Self::Em
+                | Self::Font
+                | Self::I
+                | Self::Iframe
+                | Self::Img
+                | Self::Input
+                | Self::Ins
+                | Self::Kbd
+                | Self::Label
+                | Self::Legend
+                | Self::Map
+                | Self::Mark
+                | Self::Object
+                | Self::Param
+                | Self::Q
+                | Self::Rb
+                | Self::Rbc
+                | Self::Rp
+                | Self::Rt
+                | Self::Rtc
+                | Self::Ruby
+                | Self::S
+                | Self::Samp
+                | Self::Select
+                | Self::Small
+                | Self::Source
+                | Self::Span
+                | Self::Strike
+                | Self::Strong
+                | Self::Sub
+                | Self::Sup
+                | Self::Textarea
+                | Self::Time
+                | Self::Track
+                | Self::Tt
+                | Self::U
+                | Self::Var
+                | Self::Video
+                | Self::Wbr
+        )
+    }
+
+    /// Returns true if this is an “element in list item scope”.
+    #[inline]
+    fn is_list_item_scope(self) -> bool {
+        self.is_general_scope() || matches!(self, Self::Ol | Self::Ul)
+    }
+
+    /// Returns true if this “is in the special category, but is not an address,
+    /// div, or p element”.
+    #[inline]
+    fn is_list_special(self) -> bool {
+        self.is_special() && !matches!(self, Self::Address | Self::Div | Self::P)
+    }
+
+    /// Returns true if this is a `<ruby>` item.
+    #[inline]
+    fn is_ruby_item(self) -> bool {
+        matches!(self, Self::Rb | Self::Rp | Self::Rt | Self::Rtc)
+    }
+
+    /// Returns true if this tag is in the “special” category.
+    fn is_special(self) -> bool {
+        // Ignoring applet, area, article, base, bgsound, body, dir, embed,
+        // fieldset, footer, frame, frameset, head, header, hgroup, html,
+        // keygen, listing, main, marquee, menu, nav, noembed, noframes,
+        // noscript, plaintext, script, search, section, template, and xmp,
+        // which are unsupported in this implementation
+        matches!(
+            self,
+            Self::Address
+                | Self::Aside
+                | Self::Basefont
+                | Self::Blockquote
+                | Self::Br
+                | Self::Button
+                | Self::Caption
+                | Self::Center
+                | Self::Col
+                | Self::Colgroup
+                | Self::Dd
+                | Self::Details
+                | Self::Div
+                | Self::Dl
+                | Self::Dt
+                | Self::Figcaption
+                | Self::Figure
+                | Self::Form
+                | Self::H1
+                | Self::H2
+                | Self::H3
+                | Self::H4
+                | Self::H5
+                | Self::H6
+                | Self::Hr
+                | Self::Iframe
+                | Self::Img
+                | Self::Input
+                | Self::Li
+                | Self::Link
+                | Self::Meta
+                | Self::Object
+                | Self::Ol
+                | Self::P
+                | Self::Param
+                | Self::Pre
+                | Self::Select
+                | Self::Source
+                | Self::Style
+                | Self::Summary
+                | Self::Table
+                | Self::Tbody
+                | Self::Td
+                | Self::Textarea
+                | Self::Tfoot
+                | Self::Th
+                | Self::Thead
+                | Self::Title
+                | Self::Tr
+                | Self::Track
+                | Self::Ul
+                | Self::Wbr
+                | Self::Mi
+                | Self::Mo
+                | Self::Mn
+                | Self::Ms
+                | Self::Mtext
+                | Self::AnnotationXml
+                | Self::ForeignObject
+                | Self::Desc
+        )
+    }
+
+    /// Returns true if this is a `<table>` direct child.
+    #[inline]
+    fn is_table_body(self) -> bool {
+        matches!(self, Self::Tbody | Self::Tfoot | Self::Thead)
+    }
+
+    /// Returns true if this is a `<table>` element that cannot contain most
+    /// non-table content.
+    #[inline]
+    fn is_table_fosterable(self) -> bool {
+        self.is_table_body() || matches!(self, Self::Table | Self::Tr)
+    }
+
+    /// Returns true if this is a `<table>` item (including grandchildren).
+    #[inline]
+    fn is_table_item(self) -> bool {
+        matches!(
+            self,
+            Self::Caption
+                | Self::Col
+                | Self::Colgroup
+                | Self::Tbody
+                | Self::Td
+                | Self::Tfoot
+                | Self::Th
+                | Self::Thead
+                | Self::Tr
+        )
+    }
+
+    /// Returns true if this is an “element in table scope”.
+    #[inline]
+    fn is_table_scope(self) -> bool {
+        // Ignoring html and template, which are unsupported
+        matches!(self, Self::Table)
+    }
+}
 
 /// Converts runs of text to typographically beautiful HTML.
 #[derive(Debug)]
@@ -3101,7 +4609,7 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        if matches!(name, "table" | "tr") {
+        if matches!(name, "table" | "tbody" | "tfoot" | "thead" | "tr") {
             self.foster();
         }
         if name == "table" {
@@ -3109,8 +4617,10 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
             self.next.free_mark(last.before_table);
         }
         self.next.tag_end(name);
-        if matches!(name, "caption" | "td" | "th" | "tr")
-            && let Some(last) = self.stack.last_mut()
+        if matches!(
+            name,
+            "caption" | "tbody" | "tfoot" | "td" | "th" | "thead" | "tr"
+        ) && let Some(last) = self.stack.last_mut()
         {
             debug_assert!(last.interstitial.is_none());
             last.interstitial = Some(self.next.mark());
@@ -3124,7 +4634,10 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
                 before_table: self.next.mark(),
                 interstitial: None,
             });
-        } else if matches!(name, "caption" | "td" | "th" | "tr") {
+        } else if matches!(
+            name,
+            "caption" | "tbody" | "td" | "tfoot" | "th" | "thead" | "tr"
+        ) {
             self.foster();
         }
         self.next.tag_start(name);
@@ -3133,7 +4646,7 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
         self.next.tag_start_end(name);
-        if matches!(name, "table" | "tr")
+        if matches!(name, "table" | "tbody" | "tfoot" | "thead" | "tr")
             && let Some(last) = self.stack.last_mut()
         {
             debug_assert!(last.interstitial.is_none(), "oops, {name}");
@@ -3204,6 +4717,7 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
+        eprint!("{value}");
         self.next.entity(value, raw);
     }
 
@@ -3214,6 +4728,7 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn new_line(&mut self) {
+        eprintln!("\\n");
         self.next.new_line();
     }
 
@@ -3229,16 +4744,19 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn tag_attribute_end(&mut self, name: &str) {
+        eprint!("\"");
         self.next.tag_attribute_end(name);
     }
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
+        eprint!(" {name}=\"");
         self.next.tag_attribute_start(name);
     }
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
+        eprintln!("</{name}>");
         if !VOID_TAGS.contains(name) {
             self.depth -= 1;
         }
@@ -3247,10 +4765,12 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
+        eprint!("<{name}");
         self.next.tag_start(name);
     }
 
     fn tag_start_end(&mut self, name: &str) {
+        eprintln!(">");
         if !PHRASING_TAGS.contains(name) {
             // It is possible that a template starts in an ambiguous position
             // where the output of its first tag results in some other elements
@@ -3283,6 +4803,7 @@ impl<S: Sink> Sink for TemplateTagger<S> {
 
     #[inline]
     fn text(&mut self, text: &str) {
+        eprint!("{text}");
         self.next.text(text);
     }
 }
