@@ -402,12 +402,13 @@ impl fmt::Debug for TokenInspector<'_> {
                     &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
                 .finish(),
-            Token::TableStart { attributes } => f
+            Token::TableStart { attributes, indent } => f
                 .debug_struct(&span_name("TableStart", self.0, self.1))
                 .field(
                     "attributes",
                     &VInspector::<TokenInspector<'_>>(self.0, attributes),
                 )
+                .field("indent", &indent)
                 .finish(),
             Token::Template {
                 target,

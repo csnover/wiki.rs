@@ -272,6 +272,7 @@ pub trait Visitor<'tt, E> {
         &mut self,
         _span: Span,
         _attributes: &'tt [Spanned<Token>],
+        _indent: u8,
     ) -> Result<(), E> {
         Ok(())
     }
@@ -585,7 +586,9 @@ where
         Token::TableEnd => visitor.visit_table_end(token.span),
         Token::TableHeading { attributes } => visitor.visit_table_heading(token.span, attributes),
         Token::TableRow { attributes } => visitor.visit_table_row(token.span, attributes),
-        Token::TableStart { attributes } => visitor.visit_table_start(token.span, attributes),
+        Token::TableStart { attributes, indent } => {
+            visitor.visit_table_start(token.span, attributes, *indent)
+        }
         Token::Template { target, arguments } => {
             visitor.visit_template(token.span, target, arguments)
         }

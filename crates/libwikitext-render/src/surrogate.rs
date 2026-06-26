@@ -399,6 +399,7 @@ pub(crate) trait Surrogate<E> {
         _sp: &StackFrame<'_>,
         _span: Span,
         _attributes: &[Spanned<Token>],
+        _indent: u8,
     ) -> Result<(), E> {
         Ok(())
     }
@@ -750,8 +751,8 @@ where
         Token::TableRow { attributes } => {
             surrogate.adopt_table_row(state, sp, token.span, attributes)
         }
-        Token::TableStart { attributes } => {
-            surrogate.adopt_table_start(state, sp, token.span, attributes)
+        Token::TableStart { attributes, indent } => {
+            surrogate.adopt_table_start(state, sp, token.span, attributes, *indent)
         }
         Token::Template { target, arguments } => {
             surrogate.adopt_template(state, sp, token.span, target, arguments)

@@ -78,8 +78,13 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         _content: &str,
         _unclosed: bool,
     ) -> Result {
-        // Comments are traditionally excluded from evaluation by some flag,
-        // but we will just do it all the time
+        // TODO: Decide what to do with comments.
+        // if !self.strip_comments {
+        //     write!(self.out, "<!--{content}")?;
+        //     if !unclosed {
+        //         self.out.write_str("-->")?;
+        //     }
+        // }
         Ok(())
     }
 

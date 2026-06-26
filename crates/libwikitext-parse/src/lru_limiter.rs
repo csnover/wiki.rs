@@ -79,6 +79,7 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             }
             | Token::TableStart {
                 attributes: content,
+                ..
             }
             | Token::TableCaption {
                 attributes: content,

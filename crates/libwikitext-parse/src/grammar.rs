@@ -70,10 +70,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule line_after_table() -> Vec<Spanned<Token>>
     = !at_sol()
       i:inline()*
-      // In the original parser, any line starting with `|}` would have a
-      // forced newline at the end
-      e:spanned(<eolf() { Token::NewLine }>)
-    { reduce_tree(i.into_iter().chain(iter::once(e))) }
+      e:line_eol()
+    { reduce_tree(i.into_iter().chain(e)) }
 
     /// Whole-line expressions that either require or reject whitespace at the
     /// start of a line.
@@ -206,7 +204,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// A part of a run of non-token text.
     rule text_part(flags: PpTerm)
-    = [^'['|']'|'{'|'}'|'<'|'-'|'|'|'='|'\0'|'\x7f']+
+    = [^'['|']'|'{'|'}'|'<'|'-'|'|'|'='|'\0'|'\x7f'|'\t'|' ']+
+    / !comment_block() inline_space()
     / !assert(flags.in_heading() || flags.contains(PpTerm::EQUALS), "=") "="+
     / !assert(flags.contains(PpTerm::PIPE), "|") "|"+
     / !assert(flags.in_link(), "]]") "]"+
@@ -488,7 +487,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// A minimal unambiguous start of a list item.
     rule list_start()
-    = comment_tag()* !table_hack_start() ['*'|'#'|';'|':']
+    = comment_tag()* !table_start() ['*'|'#'|';'|':']
 
     /// An inline definition detail.
     ///
@@ -528,8 +527,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// The list of possible table expressions.
     rule table_part() -> Vec<Spanned<Token>>
-    = table_hack()
-    / t:table_end() { vec![t] }
+    = t:table_end() { vec![t] }
     / table_single()
     / table_caption()
     / table_head()
@@ -539,40 +537,6 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule table_single() -> Vec<Spanned<Token>>
     = t:(table_start() / table_row()) e:line_eol()
     { iter::once(t).chain(e).collect() }
-
-    /// Table start tags are supposed to only start on a new line, but then
-    /// someone decided to add a hack to indent tables with `<dd>`s because
-    /// CSS was too hard I guess, and here we are.
-    ///
-    /// ```wikitext
-    /// ::{| k="v" ␤
-    /// ^^^^^^^^^^^^
-    /// ```
-    rule table_hack() -> Vec<Spanned<Token>>
-    = first:spanned(<
-        space_s()*
-        bf:table_hack_start()
-        e:line_eol()
-        content:(!table_hack_end() t:line() { t })*
-        term:table_hack_end()
-        {
-            let (bullets, first) = bf;
-            let content = iter::once(first)
-                .chain(e)
-                .chain(content.into_iter().flatten())
-                .chain(term)
-                .collect();
-            Token::ListItem { bullets, content }
-        }
-      >)
-      rest:(!rtrim_term() t:inline() { t })*
-      space_s()*
-    { reduce_tree(iter::once(first).chain(rest)) }
-
-    rule table_hack_start() -> (Span, Spanned<Token>)
-    = bullets:spanned(<":"+ {}>)
-      first:table_start()
-    { (bullets.span, first) }
 
     /// The end of the indented table hack.
     ///
@@ -586,15 +550,22 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// A table start tag.
     ///
+    /// Normally, table start tags are supposed to only start on a new line, but
+    /// then someone decided to add a hack to indent tables with `<dd>`s because
+    /// CSS was too hard I guess, and here we are.
+    ///
     /// ```wikitext
     /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
     /// ^^^^^^^^^^
+    /// ::{| k="v" ␤
+    /// ^^^^^^^^^^^^
     /// ```
     rule table_start() -> Spanned<Token>
     = spanned(<
+        indent:(t:$(":"*<,255>) { t.len() })
         space_s()* "{|"
         attributes:html_attributes(<nl() {}>)
-        { Token::TableStart { attributes } }
+        { Token::TableStart { attributes, indent: indent as u8 } }
     >)
 
     /// A table row tag.
@@ -1566,7 +1537,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule html_start_tag() -> Token
     = name:html_tag_name()
       (space_nl()+ / &(html_self_close()? ">"))
-      attributes:html_attributes(<space_nl()* html_self_close()? ">">)
+      attributes:html_attributes(<space_nl()* "/"? ">">)
       space_nl()*
       self_closing:html_self_close()?
     {

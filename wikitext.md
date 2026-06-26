@@ -974,7 +974,7 @@ For each line of the input `L` split on `'\n'`:
 
 1. If `L` contains only ASCII whitespace, emit the interpolation `"{L}\n"`;
    otherwise
-2. If `L` matches the regular expression `^\s*(?::*)\s*\{\|`:
+2. If `L` matches the regular expression `^\s*(:*)\s*\{\|`:
 
    1. Let `Rest` be the rest of `L` after `"{|"`;
    2. [Unstrip](#unstrip) all markers from `Rest`;

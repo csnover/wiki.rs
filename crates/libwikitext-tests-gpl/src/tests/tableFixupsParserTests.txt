@@ -294,7 +294,7 @@ Ensure newlines in collected attribute doesn't trip up reparsing
 <table>
 <tbody><tr>
 <td rowspan="1" class="foo">foobar
-<pre> baz
+<pre> baz 
 </pre>
 </td></tr></tbody></table>
 !! html/parsoid

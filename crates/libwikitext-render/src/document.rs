@@ -108,7 +108,6 @@ impl<'a> Document<'a> {
 
         for table in self.table_emitter.into_iter().rev() {
             table.finish(&mut self.next, true);
-            self.next.new_line();
         }
 
         let result = self.next.finish();
@@ -413,7 +412,9 @@ impl Surrogate<Error> for Document<'_> {
             self.adopt_tokens(state, sp, trail)?;
         } else if !force_link && title.is_local_file() {
             self.adopt_tokens(state, sp, prefix)?;
+            self.next.next_mut().next_mut().set_in_caption(true);
             super::image::render_media(self, state, sp, title, content)?;
+            self.next.next_mut().next_mut().set_in_caption(false);
             self.adopt_tokens(state, sp, trail)?;
         } else {
             self.text_style_emitter.push(<_>::default());
@@ -458,7 +459,8 @@ impl Surrogate<Error> for Document<'_> {
         }
 
         // TODO: The `in_pre` condition needs to be emitting all the tokens
-        // instead of just taking the line as text
+        // instead of just taking the line as text since tags and entities are
+        // actually supposed to be treated like tags and entities 🥴️
         if self.in_pre {
             self.next.text(&sp.source[span.into_range()]);
             return Ok(());
@@ -795,9 +797,14 @@ impl Surrogate<Error> for Document<'_> {
         sp: &StackFrame<'_>,
         span: Span,
         attributes: &[Spanned<Token>],
+        indent: u8,
     ) -> Result {
+        for _ in 0..indent {
+            self.next.tag_start_full("dl");
+            self.next.tag_start_full("dd");
+        }
         self.adopt_start_tag(state, sp, span, "table", attributes, false)?;
-        self.table_emitter.push(<_>::default());
+        self.table_emitter.push(TableState::new(indent));
         Ok(())
     }
 
@@ -859,10 +866,12 @@ impl Surrogate<Error> for Document<'_> {
 }
 
 /// A Wikitext table frame.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct TableState {
     /// If true, a Wikitext table row, header, or data token has been seen.
     has_tbody: bool,
+    /// The indent hack count for this table.
+    indent: u8,
     /// The tag name of the currently open table caption, header, or data tag.
     last_tag: Option<&'static str>,
     /// The half-parsed attributes for a pending table row.
@@ -872,6 +881,17 @@ struct TableState {
 }
 
 impl TableState {
+    /// Creates a new `TableState` with the given `indent`.
+    fn new(indent: u8) -> Self {
+        Self {
+            has_tbody: <_>::default(),
+            indent,
+            last_tag: <_>::default(),
+            tr_attrs: <_>::default(),
+            tr_emitted: <_>::default(),
+        }
+    }
+
     /// Finishes a table frame.
     fn finish<S: Sink + ?Sized>(self, next: &mut S, last: bool) {
         if let Some(name) = self.last_tag {
@@ -881,6 +901,9 @@ impl TableState {
             next.tag_end("tr");
         }
         if !self.has_tbody {
+            if last {
+                next.new_line();
+            }
             next.tag_start_full("tr");
             next.tag_start_full("td");
             next.tag_end("td");
@@ -890,5 +913,10 @@ impl TableState {
             }
         }
         next.tag_end("table");
+
+        for _ in 0..self.indent {
+            next.tag_end("dd");
+            next.tag_end("dl");
+        }
     }
 }

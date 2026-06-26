@@ -586,6 +586,8 @@ pub enum Token {
     TableStart {
         /// The table attributes.
         attributes: Vec<Spanned<Token>>,
+        /// The depth of the table indent hack.
+        indent: u8,
     },
     /// A template.
     Template {

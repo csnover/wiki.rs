@@ -2053,6 +2053,7 @@ parsoid=wt2html,wt2wt
 !! html/wiki.rs # This output matches the PHP parser, minus the tbody and different caption whitespace
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>
 <table>
+  
 <tr>
 <td>test
 </td></tr></table></figcaption></figure>

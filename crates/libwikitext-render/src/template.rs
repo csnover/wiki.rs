@@ -855,6 +855,7 @@ impl Surrogate<Error> for DbPrefetch {
         sp: &StackFrame<'_>,
         _span: Span,
         attributes: &[Spanned<Token>],
+        _indent: u8,
     ) -> Result<(), Error> {
         self.adopt_tokens(state, sp, attributes)
     }

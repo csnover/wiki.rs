@@ -1733,7 +1733,7 @@ impl<S: Sink> DomTree<S> {
             }
             tag if tag.is_ruby_item() => {
                 if self.in_scope(|node| *node == Tag::Ruby, Tag::is_general_scope) {
-                    let except = matches!(tag, Tag::Rp | Tag::Rtc).then_some(Tag::Rtc);
+                    let except = matches!(tag, Tag::Rp | Tag::Rt).then_some(Tag::Rtc);
                     self.implied_end(except);
                 }
                 self.stack.push(tag.into());
@@ -2281,7 +2281,9 @@ pub(super) struct GrafEmitter<S: Sink + Markable> {
     /// If true, the document is currently inside an explicitly defined
     /// `<blockquote>`.
     in_blockquote: bool,
-    /// If true, the document is currently inside a list.
+    /// If true, the document is currently inside an image caption.
+    in_caption: bool,
+    /// If true, the graf emitter is disabled and acts as a pass-through.
     in_list: bool,
     /// If true, the document is currently inside an explicitly defined `<pre>`.
     in_pre: bool,
@@ -2310,6 +2312,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
             current: <_>::default(),
             in_block: <_>::default(),
             in_blockquote: <_>::default(),
+            in_caption: <_>::default(),
             in_list: <_>::default(),
             in_pre: <_>::default(),
             meta_line: <_>::default(),
@@ -2360,13 +2363,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
                     self.close(false);
                     self.pending = GrafPendingState::None;
                 }
-            } else if self
-                .buffer
-                .next()
-                .as_str()
-                .bytes()
-                .all(|b| b.is_ascii_whitespace())
-            {
+            } else if self.is_empty_line() {
                 if let Some(new_state) = self.pending.emit(&mut self.next) {
                     self.next.tag_start_full("br");
                     self.current = new_state;
@@ -2400,8 +2397,20 @@ impl<S: Sink + Markable> GrafEmitter<S> {
         self.meta_line = <_>::default();
     }
 
+    /// Returns true if the currently buffered line is empty or contains only
+    /// ASCII whitespace.
+    #[inline]
+    fn is_empty_line(&self) -> bool {
+        self.buffer
+            .next()
+            .as_str()
+            .bytes()
+            .all(|b| b.is_ascii_whitespace())
+    }
+
     /// Returns true if the currently buffered line should be treated like a
     /// preformatted line.
+    #[inline]
     fn is_pre_line(&self) -> bool {
         !self.in_blockquote
             && self
@@ -2414,7 +2423,16 @@ impl<S: Sink + Markable> GrafEmitter<S> {
                 })
     }
 
-    /// Tells the `GrafEmitter` whether a Wikitext list is being processed.
+    /// Causes `GrafEmitter` to treat new line tokens as text. This is required
+    /// for correct handling of image captions.
+    #[inline]
+    pub(super) fn set_in_caption(&mut self, in_caption: bool) {
+        self.in_caption = in_caption;
+    }
+
+    /// Disables the `GrafEmitter`, causing it to pass through tokens. This is
+    /// required for correct handling of lists.
+    #[inline]
     pub(super) fn set_in_list(&mut self, in_list: bool) {
         self.pending = GrafPendingState::None;
         self.in_list = in_list;
@@ -2463,7 +2481,10 @@ impl<S: Sink + Markable> Sink for GrafEmitter<S> {
 
     #[inline]
     fn new_line(&mut self) {
-        if self.in_list {
+        if self.in_caption {
+            self.meta_line.update_text("\n");
+            self.buffer.new_line();
+        } else if self.in_list {
             self.next.new_line();
         } else {
             self.end_line(false);
@@ -2566,6 +2587,7 @@ enum GrafMetaLine {
     /// `<link>` or ASCII whitespace or a newline to be a meta line.
     Yes,
 }
+
 impl GrafMetaLine {
     /// Update the state for an HTML end tag with the given `name`.
     fn update_tag_end(&mut self, name: &str) {
@@ -3995,7 +4017,7 @@ impl TagNode {
     /// Returns true if this is a `<table>` direct child.
     #[inline]
     fn is_table_body(self) -> bool {
-        self.tag().is_some_and(Tag::is_table_body)
+        matches!(self, Self::ImplicitTbody) || self.tag().is_some_and(Tag::is_table_body)
     }
 
     /// Returns the corresponding HTML5 tag for this node, or `None` if this is
@@ -4779,7 +4801,9 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker) {
-        log::warn!("TODO: TableFoster strip marker");
+        if !self.stack.is_empty() {
+            log::warn!("TODO: TableFoster strip marker");
+        }
         self.next.strip_marker(marker);
     }
 
