@@ -818,6 +818,212 @@ impl<S: Sink> Sink for Debugger<S> {
     }
 }
 
+/// A “list of active formatting elements”.
+#[derive(Debug, Default)]
+struct DomTreeFormattingList {
+    /// The buffer for active formatting elements’ attributes. Since most
+    /// formatting elements have no attributes, this should be small and rarely
+    /// allocated.
+    attributes: String,
+    /// If true, currently buffering the attributes of a formatting element.
+    buffering: bool,
+    /// The active formatting elements.
+    elements: Vec<DomTreeFormattingItem>,
+    /// The index of the rightmost marker in [`Self::elements`].
+    marker_index: Option<u8>,
+}
+
+impl DomTreeFormattingList {
+    /// Marker in [`Self::attributes`] for the end of an attribute value.
+    const END_OF_ATTR: char = '\0';
+    /// Marker in [`Self::attributes`] for the end of an attribute list.
+    const END_OF_ATTRS: char = '\x01';
+    /// Marker in [`Self::attributes`] for the end of an attribute name.
+    const END_OF_NAME: char = '=';
+
+    /// Returns the index of the first item in [`Self::elements`] after the
+    /// rightmost marker.
+    #[inline]
+    fn after_marker(&self) -> usize {
+        self.marker_index.map_or(0, |index| usize::from(index) + 1)
+    }
+
+    /// Pushes `value` to the attributes buffer if a new formatting element is
+    /// being buffered.
+    #[inline]
+    fn buffer_char(&mut self, value: char) {
+        if self.buffering {
+            self.attributes.push(value);
+        }
+    }
+
+    /// Pushes `text` to the attributes buffer if a new formatting element is
+    /// being buffered.
+    #[inline]
+    fn buffer_text(&mut self, text: &str) {
+        if self.buffering {
+            self.attributes += text;
+        }
+    }
+
+    /// Truncates the “list of formatting elements” before the rightmost marker.
+    #[inline]
+    fn clear_to_marker(&mut self) {
+        if let Some(index) = self.marker_index.take() {
+            let index = usize::from(index);
+            self.attributes
+                .truncate(self.elements[index].attr_index.into());
+            let marker = self.elements.drain(index..).next().map(|node| node.node);
+            if let Some(TagNode::Marker(marker)) = marker {
+                self.marker_index = marker.map(|index| u8::from(index) - 1);
+            } else {
+                panic!("a marker should always point to the next marker");
+            }
+        } else {
+            self.attributes.clear();
+            self.elements.clear();
+        }
+    }
+
+    /// Returns true if `tag` exists in the “list of active formatting
+    /// elements”.
+    #[inline]
+    fn contains(&self, tag: Tag) -> bool {
+        self.elements.iter().any(|node| node.node == tag)
+    }
+
+    /// Finds the index of the rightmost item in [`Self::elements`] that matches
+    /// the given predicate, ending at the rightmost marker.
+    fn index(&self, mut predicate: impl FnMut(&TagNode) -> bool) -> Option<usize> {
+        let min = self.after_marker();
+        self.elements[min..]
+            .iter()
+            .rposition(|node| predicate(&node.node))
+            .map(|index| min + index)
+    }
+
+    /// Iterates over all formatting elements in the given `range`, returning
+    /// the tag and the list of attributes.
+    fn iter(
+        &self,
+        range: core::ops::RangeFrom<usize>,
+    ) -> impl Iterator<Item = (TagNode, impl Iterator<Item = (&str, &str)>)> {
+        self.elements[range].iter().map(|node| {
+            let mut attrs = &self.attributes[usize::from(node.attr_index)..];
+            let attrs_iter = core::iter::from_fn(move || {
+                if attrs.is_empty() || attrs.starts_with(Self::END_OF_ATTRS) {
+                    None
+                } else {
+                    let (name, value) = attrs.split_once(Self::END_OF_NAME).unwrap();
+                    let (value, rest) = value.split_once(Self::END_OF_ATTR).unwrap();
+                    attrs = rest;
+                    Some((name, value))
+                }
+            });
+            (node.node, attrs_iter)
+        })
+    }
+
+    /// Pushes a new tag to the “list of active formatting elements”, enabling
+    /// attribute buffering.
+    fn push(&mut self, tag: Tag) {
+        // “If there are already three … remove the earliest”
+        let min = self.after_marker();
+        let mut iter = self.elements[min..]
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| (node.node == tag).then_some(index));
+        let first = iter.next();
+        if iter.count() == 2 {
+            self.remove(min + first.unwrap());
+        }
+
+        self.elements.push(DomTreeFormattingItem {
+            attr_index: self.attributes.len().try_into().unwrap(),
+            node: tag.into(),
+        });
+        self.buffering = true;
+    }
+
+    /// Pushes a marker to the “list of active formatting elements”.
+    fn push_marker(&mut self) {
+        let node = TagNode::Marker(next_index(&mut self.marker_index, self.elements.len()));
+        self.elements.push(DomTreeFormattingItem {
+            attr_index: self.attributes.len().try_into().unwrap(),
+            node,
+        });
+    }
+
+    /// Removes a formatting item at the given `index`, correcting the marker
+    /// pointer chain if needed.
+    fn remove(&mut self, index: usize) {
+        let old = self.elements.remove(index);
+        if let Some(next) = &mut self.marker_index
+            && usize::from(*next) > index
+        {
+            *next -= 1;
+            let mut marker = usize::from(*next);
+            while let TagNode::Marker(Some(next)) = &mut self.elements[marker].node
+                && let old = u8::from(*next)
+                && usize::from(old) > index
+            {
+                let new = old - 1;
+                *next = NonZeroU8::new(new).unwrap();
+                marker = new.into();
+            }
+        }
+        if index == self.elements.len() {
+            self.attributes.truncate(old.attr_index.into());
+        }
+    }
+
+    /// Finds the position of the element with a tag matching the given
+    /// `predicate`.
+    #[inline]
+    fn rfind(&self, predicate: impl Fn(&TagNode) -> bool) -> Option<usize> {
+        self.elements.iter().rposition(|node| predicate(&node.node))
+    }
+
+    /// Finishes buffering an attribute.
+    #[inline]
+    fn tag_attribute_end(&mut self) {
+        if self.buffering {
+            self.attributes.push(Self::END_OF_ATTR);
+        }
+    }
+
+    /// Starts buffering an attribute.
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        if self.buffering {
+            self.attributes += name;
+            self.attributes.push(Self::END_OF_NAME);
+        }
+    }
+
+    /// Finishes buffering a formatting tag.
+    #[inline]
+    fn tag_start_end(&mut self) {
+        if self.buffering {
+            // A terminator is used so that if a formatting element is removed
+            // from the middle of the list of formatting elements, it does not
+            // require any work to fix up indexes or move the buffer around.
+            // This is what we in the biz call premature optimisation.
+            self.attributes.push(Self::END_OF_ATTRS);
+            self.buffering = false;
+        }
+    }
+}
+
+/// An active formatting element.
+#[derive(Clone, Copy, Debug)]
+struct DomTreeFormattingItem {
+    /// The index into [`DomTreeFormattingList::attributes`].
+    attr_index: u16,
+    /// The tag.
+    node: TagNode,
+}
+
 /// Balances the DOM tree using the HTML5 tree construction algorithm(ish).
 #[derive(Debug)]
 pub(super) struct DomTree<S: Sink> {
@@ -827,15 +1033,12 @@ pub(super) struct DomTree<S: Sink> {
     filtering: bool,
     /// The index of the rightmost `<form>` element in [`Self::stack`].
     form_index: Option<u8>,
-    /// The stack of active formatting elements.
-    // TODO: This is supposed to retain the attributes.
-    format: Vec<TagNode>,
+    /// The “list of active formatting elements”.
+    format: DomTreeFormattingList,
     /// If true, filter out the next newline token.
     ignore_next_newline: bool,
     /// If true, currently in an HTML start tag.
     in_attr: bool,
-    /// The index of the rightmost marker in [`Self::format`].
-    marker_index: Option<u8>,
     /// The current parser mode.
     mode: DomMode,
     /// The output.
@@ -886,7 +1089,6 @@ impl<S: Sink> DomTree<S> {
             format: <_>::default(),
             ignore_next_newline: <_>::default(),
             in_attr: <_>::default(),
-            marker_index: <_>::default(),
             mode: <_>::default(),
             next,
             p_index: <_>::default(),
@@ -902,7 +1104,7 @@ impl<S: Sink> DomTree<S> {
         // 2.
         if let Some(e) = self
             .stack
-            .pop_if(|node| *node == tag && !self.format.contains(&tag.into()))
+            .pop_if(|node| *node == tag && !self.format.contains(tag))
         {
             // The top of the stack was the tag, which is a formatting tag, but
             // somehow there is no corresponding formatting tag in the list of
@@ -914,7 +1116,7 @@ impl<S: Sink> DomTree<S> {
         // 3..4.2.
         for _ in 0..8 {
             // 4.3. `format_index` is the index of the corresponding start tag.
-            let Some(format_index) = self.format_index(|node| *node == tag) else {
+            let Some(format_index) = self.format.index(|node| *node == tag) else {
                 // No corresponding formatting tag after the last marker means
                 // this is either a rogue end tag which will be suppressed, or
                 // the corresponding start node is in a scope outside the marker
@@ -936,7 +1138,7 @@ impl<S: Sink> DomTree<S> {
                     // Actually, there was no corresponding start tag in *any*
                     // scope, so the formatting tag must have been implicitly
                     // closed and goes now to the soylent factory, rip
-                    self.remove_format(format_index);
+                    self.format.remove(format_index);
                 }
 
                 return;
@@ -955,7 +1157,7 @@ impl<S: Sink> DomTree<S> {
                 for e in self.stack.drain(stack_index..).rev() {
                     e.close(&mut self.next, &self.custom_tags, &mut self.p_index);
                 }
-                self.remove_format(format_index);
+                self.format.remove(format_index);
                 return;
             };
 
@@ -963,14 +1165,14 @@ impl<S: Sink> DomTree<S> {
             // In the spec language, there would always be a common element
             // because there would always be a root `<html>`. Since this is an
             // insertion point, it can just point to the stack element index.
-            let common = stack_index;
+            // let common = stack_index;
 
             // 4.10.
-            let mut bookmark = format_index;
+            // let mut bookmark = format_index;
 
             // 4.11.
             let mut node_index = max;
-            let mut last_node_index = max;
+            // let mut last_node_index = max;
 
             // 4.12..4.13.
             for inner in 1.. {
@@ -989,24 +1191,24 @@ impl<S: Sink> DomTree<S> {
                 }
 
                 // 4.13.4.
-                let mut format_index = self.format.iter().rposition(|fmt_node| *fmt_node == node);
+                let mut format_index = self.format.rfind(|fmt_node| *fmt_node == node);
 
                 if inner > 3
                     && let Some(index) = format_index.take()
                 {
-                    self.remove_format(index);
+                    self.format.remove(index);
                 }
 
-                if let Some(index) = format_index {
+                if let Some(_index) = format_index {
                     // 4.13.6. “[clone] `node` … [and] replace the entry … in
                     // [formatting and the stack with the clone] … and let
                     // `node` be the [clone]”
 
                     // 4.13.7. “move the bookmark … to be immediately after the
                     // new node”
-                    if last_node_index == max {
-                        bookmark = index + 1;
-                    }
+                    // if last_node_index == max {
+                    //     bookmark = index + 1;
+                    // }
                 } else {
                     // 4.13.5.
                     let e = self.stack.remove(node_index);
@@ -1026,7 +1228,7 @@ impl<S: Sink> DomTree<S> {
                 ));
 
                 // 4.13.9.
-                last_node_index = node_index;
+                // last_node_index = node_index;
             }
 
             // 4.14. “insert `last_node` … at `common`”. Because `last_node` is
@@ -1051,38 +1253,19 @@ impl<S: Sink> DomTree<S> {
         }
     }
 
-    /// Returns the index of the first item in [`Self::format`] after the
-    /// rightmost marker.
-    fn after_marker(&self) -> usize {
-        self.marker_index.map_or(0, |index| usize::from(index) + 1)
-    }
-
     /// A marker for fostered content in the algorithm. Actual fostering is done
     /// more clearly and efficiently by the `TableFoster` sink, which can look
     /// at entire chunks of of interstitial content and then move it without any
-    /// extra allocations and without pessimising the whole thing.
+    /// extra buffer allocations and without pessimising the whole thing.
     #[inline]
     const fn foster() {}
-
-    /// Truncates the list of formatting elements before the rightmost marker.
-    fn clear_formatting(&mut self) {
-        if let Some(index) = self.marker_index.take() {
-            let Some(TagNode::Marker(marker)) = self.format.drain(usize::from(index)..).next()
-            else {
-                panic!("a marker should always point to the next marker");
-            };
-            self.marker_index = marker.map(|index| u8::from(index) - 1);
-        } else {
-            self.format.clear();
-        }
-    }
 
     /// Closes the nearest table cell element.
     fn close_cell(&mut self) {
         // The spec pops all implied end tags first to track errors, but this
         // implementation does not need to track errors
         self.pop_inclusive(|node| matches!(node.tag(), Some(Tag::Td | Tag::Th)));
-        self.clear_formatting();
+        self.format.clear_to_marker();
         self.mode = DomMode::Row;
     }
 
@@ -1096,7 +1279,7 @@ impl<S: Sink> DomTree<S> {
 
     /// Performs special fixups for nested `<a>` tags.
     fn fixup_anchor(&mut self, tag: Tag) {
-        if self.format_index(|node| *node == tag).is_some() {
+        if self.format.index(|node| *node == tag).is_some() {
             self.adopt(tag);
             // “remove that element from the list of active formatting elements
             // and the stack of open elements if the adoption agency algorithm
@@ -1107,21 +1290,11 @@ impl<S: Sink> DomTree<S> {
             // allowed to nest in the case of fostering, until they are
             // serialised, then they are not. Since this is a serialiser it
             // should be the case that these things never nest.
-            if let Some(index) = self.format.iter().rposition(|node| *node == tag) {
-                self.remove_format(index);
+            if let Some(index) = self.format.rfind(|node| *node == tag) {
+                self.format.remove(index);
             }
             self.pop_in_scope(|node| *node == tag, |_| false);
         }
-    }
-
-    /// Finds the index of the rightmost item in [`Self::format`] that matches
-    /// the given predicate, ending at the rightmost marker.
-    fn format_index(&self, predicate: impl FnMut(&TagNode) -> bool) -> Option<usize> {
-        let min = self.after_marker();
-        self.format[min..]
-            .iter()
-            .rposition(predicate)
-            .map(|index| min + index)
     }
 
     /// Pop all elements on the stack with implied end tags except for `except`.
@@ -1205,28 +1378,6 @@ impl<S: Sink> DomTree<S> {
         }
     }
 
-    /// Pushes a tag to the “list of active formatting elements”.
-    fn push_format(&mut self, tag: Tag) {
-        // “If there are already three … remove the earliest”
-        let min = self.after_marker();
-        let mut iter = self.format[min..]
-            .iter()
-            .enumerate()
-            .filter_map(|(index, node)| (*node == tag).then_some(index));
-        let first = iter.next();
-        if iter.count() == 2 {
-            self.format.remove(min + first.unwrap());
-        }
-
-        self.format.push(tag.into());
-    }
-
-    /// Pushes a marker to the “list of active formatting elements”.
-    fn push_marker(&mut self) {
-        let node = TagNode::Marker(next_index(&mut self.marker_index, self.format.len()));
-        self.format.push(node);
-    }
-
     /// Pushes an indexed `<p>` tag to the stack. This is an optimisation.
     fn push_p(&mut self) {
         let node = TagNode::P(next_index(&mut self.p_index, self.stack.len()));
@@ -1238,36 +1389,18 @@ impl<S: Sink> DomTree<S> {
     fn reformat(&mut self) {
         // TODO: This is O(n^2), but could be made O(n) by having a tag count
         // table for the stack.
-        let Some(first_missing) = self.format_index(|node| !self.stack.contains(node)) else {
+        let Some(first_missing) = self.format.index(|node| !self.stack.contains(node)) else {
             return;
         };
 
-        for tag in &self.format[first_missing..] {
-            let name = tag.name(&self.custom_tags).expect("named tag");
-            // TODO: This is actually supposed to retain all of the attributes
-            // too :-(
-            self.next.tag_start_full(name.as_str());
-            self.stack.push(*tag);
-        }
-    }
-
-    /// Removes a formatting item at the given `index`, correcting the marker
-    /// pointer chain if needed.
-    fn remove_format(&mut self, index: usize) {
-        self.format.remove(index);
-        if let Some(next) = &mut self.marker_index
-            && usize::from(*next) > index
-        {
-            *next -= 1;
-            let mut marker = usize::from(*next);
-            while let TagNode::Marker(Some(next)) = &mut self.format[marker]
-                && let old = u8::from(*next)
-                && usize::from(old) > index
-            {
-                let new = old - 1;
-                *next = NonZeroU8::new(new).unwrap();
-                marker = new.into();
+        for (tag, attrs) in self.format.iter(first_missing..) {
+            let tag_name = tag.name(&self.custom_tags).expect("named tag");
+            self.next.tag_start(tag_name.as_str());
+            for (name, value) in attrs {
+                self.next.tag_attribute_full(name, value);
             }
+            self.next.tag_start_end(tag_name.as_str());
+            self.stack.push(tag);
         }
     }
 
@@ -1344,7 +1477,7 @@ impl<S: Sink> DomTree<S> {
                 // The spec pops all implied end tags first to track errors,
                 // but this implementation does not need to track errors
                 if self.pop_in_scope(|node| *node == tag, Tag::is_general_scope) {
-                    self.clear_formatting();
+                    self.format.clear_to_marker();
                 }
             }
             Tag::P => {
@@ -1366,7 +1499,7 @@ impl<S: Sink> DomTree<S> {
             if self.pop_in_scope(|node| *node == Tag::Caption, Tag::is_table_scope) {
                 // The spec pops all implied end tags first to track errors,
                 // but this implementation does not need to track errors
-                self.clear_formatting();
+                self.format.clear_to_marker();
                 self.mode = DomMode::Table;
                 if tag == Tag::Table {
                     self.tag_end_table(tag);
@@ -1383,7 +1516,7 @@ impl<S: Sink> DomTree<S> {
             if self.pop_in_scope(|node| *node == tag, Tag::is_table_scope) {
                 // The spec pops all implied end tags first to track errors,
                 // but this implementation does not need to track errors
-                self.clear_formatting();
+                self.format.clear_to_marker();
                 self.mode = DomMode::Row;
             }
         } else if tag.is_table_fosterable()
@@ -1536,7 +1669,7 @@ impl<S: Sink> DomTree<S> {
             }
             Tag::Object => {
                 self.reformat();
-                self.push_marker();
+                self.format.push_marker();
                 self.stack.push(tag.into());
                 EMIT
             }
@@ -1594,7 +1727,7 @@ impl<S: Sink> DomTree<S> {
                     self.adopt(tag);
                 }
                 self.reformat();
-                self.push_format(tag);
+                self.format.push(tag);
                 self.stack.push(tag.into());
                 EMIT
             }
@@ -1619,7 +1752,7 @@ impl<S: Sink> DomTree<S> {
     fn tag_start_caption(&mut self, tag: Tag) -> bool {
         if tag.is_table_item() {
             if self.pop_in_scope(|node| *node == Tag::Caption, Tag::is_table_scope) {
-                self.clear_formatting();
+                self.format.clear_to_marker();
                 self.mode = DomMode::Table;
                 self.tag_start_table(tag)
             } else {
@@ -1679,7 +1812,7 @@ impl<S: Sink> DomTree<S> {
         if matches!(tag, Tag::Td | Tag::Th) {
             self.pop_exclusive(|node| *node == Tag::Tr);
             self.mode = DomMode::Cell;
-            self.push_marker();
+            self.format.push_marker();
             self.stack.push(tag.into());
             EMIT
         } else if tag.is_table_item() {
@@ -1700,7 +1833,7 @@ impl<S: Sink> DomTree<S> {
             Tag::Caption => {
                 self.pop_exclusive(|node| *node == Tag::Table);
                 self.mode = DomMode::Caption;
-                self.push_marker();
+                self.format.push_marker();
                 self.stack.push(tag.into());
                 EMIT
             }
@@ -1821,6 +1954,7 @@ impl<S: Sink> Sink for DomTree<S> {
         }
 
         if self.in_attr {
+            self.format.buffer_char(value);
             self.next.entity(value, raw);
         } else {
             if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
@@ -1872,6 +2006,7 @@ impl<S: Sink> Sink for DomTree<S> {
     #[inline]
     fn tag_attribute_end(&mut self, name: &str) {
         if !self.filtering {
+            self.format.tag_attribute_end();
             self.next.tag_attribute_end(name);
         }
     }
@@ -1879,6 +2014,7 @@ impl<S: Sink> Sink for DomTree<S> {
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
         if !self.filtering {
+            self.format.tag_attribute_start(name);
             self.next.tag_attribute_start(name);
         }
     }
@@ -1924,6 +2060,7 @@ impl<S: Sink> Sink for DomTree<S> {
             self.filtering = false;
         } else {
             self.in_attr = false;
+            self.format.tag_start_end();
             self.next.tag_start_end(name);
         }
     }
@@ -1935,6 +2072,7 @@ impl<S: Sink> Sink for DomTree<S> {
         }
 
         if self.in_attr {
+            self.format.buffer_text(text);
             self.next.text(text);
         } else {
             if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {

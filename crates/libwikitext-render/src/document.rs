@@ -153,6 +153,12 @@ impl<'a> Document<'a> {
         if let Some(table) = self.table_emitter.last_mut() {
             if let Some(last) = table.last_tag.replace(name) {
                 self.next.tag_end(last);
+                // Because the original parser split table cells across lines,
+                // the text styles also must reset every line
+                self.text_style_emitter
+                    .last_mut()
+                    .unwrap()
+                    .finish(&mut self.next);
                 self.next.new_line();
             }
             if name != "caption" {
