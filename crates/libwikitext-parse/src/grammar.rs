@@ -8,7 +8,7 @@
 
 use super::{
     Argument, CommonLangFlags, HeadingLevel, InclusionMode, LangFlags, LangVariant, MARKER_PREFIX,
-    MARKER_SUFFIX, MagicLink, Parser, PreprocessorOptions, Span, Spanned, TextStyle,
+    MARKER_SUFFIX, MagicLink, Parser, PreprocessorOptions, Span, Spanned, TextStyle, TextStyleHint,
     TextStylePosition, Token, VOID_TAGS,
 };
 use core::iter;
@@ -2017,7 +2017,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule text() -> Spanned<Token>
     = spanned(<!nl() [_] { Token::Text }>)
 
-    /// A bold or italic text style.
+    /// A bold or italic text style with hints for bold-italic disambiguation.
     ///
     /// ```wikitext
     /// ''italic'' '''bold''' '''''bold and italic'''''
@@ -2028,26 +2028,50 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// text to balance quotes per line.
     rule text_style() -> Spanned<Token>
     = spanned(<
-        q:$("'''''" / "'''" / "''") !"'"
-        t:#{|input, pos| {
-            let at = pos - q.len();
-            RuleResult::Matched(pos, Token::TextStyle(match q.len() {
-                2 => TextStyle::Italic,
-                3 => TextStyle::Bold({
-                    if at > 0 && input.as_bytes()[at - 1] == b' ' {
-                        TextStylePosition::Space
-                    } else if at > 1 && input.as_bytes()[at - 2] == b' ' {
-                        TextStylePosition::Orphan
-                    } else {
-                        TextStylePosition::Normal
-                    }
-                }),
-                5 => TextStyle::BoldItalic,
-                _ => unreachable!(),
-            }))
-        }}
-        { t }
+        t:(text_style_bold_italic() / text_style_bold() / text_style_italic())
+        { Token::TextStyle(t) }
     >)
+
+    /// A bold-italic text style with a disambiguation hint.
+    rule text_style_bold_italic() -> TextStyle
+    = "'''''" !"'"
+      hint:&text_style_bold_italic_hint()?
+    { TextStyle::BoldItalic(hint) }
+
+    /// A bold-italic text style disambiguation hint.
+    rule text_style_bold_italic_hint() -> TextStyleHint
+    = (!(nl() / text_style_bold() / text_style_italic()) [_])+
+      next:(t:("'''" { 3 } / "''" { 2 }) !"'" { t } / nl() { 0 })
+    {
+        match next {
+            0 => TextStyleHint::Last,
+            2 => TextStyleHint::BoldFirst,
+            3 => TextStyleHint::ItalicFirst,
+            _ => unreachable!()
+        }
+    }
+
+    /// A bold text style.
+    rule text_style_bold() -> TextStyle
+    = "'''" !"'"
+    t:#{|input, pos| {
+        RuleResult::Matched(pos, TextStyle::Bold({
+            let at = pos - 3;
+            if at > 0 && input.as_bytes()[at - 1] == b' ' {
+                TextStylePosition::Space
+            } else if at > 1 && input.as_bytes()[at - 2] == b' ' {
+                TextStylePosition::Orphan
+            } else {
+                TextStylePosition::Normal
+            }
+        }))
+    }}
+    { t }
+
+    /// An italic text style.
+    rule text_style_italic() -> TextStyle
+    = "''" !"'"
+    { TextStyle::Italic }
 
     ///////////
     // Atoms //
@@ -2553,7 +2577,7 @@ fn reduce_dd(content: Vec<Spanned<Token>>) -> Vec<Spanned<Token>> {
         } else if let Token::TextStyle(style) = &token.node {
             match style {
                 TextStyle::Bold(_) => bold = !bold,
-                TextStyle::BoldItalic => {
+                TextStyle::BoldItalic(_) => {
                     bold = !bold;
                     italic = !italic;
                 }
@@ -2671,12 +2695,12 @@ impl peg::Cacheable for PpTerm {
 #[derive(Default)]
 struct TextStyleBalancer<'a> {
     /// The number of bold tokens.
-    bold: u32,
+    bold: u16,
     /// The best bold token to decay if there is a token mismatch after
     /// counting.
     best: Option<(&'a mut Vec<Spanned<Token>>, usize)>,
     /// The number of italic tokens.
-    italic: u32,
+    italic: u16,
     /// The priority of the `best` token.
     priority: u8,
 }
@@ -2698,7 +2722,7 @@ impl TextStyleBalancer<'_> {
                         best_index = Some((self.priority, index));
                     }
                 }
-                Token::TextStyle(TextStyle::BoldItalic) => {
+                Token::TextStyle(TextStyle::BoldItalic(_)) => {
                     self.bold += 1;
                     self.italic += 1;
                 }

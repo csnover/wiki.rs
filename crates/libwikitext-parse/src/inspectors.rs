@@ -1,7 +1,8 @@
 //! Helpers for improved debug formatting of token trees.
 
 use super::{
-    AnnoAttribute, Argument, InclusionMode, LangFlags, LangVariant, MagicLink, TextStyle, Token,
+    AnnoAttribute, Argument, InclusionMode, LangFlags, LangVariant, MagicLink, TextStyle,
+    TextStyleHint, Token,
     codemap::{FileMap, Spanned},
 };
 use core::fmt::{self, Write as _};
@@ -426,7 +427,12 @@ impl fmt::Debug for TokenInspector<'_> {
                 let name = match style {
                     TextStyle::Italic => "(italic)",
                     TextStyle::Bold(..) => "(bold)",
-                    TextStyle::BoldItalic => "(bolditalic)",
+                    TextStyle::BoldItalic(hint) => match hint {
+                        None => "(bolditalic)",
+                        Some(TextStyleHint::BoldFirst) => "(bold then italic)",
+                        Some(TextStyleHint::ItalicFirst) => "(italic then bold)",
+                        Some(TextStyleHint::Last) => "(bolditalic last)",
+                    },
                 };
                 f.write_str(&span_name(name, self.0, self.1))
             }

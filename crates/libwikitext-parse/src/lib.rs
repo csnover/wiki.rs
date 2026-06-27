@@ -681,9 +681,20 @@ pub enum TextStyle {
     /// Bold and italic text. These are held as a combined style because it is
     /// ambiguous in the tokeniser at the time the input is consumed whether the
     /// balance is `'''text'''''text''` or `''text'''''text'''`.
-    BoldItalic,
+    BoldItalic(Option<TextStyleHint>),
     /// Italic text.
     Italic,
+}
+
+/// A directionality hint for a [`TextStyle::BoldItalic`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TextStyleHint {
+    /// Bold on the left.
+    BoldFirst,
+    /// Italic on the left.
+    ItalicFirst,
+    /// No later styles on the line.
+    Last,
 }
 
 /// The positional attributes of a bold text style. Used for decomposition when

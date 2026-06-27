@@ -12,7 +12,7 @@ use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode, decode_html, escape_id, normalize_section_name, title::normalize_fragment,
 };
-use libwikitext_parse::{HeadingLevel, TextStyle, VOID_TAGS};
+use libwikitext_parse::{HeadingLevel, TextStyle, TextStyleHint, VOID_TAGS};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashSet, sync::LazyLock};
 use uncased::{Uncased, UncasedStr};
@@ -3706,11 +3706,19 @@ impl TextStyleEmitter {
                     Self::I
                 }
             },
-            TextStyle::BoldItalic => match self {
+            TextStyle::BoldItalic(hint) => match self {
                 Self::None => {
-                    next.tag_start_full("i");
-                    next.tag_start_full("b");
-                    Self::IB
+                    if hint == Some(TextStyleHint::Last) {
+                        Self::None
+                    } else if hint == Some(TextStyleHint::BoldFirst) {
+                        next.tag_start_full("b");
+                        next.tag_start_full("i");
+                        Self::BI
+                    } else {
+                        next.tag_start_full("i");
+                        next.tag_start_full("b");
+                        Self::IB
+                    }
                 }
                 Self::B => {
                     next.tag_end("b");
