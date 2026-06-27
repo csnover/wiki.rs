@@ -70,6 +70,15 @@ impl PluginExtensionTag for DivTagPf {
         } else {
             <_>::default()
         };
+
+        // This is `Parser::stripOuterParagraph` which is used nowhere except
+        // here, interwikilink parser function, and indicator extension tag
+        let content = content
+            .strip_prefix("<p>")
+            .map(|c| c.strip_suffix('\n').unwrap_or(c))
+            .and_then(|c| c.strip_suffix("</p>"))
+            .map_or(content.as_ref(), |c| c.strip_suffix('\n').unwrap_or(c));
+
         write!(out, "<{tag}>{content}</{tag}>")?;
         Ok(OutputMode::Html)
     }

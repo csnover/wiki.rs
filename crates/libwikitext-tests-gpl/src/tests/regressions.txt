@@ -102,8 +102,12 @@ parsoid=wt2html
 
 </table>
 </figcaption></figure>
-!! html/wiki.rs # This output matches the PHP parser, mostly
-<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element"></a><figcaption> <span>foo</span><table>  <tbody><tr><td></td></tr></tbody></table> </figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody and whitespace
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a><figcaption>
+<span>foo</span><table>
+
+<tr><td></td></tr></table>
+</figcaption></figure>
 !! end
 
 !! test
@@ -223,12 +227,12 @@ parsoid=wt2html
 3. <a rel="mw:WikiLink" href="./Foo?action=edit&amp;redlink=1" title="Foo" class="new" typeof="mw:LocalizedAttrs" data-mw-i18n='{"title":{"lang":"x-page","key":"red-link-title","params":["Foo"]}}'><span typeof="mw:Extension/spantag" about="#mwt3" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"a"}}'>a</span></a>
 4. <a rel="mw:WikiLink" href="./Foo?action=edit&amp;redlink=1" title="Foo" class="new" typeof="mw:LocalizedAttrs" data-mw-i18n='{"title":{"lang":"x-page","key":"red-link-title","params":["Foo"]}}'><span typeof="mw:Extension/spantag" about="#mwt4" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"a"}}'>a</span></a>
 5. <a rel="mw:WikiLink" href="./Foo?action=edit&amp;redlink=1" title="Foo" class="new" typeof="mw:LocalizedAttrs" data-mw-i18n='{"title":{"lang":"x-page","key":"red-link-title","params":["Foo"]}}'><span typeof="mw:Extension/spantag" about="#mwt5" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"a"}}'>a</span></a></p>
-!! html/wiki.rs
-<p>1. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
-2. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
-3. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
-4. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
-5. <a href="/wiki/Foo?action=edit&amp;redlink=1" title="Foo" class="new"><span>a</span></a>
+!! html/wiki.rs # This output matches the PHP parser
+<p>1. <a href="/wiki/Foo?action=edit&amp;redlink=1" class="new" title="Foo (page does not exist)"><span>a</span></a>
+2. <a href="/wiki/Foo?action=edit&amp;redlink=1" class="new" title="Foo (page does not exist)"><span>a</span></a>
+3. <a href="/wiki/Foo?action=edit&amp;redlink=1" class="new" title="Foo (page does not exist)"><span>a</span></a>
+4. <a href="/wiki/Foo?action=edit&amp;redlink=1" class="new" title="Foo (page does not exist)"><span>a</span></a>
+5. <a href="/wiki/Foo?action=edit&amp;redlink=1" class="new" title="Foo (page does not exist)"><span>a</span></a>
 </p>
 !! end
 
