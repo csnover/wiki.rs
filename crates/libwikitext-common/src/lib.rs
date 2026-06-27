@@ -264,7 +264,7 @@ pub fn escape(text: &str) -> Cow<'_, str> {
 
 /// Encodes section heading text into a format suitable for use as a URL anchor.
 ///
-/// This is equivalent to `escapeIdForAttribute`.
+/// This is equivalent to `escapeIdForAttribute` (`escapeIdInternal`).
 #[must_use]
 pub fn escape_id(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
     let id = &s[..s.floor_char_boundary(1024)];
@@ -285,6 +285,21 @@ pub fn escape_id(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
             Cow::from(percent_encoding::utf8_percent_encode(id, &ALPHABET))
                 .map(|id| strtr(id, &[(" ", "_"), ("%", ".")]))
         }
+    }
+}
+
+/// Encodes section heading text into a format suitable for use as a URL anchor.
+///
+/// This is equivalent to `escapeIdForLink` (`escapeIdInternalUrl`).
+#[must_use]
+pub fn escape_id_url(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
+    let id = escape_id(s, mode);
+    if mode == AnchorEncodeMode::Html5 {
+        static RE_DOUBLE_ENCODE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new("%([0-9a-fA-F]{2})").unwrap());
+        id.map(|id| RE_DOUBLE_ENCODE.replace_all(id, "%25$1"))
+    } else {
+        id
     }
 }
 
@@ -559,7 +574,7 @@ pub fn make_url<P: core::fmt::Display>(
     if let Some(fragment) = fragment
         && !fragment.is_empty()
     {
-        write!(url, "#{}", escape_id(fragment, AnchorEncodeMode::Html5)).unwrap();
+        write!(url, "#{}", escape_id_url(fragment, AnchorEncodeMode::Html5)).unwrap();
     }
     url
 }

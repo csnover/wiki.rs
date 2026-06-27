@@ -32,7 +32,7 @@ type RendererChain<'a> = AttributeFilter<
     OutlineEmitter<
         'a,
         GrafEmitter<
-            DomTree<TemplateTagger<TableFoster<PWrapper<EmptyTagger<PrettyText<Accumulator>>>>>>,
+            DomTree<TemplateTagger<TableFoster<PrettyText<PWrapper<EmptyTagger<Accumulator>>>>>>,
         >,
     >,
 >;
@@ -67,7 +67,7 @@ impl<'a> Document<'a> {
             next: AttributeFilter::new(OutlineEmitter::new(
                 outline,
                 GrafEmitter::new(DomTree::new(TemplateTagger::new(TableFoster::new(
-                    PWrapper::new(EmptyTagger::new(PrettyText::new(Accumulator::new()))),
+                    PrettyText::new(PWrapper::new(EmptyTagger::new(Accumulator::new()))),
                 )))),
             )),
             list_emitter: <_>::default(),
@@ -753,7 +753,7 @@ impl Surrogate<Error> for Document<'_> {
     }
 
     #[inline]
-    fn adopt_table_heading(
+    fn adopt_table_header(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,

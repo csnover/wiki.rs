@@ -389,7 +389,7 @@ impl fmt::Debug for TokenInspector<'_> {
             Token::TableEnd => f
                 .debug_struct(&span_name("TableEnd", self.0, self.1))
                 .finish(),
-            Token::TableHeading { attributes } => f
+            Token::TableHeader { attributes } => f
                 .debug_struct(&span_name("TableHeading", self.0, self.1))
                 .field(
                     "attributes",
@@ -428,10 +428,9 @@ impl fmt::Debug for TokenInspector<'_> {
                     TextStyle::Italic => "(italic)",
                     TextStyle::Bold(..) => "(bold)",
                     TextStyle::BoldItalic(hint) => match hint {
-                        None => "(bolditalic)",
-                        Some(TextStyleHint::BoldFirst) => "(bold then italic)",
-                        Some(TextStyleHint::ItalicFirst) => "(italic then bold)",
-                        Some(TextStyleHint::Last) => "(bolditalic last)",
+                        TextStyleHint::BoldFirst => "(bold then italic)",
+                        TextStyleHint::ItalicFirst => "(italic then bold)",
+                        TextStyleHint::Last => "(bolditalic last)",
                     },
                 };
                 f.write_str(&span_name(name, self.0, self.1))

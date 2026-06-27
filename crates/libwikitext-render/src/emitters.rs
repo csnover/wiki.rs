@@ -12,7 +12,7 @@ use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode, decode_html, escape_id, normalize_section_name, title::normalize_fragment,
 };
-use libwikitext_parse::{HeadingLevel, TextStyle, TextStyleHint, VOID_TAGS};
+use libwikitext_parse::{HeadingLevel, MARKER_PREFIX, TextStyle, TextStyleHint, VOID_TAGS};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashSet, sync::LazyLock};
 use uncased::{Uncased, UncasedStr};
@@ -107,7 +107,7 @@ pub(super) trait Sink {
     fn new_line(&mut self);
 
     /// Writes strip marker content.
-    fn strip_marker(&mut self, marker: &StripMarker);
+    fn strip_marker(&mut self, marker: &StripMarker<'_>);
 
     /// End a tag attribute with the given `name`.
     ///
@@ -181,8 +181,7 @@ pub(super) trait Sink {
 pub(super) struct Accumulator {
     /// The target string buffer.
     inner: MarkableString,
-    /// If true, the accumulator has received a `tag_attribute_start` and is
-    /// waiting for a `tag_attribute_end`.
+    /// If true, currently in an HTML start tag.
     in_attr: bool,
 }
 
@@ -191,12 +190,6 @@ impl Accumulator {
     #[inline]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Extracts a string slice containing the entire accumulator.
-    #[inline]
-    fn as_str(&self) -> &str {
-        &self.inner.inner
     }
 
     /// Returns the length of the accumulator string, in bytes.
@@ -268,7 +261,7 @@ impl Sink for Accumulator {
     }
 
     #[inline]
-    fn strip_marker(&mut self, _: &StripMarker) {
+    fn strip_marker(&mut self, _: &StripMarker<'_>) {
         panic!("strip markers should be decomposed before now");
     }
 
@@ -507,7 +500,7 @@ impl<S: Sink + Markable> Sink for AttributeFilter<S> {
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         if self.state == FilterState::Idle {
             self.next.strip_marker(marker);
         }
@@ -730,6 +723,271 @@ static COMMON_ATTRS: phf::Set<&str> = phf::phf_set! {
     "typeof",
 };
 
+/// Buffers a sink sequence for replay.
+#[derive(Debug, Default)]
+struct Buffer {
+    /// If true, the buffer received anything which is non-ASCII whitespace.
+    contains_non_ascii_whitespace: bool,
+    /// The backing store for the buffer.
+    inner: Vec<u8>,
+    /// The first character received by the buffer.
+    starts_with: Option<char>,
+}
+
+impl Buffer {
+    /// Hey, look! It’s your old buddy, the C null-string terminator!
+    const TERMINATOR: u8 = b'\0';
+
+    /// Clears the buffer.
+    fn clear(&mut self) {
+        self.contains_non_ascii_whitespace = false;
+        self.inner.clear();
+        self.starts_with = None;
+    }
+
+    /// Flushes the buffer to `next`.
+    fn flush<S: Sink + ?Sized>(&mut self, next: &mut S, mut skip_first_char: bool) {
+        fn slice_term(data: &[u8]) -> (&str, &[u8]) {
+            let end = data.iter().position(|b| *b == Buffer::TERMINATOR).expect("terminator");
+            // SAFETY: This data came from a string.
+            let value = unsafe { str::from_utf8_unchecked(&data[..end]) };
+            (value, &data[end + 1..])
+        }
+
+        let mut cursor = self.inner.as_slice();
+        let mut tag_name = "";
+        let mut attr_name = "";
+        while let Some((insn, mut data)) = cursor.split_first() {
+            match BufferInsn::try_from(*insn).expect("valid buffer") {
+                BufferInsn::CommentEnd => {
+                    next.comment_end();
+                }
+                BufferInsn::CommentStart => {
+                    next.comment_start();
+                }
+                BufferInsn::Entity => {
+                    let value;
+                    (value, data) = slice_term(data);
+                    let mut iter = value.chars();
+                    let value = iter.next().expect("value");
+                    let raw = iter.as_str();
+                    next.entity(value, raw);
+                }
+                BufferInsn::NewLine => {
+                    next.new_line();
+                },
+                BufferInsn::StripMarkerGeneral => {
+                    let marker;
+                    (marker, data) = slice_term(data);
+                    next.strip_marker(&StripMarker::General(marker.into()));
+                }
+                BufferInsn::StripMarkerNoWiki => {
+                    let marker;
+                    (marker, data) = slice_term(data);
+                    next.strip_marker(&StripMarker::NoWiki(marker.into()));
+                }
+                BufferInsn::StripMarkerWikiRsSourceEnd => {
+                    let marker;
+                    (marker, data) = slice_term(data);
+                    next.strip_marker(&StripMarker::WikiRsSourceEnd(marker.into()));
+                }
+                BufferInsn::StripMarkerWikiRsSourceStart => {
+                    let marker;
+                    (marker, data) = slice_term(data);
+                    next.strip_marker(&StripMarker::WikiRsSourceStart(marker.into()));
+                }
+                BufferInsn::TagAttributeEnd => {
+                    next.tag_attribute_end(attr_name);
+                }
+                BufferInsn::TagAttributeStart => {
+                    (attr_name, data) = slice_term(data);
+                    next.tag_attribute_start(attr_name);
+                }
+                BufferInsn::TagEnd => {
+                    (tag_name, data) = slice_term(data);
+                    next.tag_end(tag_name);
+                }
+                BufferInsn::TagStart => {
+                    (tag_name, data) = slice_term(data);
+                    next.tag_start(tag_name);
+                }
+                BufferInsn::TagStartEnd => {
+                    next.tag_start_end(tag_name);
+                }
+                BufferInsn::Text => {
+                    let text;
+                    (text, data) = slice_term(data);
+                    if skip_first_char {
+                        skip_first_char = false;
+                        next.text(&text[1..]);
+                    } else {
+                        next.text(text);
+                    }
+                }
+            }
+            cursor = data;
+        }
+
+        self.clear();
+    }
+
+    /// Updates some metadata used by `GrafEmitter`, which was originally a hack
+    /// and so seems to always require a hack *somewhere* to function.
+    fn update_metadata(&mut self, text: &str) {
+        if !self.contains_non_ascii_whitespace {
+            self.contains_non_ascii_whitespace = text.bytes().any(|b| !b.is_ascii_whitespace());
+            if self.starts_with.is_none() {
+                self.starts_with = text.chars().next();
+            }
+        }
+    }
+}
+
+impl Sink for Buffer {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.update_metadata("<");
+        self.inner.push(BufferInsn::CommentEnd as u8);
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.update_metadata("<");
+        self.inner.push(BufferInsn::CommentStart as u8);
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.update_metadata("&");
+        self.inner.push(BufferInsn::Entity as u8);
+        let mut buffer = [0; 4];
+        self.inner.extend(value.encode_utf8(&mut buffer[..]).as_bytes());
+        self.inner.extend(raw.as_bytes());
+        self.inner.push(Self::TERMINATOR);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        panic!("should not call this");
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.update_metadata("\n");
+        self.inner.push(BufferInsn::NewLine as u8);
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        let insn = match marker {
+            StripMarker::General(s) => {
+                // In the original parser, general markers are unstripped for
+                // GrafEmitter
+                self.update_metadata(s);
+                BufferInsn::StripMarkerGeneral
+            },
+            StripMarker::NoWiki(_) => {
+                // In the original parser, nowiki markers are still markers for
+                // GrafEmitter
+                self.update_metadata(MARKER_PREFIX);
+                BufferInsn::StripMarkerNoWiki
+            },
+            StripMarker::WikiRsSourceEnd(_) => BufferInsn::StripMarkerWikiRsSourceEnd,
+            StripMarker::WikiRsSourceStart(_) => BufferInsn::StripMarkerWikiRsSourceStart,
+        };
+        self.inner.push(insn as u8);
+        self.inner.extend(marker.as_bytes());
+        self.inner.push(Self::TERMINATOR);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, _: &str) {
+        self.inner.push(BufferInsn::TagAttributeEnd as u8);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.inner.push(BufferInsn::TagAttributeStart as u8);
+        self.inner.extend(name.as_bytes());
+        self.inner.push(Self::TERMINATOR);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.update_metadata("<");
+        self.inner.push(BufferInsn::TagEnd as u8);
+        self.inner.extend(name.as_bytes());
+        self.inner.push(Self::TERMINATOR);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.update_metadata("<");
+        self.inner.push(BufferInsn::TagStart as u8);
+        self.inner.extend(name.as_bytes());
+        self.inner.push(Self::TERMINATOR);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, _: &str) {
+        self.inner.push(BufferInsn::TagStartEnd as u8);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.update_metadata(text);
+        self.inner.push(BufferInsn::Text as u8);
+        self.inner.extend(text.as_bytes());
+        self.inner.push(Self::TERMINATOR);
+    }
+}
+
+/// It generates an enum with a `TryFrom` implementation from a primitive. Wow.
+macro_rules! that_enum_thing_that_should_be_in_std {
+    ($(#[$meta:meta])* enum $id:ident { $($var:ident),* $(,)? }) => {
+        $(#[$meta])*
+        enum $id {
+            $($var,)*
+        }
+
+        impl TryFrom<u8> for $id {
+            type Error = ();
+
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                $(if value == Self::$var as u8 {
+                    Ok(Self::$var)
+                } else)* {
+                    Err(())
+                }
+            }
+        }
+    }
+}
+
+that_enum_thing_that_should_be_in_std! {
+    /// A buffered sink instruction.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum BufferInsn {
+        CommentEnd,
+        CommentStart,
+        Entity,
+        NewLine,
+        StripMarkerGeneral,
+        StripMarkerNoWiki,
+        StripMarkerWikiRsSourceEnd,
+        StripMarkerWikiRsSourceStart,
+        TagAttributeEnd,
+        TagAttributeStart,
+        TagEnd,
+        TagStart,
+        TagStartEnd,
+        Text,
+    }
+}
+
 /// An emitter debugger.
 #[allow(
     clippy::allow_attributes,
@@ -782,7 +1040,7 @@ impl<S: Sink> Sink for Debugger<S> {
         self.next.new_line();
     }
 
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         eprint!("{marker:?}");
         self.next.strip_marker(marker);
     }
@@ -1097,7 +1355,8 @@ impl<S: Sink> DomTree<S> {
     }
 
     /// Runs the “adoption agency algorithm”, either for a formatting end `tag`,
-    /// or for a start `<nobr>`.
+    /// or for a start `<nobr>`. Numbers are the step numbers from the HTML5 LS
+    /// dated 25 June 2026.
     fn adopt(&mut self, tag: Tag) {
         // TODO: This ends up being O(n) but could be O(1) if `self.format` had
         // a counter table.
@@ -1992,7 +2251,7 @@ impl<S: Sink> Sink for DomTree<S> {
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         if self.filtering {
             return;
         }
@@ -2157,7 +2416,7 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         if !marker.is_empty() {
             self.flush();
         }
@@ -2270,7 +2529,7 @@ fn flush_ws<S: Sink + ?Sized>(next: &mut S, mut ws: &str) {
 )]
 pub(super) struct GrafEmitter<S: Sink + Markable> {
     /// The next line buffer.
-    buffer: PrettyText<Accumulator>,
+    buffer: Buffer,
     /// If true, the line contains an end tag which triggers a graf state
     /// transition.
     close_match: bool,
@@ -2307,7 +2566,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
     /// Creates a new `GrafEmitter` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
-            buffer: PrettyText::new(<_>::default()),
+            buffer: <_>::default(),
             close_match: <_>::default(),
             current: <_>::default(),
             in_block: <_>::default(),
@@ -2339,7 +2598,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
 
     /// Finishes processing of a line of source text.
     fn end_line(&mut self, last_line: bool) {
-        let mut start_at = 0;
+        let mut skip_first_char = false;
         if self.open_match || self.close_match {
             self.pending = GrafPendingState::None;
             if !self.in_pre || self.pre_open_match {
@@ -2357,7 +2616,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
                     self.next.tag_start_full("pre");
                     self.current = GrafState::Pre;
                 }
-                start_at = 1;
+                skip_first_char = true;
             } else if self.meta_line == GrafMetaLine::Yes {
                 if self.pending != GrafPendingState::None {
                     self.close(false);
@@ -2382,12 +2641,13 @@ impl<S: Sink + Markable> GrafEmitter<S> {
             }
         }
 
-        let buffer = core::mem::take(self.buffer.next_mut());
         if self.pending == GrafPendingState::None {
-            tokenise(&mut self.next, &buffer.as_str()[start_at..]);
+            self.buffer.flush(&mut self.next, skip_first_char);
             if !last_line || self.current != GrafState::None {
                 self.next.new_line();
             }
+        } else {
+            self.buffer.clear();
         }
 
         self.pre_open_match = <_>::default();
@@ -2401,11 +2661,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
     /// ASCII whitespace.
     #[inline]
     fn is_empty_line(&self) -> bool {
-        self.buffer
-            .next()
-            .as_str()
-            .bytes()
-            .all(|b| b.is_ascii_whitespace())
+        !self.buffer.contains_non_ascii_whitespace
     }
 
     /// Returns true if the currently buffered line should be treated like a
@@ -2413,14 +2669,8 @@ impl<S: Sink + Markable> GrafEmitter<S> {
     #[inline]
     fn is_pre_line(&self) -> bool {
         !self.in_blockquote
-            && self
-                .buffer
-                .next()
-                .as_str()
-                .strip_prefix(' ')
-                .is_some_and(|text| {
-                    self.current == GrafState::Pre || text.bytes().any(|b| !b.is_ascii_whitespace())
-                })
+            && self.buffer.starts_with == Some(' ')
+            && (self.current == GrafState::Pre || self.buffer.contains_non_ascii_whitespace)
     }
 
     /// Causes `GrafEmitter` to treat new line tokens as text. This is required
@@ -2473,6 +2723,7 @@ impl<S: Sink + Markable> Sink for GrafEmitter<S> {
         }
     }
 
+    #[inline]
     fn finish(mut self) -> String {
         self.end_line(true);
         self.close(true);
@@ -2492,7 +2743,7 @@ impl<S: Sink + Markable> Sink for GrafEmitter<S> {
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         if self.in_list {
             self.next.strip_marker(marker);
         } else {
@@ -3022,6 +3273,13 @@ impl MarkableString {
     /// Marker for the end of the free list.
     const NO_FREE: u16 = u16::MAX;
 
+    /// Updates the positions of marks above `start`
+    fn adjust_marks(&mut self, start: u32, delta: i32) {
+        for pos in self.iter_marks_mut(start) {
+            *pos = pos.checked_add_signed(delta).unwrap_or(Self::INVALID);
+        }
+    }
+
     /// Releases the given mark to the free pool.
     // TODO: It is bad that this has to be done manually, marks will leak!
     #[inline]
@@ -3052,6 +3310,17 @@ impl MarkableString {
             *slot = pos;
             mark
         }
+    }
+
+    /// Inserts `string` at byte position `idx`.
+    #[inline]
+    pub fn insert_str(&mut self, idx: usize, string: &str) {
+        if string.is_empty() {
+            return;
+        }
+        self.inner.insert_str(idx, string);
+        let delta = i32::try_from(string.len()).unwrap();
+        self.adjust_marks(u32::try_from(idx).unwrap(), delta);
     }
 
     /// Returns the underlying `String`, consuming this object.
@@ -3335,10 +3604,11 @@ impl<S: Sink + Markable> Sink for OutlineEmitter<'_, S> {
         }
     }
 
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         match marker {
             // Even if this is not processing any heading, tokenising is needed
             // by subsequent sinks, so just do it here always
+            // TODO: OR MAYBE DON’T SINCE THE TOKENISER SCREWS WITH STUFF
             StripMarker::General(html) => {
                 self.in_strip_marker = true;
                 tokenise(self, html);
@@ -3554,7 +3824,7 @@ impl Sink for OutlineEntryBody {
     }
 
     #[inline]
-    fn strip_marker(&mut self, _: &StripMarker) {
+    fn strip_marker(&mut self, _: &StripMarker<'_>) {
         panic!("strip markers should not be sent here");
     }
 
@@ -3707,19 +3977,19 @@ impl TextStyleEmitter {
                 }
             },
             TextStyle::BoldItalic(hint) => match self {
-                Self::None => {
-                    if hint == Some(TextStyleHint::Last) {
-                        Self::None
-                    } else if hint == Some(TextStyleHint::BoldFirst) {
+                Self::None => match hint {
+                    TextStyleHint::BoldFirst => {
                         next.tag_start_full("b");
                         next.tag_start_full("i");
                         Self::BI
-                    } else {
+                    }
+                    TextStyleHint::ItalicFirst => {
                         next.tag_start_full("i");
                         next.tag_start_full("b");
                         Self::IB
                     }
-                }
+                    TextStyleHint::Last => Self::None,
+                },
                 Self::B => {
                     next.tag_end("b");
                     next.tag_start_full("i");
@@ -3793,71 +4063,81 @@ impl TextStyleEmitter {
 pub(super) struct PWrapper<S: Sink> {
     /// The current DOM depth.
     depth: u8,
-    /// If true, inside a p-wrapper.
-    in_p: bool,
+    /// If true, currently in an HTML start tag.
+    in_attr: bool,
     /// The output.
     next: S,
     /// P-wrapper root depths.
-    roots: Vec<u8>,
-    /// The whitespace buffer for a potentially empty element.
-    ws_buffer: Option<String>,
+    roots: Vec<PWrapperRoot>,
+}
+
+/// A p-wrapper root.
+#[derive(Debug, Default)]
+struct PWrapperRoot {
+    /// The candidate start position for a p-wrapper.
+    candidate: Option<Mark>,
+    /// The depth of the wrapper root.
+    depth: u8,
 }
 
 chainable!(PWrapper);
 
-impl<S: Sink> PWrapper<S> {
+impl<S: Sink + Markable> PWrapper<S> {
     /// Creates a new `PWrapper` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
             depth: <_>::default(),
-            in_p: <_>::default(),
+            in_attr: <_>::default(),
             next,
-            roots: vec![0],
-            ws_buffer: <_>::default(),
+            roots: vec![<_>::default()],
         }
     }
 
     /// Enters a graf wrapper if it is appropriate at the current DOM position.
     fn enter_p(&mut self) {
-        if self.should_enter_p() {
-            self.in_p = true;
-            self.next.tag_start_full("p");
-            self.flush();
+        if self.in_attr {
+            return;
+        }
+
+        let root = self.roots.last_mut().unwrap();
+        if root.depth == self.depth && root.candidate.is_none() {
+            root.candidate = Some(self.next.mark());
         }
     }
 
     /// Exits a graf wrapper.
-    fn exit_p(&mut self) {
-        self.flush();
-        if self.in_p {
-            self.next.tag_end("p");
-            self.in_p = false;
+    fn exit_p(&mut self) -> bool {
+        let root = self.roots.last_mut().unwrap();
+        if root.depth == self.depth {
+            if let Some(candidate) = root.candidate.take() {
+                self.next.with_marks([&candidate], |[candidate], out| {
+                    if let Some(candidate) = candidate
+                        && out[candidate..].bytes().any(|b| !b.is_ascii_whitespace())
+                    {
+                        out.insert_str(candidate, "<p>");
+                        out.push_str("</p>");
+                    }
+                });
+                self.next.free_mark(candidate);
+            }
+            true
+        } else {
+            if let Some(candidate) = root.candidate.take() {
+                self.next.free_mark(candidate);
+            }
+            false
         }
-    }
-
-    /// Writes the buffered tag to the next sink.
-    fn flush(&mut self) {
-        if let Some(ws) = self.ws_buffer.take() {
-            flush_ws(&mut self.next, &ws);
-        }
-    }
-
-    /// Returns true if the emitter is in a state for inserting a graf wrapper.
-    fn should_enter_p(&self) -> bool {
-        !self.in_p && Some(&self.depth) == self.roots.last()
     }
 }
 
-impl<S: Sink> Sink for PWrapper<S> {
+impl<S: Sink + Markable> Sink for PWrapper<S> {
     #[inline]
     fn comment_end(&mut self) {
-        self.flush();
         self.next.comment_end();
     }
 
     #[inline]
     fn comment_start(&mut self) {
-        self.flush();
         self.next.comment_start();
     }
 
@@ -3869,23 +4149,21 @@ impl<S: Sink> Sink for PWrapper<S> {
 
     #[inline]
     fn finish(mut self) -> String {
+        debug_assert_eq!(self.depth, 0);
         self.exit_p();
         self.next.finish()
     }
 
     #[inline]
     fn new_line(&mut self) {
-        if self.should_enter_p() {
-            self.ws_buffer.get_or_insert_default().push('\n');
-        } else {
-            self.next.new_line();
-        }
+        self.enter_p();
+        self.next.new_line();
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         // TODO: Strip markers should be unstripped before here.
-        log::warn!("Late strip marker");
+        log::warn!("Late strip marker: {marker:?}");
         self.next.strip_marker(marker);
     }
 
@@ -3900,11 +4178,8 @@ impl<S: Sink> Sink for PWrapper<S> {
     }
 
     fn tag_end(&mut self, name: &str) {
-        if name == "blockquote" {
-            self.exit_p();
+        if !Tag::known(name).is_some_and(Tag::is_inline) && self.exit_p() {
             self.roots.pop();
-        } else if name == "p" {
-            self.in_p = false;
         }
         self.next.tag_end(name);
         self.depth -= 1;
@@ -3917,27 +4192,28 @@ impl<S: Sink> Sink for PWrapper<S> {
             self.exit_p();
         }
         self.next.tag_start(name);
-        self.depth += 1;
-        if name == "blockquote" {
-            self.roots.push(self.depth);
-        } else if name == "p" {
-            self.in_p = true;
+        if !VOID_TAGS.contains(name) {
+            self.depth += 1;
         }
+        if name == "blockquote" {
+            self.roots.push(PWrapperRoot {
+                depth: self.depth,
+                ..<_>::default()
+            });
+        }
+        self.in_attr = true;
     }
 
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
+        self.in_attr = false;
         self.next.tag_start_end(name);
     }
 
     #[inline]
     fn text(&mut self, text: &str) {
-        if self.should_enter_p() && text.bytes().all(|c| c.is_ascii_whitespace()) {
-            *self.ws_buffer.get_or_insert_default() += text;
-        } else {
-            self.enter_p();
-            self.next.text(text);
-        }
+        self.enter_p();
+        self.next.text(text);
     }
 }
 
@@ -4588,7 +4864,7 @@ impl<S: Sink> Sink for PrettyText<S> {
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         if let StripMarker::NoWiki(text) = marker {
             self.text(&decode_html(text));
         } else {
@@ -4616,8 +4892,9 @@ impl<S: Sink> Sink for PrettyText<S> {
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        // TODO: PrettyText is used in GrafEmitter buffer without the DOM
-        // balancing, this breaks things.
+        // TODO: PrettyText is used in GrafEmitter buffer because all of the
+        // strip markers have to be gone before serialising to any HTML, and
+        // without the DOM balancing, these counters are wrong.
         self.in_code = self
             .in_code
             .saturating_sub(u8::from(Self::is_code_tag(name)));
@@ -4688,7 +4965,6 @@ impl<S: Sink> Sink for PrettyText<S> {
                 }
                 // TODO: Track balance to differentiate between e.g.
                 // `The ‘90s’` vs `In the ’90s` and other pathological cases
-                // TODO: Escape plain '"' inside of an attribute
                 '"' | '\'' if self.in_code == 0 => {
                     let next = chars.peek().map(|(_, c)| *c);
                     let break_before = Self::is_break(self.prev_chars[1], next);
@@ -4808,7 +5084,7 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         if !self.stack.is_empty() {
             log::warn!("TODO: TableFoster strip marker");
         }
@@ -4949,7 +5225,7 @@ impl<S: Sink> Sink for TemplateTagger<S> {
     }
 
     #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker) {
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         match marker {
             StripMarker::WikiRsSourceEnd(name) => self.pop(name),
             StripMarker::WikiRsSourceStart(name) => self.push(name),

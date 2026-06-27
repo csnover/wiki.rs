@@ -1,6 +1,6 @@
 //! Types and functions for parsing and formatting MediaWiki title strings.
 
-use super::{config::Configuration, decode_html, url_encode};
+use super::{AnchorEncodeMode, config::Configuration, decode_html, escape_id_url, url_encode};
 use core::fmt::Write as _;
 use libmisc::{CowExt as _, to_lower};
 use libphp_rs::strtr;
@@ -488,7 +488,7 @@ impl Title {
     /// ```
     #[inline]
     #[must_use]
-    pub fn base_uri(&self) -> Cow<'_, str> {
+    pub fn base_url(&self) -> Cow<'_, str> {
         Self::url_encode(self.base_text())
     }
 
@@ -505,6 +505,19 @@ impl Title {
             let start_at = usize::from(d) + 1;
             &self.text[start_at..]
         })
+    }
+
+    /// The page fragment.
+    ///
+    /// ```text
+    /// Interwiki:Namespace:Title/Sub/Page#Fragment
+    ///                                    ^^^^^^^^
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn fragment_url(&self, mode: AnchorEncodeMode) -> Option<Cow<'_, str>> {
+        self.fragment()
+            .map(|fragment| escape_id_url(fragment, mode))
     }
 
     /// The full text of the title.

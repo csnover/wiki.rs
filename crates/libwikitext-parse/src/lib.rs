@@ -14,8 +14,8 @@ pub use inspectors::{inspect, inspect_one};
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
-    AnchorEncodeMode, DEPRECATED_LANGUAGE_CODES, config::Configuration, escape_id, lang_to_bcp47,
-    normalize_section_name, regex_switch,
+    AnchorEncodeMode, DEPRECATED_LANGUAGE_CODES, config::Configuration, escape_id_url,
+    lang_to_bcp47, normalize_section_name, regex_switch,
 };
 pub use peg::str::LineCol;
 use regex::{Captures, Regex};
@@ -113,10 +113,10 @@ impl<'config> Parser<'config> {
         let root = self.parse(source)?;
         let text = borrow_fast(source, &root).map_or_else(
             || {
-                // TODO: Technically this is supposed to not care about whether a
-                // link is a category or interwiki because the original code was
-                // so shitty it just tried to scoop out the insides of a link using
-                // yet more regular expressions.
+                // TODO: Technically this is supposed to not care about whether
+                // a link is a category or interwiki because the original code
+                // was so shitty it just tried to scoop out the insides of a
+                // link using yet more regular expressions.
                 let mut extractor =
                     helpers::TextContent::new(self.config, false, source, String::new());
                 let _ = visit::Visitor::visit_tokens(&mut extractor, &root);
@@ -125,7 +125,9 @@ impl<'config> Parser<'config> {
             Cow::Borrowed,
         );
 
-        Ok(text.map(normalize_section_name).map(|s| escape_id(s, mode)))
+        Ok(text
+            .map(normalize_section_name)
+            .map(|s| escape_id_url(s, mode)))
     }
 
     /// Returns the parser configuration.
@@ -572,9 +574,9 @@ pub enum Token {
     },
     /// A table end.
     TableEnd,
-    /// A table heading cell.
-    TableHeading {
-        /// The heading cell attributes.
+    /// A table header cell.
+    TableHeader {
+        /// The header cell attributes.
         attributes: Vec<Spanned<Token>>,
     },
     /// A table row.
@@ -681,7 +683,7 @@ pub enum TextStyle {
     /// Bold and italic text. These are held as a combined style because it is
     /// ambiguous in the tokeniser at the time the input is consumed whether the
     /// balance is `'''text'''''text''` or `''text'''''text'''`.
-    BoldItalic(Option<TextStyleHint>),
+    BoldItalic(TextStyleHint),
     /// Italic text.
     Italic,
 }

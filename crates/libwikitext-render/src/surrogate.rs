@@ -367,9 +367,9 @@ pub(crate) trait Surrogate<E> {
         Ok(())
     }
 
-    /// Visits a [`Token::TableHeading`].
+    /// Visits a [`Token::TableHeader`].
     #[inline]
-    fn adopt_table_heading(
+    fn adopt_table_header(
         &mut self,
         _state: &mut State<'_, '_, '_>,
         _sp: &StackFrame<'_>,
@@ -745,8 +745,8 @@ where
             surrogate.adopt_table_data(state, sp, token.span, attributes)
         }
         Token::TableEnd => surrogate.adopt_table_end(state, sp, token.span),
-        Token::TableHeading { attributes } => {
-            surrogate.adopt_table_heading(state, sp, token.span, attributes)
+        Token::TableHeader { attributes } => {
+            surrogate.adopt_table_header(state, sp, token.span, attributes)
         }
         Token::TableRow { attributes } => {
             surrogate.adopt_table_row(state, sp, token.span, attributes)

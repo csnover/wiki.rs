@@ -246,9 +246,9 @@ pub trait Visitor<'tt, E> {
         Ok(())
     }
 
-    /// Visits a [`Token::TableHeading`].
+    /// Visits a [`Token::TableHeader`].
     #[inline]
-    fn visit_table_heading(
+    fn visit_table_header(
         &mut self,
         _span: Span,
         _attributes: &'tt [Spanned<Token>],
@@ -584,7 +584,7 @@ where
         Token::TableCaption { attributes } => visitor.visit_table_caption(token.span, attributes),
         Token::TableData { attributes } => visitor.visit_table_data(token.span, attributes),
         Token::TableEnd => visitor.visit_table_end(token.span),
-        Token::TableHeading { attributes } => visitor.visit_table_heading(token.span, attributes),
+        Token::TableHeader { attributes } => visitor.visit_table_header(token.span, attributes),
         Token::TableRow { attributes } => visitor.visit_table_row(token.span, attributes),
         Token::TableStart { attributes, indent } => {
             visitor.visit_table_start(token.span, attributes, *indent)

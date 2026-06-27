@@ -87,7 +87,7 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             | Token::TableData {
                 attributes: content,
             }
-            | Token::TableHeading {
+            | Token::TableHeader {
                 attributes: content,
             } => {
                 self.size += vec_size(content);

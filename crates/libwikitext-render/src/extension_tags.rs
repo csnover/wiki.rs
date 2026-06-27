@@ -147,7 +147,7 @@ use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode,
     db::DatabaseProvider,
-    decode_html, escape, escape_id, escape_no_wiki,
+    decode_html, escape, escape_id, escape_id_url, escape_no_wiki,
     title::{Namespace, Title},
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, strip};
@@ -777,7 +777,7 @@ impl References {
     fn make_anchors(id: &str) -> (String, String) {
         (
             escape_id(&format!("cite_ref-{id}"), AnchorEncodeMode::Html5).into_owned(),
-            escape_id(&format!("ref_{id}"), AnchorEncodeMode::Html5).into_owned(),
+            escape_id_url(&format!("ref_{id}"), AnchorEncodeMode::Html5).into_owned(),
         )
     }
 
@@ -1244,7 +1244,7 @@ pub(super) fn render_extension_tag(
     arguments: &InArgs<'_, '_>,
     body: Option<&str>,
     in_document: bool,
-) -> Result<Option<Either<StripMarker, String>>> {
+) -> Result<Option<Either<StripMarker<'static>, String>>> {
     let (arguments, from_parser_fn) = match arguments {
         InArgs::ParserFn(kvs) => (Cow::Borrowed(*kvs), true),
         InArgs::Wikitext(attrs) => {
@@ -1301,8 +1301,8 @@ pub(super) fn render_extension_tag(
 
     Ok(match mode {
         OutputMode::Empty => None,
-        OutputMode::Html => Some(Either::Left(StripMarker::General(out))),
-        OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out))),
+        OutputMode::Html => Some(Either::Left(StripMarker::General(out.into()))),
+        OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out.into()))),
         OutputMode::Raw => Some(Either::Right(out)),
     })
 }

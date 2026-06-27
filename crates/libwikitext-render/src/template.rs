@@ -303,7 +303,7 @@ pub(super) fn render_template<'tt>(
         state.strip_markers.push(
             out.out(),
             "wiki-rs",
-            StripMarker::WikiRsSourceStart(key.clone()),
+            StripMarker::WikiRsSourceStart(key.clone().into()),
         );
         if needs_newline {
             writeln!(out.out())?;
@@ -311,7 +311,7 @@ pub(super) fn render_template<'tt>(
         write!(out.out(), "{partial}")?;
         state
             .strip_markers
-            .push(out.out(), "wiki-rs", StripMarker::WikiRsSourceEnd(key));
+            .push(out.out(), "wiki-rs", StripMarker::WikiRsSourceEnd(key.into()));
     } else {
         if needs_newline {
             writeln!(out.out())?;
@@ -831,7 +831,7 @@ impl Surrogate<Error> for DbPrefetch {
         self.adopt_tokens(state, sp, attributes)
     }
 
-    fn adopt_table_heading(
+    fn adopt_table_header(
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,

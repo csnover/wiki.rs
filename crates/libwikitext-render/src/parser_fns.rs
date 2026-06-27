@@ -430,7 +430,7 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        page_name_impl(out, state, arguments, Title::base_text, Title::base_uri)
+        page_name_impl(out, state, arguments, Title::base_text, Title::base_url)
     }
 
     /// `{{#contentmodel: format [| title] }}`

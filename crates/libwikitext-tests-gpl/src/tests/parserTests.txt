@@ -1244,9 +1244,6 @@ T17491: <ins>/<del> in blockquote (2)
 !! html
 <blockquote><p>Foo <del>bar</del> <ins>baz</ins> quux
 </p></blockquote>
-!! html/wiki.rs
-<blockquote><p>Foo <del>bar</del> <ins>baz</ins> quux</p>
-</blockquote>
 !! end
 
 # Regression test to prevent problematic simplifications of parser tests
@@ -4901,10 +4898,11 @@ Don't bail on table cell attribute parsing if wikilink is found in template arg
 <table>
 <tbody><tr data-parsoid='{"autoInsertedStart":true}'><td>Test <span typeof="mw:Extension/spantag mw:Transclusion" data-mw='{"name":"spantag","attrs":{},"body":{"extsrc":"One two \"[[three]]\" four"},"parts":[{"template":{"target":{"wt":"#tag:spantag","function":"tag"},"params":{"1":{"wt":"One two \"[[three]]\" four"}},"i":0}}]}'>One two "<a rel="mw:WikiLink" href="./Three" title="Three">three</a>" four</span></td></tr>
 </tbody></table>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody and with pretty text
 <table>
-<tr><td>Test <span>One two "<a href="/wiki/Three" title="Three">three</a>" four</span></td></tr>
-</table>
+<tr>
+<td>Test <span>One two “<a href="/wiki/Three" title="Three">three</a>” four</span>
+</td></tr></table>
 !! end
 
 !! test
@@ -5184,6 +5182,16 @@ msgnw keyword
 &#42; interpreted
 &#32;but rather passed unmodified
 &#123;&#123;test&#125;&#125;
+&#60;gallery&#62;
+File:Foobar.jpg
+&#60;/gallery&#62;
+&#60;!-- comment --&#62;
+</p>
+!! html/wiki.rs # This output matches the PHP parser, but with some entities decoded
+<p>''None'' of '''this''' should be 
+* interpreted
+ but rather passed unmodified
+{{test}}
 &#60;gallery&#62;
 File:Foobar.jpg
 &#60;/gallery&#62;
@@ -6783,14 +6791,17 @@ Templates: Wiki Tables: 8. Fosterable meta-tags should get fostered
 
 <td>foo</td></tr>
 </tbody></table>
-!! html/wiki.rs
-
+!! html/wiki.rs # This output matches the PHP parser
 <table>
+
 <tr>
 <td>foo
 </td></tr></table>
 
+<p><br />
+</p>
 <table>
+
 <tr>
 <td>foo
 </td></tr></table>
@@ -11315,6 +11326,8 @@ parsoid=html2wt
 
 !! test
 Special:Search page linking.
+!! options
+wiki-rs-skip=[[special pages are not supported]]
 !! wikitext
 {{Special:search}}
 !! html/php
@@ -11945,6 +11958,11 @@ __NOEDITSECTION__
 <h3 id="+:.3A%3A_&amp;&amp;]]_x"><span id=".2B:.3A.253A_.26.26.5D.5D_x" typeof="mw:FallbackId"></span>_ +:.3A%3A _ &amp;<span typeof="mw:Entity" data-parsoid='{"src":"&amp;amp;","srcContent":"&amp;"}'>&amp;</span>]] x</h3>
 <p><span about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"anchorencode: _ +:.3A%3A _ &amp;&amp;amp;]] x","function":"anchorencode"},"params":{},"i":0}}]}'>+:.3A%253A_</span><span typeof="mw:Entity" about="#mwt1">&amp;</span><span typeof="mw:Entity" about="#mwt1">&amp;</span><span typeof="mw:Entity" about="#mwt1">]</span><span typeof="mw:Entity" about="#mwt1">]</span><span about="#mwt1">_x</span></p>
 <meta property="mw:PageProp/noeditsection"/>
+!! html/wiki.rs # This output matches the PHP parser, minus the wrapper, XHTML, non-essential entity encoding
+<h3 id="+:.3A%3A_&amp;&amp;]]_x"><span id=".2B:.3A.253A_.26.26.5D.5D_x"></span>_ +:.3A%3A _ &amp;&amp;]] x</h3>
+<p>+:.3A%253A_&amp;&amp;]]_x
+</p><p><br>
+</p>
 !! end
 
 !! test
@@ -13002,7 +13020,7 @@ T5158: Test for French spaces in attributes
 <p><br style="clear : both ;" />
 </p>
 !! html/wiki.rs
-<p><br style="--mw-output-clear:both ;">
+<p><br style="--mw-output-clear:both;">
 </p>
 !! end
 
@@ -14151,9 +14169,6 @@ Non-empty attributes in th-cells
 <th>Foo</th>
 <th style="color: red">Bar
 </th></tr></tbody></table>
-!! html/wiki.rs
-<table><tr><th>Foo</th><th style="--mw-output-color:red;">Bar
-</th></tr></table>
 !! end
 
 !!test
@@ -17896,10 +17911,10 @@ z
 <p><i about="#mwt3" typeof="mw:ExpandedAttrs" data-parsoid='{"stx":"html","a":{"&lt;sealtag>y&lt;/sealtag>":null},"sa":{"&lt;sealtag>y&lt;/sealtag>":""},"autoInsertedEnd":true}' data-mw='{"attribs":[[{"txt":"","html":"&lt;span about=\"#mwt2\" typeof=\"mw:Extension/sealtag\" data-parsoid=&apos;{\"src\":\"&amp;lt;sealtag>y&amp;lt;/sealtag>\"}&apos; data-mw=&apos;{\"name\":\"sealtag\",\"attrs\":{},\"body\":{\"extsrc\":\"y\"}}&apos;>&lt;/span>"},{"html":""}]]}'></i></p>
 
 <p><i about="#mwt3" typeof="mw:ExpandedAttrs" data-parsoid='{"stx":"html","a":{"&lt;sealtag>y&lt;/sealtag>":null},"sa":{"&lt;sealtag>y&lt;/sealtag>":""},"autoInsertedStart":true,"autoInsertedEnd":true}' data-mw='{"attribs":[[{"txt":"","html":""},{"html":""}]]}'>z</i></p>
-!! html/wiki.rs
-<p><i></i></p>
-
-<p><i>z</i></p>
+!! html/wiki.rs # This output matches hypothetical PHP parser output (sealtag is only in Parsoid)
+<p><i>
+</i></p><p><i>z
+</i></p>
 !! end
 
 !! test
@@ -17914,10 +17929,10 @@ z
 <p><i title="" about="#mwt3" typeof="mw:ExpandedAttrs" data-parsoid='{"stx":"html","a":{"title":""},"sa":{"title":"&lt;sealtag>y&lt;/sealtag>"},"autoInsertedEnd":true}' data-mw='{"attribs":[[{"txt":"title"},{"html":"&lt;span about=\"#mwt2\" typeof=\"mw:Extension/sealtag\" data-parsoid=&apos;{\"src\":\"&amp;lt;sealtag>y&amp;lt;/sealtag>\"}&apos; data-mw=&apos;{\"name\":\"sealtag\",\"attrs\":{},\"body\":{\"extsrc\":\"y\"}}&apos;>&lt;/span>"}]]}'>a</i></p>
 
 <p><i title="" about="#mwt3" typeof="mw:ExpandedAttrs" data-parsoid='{"stx":"html","a":{"title":""},"sa":{"title":"&lt;sealtag>y&lt;/sealtag>"},"autoInsertedStart":true,"autoInsertedEnd":true}' data-mw='{"attribs":[[{"txt":"title"},{"html":""}]]}'>z</i></p>
-!! html/wiki.rs
-<p><i title="">a</i></p>
-
-<p><i title="">z</i></p>
+!! html/wiki.rs # This output matches hypothetical PHP parser output (sealtag is only in Parsoid)
+<p><i title="&lt;span&gt;&lt;/span&gt;">a
+</i></p><p><i title="&lt;span&gt;&lt;/span&gt;">z
+</i></p>
 !! end
 
 !! test
@@ -18056,6 +18071,9 @@ parsoid=wt2html
 <spantag name=Round of 16>test</spantag>
 !! html/parsoid
 <p><span typeof="mw:Extension/spantag" data-mw='{"name":"spantag","attrs":{"name":"Round","of":"","16":""},"body":{"extsrc":"test"}}'>test</span></p>
+!! html/wiki.rs # This output matches the PHP parser
+<p><span>test</span>
+</p>
 !! end
 
 !! test

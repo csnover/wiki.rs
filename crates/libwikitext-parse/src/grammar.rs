@@ -615,7 +615,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///                                        ^^^^^^^^^^^^^^^^^^^^^
     /// ```
     rule table_head() -> Vec<Spanned<Token>>
-    = table_cells(<"!">, <"||" / "!!">, |attributes| Token::TableHeading { attributes })
+    = table_cells(<"!">, <"||" / "!!">, |attributes| Token::TableHeader { attributes })
 
     /// A table data tag.
     ///
@@ -671,11 +671,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         // The ambiguous parse of a table cell with a "|" inside versus a
         // terminator for table attributes is disambiguated by whether the
         // expression contains "[[" or "-{", which is tested here by terminating
-        // at those sequences which will cause "|" to fail to match. (Authors have
-        // to put any "|" literal in a `<nowiki>` because the original parser is
-        // so context-unaware the only way to successfully get that character in
-        // this position is by having it in a strip marker.)
-        a:(t:html_attributes(<"[[" / "-{" / "|" / nl() {}>) "|" !"|" { t })?
+        // at those sequences which will cause "|" to fail to match. (Authors
+        // have to put any "|" literal in a `<nowiki>` because the original
+        // parser is so context-unaware the only way to successfully get that
+        // character in this position is by having it in a strip marker.)
+        a:(t:html_attributes(<"[[" / "-{" / "|" / term() / nl() {}>) "|" !"|" { t })?
         space_s()*
         { a }
       >)
@@ -2035,13 +2035,13 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// A bold-italic text style with a disambiguation hint.
     rule text_style_bold_italic() -> TextStyle
     = "'''''" !"'"
-      hint:&text_style_bold_italic_hint()?
+      hint:&text_style_bold_italic_hint()
     { TextStyle::BoldItalic(hint) }
 
     /// A bold-italic text style disambiguation hint.
     rule text_style_bold_italic_hint() -> TextStyleHint
-    = (!(nl() / text_style_bold() / text_style_italic()) [_])+
-      next:(t:("'''" { 3 } / "''" { 2 }) !"'" { t } / nl() { 0 })
+    = (!(nl() / text_style_bold() / text_style_italic()) [_])*
+      next:(t:("'''" { 3 } / "''" { 2 }) !"'" { t } / eolf() { 0 })
     {
         match next {
             0 => TextStyleHint::Last,

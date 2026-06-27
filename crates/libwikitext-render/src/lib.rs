@@ -563,7 +563,7 @@ pub struct Paths {
 
 /// A list of stripped extension tags.
 #[derive(Default)]
-pub(crate) struct StripMarkers(Vec<StripMarker>);
+pub(crate) struct StripMarkers(Vec<StripMarker<'static>>);
 
 impl StripMarkers {
     /// Invokes callback `f` for each strip marker in the given text.
@@ -573,19 +573,19 @@ impl StripMarkers {
     #[inline]
     pub fn for_each_marker<'a, F>(&self, body: &'a str, mut f: F) -> Cow<'a, str>
     where
-        for<'m> F: FnMut(&'m StripMarker) -> Option<Cow<'m, str>>,
+        for<'m> F: FnMut(&'m StripMarker<'_>) -> Option<Cow<'m, str>>,
     {
         strip::for_each_marker_key(body, |key| f(&self.0[strip::key_index(key)]))
     }
 
     /// Gets the strip marker with the given key.
-    fn get(&self, key: &str) -> Option<&StripMarker> {
+    fn get(&self, key: &str) -> Option<&StripMarker<'_>> {
         self.0.get(strip::key_index(key))
     }
 
     /// Pushes a new strip marker to the list, emitting the marker to the given
     /// `out` string.
-    fn push<W: fmt::Write + ?Sized>(&mut self, out: &mut W, tag_name: &str, marker: StripMarker) {
+    fn push<W: fmt::Write + ?Sized>(&mut self, out: &mut W, tag_name: &str, marker: StripMarker<'static>) {
         let _ = write!(
             out,
             "{MARKER_PREFIX}{tag_name}-{:x}{MARKER_SUFFIX}",
@@ -618,25 +618,25 @@ impl StripMarkers {
 
 /// A strip marker.
 #[derive(Debug)]
-pub(crate) enum StripMarker {
+pub(crate) enum StripMarker<'a> {
     /// A strip marker containing general HTML.
-    General(String),
+    General(Cow<'a, str>),
     /// A strip marker containing only phrasing content from a `<nowiki>` tag.
-    NoWiki(String),
+    NoWiki(Cow<'a, str>),
     /// A strip marker containing a wiki.rs-specific template source end marker.
-    WikiRsSourceEnd(String),
+    WikiRsSourceEnd(Cow<'a, str>),
     /// A strip marker containing a wiki.rs-specific template source start
     /// marker.
-    WikiRsSourceStart(String),
+    WikiRsSourceStart(Cow<'a, str>),
 }
 
-impl fmt::Display for StripMarker {
+impl fmt::Display for StripMarker<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self)
     }
 }
 
-impl core::ops::Deref for StripMarker {
+impl core::ops::Deref for StripMarker<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {

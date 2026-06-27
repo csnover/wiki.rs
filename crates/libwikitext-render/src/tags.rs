@@ -9,7 +9,7 @@ use libwikitext_common::{
     AnchorEncodeMode,
     config::{Configuration, ImageHotlinking},
     db::DatabaseProvider as _,
-    decode_html, escape_id, make_url,
+    decode_html, make_url,
     title::{Namespace, Title},
     url::Url,
     url_encode_sanitized,
@@ -129,12 +129,9 @@ pub(super) fn render_internal_link(
 ) -> Result<(), Error> {
     if state.globals.title == title {
         out.next.tag_start("a");
-        if let Some(fragment) = title.fragment() {
+        if let Some(fragment) = title.fragment_url(AnchorEncodeMode::Html5) {
             out.next.tag_attribute_full("class", "mw-selflink-fragment");
-            out.next.tag_attribute_full(
-                "href",
-                &format!("#{}", escape_id(fragment, AnchorEncodeMode::Html5)),
-            );
+            out.next.tag_attribute_full("href", &format!("#{fragment}"));
         } else {
             out.next.tag_attribute_full("class", "mw-selflink selflink");
         }
@@ -386,20 +383,19 @@ impl LinkKind<'_> {
                             None,
                             title.fragment(),
                         )
-                    } else if let Some(fragment) = title.fragment()
+                    } else if let Some(fragment) = title.fragment_url(AnchorEncodeMode::Html5)
                         && !fragment.is_empty()
                     {
-                        format!("{url}#{}", escape_id(fragment, AnchorEncodeMode::Html5))
+                        format!("{url}#{fragment}")
                     } else {
                         url
                     }
                 } else if title.prefixed_text().is_empty() {
                     format!(
                         "#{}",
-                        escape_id(
-                            title.fragment().unwrap_or_default(),
-                            AnchorEncodeMode::Html5
-                        )
+                        title
+                            .fragment_url(AnchorEncodeMode::Html5)
+                            .unwrap_or_default(),
                     )
                 } else if title.namespace().id == Namespace::MEDIA {
                     make_media_url(options.base_uri, options.paths.media, &title.text_url())
