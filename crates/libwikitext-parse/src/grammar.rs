@@ -679,8 +679,39 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         space_s()*
         { a }
       >)
-      body:(!(space_s()* (term() / nl())) t:inline() { t })*
+      body:table_cell_body(&term)
     { (sa.span, sa.node.unwrap_or_default(), body) }
+
+    /// A single table cell body.
+    ///
+    /// ```wikitext
+    /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
+    ///                        ^                           ^    ^^              ^    ^^
+    /// ```
+    rule table_cell_body(term: rule<()>) -> Vec<Spanned<Token>>
+    = start:position!()
+      (!(space_s()* (term() / nl())) inline_in_tag())*
+      i:#{|input, pos| RuleResult::Matched(pos, &input[..pos]) }
+    {? table_cell_body_content(i, o, start).map_err(|_| "table cell") }
+
+    /// The content of a table cell body.
+    ///
+    /// ```wikitext
+    /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
+    ///                        ^                           ^    ^^              ^    ^^
+    /// ```
+    ///
+    /// This contortion is necessary because table cells have higher priority
+    /// than links and trying to thread terminators through the grammar sucks.
+    /// For example, a table line `| [http://example.com||oops]` should be
+    /// `[TableData, "[", Autolink("http://example.com"), TableData, "oops]"`,
+    /// but without this extra work, would be parsed improperly as
+    /// `[TableData, ExternalLink("http://example.com||oops")]`.
+    // TODO: Could precedence climbing solve this in a less hacky way?
+    pub(self) rule table_cell_body_content(start_at: usize) -> Vec<Spanned<Token>>
+    = #{|_, _| RuleResult::Matched(start_at, ()) }
+      t:inline()*
+    { reduce_tree(t) }
 
     /// A termination rule for right-side ASCII whitespace trimming expressions.
     rule rtrim_term()
@@ -1057,7 +1088,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [//example.com External site]
     ///  ^^^^^^^^^^^^^
     /// ```
-    pub rule external_link_target() -> Vec<Spanned<Token>>
+    rule external_link_target() -> Vec<Spanned<Token>>
     = s:url_scheme()
       h:(url_ipish() / external_link_url_class())
       rest:external_link_url_class()*
@@ -2017,7 +2048,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule text() -> Spanned<Token>
     = spanned(<!nl() [_] { Token::Text }>)
 
-    /// A bold or italic text style with hints for bold-italic disambiguation.
+    /// A bold or italic text style with hints for decomposition and bold-italic
+    /// disambiguation.
     ///
     /// ```wikitext
     /// ''italic'' '''bold''' '''''bold and italic'''''

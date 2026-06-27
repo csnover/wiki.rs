@@ -894,16 +894,22 @@ impl TableState {
 
     /// Finishes a table frame.
     fn finish<S: Sink + ?Sized>(self, next: &mut S, last: bool) {
+        if last {
+            next.new_line();
+        }
         if let Some(name) = self.last_tag {
             next.tag_end(name);
-        }
-        if self.tr_emitted {
-            next.tag_end("tr");
-        }
-        if !self.has_tbody {
             if last {
                 next.new_line();
             }
+        }
+        if self.tr_emitted {
+            next.tag_end("tr");
+            if last {
+                next.new_line();
+            }
+        }
+        if !self.has_tbody {
             next.tag_start_full("tr");
             next.tag_start_full("td");
             next.tag_end("td");

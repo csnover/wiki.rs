@@ -748,7 +748,10 @@ impl Buffer {
     /// Flushes the buffer to `next`.
     fn flush<S: Sink + ?Sized>(&mut self, next: &mut S, mut skip_first_char: bool) {
         fn slice_term(data: &[u8]) -> (&str, &[u8]) {
-            let end = data.iter().position(|b| *b == Buffer::TERMINATOR).expect("terminator");
+            let end = data
+                .iter()
+                .position(|b| *b == Buffer::TERMINATOR)
+                .expect("terminator");
             // SAFETY: This data came from a string.
             let value = unsafe { str::from_utf8_unchecked(&data[..end]) };
             (value, &data[end + 1..])
@@ -775,7 +778,7 @@ impl Buffer {
                 }
                 BufferInsn::NewLine => {
                     next.new_line();
-                },
+                }
                 BufferInsn::StripMarkerGeneral => {
                     let marker;
                     (marker, data) = slice_term(data);
@@ -861,7 +864,8 @@ impl Sink for Buffer {
         self.update_metadata("&");
         self.inner.push(BufferInsn::Entity as u8);
         let mut buffer = [0; 4];
-        self.inner.extend(value.encode_utf8(&mut buffer[..]).as_bytes());
+        self.inner
+            .extend(value.encode_utf8(&mut buffer[..]).as_bytes());
         self.inner.extend(raw.as_bytes());
         self.inner.push(Self::TERMINATOR);
     }
@@ -885,13 +889,13 @@ impl Sink for Buffer {
                 // GrafEmitter
                 self.update_metadata(s);
                 BufferInsn::StripMarkerGeneral
-            },
+            }
             StripMarker::NoWiki(_) => {
                 // In the original parser, nowiki markers are still markers for
                 // GrafEmitter
                 self.update_metadata(MARKER_PREFIX);
                 BufferInsn::StripMarkerNoWiki
-            },
+            }
             StripMarker::WikiRsSourceEnd(_) => BufferInsn::StripMarkerWikiRsSourceEnd,
             StripMarker::WikiRsSourceStart(_) => BufferInsn::StripMarkerWikiRsSourceStart,
         };
@@ -5086,7 +5090,7 @@ impl<S: Sink + Markable> Sink for TableFoster<S> {
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker<'_>) {
         if !self.stack.is_empty() {
-            log::warn!("TODO: TableFoster strip marker");
+            log::warn!("TODO: TableFoster strip marker {marker:?}");
         }
         self.next.strip_marker(marker);
     }

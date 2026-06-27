@@ -309,9 +309,11 @@ pub(super) fn render_template<'tt>(
             writeln!(out.out())?;
         }
         write!(out.out(), "{partial}")?;
-        state
-            .strip_markers
-            .push(out.out(), "wiki-rs", StripMarker::WikiRsSourceEnd(key.into()));
+        state.strip_markers.push(
+            out.out(),
+            "wiki-rs",
+            StripMarker::WikiRsSourceEnd(key.into()),
+        );
     } else {
         if needs_newline {
             writeln!(out.out())?;

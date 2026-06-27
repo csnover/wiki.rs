@@ -585,7 +585,12 @@ impl StripMarkers {
 
     /// Pushes a new strip marker to the list, emitting the marker to the given
     /// `out` string.
-    fn push<W: fmt::Write + ?Sized>(&mut self, out: &mut W, tag_name: &str, marker: StripMarker<'static>) {
+    fn push<W: fmt::Write + ?Sized>(
+        &mut self,
+        out: &mut W,
+        tag_name: &str,
+        marker: StripMarker<'static>,
+    ) {
         let _ = write!(
             out,
             "{MARKER_PREFIX}{tag_name}-{:x}{MARKER_SUFFIX}",
