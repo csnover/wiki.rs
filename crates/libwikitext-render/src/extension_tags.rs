@@ -643,6 +643,7 @@ fn pre(
         }
 
         // ha ha kill me
+        // TODO: This is supposed to be a thing that `#tag` does, not here.
         let value = if arguments.from_parser_fn
             && ((value.starts_with('"') && value.ends_with('"'))
                 || (value.starts_with('\'') && value.ends_with('\'')))
@@ -662,21 +663,19 @@ fn pre(
     let body = if process_wikitext {
         Cow::Owned(arguments.eval_body(state)?)
     } else {
-        // 'Template:Blockquote' dumps a `<syntaxhighlight>` into
-        // 'Template:Markup' which blindly dumps that into a `<pre>`.
-        // Unstripping strip markers *before* encoding the rest of the body will
-        // result in double-encoding of the markup. MW does things differently
-        // and does not unstrip markers at all in its tag hooks, obviously
-        // preferring to commit a crime somewhere else to get the strip marker
-        // content out. Since all the strip markers in wiki.rs are supposed to
-        // contain well-formed HTML ready to be emitted to the final document
-        // with no other Wikitext parsing, doing things in this order ‘should’
-        // be ‘fine’.
         STRIP_NOWIKI
             .replace_all(arguments.body(), "$1")
             .map(|body| strtr(body, &[("<", "&lt;"), (">", "&gt;")]))
     };
 
+    // 'Template:Blockquote' dumps a `<syntaxhighlight>` into
+    // 'Template:Markup' which blindly dumps that into a `<pre>`.
+    // Unstripping strip markers *before* encoding the rest of the body will
+    // result in double-encoding of the markup. MW does things differently
+    // and does not unstrip markers at all in its tag hooks, obviously
+    // preferring to commit a crime somewhere else to get the strip marker
+    // content out (maybe it works out because of the stupid incantation of
+    // unstripping general, then nowiki, then general again?).
     let body = state.strip_markers.unstrip(&body);
     write!(out, "{body}</pre>")?;
     Ok(OutputMode::Html)

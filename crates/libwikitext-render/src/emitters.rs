@@ -1437,6 +1437,19 @@ struct DomTreeFormattingItem {
     node: TagNode,
 }
 
+/// A newline filtering state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum DomTreeNewlineState {
+    /// Emit newlines like normal.
+    #[default]
+    Idle,
+    /// Filter out the next newline token.
+    IgnoreNext,
+    /// Oh god, unless there were two of them! Then put it back! Put it back
+    /// right now! Undo! Undo!
+    JustIgnored,
+}
+
 /// Balances the DOM tree using the HTML5 tree construction algorithm(ish).
 #[derive(Debug)]
 pub(super) struct DomTree<S: Sink> {
@@ -1448,12 +1461,12 @@ pub(super) struct DomTree<S: Sink> {
     form_index: Option<u8>,
     /// The “list of active formatting elements”.
     format: DomTreeFormattingList,
-    /// If true, filter out the next newline token.
-    ignore_next_newline: bool,
     /// If true, currently in an HTML start tag.
     in_attr: bool,
     /// The current parser mode.
     mode: DomMode,
+    /// The newline filtering state.
+    newline_mode: DomTreeNewlineState,
     /// The output.
     next: S,
     /// The index of the rightmost `<p>` in [`Self::stack`].
@@ -1500,9 +1513,9 @@ impl<S: Sink> DomTree<S> {
             filtering: <_>::default(),
             form_index: <_>::default(),
             format: <_>::default(),
-            ignore_next_newline: <_>::default(),
             in_attr: <_>::default(),
             mode: <_>::default(),
+            newline_mode: <_>::default(),
             next,
             p_index: <_>::default(),
             stack: <_>::default(),
@@ -2104,7 +2117,7 @@ impl<S: Sink> DomTree<S> {
                 if tag == Tag::Pre {
                     self.close_p();
                 }
-                self.ignore_next_newline = true;
+                self.newline_mode = DomTreeNewlineState::IgnoreNext;
                 self.stack.push(tag.into());
                 EMIT
             }
@@ -2345,7 +2358,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
         self.next.comment_end();
         if !self.in_attr {
-            self.ignore_next_newline = false;
+            self.newline_mode = <_>::default();
         }
     }
 
@@ -2357,7 +2370,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
         self.next.comment_start();
         if !self.in_attr {
-            self.ignore_next_newline = false;
+            self.newline_mode = <_>::default();
         }
     }
 
@@ -2375,7 +2388,7 @@ impl<S: Sink> Sink for DomTree<S> {
                 self.reformat();
             }
             self.next.entity(value, raw);
-            self.ignore_next_newline = false;
+            self.newline_mode = <_>::default();
         }
     }
 
@@ -2395,8 +2408,12 @@ impl<S: Sink> Sink for DomTree<S> {
 
         if self.in_attr {
             self.next.new_line();
-        } else if self.ignore_next_newline {
-            self.ignore_next_newline = false;
+        } else if self.newline_mode == DomTreeNewlineState::IgnoreNext {
+            self.newline_mode = DomTreeNewlineState::JustIgnored;
+        } else if self.newline_mode == DomTreeNewlineState::JustIgnored {
+            self.next.new_line();
+            self.next.new_line();
+            self.newline_mode = <_>::default();
         } else {
             if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
                 self.reformat();
@@ -2413,7 +2430,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
         self.next.strip_marker(marker);
         if !self.in_attr {
-            self.ignore_next_newline = false;
+            self.newline_mode = <_>::default();
         }
     }
 
@@ -2435,7 +2452,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        self.ignore_next_newline = false;
+        self.newline_mode = <_>::default();
 
         let tag = Tag::new(name, &mut self.custom_tags);
 
@@ -2452,7 +2469,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
     #[inline]
     fn tag_start(&mut self, mut name: &str) {
-        self.ignore_next_newline = false;
+        self.newline_mode = <_>::default();
 
         if name.eq_ignore_ascii_case("image") {
             name = "img";
@@ -2493,7 +2510,7 @@ impl<S: Sink> Sink for DomTree<S> {
                 self.reformat();
             }
             self.next.text(text);
-            self.ignore_next_newline = false;
+            self.newline_mode = <_>::default();
         }
     }
 }
