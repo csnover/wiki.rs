@@ -856,7 +856,7 @@ static COMMON_ATTRS: phf::Set<&str> = phf::phf_set! {
 };
 
 /// Buffers a sink sequence for replay.
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Buffer {
     /// If true, the buffer received anything which is non-ASCII whitespace.
     contains_non_ascii_whitespace: bool,
@@ -878,7 +878,13 @@ impl Buffer {
     }
 
     /// Flushes the buffer to `next`.
-    fn flush<S: Sink + ?Sized>(&mut self, next: &mut S, mut skip_first_char: bool) {
+    fn flush<S: Sink + ?Sized>(&mut self, next: &mut S, skip_first_char: bool) {
+        self.write(next, skip_first_char);
+        self.clear();
+    }
+
+    /// Writes the buffer to `next` without clearing it.
+    fn write<S: Sink + ?Sized>(&self, next: &mut S, mut skip_first_char: bool) {
         fn slice_term(data: &[u8]) -> (&str, &[u8]) {
             let end = data
                 .iter()
@@ -962,8 +968,6 @@ impl Buffer {
             }
             cursor = data;
         }
-
-        self.clear();
     }
 
     /// Updates some metadata used by `GrafEmitter`, which was originally a hack
@@ -975,6 +979,21 @@ impl Buffer {
                 self.starts_with = text.chars().next();
             }
         }
+    }
+}
+
+impl core::fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut inner = Accumulator::new();
+        self.write(&mut inner, false);
+        f.debug_struct("Buffer")
+            .field(
+                "contains_non_ascii_whitespace",
+                &self.contains_non_ascii_whitespace,
+            )
+            .field("inner", &inner.inner.inner.as_str())
+            .field("starts_with", &self.starts_with)
+            .finish()
     }
 }
 
@@ -2740,7 +2759,7 @@ impl<S: Sink + Markable> GrafEmitter<S> {
             if !self.in_pre || self.pre_open_match {
                 self.close(false);
             }
-            if self.pre_open_match {
+            if self.pre_open_match || self.pre_close_match {
                 self.in_pre = !self.pre_close_match;
             }
             self.in_block = !self.close_match;
