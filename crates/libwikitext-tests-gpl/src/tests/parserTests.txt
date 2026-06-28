@@ -14649,7 +14649,7 @@ parsoid=wt2wt,wt2html
 </tr>
 </tbody>
 </table>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser
 <div><p>foo</p></div><table><tr><td>bar</td></tr></table>
 !! end
 
@@ -14764,7 +14764,6 @@ parsoid=wt2html
 </div><table>
 </table><table>
 <tr><td></td></tr></table>
-
 !! end
 
 # Parsoid only for T66747
@@ -14874,7 +14873,8 @@ hiho
 
 
 
-hiho<table></table>
+hiho
+<table></table>
 !! end
 
 !! test

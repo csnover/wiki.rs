@@ -1468,11 +1468,218 @@ pub(super) struct DomTree<S: Sink> {
     /// The newline filtering state.
     newline_mode: DomTreeNewlineState,
     /// The output.
-    next: S,
+    next: DomTreeOutput<S>,
     /// The index of the rightmost `<p>` in [`Self::stack`].
     p_index: Option<u8>,
     /// The stack of currently open nodes.
     stack: Vec<TagNode>,
+}
+
+/// A buffering output for HTML5 foster parenting.
+#[derive(Debug)]
+struct DomTreeOutput<S: Sink> {
+    /// The output.
+    next: S,
+    /// The pending “in table text” text which may be fostered, or not,
+    /// depending on whether the *entire run of text* contains only ASCII
+    /// whitespace.
+    pending_text: String,
+    /// The stack of buffering tables.
+    tables: Vec<DomTreeTable>,
+}
+
+/// A buffering output for an HTML table.
+#[derive(Debug, Default)]
+struct DomTreeTable {
+    /// The buffer for the table and its non-fostered contents.
+    buffer: Buffer,
+    /// The count of fostered element children. All incoming items will be
+    /// fostered until the depth reaches zero, at which point this will be
+    /// unlatched.
+    foster_depth: Option<u8>,
+}
+
+impl<S: Sink> DomTreeOutput<S> {
+    /// Creates a new `DomTreeOutput` which emits to `next`.
+    #[inline]
+    fn new(next: S) -> Self {
+        Self {
+            next,
+            pending_text: <_>::default(),
+            tables: <_>::default(),
+        }
+    }
+
+    /// Decrements the fostered child counter.
+    #[inline]
+    fn dec_foster(&mut self) {
+        if let Some(table) = self.tables.last_mut()
+            && let Some(depth) = &mut table.foster_depth
+        {
+            *depth -= 1;
+            if *depth == 0 {
+                table.foster_depth = None;
+            }
+        }
+    }
+
+    /// Disables fostering if there is no active content fostering.
+    ///
+    /// This is needed in situations where fostering would occur if a tag was
+    /// actually emitted, but no tag was emitted. Otherwise, the next tag will
+    /// end up being treated as fostered content when that was not intended.
+    fn disable_fostering(&mut self) {
+        if let Some(table) = self.tables.last_mut()
+            && table.foster_depth == Some(0)
+        {
+            table.foster_depth = None;
+        }
+    }
+
+    /// Enables content fostering. Once enabled, content fostering continues
+    /// until the fostered child counter reaches zero.
+    #[inline]
+    fn enable_fostering(&mut self) {
+        if let Some(table) = self.tables.last_mut() {
+            table.foster_depth.get_or_insert_default();
+        }
+    }
+
+    /// Increments the fostered child counter.
+    #[inline]
+    fn inc_foster(&mut self) {
+        if let Some(table) = self.tables.last_mut()
+            && let Some(depth) = &mut table.foster_depth
+        {
+            *depth += 1;
+        }
+    }
+
+    /// Pops a buffered table and flushes it to the next buffer.
+    fn pop_table(&mut self) {
+        if let Some(mut table) = self.tables.pop() {
+            debug_assert!(self.pending_text.is_empty());
+            if let Some(next) = self.tables.last_mut() {
+                table.buffer.flush(&mut next.buffer, false);
+            } else {
+                table.buffer.flush(&mut self.next, false);
+            }
+        }
+    }
+
+    /// Pushes a new table onto the stack of buffering tables.
+    #[inline]
+    fn push_table(&mut self) {
+        self.tables.push(<_>::default());
+    }
+
+    /// Flushes pending text and returns the appropriate target sink for a
+    /// possibly fostered, possibly buffered item.
+    fn target(&mut self) -> &mut dyn Sink {
+        if let Some((table, next)) = self.tables.split_last_mut() {
+            let before: &mut dyn Sink = next
+                .last_mut()
+                .map_or(&mut self.next, |next| &mut next.buffer);
+            let next = &mut table.buffer;
+            if !self.pending_text.is_empty() {
+                // Fostered content goes out as a nowiki strip marker to bypass
+                // the p-wrapper, which, for whatever reason, was written to
+                // ignore fostered content
+                let content = StripMarker::NoWiki(self.pending_text.as_str().into());
+                if self
+                    .pending_text
+                    .contains(|c: char| !c.is_ascii_whitespace())
+                {
+                    before.strip_marker(&content);
+                } else {
+                    next.strip_marker(&content);
+                }
+                self.pending_text.clear();
+            }
+            if table.foster_depth.is_some() {
+                before
+            } else {
+                next
+            }
+        } else {
+            debug_assert!(self.pending_text.is_empty());
+            &mut self.next
+        }
+    }
+}
+
+impl<S: Sink> Sink for DomTreeOutput<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.target().comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.target().comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.target().entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        debug_assert!(self.tables.is_empty() && self.pending_text.is_empty());
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.target().new_line();
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        self.target().strip_marker(marker);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.target().tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.target().tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.target().tag_end(name);
+        self.dec_foster();
+        if name == "table" {
+            self.pop_table();
+        }
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.inc_foster();
+        if name == "table" {
+            self.push_table();
+        }
+        self.target().tag_start(name);
+        if VOID_TAGS.contains(name) {
+            self.dec_foster();
+        }
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.target().tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.target().text(text);
+    }
 }
 
 /// Emit the tag to the next sink.
@@ -1502,7 +1709,30 @@ enum DomMode {
     TableBody,
 }
 
-chainable!(DomTree);
+impl DomMode {
+    /// Returns true if text must be fostered out of the table in this mode.
+    fn foster_text(self) -> bool {
+        matches!(self, Self::Row | Self::Table | Self::TableBody)
+    }
+
+    /// Returns true if formatting elements should be reconstructed around text
+    /// in this mode.
+    fn reformat_text(self) -> bool {
+        matches!(self, DomMode::Body | DomMode::Caption | DomMode::Cell)
+    }
+}
+
+impl<S: Sink + Markable> Chain for DomTree<S> {
+    type Next = S;
+
+    fn next(&self) -> &Self::Next {
+        &self.next.next
+    }
+
+    fn next_mut(&mut self) -> &mut Self::Next {
+        &mut self.next.next
+    }
+}
 
 impl<S: Sink> DomTree<S> {
     /// Creates a new `DomTree` which emits to `next`.
@@ -1516,7 +1746,7 @@ impl<S: Sink> DomTree<S> {
             in_attr: <_>::default(),
             mode: <_>::default(),
             newline_mode: <_>::default(),
-            next,
+            next: DomTreeOutput::new(next),
             p_index: <_>::default(),
             stack: <_>::default(),
         }
@@ -1680,13 +1910,6 @@ impl<S: Sink> DomTree<S> {
         }
     }
 
-    /// A marker for fostered content in the algorithm. Actual fostering is done
-    /// more clearly and efficiently by the `TableFoster` sink, which can look
-    /// at entire chunks of of interstitial content and then move it without any
-    /// extra buffer allocations and without pessimising the whole thing.
-    #[inline]
-    const fn foster() {}
-
     /// Closes the nearest table cell element.
     fn close_cell(&mut self) {
         // The spec pops all implied end tags first to track errors, but this
@@ -1741,6 +1964,16 @@ impl<S: Sink> DomTree<S> {
         scope: impl FnMut(Tag) -> bool,
     ) -> bool {
         self.index_in_scope(predicate, scope).is_some()
+    }
+
+    /// Returns true if the tree is “in table text”.
+    #[inline]
+    fn in_table_text(&self) -> bool {
+        self.mode.foster_text()
+            && self
+                .stack
+                .last()
+                .is_some_and(|node| node.is_table_fosterable())
     }
 
     /// Returns the index of an element matching the given `predicate` on the
@@ -1995,8 +2228,10 @@ impl<S: Sink> DomTree<S> {
                 self.reset_mode();
             }
         } else if !tag.is_table_item() {
-            Self::foster();
+            // eprintln!("enable for close {tag:?} {:?}", self.stack);
+            self.next.enable_fostering();
             self.tag_end_body(tag);
+            self.next.disable_fostering();
         }
     }
 
@@ -2300,9 +2535,10 @@ impl<S: Sink> DomTree<S> {
             Tag::Style => self.tag_start_head(tag),
             Tag::Input => {
                 // The spec says that hidden inputs are not supposed to be
-                // fostered but this is a needless complexity for this
-                // implementation
-                Self::foster();
+                // fostered but this is a needless complexity which would
+                // require tracking attributes since this is not supported in
+                // normal Wikitext anyway
+                self.next.enable_fostering();
                 self.tag_start_body(tag)
             }
             Tag::Form => {
@@ -2312,8 +2548,9 @@ impl<S: Sink> DomTree<S> {
                 // emit anything
                 SUPPRESS
             }
-            _ => {
-                Self::foster();
+            tag => {
+                // eprintln!("enable for {tag:?} {:?}", self.stack);
+                self.next.enable_fostering();
                 self.tag_start_body(tag)
             }
         }
@@ -2384,10 +2621,14 @@ impl<S: Sink> Sink for DomTree<S> {
             self.format.buffer_char(value);
             self.next.entity(value, raw);
         } else {
-            if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
+            if self.mode.reformat_text() {
                 self.reformat();
             }
-            self.next.entity(value, raw);
+            if self.in_table_text() {
+                self.next.pending_text.push(value);
+            } else {
+                self.next.entity(value, raw);
+            }
             self.newline_mode = <_>::default();
         }
     }
@@ -2411,14 +2652,22 @@ impl<S: Sink> Sink for DomTree<S> {
         } else if self.newline_mode == DomTreeNewlineState::IgnoreNext {
             self.newline_mode = DomTreeNewlineState::JustIgnored;
         } else if self.newline_mode == DomTreeNewlineState::JustIgnored {
-            self.next.new_line();
-            self.next.new_line();
+            if self.in_table_text() {
+                self.next.pending_text += "\n\n";
+            } else {
+                self.next.new_line();
+                self.next.new_line();
+            }
             self.newline_mode = <_>::default();
         } else {
-            if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
+            if self.mode.reformat_text() {
                 self.reformat();
             }
-            self.next.new_line();
+            if self.in_table_text() {
+                self.next.pending_text.push('\n');
+            } else {
+                self.next.new_line();
+            }
         }
     }
 
@@ -2506,10 +2755,14 @@ impl<S: Sink> Sink for DomTree<S> {
             self.format.buffer_text(text);
             self.next.text(text);
         } else {
-            if matches!(self.mode, DomMode::Body | DomMode::Caption | DomMode::Cell) {
+            if self.mode.reformat_text() {
                 self.reformat();
             }
-            self.next.text(text);
+            if self.in_table_text() {
+                self.next.pending_text += text;
+            } else {
+                self.next.text(text);
+            }
             self.newline_mode = <_>::default();
         }
     }
@@ -3517,47 +3770,6 @@ impl MarkableString {
         self.insert_mark(pos)
     }
 
-    /// Moves the string in `range` to `dest`.
-    pub fn move_range<R: core::ops::RangeBounds<usize>>(&mut self, range: R, dest: usize) {
-        // TODO: core::slice::range is unstable. rust-lang/rust#76393
-        let start = match range.start_bound() {
-            core::ops::Bound::Included(&start) => start,
-            core::ops::Bound::Excluded(&start) => start + 1,
-            core::ops::Bound::Unbounded => 0,
-        };
-        let end = match range.end_bound() {
-            core::ops::Bound::Included(&end) => end + 1,
-            core::ops::Bound::Excluded(&end) => end,
-            core::ops::Bound::Unbounded => self.inner.len(),
-        };
-
-        let (start, mid, end) = if dest < start {
-            (dest, start, end)
-        } else if dest < end {
-            (start, end, dest + end - start)
-        } else {
-            (start, end - start, dest)
-        };
-
-        assert!(self.inner.is_char_boundary(start));
-        assert!(self.inner.is_char_boundary(end));
-        assert!(self.inner.is_char_boundary(dest));
-        // SAFETY: All of start, end, and dest are asserted to be on character
-        // boundaries.
-        (unsafe { self.inner.as_bytes_mut() })[start..end].rotate_left(mid - start);
-
-        let start = u32::try_from(start).unwrap();
-        let mid = u32::try_from(mid).unwrap();
-        let end = u32::try_from(end).unwrap();
-        let delta_left = i32::try_from(end).unwrap().strict_sub_unsigned(mid);
-        let delta_right = i32::try_from(start).unwrap().strict_sub_unsigned(mid);
-        for pos in self.iter_marks_mut(start).filter(|pos| **pos <= end) {
-            *pos = pos
-                .checked_add_signed(if *pos > mid { delta_right } else { delta_left })
-                .unwrap_or(Self::INVALID);
-        }
-    }
-
     /// Appends `ch` to the string.
     #[inline]
     pub fn push(&mut self, ch: char) {
@@ -4250,6 +4462,8 @@ struct PWrapperRoot {
     candidate: Option<Mark>,
     /// The depth of the wrapper root.
     depth: u8,
+    /// Whether this candidate wrapper has some non-ASCII-whitespace content.
+    has_content: bool,
 }
 
 chainable!(PWrapper);
@@ -4266,7 +4480,7 @@ impl<S: Sink + Markable> PWrapper<S> {
     }
 
     /// Enters a graf wrapper if it is appropriate at the current DOM position.
-    fn enter_p(&mut self) {
+    fn enter_p(&mut self, has_content: bool) {
         if self.in_attr {
             return;
         }
@@ -4274,7 +4488,9 @@ impl<S: Sink + Markable> PWrapper<S> {
         let root = self.roots.last_mut().unwrap();
         if root.depth == self.depth && root.candidate.is_none() {
             root.candidate = Some(self.next.mark());
+            root.has_content = false;
         }
+        root.has_content |= has_content;
     }
 
     /// Exits a graf wrapper.
@@ -4282,14 +4498,14 @@ impl<S: Sink + Markable> PWrapper<S> {
         let root = self.roots.last_mut().unwrap();
         if root.depth == self.depth {
             if let Some(candidate) = root.candidate.take() {
-                self.next.with_marks([&candidate], |[candidate], out| {
-                    if let Some(candidate) = candidate
-                        && out[candidate..].bytes().any(|b| !b.is_ascii_whitespace())
-                    {
-                        out.insert_str(candidate, "<p>");
-                        out.push_str("</p>");
-                    }
-                });
+                if root.has_content {
+                    self.next.with_marks([&candidate], |[candidate], out| {
+                        if let Some(candidate) = candidate {
+                            out.insert_str(candidate, "<p>");
+                            out.push_str("</p>");
+                        }
+                    });
+                }
                 self.next.free_mark(candidate);
             }
             true
@@ -4315,7 +4531,7 @@ impl<S: Sink + Markable> Sink for PWrapper<S> {
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
-        self.enter_p();
+        self.enter_p(true);
         self.next.entity(value, raw);
     }
 
@@ -4328,14 +4544,12 @@ impl<S: Sink + Markable> Sink for PWrapper<S> {
 
     #[inline]
     fn new_line(&mut self) {
-        self.enter_p();
+        self.enter_p(false);
         self.next.new_line();
     }
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker<'_>) {
-        // TODO: Strip markers should be unstripped before here.
-        log::warn!("Late strip marker: {marker:?}");
         self.next.strip_marker(marker);
     }
 
@@ -4359,7 +4573,7 @@ impl<S: Sink + Markable> Sink for PWrapper<S> {
 
     fn tag_start(&mut self, name: &str) {
         if Tag::known(name).is_some_and(Tag::is_inline) {
-            self.enter_p();
+            self.enter_p(true);
         } else {
             self.exit_p();
         }
@@ -4384,7 +4598,7 @@ impl<S: Sink + Markable> Sink for PWrapper<S> {
 
     #[inline]
     fn text(&mut self, text: &str) {
-        self.enter_p();
+        self.enter_p(text.contains(|c: char| !c.is_ascii_whitespace()));
         self.next.text(text);
     }
 }
@@ -4420,13 +4634,19 @@ impl PartialEq<Tag> for TagNode {
 impl TagNode {
     /// Emits the close tag for this node to `next`, using the given set of
     /// `custom` tag names, and updating the `next_index` if applicable.
-    fn close<S: Sink + ?Sized>(
+    fn close<S: Sink>(
         self,
-        next: &mut S,
+        next: &mut DomTreeOutput<S>,
         custom: &IndexSet<Uncased<'static>>,
         next_index: &mut Option<u8>,
     ) {
         if let Some(name) = self.name(custom) {
+            // Because the HTML5 spec is designed to construct a tree, fostering
+            // of a start tag “in table” mode would cause the whole tag to be
+            // moved out, including its children and any implicit end tag, so in
+            // order to close an element correctly it’s necessary to know if it
+            // is in a position where the start tag was also fostered out.
+
             debug_assert!(!VOID_TAGS.contains(name.as_str()));
             next.tag_end(name.as_str());
             if let Self::P(next) | Self::Marker(next) = self {
@@ -4474,6 +4694,13 @@ impl TagNode {
     #[inline]
     fn is_table_body(self) -> bool {
         matches!(self, Self::ImplicitTbody) || self.tag().is_some_and(Tag::is_table_body)
+    }
+
+    /// Returns true if this is a `<table>` element that cannot contain most
+    /// non-table content.
+    #[inline]
+    fn is_table_fosterable(self) -> bool {
+        matches!(self, Self::ImplicitTbody) || self.tag().is_some_and(Tag::is_table_fosterable)
     }
 
     /// Returns the corresponding HTML5 tag for this node, or `None` if this is
@@ -5067,12 +5294,7 @@ impl<S: Sink> Sink for PrettyText<S> {
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        // TODO: PrettyText is used in GrafEmitter buffer because all of the
-        // strip markers have to be gone before serialising to any HTML, and
-        // without the DOM balancing, these counters are wrong.
-        self.in_code = self
-            .in_code
-            .saturating_sub(u8::from(Self::is_code_tag(name)));
+        self.in_code -= u8::from(Self::is_code_tag(name));
         if !PHRASING_TAGS.contains(name) {
             self.push_char(' ');
         }
@@ -5173,163 +5395,6 @@ impl<S: Sink> Sink for PrettyText<S> {
         if flushed != text.len() {
             self.next.text(&text[flushed..]);
         }
-    }
-}
-
-/// Ejects content from inside tables to outside tables.
-///
-/// This is, strictly speaking, unnecessary. Browsers all follow the HTML5 spec
-/// from which this behaviour derives. However, to satisfy the MW test suite
-/// without going insane, fostering is also implemented in the renderer.
-#[derive(Debug)]
-pub(super) struct TableFoster<S: Sink + Markable> {
-    /// The output.
-    next: S,
-    /// The position just before the nearest table. Since tables can be nested,
-    /// this is a stack.
-    stack: Vec<TableFosterFrame>,
-}
-
-/// A currently processing table.
-#[derive(Debug)]
-struct TableFosterFrame {
-    /// The position just before the nearest table.
-    before_table: Mark,
-    /// The starting position of the currently processing space between table
-    /// children.
-    interstitial: Option<Mark>,
-}
-
-impl<S: Sink + Markable> TableFoster<S> {
-    /// Creates a new `TableFoster` chained to `next`.
-    pub fn new(next: S) -> Self {
-        Self {
-            next,
-            stack: <_>::default(),
-        }
-    }
-
-    /// Gives up the child to the state.
-    fn foster(&mut self) {
-        if let Some(TableFosterFrame {
-            before_table: before,
-            interstitial,
-        }) = self.stack.last_mut()
-            && let Some(start) = interstitial.take()
-        {
-            let end = self.next.mark();
-            self.next
-                .with_marks([before, &start, &end], |[before, start, end], out| {
-                    if let (Some(before), Some(start), Some(end)) = (before, start, end)
-                        && start != end
-                        && out[start..end].bytes().any(|c| !c.is_ascii_whitespace())
-                    {
-                        out.move_range(start..end, before);
-                    }
-                });
-            self.next.free_mark(start);
-            self.next.free_mark(end);
-        }
-    }
-}
-
-chainable!(TableFoster);
-
-impl<S: Sink + Markable> Sink for TableFoster<S> {
-    #[inline]
-    fn comment_end(&mut self) {
-        self.next.comment_end();
-    }
-
-    #[inline]
-    fn comment_start(&mut self) {
-        self.next.comment_start();
-    }
-
-    #[inline]
-    fn entity(&mut self, value: char, raw: &str) {
-        self.next.entity(value, raw);
-    }
-
-    #[inline]
-    fn finish(self) -> String {
-        debug_assert!(self.stack.is_empty());
-        self.next.finish()
-    }
-
-    #[inline]
-    fn new_line(&mut self) {
-        self.next.new_line();
-    }
-
-    #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
-        if !self.stack.is_empty() {
-            log::warn!("TODO: TableFoster strip marker {marker:?}");
-        }
-        self.next.strip_marker(marker);
-    }
-
-    #[inline]
-    fn tag_attribute_end(&mut self, name: &str) {
-        self.next.tag_attribute_end(name);
-    }
-
-    #[inline]
-    fn tag_attribute_start(&mut self, name: &str) {
-        self.next.tag_attribute_start(name);
-    }
-
-    #[inline]
-    fn tag_end(&mut self, name: &str) {
-        if matches!(name, "table" | "tbody" | "tfoot" | "thead" | "tr") {
-            self.foster();
-        }
-        if name == "table" {
-            let last = self.stack.pop().expect("table mark");
-            self.next.free_mark(last.before_table);
-        }
-        self.next.tag_end(name);
-        if matches!(
-            name,
-            "caption" | "tbody" | "tfoot" | "td" | "th" | "thead" | "tr"
-        ) && let Some(last) = self.stack.last_mut()
-        {
-            debug_assert!(last.interstitial.is_none());
-            last.interstitial = Some(self.next.mark());
-        }
-    }
-
-    #[inline]
-    fn tag_start(&mut self, name: &str) {
-        if name == "table" {
-            self.stack.push(TableFosterFrame {
-                before_table: self.next.mark(),
-                interstitial: None,
-            });
-        } else if matches!(
-            name,
-            "caption" | "tbody" | "td" | "tfoot" | "th" | "thead" | "tr"
-        ) {
-            self.foster();
-        }
-        self.next.tag_start(name);
-    }
-
-    #[inline]
-    fn tag_start_end(&mut self, name: &str) {
-        self.next.tag_start_end(name);
-        if matches!(name, "table" | "tbody" | "tfoot" | "thead" | "tr")
-            && let Some(last) = self.stack.last_mut()
-        {
-            debug_assert!(last.interstitial.is_none(), "oops, {name}");
-            last.interstitial = Some(self.next.mark());
-        }
-    }
-
-    #[inline]
-    fn text(&mut self, text: &str) {
-        self.next.text(text);
     }
 }
 
@@ -5527,57 +5592,5 @@ mod tests {
         assert_eq!(decode_css("\\ffffff").as_deref(), None);
         assert_eq!(decode_css("\x7f").as_deref(), None);
         assert_eq!(decode_css("\\7f").as_deref(), None);
-    }
-
-    #[test]
-    fn move_range() {
-        let mut s = MarkableString::default();
-        let before = s.mark();
-        s.push('a');
-        let after_a = s.mark();
-        s.push_str("bc");
-        let after_c = s.mark();
-        s.push('d');
-        let after_d = s.mark();
-        let start = s.inner.len();
-        s.push('e');
-        let after_e = s.mark();
-        s.push_str("fghi");
-        let after_i = s.mark();
-        let end = s.inner.len();
-
-        s.move_range(start..end, 0);
-        let positions = [&before, &after_a, &after_c, &after_d, &after_e, &after_i]
-            .map(|mark| s.restore_mark(mark));
-        assert_eq!(s.inner, "efghiabcd");
-        assert_eq!(
-            positions,
-            [Some(0), Some(6), Some(8), Some(9), Some(1), Some(5)]
-        );
-
-        s.move_range(0..4, 5);
-        let positions = [&before, &after_a, &after_c, &after_d, &after_e, &after_i]
-            .map(|mark| s.restore_mark(mark));
-        assert_eq!(s.inner, "iefghabcd");
-        assert_eq!(
-            positions,
-            [Some(0), Some(6), Some(8), Some(9), Some(2), Some(1)]
-        );
-
-        s.move_range(3..6, 5);
-        let positions = [&before, &after_a, &after_c, &after_d, &after_e, &after_i]
-            .map(|mark| s.restore_mark(mark));
-        assert_eq!(s.inner, "iefbcghad");
-        assert_eq!(
-            positions,
-            [Some(0), Some(8), Some(5), Some(9), Some(2), Some(1)]
-        );
-
-        s.free_mark(before);
-        s.free_mark(after_a);
-        s.free_mark(after_c);
-        s.free_mark(after_d);
-        s.free_mark(after_e);
-        s.free_mark(after_i);
     }
 }

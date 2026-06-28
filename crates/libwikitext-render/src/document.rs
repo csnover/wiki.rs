@@ -4,7 +4,7 @@ use super::{
     Error, LinkKind, Result, State,
     emitters::{
         Accumulator, AttributeFilter, DomTree, EmptyTagger, GrafEmitter, ListEmitter,
-        OutlineEmitter, PWrapper, PrettyText, Sink, TableFoster, TemplateTagger, TextStyleEmitter,
+        OutlineEmitter, PWrapper, PrettyText, Sink, TemplateTagger, TextStyleEmitter,
     },
     extension_tags,
     globals::Outline,
@@ -31,9 +31,7 @@ use std::borrow::Cow;
 type RendererChain<'a> = AttributeFilter<
     OutlineEmitter<
         'a,
-        GrafEmitter<
-            DomTree<TemplateTagger<TableFoster<PrettyText<PWrapper<EmptyTagger<Accumulator>>>>>>,
-        >,
+        GrafEmitter<DomTree<PWrapper<TemplateTagger<PrettyText<EmptyTagger<Accumulator>>>>>>,
     >,
 >;
 
@@ -66,8 +64,8 @@ impl<'a> Document<'a> {
             in_pre: <_>::default(),
             next: AttributeFilter::new(OutlineEmitter::new(
                 outline,
-                GrafEmitter::new(DomTree::new(TemplateTagger::new(TableFoster::new(
-                    PrettyText::new(PWrapper::new(EmptyTagger::new(Accumulator::new()))),
+                GrafEmitter::new(DomTree::new(PWrapper::new(TemplateTagger::new(
+                    PrettyText::new(EmptyTagger::new(Accumulator::new())),
                 )))),
             )),
             list_emitter: <_>::default(),
@@ -151,13 +149,13 @@ impl<'a> Document<'a> {
     ) -> Result {
         if let Some(table) = self.table_emitter.last_mut() {
             if let Some(last) = table.last_tag.replace(name) {
-                self.next.tag_end(last);
                 // Because the original parser split table cells across lines,
                 // the text styles also must reset every line
                 self.text_style_emitter
                     .last_mut()
                     .unwrap()
                     .finish(&mut self.next);
+                self.next.tag_end(last);
                 self.next.new_line();
             }
             if name != "caption" {

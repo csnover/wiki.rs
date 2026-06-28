@@ -61,6 +61,8 @@ x
 <p>x</p>
 !! html/wiki.rs # This output matches the PHP parser
 <span><div>x</div></span>
+<p>x
+</p>
 !! end
 
 !! test
