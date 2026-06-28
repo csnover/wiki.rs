@@ -1568,7 +1568,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule html_start_tag() -> Token
     = name:html_tag_name()
       (space_nl()+ / &(html_self_close()? ">"))
-      attributes:html_attributes(<space_nl()* "/"? ">">)
+      // The original parser explodes the input on `<` which means that it is
+      // not legal to have a literal `<` anywhere in a tag
+      attributes:html_attributes(<"<" / space_nl()* "/"? ">">)
       space_nl()*
       self_closing:html_self_close()?
     {

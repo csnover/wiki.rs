@@ -105,32 +105,30 @@ steps is run in order:
 2. [Preprocess the input](#preprocess-input);
 3. Delete all [comment ranges](#comment-range) in the input;
 4. <a name="escape-invalid-tags"></a>
-   HTML entity escape all `<` and `>` that are not part of an allowed HTML
-   tag[^allowedtags];
-5. [Rewrite HTML tag attributes](#html-attributes);
-6. [Convert Wikitext tables to HTML](#tables);
-7. [Convert Wikitext horizontal rules to HTML](#horizontal-rules);
-8. [Remove double underscores](#double-underscores);
-9. [Convert Wikitext headings to HTML](#headings);
-10. [Convert Wikitext internal links to HTML links](#wikilinks);
-11. For each line `L` in the input ending in `'\n'`:
+   [Rewrite HTML tags](#html-tags);
+5. [Convert Wikitext tables to HTML](#tables);
+6. [Convert Wikitext horizontal rules to HTML](#horizontal-rules);
+7. [Remove double underscores](#double-underscores);
+8. [Convert Wikitext headings to HTML](#headings);
+9. [Convert Wikitext internal links to HTML links](#wikilinks);
+10. For each line `L` in the input ending in `'\n'`:
 
     1. [Run text styles processing](#text-styles);
     2. If `L` is not the last line in the input, emit `'\n'`.
 
-12. [Convert Wikitext external links to HTML](#external-links);
-13. Delete all [cloaked link pseudo-strip markers](#external-link-cloaks);
-14. [Convert magic links to HTML](#magic-links);
-15. [Run the outline algorithm](#outlining);
-16. [Unstrip strip markers](#unstrip) with mode `general`;
-17. [Run the block level algorithm](#block-level-wikitext);
-18. [Run the language converter](#language-conversion);
-19. [Unstrip strip markers](#unstrip) with mode `nowiki`;
-20. [Unstrip strip markers](#unstrip) with mode `general`[^gen2];
-21. [Parse into an HTML5 DOM];
-22. [Guard French quotation marks from word wrapping](#guard-quotes);
-23. [Run the p-wrapping algorithm](#p-wrapping);
-24. [Format elements](#format-elements).
+11. [Convert Wikitext external links to HTML](#external-links);
+12. Delete all [cloaked link pseudo-strip markers](#external-link-cloaks);
+13. [Convert magic links to HTML](#magic-links);
+14. [Run the outline algorithm](#outlining);
+15. [Unstrip strip markers](#unstrip) with mode `general`;
+16. [Run the block level algorithm](#block-level-wikitext);
+17. [Run the language converter](#language-conversion);
+18. [Unstrip strip markers](#unstrip) with mode `nowiki`;
+19. [Unstrip strip markers](#unstrip) with mode `general`[^gen2];
+20. [Parse into an HTML5 DOM];
+21. [Guard French quotation marks from word wrapping](#guard-quotes);
+22. [Run the p-wrapping algorithm](#p-wrapping);
+23. [Format elements](#format-elements).
 
 [Parse into an HTML5 DOM]: https://html.spec.whatwg.org/multipage/parsing.html
 
@@ -139,7 +137,8 @@ steps is run in order:
   `|"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"hr"|"i"|"ins"|"kbd"|"li"|"mark"|"ol"|"p"`
   `|"pre"|"q"|"rb"|"rp"|"rt"|"rtc"|"ruby"|"s"|"samp"|"small"|"span"|"strike"`
   `|"strong"|"sub"|"sup"|"table"|"td"|"th"|"time"|"tr"|"tt"|"u"|"ul"|"var"`
-  `|"wbr"]`
+  `|"wbr"]`, plus `"meta"` if it has `"itemprop"` and `"content"` attributes,
+  plus `"link"` if it has `"itemprop"` and `"href"` attributes
 
 [^gen2]: The rationale for this sequential unstripping was “inserted for
   transparent tag hooks (now deprecated) but some extensions (notably `<poem>`)
@@ -856,20 +855,101 @@ If the namespace of `Title` is an alias for the `MediaWiki` namespace and
    otherwise
 6. Return the range `O..C`.
 
-## HTML attributes
+## HTML tags
+
+※ Tag parsing uses a non-standard parse where `>` or `/>` are terminators for
+  attribute values, even if they are inside a quoted-text part. It also allows
+  whitespace to exist between `/` and `>` of a self-closing tag. It also does
+  not allow `<` to exist inside the attributes part of an HTML tag. Previous
+  versions of Wikitext (MediaWiki 1.27 and earlier, ~July 2016) also required
+  self-closing tags to be treated using XML semantics rather than HTML5
+  semantics. This all violates the XML and HTML standards.
+
+1. Let `Input` be the input;
+2. Let `S` be 0;
+3. Let `E` be the position of the first `'<'` in `Input`, or the position of the
+   end of the input if there is no match;
+4. Emit `Input[S..E]`, replacing all `'>'` with `"&gt;"`;
+5. Let `S` equal `E`;
+
+While `S` is not the end of the input:
+
+1. Let `E` be the position of the next `'<'` in `Input` after `S`, or the
+   position of the end of the input if there is no match;
+2. If `Input[S..E]` matches the regular expression
+   `^(?<EndC>/?)(?<Name>[A-Za-z][^\t\n\v />\0]*+)(?<Attrs>[^>]*?)(?<EndS>/?>)(?<Rest>[^<]*)$`:
+
+   1. Let `Attrs` be the capture group `Attrs`;
+   2. [Unstrip](#unstrip) all markers from `Attrs`;
+   3. Let `Attrs` be the result of [parsing the attributes](#parse-attributes)
+      from `Attrs`;
+   4. Let `Name` be the ASCII lowercase case-folded capture group `Name`;
+   5. If `Name` and `Attrs` match an allowed HTML tag[^allowedtags]:
+
+      1. Let `Brace` be the capture group `EndS`;
+      2. If `Brace` is `"/>"` and `Name` is not one of
+         `["br"|"wbr"|"hr"|"li"|"dt"|"dd"|"meta"|"link"]` and the supported
+         version of Wikitext is above 1.27, let `Brace` be `">"`; otherwise
+      3. If `Brace` is `"/>"` and `Name` is not one of
+         `["br"|"wbr"|"hr"|"meta"|"link"]` and the supported version of Wikitext
+         is below 1.28, let `Brace` be the interpolation `"></{{Name}}>"`;
+      4. Let `Rest` be the capture group `Rest`, replacing all `'>'` with
+         `"&gt;"`;
+      5. Let `EndC` be the capture group `EndC`;
+      6. Emit the interpolation `"<{{EndC}}{{Name}}{{Attrs}}{{Brace}}{{Rest}}"`;
+      7. Let `S` equal `E` and restart the loop.
+
+      Otherwise;
+
+3. Emit `Input[S..E]`, replacing all `'>'` with `"&gt;"`;
+4. Let `S` equal `E`.
+
+### Parse attributes
 
 ※ Attribute value parsing uses a non-standard parse where `>` or `/>` are
   terminators for attribute values, even if they are inside a quoted-text part.
   This violates the XML and HTML standards.
 
-For each attribute of each HTML tag in the input:
+1. Unstrip all strip markers from the input;
+2. Trim ASCII whitespace from the input;
+3. If the input is empty, return empty;
+4. Let `A` be a map.
 
-1. Let `Name` be the lowercase ASCII name of the attribute;
+For each attribute pair extracted from the input by the regular expression
+   `(?<N>[^\s/>][^\s/>=]*)(?:\s*=\s*(?:"(?<V1>[^"]*)(?:"|$)|'(?<V2>[^']*)(?:'|$)|(?<V3>[^\s>]*))?`:
+
+1. Let `N` be the ASCII lowercase conversion of capture group `N`;
+2. If `N` matches the regular expression `^[:_\p{L}\p{N}][:_.\p{L}\p{N}-]*$`:
+
+   ※ The behaviour of matching the pair and then filtering the name is different
+     than matching the name in the attribute pair. If combined, the pair
+     expression may fail to match an invalid name, then improperly match parts
+     of the value.
+
+   1. Let `V` be whichever capture group `[V1|V2|V3]` is not none;
+   2. Replace each run of `['\t'|'\r'|'\n'|' ']` in `V` with a single space
+      character;
+   3. Trim ASCII whitespace from `V`;
+   4. Decode HTML entities in `V` using the special MediaWiki rules[^entity];
+   5. [Sanitise the attribute](#sanitise-attribute);
+   6. Insert `V` to `A` with key `K`.
+
+Finally, return `A`.
+
+When `A` is interpolated into a string, for each item, entity encode all of
+`['<'|'>'|'"'|'\''|'&']` in its value and emit the interpolation
+`{{Name}}="{{Value}}"`.
+
+### Sanitise attribute
+
+For each attribute in the input map `A`:
+
+1. Let `Name` be the ASCII lowercase case-folded name of the attribute;
 2. If `Name` is `"style"`:
 
-   1. Let `Value` be the normalised value of the attribute:
+   1. Let `Value` be the value of the attribute following using these steps:
 
-      1. Decode HTML entities using the MediaWiki rules;
+      1. Decode HTML entities using the special MediaWiki rules[^entity];
       2. Decode CSS escapes according to the CSS 2 grammar;
       3. If the value matches the regular expression
          `^\s*/\*[^*\\/]*\*/\s*$`, stop here; otherwise
@@ -908,8 +988,15 @@ For each attribute of each HTML tag in the input:
 6. If `Name` is `"tabindex"` and the value is not `"0"`, discard it; otherwise
 7. If `Name` is `["itemtype"|"itemid"|"itemref"]` and there is no corresponding
    `"itemscope"` attribute, discard it; otherwise
-8. If `Name` is `"class"`,
-8. If `Name` is not on the following whitelist for the given tag name, discard
+8. If `Name` is `"class"`:
+
+   1. Split the value on runs of ASCII whitespace;
+   2. Remove any duplicate values from the list;
+   3. Join the list of values using a single space character between each value.
+
+   Otherwise;
+
+9. If `Name` is not on the following whitelist for the given tag name, discard
    it:
 
    * Let `Common` be any of:
@@ -959,10 +1046,9 @@ For each attribute of each HTML tag in the input:
                                    `|"nowrap"|"width"|"height"]`
    * `"font"`:          `Common` + `["size"|"color"|"face"]`
 
-9. If the attribute name matches an attribute name which already exists
-   on the tag, replace the old value of the previous attribute with the new
-   value from the new attribute; otherwise
-10. Add the attribute to the tag.
+10. If the attribute name matches an attribute name which already exists
+    on the tag, replace the old value of the previous attribute with the new
+    value from the new attribute.
 
 ## Tables
 
@@ -1080,33 +1166,6 @@ Finally:
 [^oopsbug]: This is a bug in the original parser since `TD History` may be true
   for any of `["caption"|"td"|"th"]`. Otherwise compliant parsers might want to
   emit the correct last tag instead.
-
-### Parse attributes
-
-1. Unstrip all strip markers from the input;
-2. Trim ASCII whitespace from the input;
-3. If the input is empty, return empty;
-4. Let `A` be a map.
-
-For each attribute pair extracted from the input by the regular expression
-   `(?<N>[^\s/>][^\s/>=]*)(?:\s*=\s*(?:"(?<V1>[^"]*)(?:"|$)|'(?<V2>[^']*)(?:'|$)|(?<V3>[^\s>]*))?`:
-
-1. Let `N` be the ASCII lowercase conversion of capture group `N`;
-2. If `N` matches the regular expression `^[:_\p{L}\p{N}][:_.\p{L}\p{N}-]*$`:
-
-   ※ The behaviour of matching the pair and then filtering the name is different
-     than matching the name in the attribute pair. If combined, the pair
-     expression may fail to match an invalid name, then improperly match parts
-     of the value.
-
-   1. Let `V` be whichever capture group `[V1|V2|V3]` is not none;
-   2. Replace each run of `['\t'|'\r'|'\n'|' ']` in `V` with a single space
-      character;
-   3. Trim ASCII whitespace from `V`;
-   4. Decode HTML entities in `V` using the special MediaWiki rules[^entity];
-   5. Insert `V` to `A` with key `K`.
-
-Finally, return `A`.
 
 ## Horizontal rules
 
@@ -2976,6 +3035,9 @@ If the input starts with `"../"` or `'/'`:
 
     1. Entities MUST end with `;`. (In HTML5, this is not required.)
     2. Non-standard entities `"&רלמ;"` and `"&رلم;"` decode to '\u{200f}'.
+    3. Decoded values which are not in the set
+       `['\t'|'\n'|' '..='\x7f'|'\u{a0}'..='\u{d7ff}'|'\u{e000}'..='\u{fffd}'|'\u{10000}'..='\u{10ffff}']`
+       must be replaced by the UTF-8 replacement character ('\u{fffd}'`).
 
 [^fuzzyip]: A match of the regular expression `[0-9.]+|\[[0-9A-Fa-f:.]+\]`.
 
