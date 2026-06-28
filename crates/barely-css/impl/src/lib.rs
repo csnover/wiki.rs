@@ -222,7 +222,7 @@ peg::parser! {grammar barely_css() for str {
       |'\u{10000}'..]
 
   rule value()
-  = value_part()*
+  = (!eol() value_part())*
 
   rule value_part()
   = quoted_string() / [^';']

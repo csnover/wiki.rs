@@ -2,7 +2,7 @@
 
 use super::{StripMarker, globals::Outline, tags::PHRASING_TAGS};
 use core::{
-    fmt,
+    fmt::{self, Write as _},
     num::{NonZeroU8, NonZeroU32},
 };
 use html_escape::encode_double_quoted_attribute;
@@ -389,17 +389,13 @@ impl<S: Sink + Markable> AttributeFilter<S> {
             Regex::new(UHOH).unwrap()
         });
 
-        // TODO: Must decode CSS escapes.
-        // TODO: `^\s*/\*[^*\\/]*\*/\s*$` should do nothing
-        // TODO: Replace CSS comments by a single space character
-        // TODO: Discard anything after "/*"
-
-        if style.contains(
-            |c| matches!(c, '\0'..='\x08' | '\x0b' | '\x0e'..='\x1f' | '\x7f' | char::REPLACEMENT_CHARACTER),
-        ) {
+        let style = decode_html(style);
+        let Some(style) = decode_css(&style) else {
             next.text("/* invalid control char */");
             return;
-        } else if RE_UHOH.is_match(style) {
+        };
+
+        if RE_UHOH.is_match(&style) {
             next.text("/* insecure input */");
             return;
         }
@@ -461,6 +457,142 @@ impl<S: Sink + Markable> AttributeFilter<S> {
             }
         }
     }
+}
+
+/// Decodes CSS escape sequences according to the MediaWiki rules, returning
+/// `None` if `style` contains any “problematic control characters”.
+fn decode_css(style: &str) -> Option<Cow<'_, str>> {
+    #[inline]
+    fn bad_char(c: char) -> bool {
+        matches!(c, '\0'..='\x08' | '\x0b' | '\x0e'..='\x1f' | '\x7f' | char::REPLACEMENT_CHARACTER)
+    }
+
+    let bytes = style.as_bytes();
+    let mut out = String::new();
+    let mut cursor = 0;
+    let mut flushed = 0;
+    let mut seen_non_ws = false;
+
+    // Any slash at the end of a CSS string is a literal slash requiring no
+    // processing
+    let max = style.len().saturating_sub(1);
+
+    // This has to be a range check because a multi-byte character at the end of
+    // the string will cause `cursor` to advance to `style.len()`
+    while cursor < max {
+        // Technically, comment handling is supposed to be a separate pass
+        // *after* decoding, but if someone relied on unescaping CSS to get
+        // their CSS comment to look like a CSS comment, ya dun goofed
+        if bytes[cursor] == b'/' && bytes[cursor + 1] == b'*' {
+            let start = cursor;
+            cursor += 2;
+            let unclosed = loop {
+                if cursor == max {
+                    break true;
+                }
+                if bytes[cursor] == b'*' && bytes[cursor + 1] == b'/' {
+                    cursor += 2;
+                    break false;
+                }
+                cursor += 1;
+            };
+
+            if unclosed {
+                return Some(if flushed == 0 {
+                    Cow::Borrowed(&style[..start])
+                } else {
+                    out += &style[flushed..start];
+                    Cow::Owned(out)
+                });
+            }
+
+            if !seen_non_ws && style[cursor..].bytes().all(|b| b.is_ascii_whitespace()) {
+                // This comment is the only thing in the whole style other than
+                // some whitespace, so just return it all
+                return (style[start..cursor].chars().all(|c| !bad_char(c)))
+                    .then_some(Cow::Borrowed(style));
+            }
+
+            // …and there is other stuff, so replace the whole comment with
+            // whitespace and continue
+            seen_non_ws = true;
+            out += &style[flushed..start];
+            out.push(' ');
+            flushed = cursor;
+            continue;
+        }
+
+        if bytes[cursor] != b'\\' {
+            let c = style[cursor..].chars().next()?;
+            if bad_char(c) {
+                return None;
+            }
+            seen_non_ws |= !c.is_ascii_whitespace();
+            cursor += c.len_utf8();
+            continue;
+        }
+
+        seen_non_ws = true;
+        out += &style[flushed..cursor];
+        cursor += 1;
+
+        // It is safe to unconditionally access `bytes[cursor]` here because
+        // `max` means there will always be at least one more byte to check
+        if bytes[cursor] == b'\r' && bytes.get(cursor + 1) == Some(&b'\n') {
+            // Line continuation
+            cursor += 2;
+        } else if matches!(bytes[cursor], b'\r' | b'\n' | b'\x0c') {
+            // Line continuation
+            cursor += 1;
+        } else if bytes[cursor].is_ascii_hexdigit() {
+            // Unicode escape sequence
+            let start = cursor;
+            for _ in 0..6 {
+                cursor += 1;
+                if bytes.get(cursor).is_none_or(|b| !b.is_ascii_hexdigit()) {
+                    break;
+                }
+            }
+
+            let c = u32::from_str_radix(&style[start..cursor], 16).unwrap();
+            let c = char::from_u32(c)?;
+            if bad_char(c) {
+                return None;
+            } else if matches!(c, '\n' | '"' | '\'' | '\\') {
+                write!(out, "\\{:x} ", c as u32).unwrap();
+            } else {
+                out.push(c);
+            }
+
+            if matches!(
+                bytes.get(cursor),
+                Some(b'\t' | b'\r' | b'\n' | b'\x0c' | b' ')
+            ) {
+                cursor += 1;
+            }
+        } else if matches!(bytes[cursor], b'"' | b'\'' | b'\\') {
+            // Escape of a character considered special by MediaWiki
+            write!(out, "\\{:x} ", bytes[cursor]).unwrap();
+            cursor += 1;
+        } else {
+            // A non-escape escape
+        }
+
+        flushed = cursor;
+    }
+
+    for c in style[cursor..].chars() {
+        if bad_char(c) {
+            return None;
+        }
+    }
+
+    Some(if flushed == 0 {
+        Cow::Borrowed(style)
+    } else {
+        out += &style[flushed..];
+        Cow::Owned(out)
+    })
 }
 
 impl<S: Sink + Markable> Sink for AttributeFilter<S> {
@@ -4726,6 +4858,8 @@ impl Tag {
 /// Converts runs of text to typographically beautiful HTML.
 #[derive(Debug)]
 pub(super) struct PrettyText<S: Sink> {
+    /// If true, currently in an HTML start tag.
+    in_attr: bool,
     /// The current number of code contexts.
     ///
     /// Pretty typography does not apply in code contexts.
@@ -4752,7 +4886,8 @@ impl<S: Sink> PrettyText<S> {
     #[inline]
     pub fn new(next: S) -> Self {
         Self {
-            in_code: 0,
+            in_attr: <_>::default(),
+            in_code: <_>::default(),
             next,
             prev_chars: Self::new_context(),
             saved_contexts: <_>::default(),
@@ -4878,7 +5013,7 @@ impl<S: Sink> Sink for PrettyText<S> {
 
     #[inline]
     fn tag_attribute_end(&mut self, name: &str) {
-        if name != "title" {
+        if !matches!(name, "alt" | "title") {
             self.in_code -= 1;
         }
         self.pop_context();
@@ -4887,7 +5022,7 @@ impl<S: Sink> Sink for PrettyText<S> {
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
-        if name != "title" {
+        if !matches!(name, "alt" | "title") {
             self.in_code += 1;
         }
         self.push_context();
@@ -4913,12 +5048,14 @@ impl<S: Sink> Sink for PrettyText<S> {
         if name == "br" || name == "hr" {
             self.push_char('\n');
         }
+        self.in_attr = true;
         self.in_code += u8::from(Self::is_code_tag(name));
         self.next.tag_start(name);
     }
 
     #[inline]
     fn tag_start_end(&mut self, name: &str) {
+        self.in_attr = false;
         self.next.tag_start_end(name);
     }
 
@@ -4960,9 +5097,11 @@ impl<S: Sink> Sink for PrettyText<S> {
                     self.next.text("…");
                     c = '…';
                 }
-                // TODO: Mark the source for a retry later if `None` returns.
-                ' ' if Self::is_french_space(self.prev_chars, peek_array(&mut chars))
-                    == Some(true) =>
+                // This is supposed to also occur in code contexts except for
+                // attributes
+                ' ' if (self.in_code == 0 || !self.in_attr)
+                    && Self::is_french_space(self.prev_chars, peek_array(&mut chars))
+                        == Some(true) =>
                 {
                     flush(&mut self.next, &mut flushed, text, index, c);
                     self.next.text("\u{00a0}");
@@ -5330,6 +5469,29 @@ use chainable;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_decode_css() {
+        assert_eq!(decode_css("\\\"").as_deref(), Some("\\22 "));
+        assert_eq!(decode_css("\\22 ").as_deref(), Some("\\22 "));
+        assert_eq!(decode_css("\\💩").as_deref(), Some("💩"));
+        assert_eq!(decode_css("a\\\nb").as_deref(), Some("ab"));
+        // CSS is a unique snowflake
+        assert_eq!(decode_css("a\\nb").as_deref(), Some("anb"));
+        // And so is MediaWiki, which demands "\\\n" be escaped but a raw
+        // unescaped one is fine?
+        assert_eq!(decode_css("a\nb").as_deref(), Some("a\nb"));
+        assert_eq!(decode_css("\\01f4a98").as_deref(), Some("💩8"));
+        assert_eq!(decode_css("\\1f4a9 8").as_deref(), Some("💩8"));
+        assert_eq!(decode_css("\\1f4a9\t8").as_deref(), Some("💩8"));
+        assert_eq!(decode_css("\\1f4a9\r8").as_deref(), Some("💩8"));
+        assert_eq!(decode_css("\\1f4a9\n8").as_deref(), Some("💩8"));
+        assert_eq!(decode_css("\\1f4a9\x0c8").as_deref(), Some("💩8"));
+        assert_eq!(decode_css("\\1f4a9x").as_deref(), Some("💩x"));
+        assert_eq!(decode_css("\\ffffff").as_deref(), None);
+        assert_eq!(decode_css("\x7f").as_deref(), None);
+        assert_eq!(decode_css("\\7f").as_deref(), None);
+    }
 
     #[test]
     fn move_range() {

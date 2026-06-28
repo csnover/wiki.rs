@@ -174,6 +174,23 @@ pub enum AnchorEncodeMode {
 
 /// Decodes HTML entities according to the Wikitext rules.
 pub fn decode_html(text: &str) -> Cow<'_, str> {
+    // Someone working on MW decided that if an entity decodes to something
+    // which is invalid in either HTML *or* XML that it is going to nuke it even
+    // though ENTITIES EXIST IN PART TO ENABLE THESE CHARACTERS TO BE ENCODED!
+    // Not replacing them in this way causes problems in edge cases like, of all
+    // outdated and useless things, the CSS sanitiser.
+    fn break_perfectly_valid_characters(c: char) -> char {
+        if matches!(c, '\t' | '\n' | ' '..='\x7e'
+            | '\u{00a0}'..='\u{d7ff}'
+            | '\u{e000}'..='\u{fffd}'
+            | '\u{10000}'..='\u{10ffff}'
+        ) {
+            c
+        } else {
+            char::REPLACEMENT_CHARACTER
+        }
+    }
+
     const MAX_LEN: usize = {
         let mut max = 0;
         let mut entities = NAMED_ENTITIES.as_slice();
@@ -215,7 +232,7 @@ pub fn decode_html(text: &str) -> Cow<'_, str> {
             }
             .ok()
             .and_then(char::from_u32)
-            .map(|c| &*c.encode_utf8(&mut char))
+            .map(|c| &*break_perfectly_valid_characters(c).encode_utf8(&mut char))
         } else {
             NAMED_ENTITIES
                 .binary_search_by(|(t_name, _)| t_name.cmp(&name.as_bytes()))

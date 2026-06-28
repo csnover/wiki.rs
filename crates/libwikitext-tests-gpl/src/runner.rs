@@ -687,6 +687,11 @@ fn check_test_results(
             if fail && let Cow::Owned(expected_html) = styles(expected_html) {
                 heuristic = "unpretty + styles";
                 fail = expected_html != actual;
+
+                if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                    heuristic = "unpretty + styles + decode html";
+                    fail = expected_html != actual;
+                }
             }
 
             if fail && let Cow::Owned(expected_html) = unwrap_heading(expected_html) {
@@ -968,7 +973,7 @@ fn styles(html: &str) -> Cow<'_, str> {
     static RE_PREFIX_STYLES: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"(<[^>]+ )style="([^"]+)""#).unwrap());
     static RE_PREFIX_STYLE_DECL: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"\s*([^\s:]+)\s*:\s*([^;]+);?\s*").unwrap());
+        LazyLock::new(|| Regex::new(r"\s*([^\s:]+)\s*:\s*((?:\([^)]+\)|[^;])+);?\s*").unwrap());
 
     fn re_style(caps: &regex::Captures<'_>) -> String {
         let (orig, [prefix, decls]) = caps.extract();
