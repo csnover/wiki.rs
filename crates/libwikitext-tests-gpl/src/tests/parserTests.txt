@@ -11613,6 +11613,31 @@ parsoid={ "modes": ["wt2html","html2html"], "normalizePhp": true }
 <dd>&rlm; &rlm;</dd>
 <dt>Highest valid characters</dt>
 <dd>&#x10fffd; &#x10fffe; &#x10ffff;</dd></dl>
+!! html/wiki.rs # Entities that can be decoded to character literals, are decoded
+<dl><dt>Null</dt>
+<dd>&amp;#00;</dd>
+<dt>FF</dt>
+<dd>&amp;#xC;</dd>
+<dt>CR</dt>
+<dd>&amp;#xD;</dd>
+<dt>Control (low)</dt>
+<dd>&amp;#8;</dd>
+<dt>Control (high)</dt>
+<dd>&amp;#x7F; &amp;#x9F;</dd>
+<dt>Unsupported legacy</dt>
+<dd>&amp;#128; &amp;#130; &amp;#131; &amp;#150; &amp;#159;</dd>
+<dt>Surrogate</dt>
+<dd>&amp;#xD83D;&amp;#xDCA9;</dd>
+<dt>Invalid characters</dt>
+<dd>&amp;#xfffe; &amp;#xffff;</dd>
+<dt>This is an okay astral character</dt>
+<dd>💩</dd>
+<dt>This is an okay multi-codepoint HTML5 entity</dt>
+<dd>∾</dd>
+<dt>This are valid wikitext-specific entities</dt>
+<dd>‏ ‏</dd>
+<dt>Highest valid characters</dt>
+<dd>􏿽 􏿾 􏿿</dd></dl>
 !! end
 
 !! test
