@@ -607,6 +607,9 @@ impl Surrogate<Error> for Document<'_> {
             self.next.new_line();
             self.next.next_mut().next_mut().set_in_list(false);
         } else {
+            if let Some(table) = self.table_emitter.pop_if(|table| table.after_table) {
+                table.finish(&mut self.next, false);
+            }
             self.next.new_line();
         }
         Ok(())
@@ -744,8 +747,8 @@ impl Surrogate<Error> for Document<'_> {
         sp: &StackFrame<'_>,
         span: Span,
     ) -> Result {
-        if let Some(table) = self.table_emitter.pop() {
-            table.finish(&mut self.next, false);
+        if let Some(table) = self.table_emitter.last_mut() {
+            table.table_end(&mut self.next, false);
         } else {
             self.next.text(&sp.source[span.into_range()]);
         }
@@ -868,6 +871,9 @@ impl Surrogate<Error> for Document<'_> {
 /// A Wikitext table frame.
 #[derive(Debug)]
 struct TableState {
+    /// If true, the table has ended, and this state waiting for the line end to
+    /// emit any indent end elements.
+    after_table: bool,
     /// If true, a Wikitext table row, header, or data token has been seen.
     has_tbody: bool,
     /// The indent hack count for this table.
@@ -884,6 +890,7 @@ impl TableState {
     /// Creates a new `TableState` with the given `indent`.
     fn new(indent: u8) -> Self {
         Self {
+            after_table: <_>::default(),
             has_tbody: <_>::default(),
             indent,
             last_tag: <_>::default(),
@@ -893,7 +900,18 @@ impl TableState {
     }
 
     /// Finishes a table frame.
-    fn finish<S: Sink + ?Sized>(self, next: &mut S, last: bool) {
+    fn finish<S: Sink + ?Sized>(mut self, next: &mut S, last: bool) {
+        if !self.after_table {
+            self.table_end(next, last);
+        }
+        for _ in 0..self.indent {
+            next.tag_end("dd");
+            next.tag_end("dl");
+        }
+    }
+
+    /// Closes the table for a table frame.
+    fn table_end<S: Sink + ?Sized>(&mut self, next: &mut S, last: bool) {
         if last {
             next.new_line();
         }
@@ -920,9 +938,7 @@ impl TableState {
         }
         next.tag_end("table");
 
-        for _ in 0..self.indent {
-            next.tag_end("dd");
-            next.tag_end("dl");
-        }
+        debug_assert!(!self.after_table);
+        self.after_table = true;
     }
 }
