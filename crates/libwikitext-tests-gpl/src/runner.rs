@@ -740,7 +740,7 @@ fn check_test_results(
             }
 
             if !fail {
-                log::info!("Passed using the {heuristic} heuristic");
+                log::info!(target: target, "Passed using the {heuristic} heuristic");
             }
         }
 
