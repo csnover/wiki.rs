@@ -765,7 +765,7 @@ fn check_test_results(
             }
         }
 
-        if meta.text.is_some() {
+        if meta.text.is_some() || !meta.kvs.is_empty() {
             log::warn!(target: target, "TODO: Compare title or indicators");
         } else if options.contains("showindicators") {
             log::log!(target: target, log_level, "Expected indicators");

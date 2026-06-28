@@ -414,12 +414,26 @@ fn graph(
 /// The `<indicator>` extension tag.
 /// <https://www.mediawiki.org/wiki/Help:Page_status_indicators>
 fn indicator(
-    _: &mut String,
+    out: &mut String,
     state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    let Some(name) = arguments.get(state, "name")? else {
-        return Ok(OutputMode::Empty);
+    // TODO: This is probably a general useful function, considering how many
+    // times `is_ascii_whitespace` shows up!
+    fn not_empty(value: Cow<'_, str>) -> Option<Cow<'_, str>> {
+        value
+            .contains(|c: char| !c.is_ascii_whitespace())
+            .then_some(value)
+    }
+
+    let Some(name) = arguments.get(state, "name")?.and_then(not_empty) else {
+        let error =
+            state
+                .statics
+                .messages
+                .find_or_default(["invalid-indicator-name"], None, true)?;
+        write!(out, r#"<span class="error">{error}</span>"#)?;
+        return Ok(OutputMode::Html);
     };
 
     let (sp, body) = arguments.parse_body(state)?;
