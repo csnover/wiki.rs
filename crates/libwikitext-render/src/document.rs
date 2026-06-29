@@ -1,18 +1,17 @@
 //! The root of a Wikitext document.
 
 use super::{
-    Error, LinkKind, Result, State,
+    Error, LinkKind, Result, State, StripMarker,
     emitters::{ListEmitter, TableState, TextStyleEmitter},
-    transform::{
-        Chain as _,
-        Accumulator, AttributeFilter, DomTree, EmptyTagger, GrafEmitter,
-        OutlineEmitter, PWrapper, PrettyText, Sink as _, TemplateTagger,
-    },
     extension_tags,
     globals::Outline,
     stack::StackFrame,
     surrogate::{self, Surrogate},
     tags::{self, ExternalLinkKind},
+    transform::{
+        Accumulator, AttributeFilter, Chain as _, DomTree, EmptyTagger, GrafEmitter,
+        OutlineEmitter, PWrapper, PrettyText, Sink, TemplateTagger,
+    },
 };
 use either::Either;
 use libmisc::{CowExt as _, to_ascii_lower};
@@ -28,31 +27,15 @@ use libwikitext_parse::{
 };
 use std::borrow::Cow;
 
-/// The chain of render nodes used to render a “half parsed” Wikitext document.
-/// This is equivalent to `Parser::recursiveTagParse`.
-type HalfParsedChain<'a> = AttributeFilter<OutlineEmitter<'a, Accumulator>>;
-
-/// The chain of render nodes used to render the document.
-/// This is equivalent to `Parser::parse` or `Parser::recursiveTagParseFully`.
-type RendererChain<'a> = AttributeFilter<
-    OutlineEmitter<
-        'a,
-        GrafEmitter<DomTree<PWrapper<TemplateTagger<PrettyText<EmptyTagger<Accumulator>>>>>>,
-    >,
->;
-
 /// The root of a Wikitext document.
 #[derive(Debug)]
-pub(crate) struct Document<'a> {
-    /// If true, this [`Document`] is used to render a document fragment rather
-    /// than a complete document.
-    fragment: bool,
+pub(crate) struct Document<S> {
     /// The stack of inclusion control tags.
     in_include: Vec<InclusionMode>,
     /// If true, inside a `<pre>` tag.
     in_pre: bool,
     /// The output sink.
-    pub(super) next: RendererChain<'a>,
+    pub(super) next: S,
     /// The list emitter.
     list_emitter: Option<ListEmitter>,
     /// The Wikitext table emitters.
@@ -61,19 +44,16 @@ pub(crate) struct Document<'a> {
     text_style_emitter: Vec<TextStyleEmitter>,
 }
 
-impl<'a> Document<'a> {
+impl<S> Document<S>
+where
+    S: DocumentSink,
+{
     /// Creates a new [`Document`].
-    pub(crate) fn new(fragment: bool, outline: &'a mut Outline) -> Self {
+    pub(crate) fn new(args: S::Args) -> Self {
         Self {
-            fragment,
             in_include: <_>::default(),
             in_pre: <_>::default(),
-            next: AttributeFilter::new(OutlineEmitter::new(
-                outline,
-                GrafEmitter::new(DomTree::new(PWrapper::new(TemplateTagger::new(
-                    PrettyText::new(EmptyTagger::new(Accumulator::new())),
-                )))),
-            )),
+            next: S::new(args),
             list_emitter: <_>::default(),
             table_emitter: <_>::default(),
             text_style_emitter: vec![TextStyleEmitter::default()],
@@ -188,7 +168,10 @@ impl<'a> Document<'a> {
     }
 }
 
-impl Surrogate<Error> for Document<'_> {
+impl<S> Surrogate<Error> for Document<S>
+where
+    S: DocumentSink,
+{
     fn adopt_autolink(
         &mut self,
         state: &mut State<'_, '_, '_>,
@@ -300,7 +283,16 @@ impl Surrogate<Error> for Document<'_> {
             content,
             true,
         )? {
-            Some(Either::Left(marker)) => self.next.strip_marker(&marker),
+            Some(Either::Left(marker)) => {
+                if S::UNSTRIP_MARKERS {
+                    let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
+                    self.next.strip_marker(&marker);
+                } else {
+                    let id = &mut String::new();
+                    state.strip_markers.push(id, &name, marker);
+                    self.next.text(id);
+                }
+            }
             Some(Either::Right(_)) => todo!("this should never happen?"),
             None => {}
         }
@@ -416,9 +408,9 @@ impl Surrogate<Error> for Document<'_> {
             self.adopt_tokens(state, sp, trail)?;
         } else if !force_link && title.is_local_file() {
             self.adopt_tokens(state, sp, prefix)?;
-            self.next.next_mut().next_mut().set_in_caption(true);
+            self.next.set_in_caption(true);
             super::image::render_media(self, state, sp, title, content)?;
-            self.next.next_mut().next_mut().set_in_caption(false);
+            self.next.set_in_caption(false);
             self.adopt_tokens(state, sp, trail)?;
         } else {
             self.text_style_emitter.push(<_>::default());
@@ -489,7 +481,7 @@ impl Surrogate<Error> for Document<'_> {
         let mut list = if let Some(list) = self.list_emitter.take() {
             list
         } else {
-            self.next.next_mut().next_mut().set_in_list(true);
+            self.next.set_in_list(true);
             <_>::default()
         };
 
@@ -609,7 +601,7 @@ impl Surrogate<Error> for Document<'_> {
         if let Some(mut list) = self.list_emitter.take() {
             list.finish(&mut self.next);
             self.next.new_line();
-            self.next.next_mut().next_mut().set_in_list(false);
+            self.next.set_in_list(false);
         } else {
             if let Some(table) = self.table_emitter.pop_if(|table| table.after_table) {
                 table.finish(&mut self.next, false);
@@ -711,15 +703,21 @@ impl Surrogate<Error> for Document<'_> {
     fn adopt_strip_marker(
         &mut self,
         state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
-        _span: Span,
+        sp: &StackFrame<'_>,
+        span: Span,
         marker: &str,
     ) -> Result {
-        if let Some(tag) = state.strip_markers.get(marker) {
-            self.next.strip_marker(tag);
-            Ok(())
+        if S::UNSTRIP_MARKERS {
+            if let Some(marker) = state.strip_markers.get(marker) {
+                let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
+                self.next.strip_marker(&marker);
+                Ok(())
+            } else {
+                Err(Error::StripMarker(marker.to_owned()))
+            }
         } else {
-            Err(Error::StripMarker(marker.to_owned()))
+            self.next.text(&sp.source[span.into_range()]);
+            Ok(())
         }
     }
 
@@ -869,5 +867,215 @@ impl Surrogate<Error> for Document<'_> {
             start: sp.source.find_line_col(token.span.start),
             err: Box::new(err),
         })
+    }
+}
+
+/// A [`Sink`] supertrait used by [`Document`].
+pub(super) trait DocumentSink: Sink {
+    /// If true, the sink will process strip markers.
+    const UNSTRIP_MARKERS: bool;
+
+    /// Arguments to [`Self::new`].
+    type Args;
+
+    /// Creates a new `DocumentSink` with the given `args`.
+    fn new(args: Self::Args) -> Self
+    where
+        Self: Sized;
+
+    /// Enables or disables in-caption processing mode.
+    fn set_in_caption(&mut self, in_caption: bool);
+    /// Enables or disables in-list processing mode.
+    fn set_in_list(&mut self, in_list: bool);
+}
+
+/// A [`DocumentSink`] for rendering a “half parsed” Wikitext document.
+/// This is equivalent to `Parser::recursiveTagParse`.
+pub(super) struct ParseHalf<'a>(AttributeFilter<OutlineEmitter<'a, Accumulator>>);
+impl<'a> DocumentSink for ParseHalf<'a> {
+    const UNSTRIP_MARKERS: bool = false;
+
+    type Args = &'a mut Outline;
+
+    #[inline]
+    fn new(args: Self::Args) -> Self
+    where
+        Self: Sized,
+    {
+        Self(AttributeFilter::new(OutlineEmitter::new(
+            args,
+            Accumulator::new(),
+        )))
+    }
+
+    #[inline]
+    fn set_in_caption(&mut self, _: bool) {}
+
+    #[inline]
+    fn set_in_list(&mut self, _: bool) {}
+}
+
+impl Sink for ParseHalf<'_> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.0.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.0.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.0.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.0.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.0.new_line();
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        self.0.strip_marker(marker);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.0.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.0.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.0.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.0.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.0.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.0.text(text);
+    }
+}
+
+/// The chain of transformers used to fully parse a document.
+type ParseFullyChain<'a> = AttributeFilter<
+    OutlineEmitter<
+        'a,
+        GrafEmitter<DomTree<PWrapper<TemplateTagger<PrettyText<EmptyTagger<Accumulator>>>>>>,
+    >,
+>;
+
+/// A [`DocumentSink`] for rendering a complete Wikitext document.
+/// This is equivalent to `Parser::parse` or `Parser::recursiveTagParseFully`.
+pub(super) struct ParseFully<'a>(ParseFullyChain<'a>);
+
+impl<'a> DocumentSink for ParseFully<'a> {
+    const UNSTRIP_MARKERS: bool = true;
+
+    type Args = &'a mut Outline;
+
+    #[inline]
+    fn new(args: Self::Args) -> Self
+    where
+        Self: Sized,
+    {
+        Self(AttributeFilter::new(OutlineEmitter::new(
+            args,
+            GrafEmitter::new(DomTree::new(PWrapper::new(TemplateTagger::new(
+                PrettyText::new(EmptyTagger::new(Accumulator::new())),
+            )))),
+        )))
+    }
+
+    #[inline]
+    fn set_in_caption(&mut self, in_caption: bool) {
+        self.0.next_mut().next_mut().set_in_caption(in_caption);
+    }
+
+    #[inline]
+    fn set_in_list(&mut self, in_list: bool) {
+        self.0.next_mut().next_mut().set_in_list(in_list);
+    }
+}
+
+impl Sink for ParseFully<'_> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.0.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.0.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.0.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.0.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.0.new_line();
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        self.0.strip_marker(marker);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.0.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.0.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.0.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.0.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.0.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.0.text(text);
     }
 }

@@ -2339,7 +2339,6 @@ Sections:
 <h2 id="spantag_h2">spantag h2</h2>
 <p>intro
 </p>
-
 <h2 id="page_h2">page h2</h2>
 <p>blah
 </p>
@@ -2393,7 +2392,6 @@ blah
 <p><span>
 </span></p>
 <h2 id="spantag_h2">spantag h2</h2>
-
 <h2 id="template_h2">template h2</h2>
 <p>intro
 </p>

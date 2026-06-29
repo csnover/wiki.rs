@@ -1,7 +1,9 @@
 //! Plain HTML rendering functions.
 
 use super::{
-    Error, Paths, Result, StackFrame, State, Surrogate, document::Document, image::make_media_url,
+    Error, Paths, Result, StackFrame, State, Surrogate,
+    document::{Document, DocumentSink},
+    image::make_media_url,
     transform::Sink,
 };
 use libmisc::CowExt as _;
@@ -19,8 +21,8 @@ use regex::Regex;
 use std::{borrow::Cow, sync::LazyLock};
 
 /// Renders an external web site link.
-pub(super) fn render_external_link(
-    out: &mut Document<'_>,
+pub(super) fn render_external_link<S: DocumentSink>(
+    out: &mut Document<S>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &[Spanned<Token>],
@@ -117,8 +119,8 @@ fn should_render_hotlink(config: &Configuration, target: &str) -> bool {
 
 /// Renders an internal link.
 #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
-pub(super) fn render_internal_link(
-    out: &mut Document<'_>,
+pub(super) fn render_internal_link<S: DocumentSink>(
+    out: &mut Document<S>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     target: &str,

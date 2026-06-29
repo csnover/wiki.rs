@@ -131,7 +131,8 @@
 
 use super::{
     Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
-    document::Document,
+    document::{Document, ParseFully, ParseHalf},
+    eval_plugin,
     image::{self, FrameKind},
     preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
@@ -388,7 +389,7 @@ fn gallery(
         }
 
         let mut outline = <_>::default();
-        let mut inner = Document::new(true, &mut outline);
+        let mut inner = Document::<ParseHalf<'_>>::new(&mut outline);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
         write!(out, r#"<li class="gallerybox">{}</li>"#, inner.finish())?;
     }
@@ -456,7 +457,7 @@ fn indicator(
 
     if let Some(image) = image {
         let mut outline = <_>::default();
-        let mut out = Document::new(true, &mut outline);
+        let mut out = Document::<ParseFully<'_>>::new(&mut outline);
         out.adopt_token(state, &sp, image)?;
         let indicator = out.finish();
         state.globals.indicators.insert(name.to_string(), indicator);
@@ -919,6 +920,8 @@ fn references(
     // template expansion. Because wiki.rs converts `#tag` calls from scripts
     // into XML tags to be processed during the final pass, scripts that call
     // that also will break if `<references>` processing is not deferred.
+    // TODO: This may be no longer true since implementation closer to the
+    // original parser was necessary in other places.
     if !arguments.in_document {
         return render_raw(
             state,
@@ -1329,12 +1332,7 @@ fn eval_string(
     unstrip: bool,
 ) -> Result<String> {
     let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
-    let sp = sp.clone_with_source(FileMap::new(&source));
-    let root = state.statics.parser.parse(&sp.source)?;
-    let mut outline = <_>::default();
-    let mut out = Document::new(!unstrip, &mut outline);
-    out.adopt_tokens(state, &sp, &root)?;
-    Ok(out.finish())
+    eval_plugin(state, sp, unstrip, &source)
 }
 
 /// Re-emits an extension tag.

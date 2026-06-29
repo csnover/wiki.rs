@@ -109,12 +109,12 @@ impl PluginParserFn for DivTagPf {
         }
 
         let content = if raw {
-            args.eval(state, 0)
+            args.eval(state, 0)?
         } else if raw_html {
-            args.eval_as_document(state, 0)
+            args.eval_as_document(state, 0)?.map(Cow::Owned)
         } else {
-            args.eval_as_fragment(state, 0)
-        }?
+            args.eval_as_fragment(state, 0)?.map(Cow::Owned)
+        }
         .unwrap_or_default();
 
         write!(out, "<{tag}>{content}</{tag}>")?;

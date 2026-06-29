@@ -2,7 +2,7 @@
 
 use super::{
     Result, StackFrame, State, StripMarkers, Surrogate as _,
-    document::Document,
+    document::{Document, DocumentSink},
     tags::{self, LinkKind, LinkKindOptions},
     transform::Sink,
 };
@@ -576,8 +576,8 @@ fn render_image<S: Sink + ?Sized>(
 }
 
 /// Renders a media tag.
-pub(super) fn render_media(
-    out: &mut Document<'_>,
+pub(super) fn render_media<S: DocumentSink>(
+    out: &mut Document<S>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     title: Title,
@@ -588,8 +588,8 @@ pub(super) fn render_media(
 }
 
 /// Renders a media tag using the given media options.
-pub(super) fn render_media_with_options(
-    out: &mut Document<'_>,
+pub(super) fn render_media_with_options<S: DocumentSink>(
+    out: &mut Document<S>,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     options: &Options<'_>,

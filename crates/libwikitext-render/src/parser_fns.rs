@@ -8,7 +8,7 @@
 )]
 
 use super::{
-    Document, Error, PluginResult, PluginState, Result, State,
+    Error, PluginResult, PluginState, Result, State,
     expand_templates::{ExpandMode, ExpandTemplates},
     extension_tags,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
@@ -100,7 +100,7 @@ impl PluginFnArgs<'_, '_, '_> {
         &self,
         state: &mut PluginState<'_, '_, '_, '_>,
         index: usize,
-    ) -> PluginResult<Option<Cow<'_, str>>> {
+    ) -> PluginResult<Option<String>> {
         self.eval_as_impl(state, index, false)
     }
 
@@ -114,7 +114,7 @@ impl PluginFnArgs<'_, '_, '_> {
         &self,
         state: &mut PluginState<'_, '_, '_, '_>,
         index: usize,
-    ) -> PluginResult<Option<Cow<'_, str>>> {
+    ) -> PluginResult<Option<String>> {
         self.eval_as_impl(state, index, true)
     }
 
@@ -124,16 +124,13 @@ impl PluginFnArgs<'_, '_, '_> {
         state: &mut PluginState<'_, '_, '_, '_>,
         index: usize,
         fragment: bool,
-    ) -> PluginResult<Option<Cow<'_, str>>> {
+    ) -> PluginResult<Option<String>> {
         let Some(source) = self.0.eval(state.0, index)? else {
             return Ok(None);
         };
-        let sp = self.0.sp.clone_with_source(FileMap::new(&source));
-        let root = state.0.statics.parser.parse(&sp.source)?;
-        let mut outline = <_>::default();
-        let mut out = Document::new(fragment, &mut outline);
-        out.adopt_tokens(state.0, &sp, &root)?;
-        Ok(Some(out.finish().into()))
+        Ok(Some(super::eval_plugin(
+            state.0, self.0.sp, !fragment, &source,
+        )?))
     }
 
     /// Returns true if there are no arguments.
@@ -359,9 +356,8 @@ mod ext {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let (Some(name), Some(body)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
-            let name = strip::kill(&name);
             // Extension tags may contain non-ASCII characters
-            let name = to_lower(name.trim_ascii());
+            let name = strip::kill(&name).map_ref(str::trim_ascii).map(to_lower);
             match extension_tags::render_extension_tag(
                 state,
                 arguments.sp,

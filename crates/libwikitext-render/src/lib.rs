@@ -25,7 +25,7 @@ mod template;
 mod transform;
 
 use core::{fmt, time::Duration};
-use document::Document;
+use document::{Document, ParseFully, ParseHalf};
 use expand_templates::{ExpandMode, ExpandTemplates};
 pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
 use libphp_rs::DateTime;
@@ -272,7 +272,7 @@ fn render(
     prefetcher.finish(&mut state);
 
     let mut outline = <_>::default();
-    let mut renderer = Document::new(false, &mut outline);
+    let mut renderer = Document::<ParseFully<'_>>::new(&mut outline);
     renderer.adopt_tokens(&mut state, &sp, &root)?;
     let content = renderer.finish();
 
@@ -646,6 +646,18 @@ pub(crate) enum StripMarker<'a> {
     WikiRsSourceStart(Cow<'a, str>),
 }
 
+impl<'a> StripMarker<'a> {
+    /// Makes a new `StripMarker` using a reference-returning callback.
+    fn map_ref(&'a self, f: impl FnOnce(&'a str) -> Cow<'a, str>) -> Self {
+        match self {
+            Self::General(s) => Self::General(f(s)),
+            Self::NoWiki(s) => Self::NoWiki(f(s)),
+            Self::WikiRsSourceEnd(s) => Self::WikiRsSourceEnd(Cow::Borrowed(s)),
+            Self::WikiRsSourceStart(s) => Self::WikiRsSourceStart(Cow::Borrowed(s)),
+        }
+    }
+}
+
 impl fmt::Display for StripMarker<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self)
@@ -716,6 +728,29 @@ impl ArticleState {
             variables: <_>::default(),
         }
     }
+}
+
+/// Evaluates the given `source` in the context of the given `sp`, returning
+/// either a half-parsed Wikitext or fully-parsed HTML string according to
+/// `parse_fully`.
+fn eval_plugin(
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    parse_fully: bool,
+    source: &str,
+) -> Result<String> {
+    let sp = sp.clone_with_source(FileMap::new(source));
+    let root = state.statics.parser.parse(&sp.source)?;
+    let mut outline = <_>::default();
+    Ok(if parse_fully {
+        let mut out = Document::<ParseFully<'_>>::new(&mut outline);
+        out.adopt_tokens(state, &sp, &root)?;
+        out.finish()
+    } else {
+        let mut out = Document::<ParseHalf<'_>>::new(&mut outline);
+        out.adopt_tokens(state, &sp, &root)?;
+        out.finish()
+    })
 }
 
 /// Writes a run of text to the given output as entity-encoded HTML, converting
