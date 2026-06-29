@@ -132,13 +132,13 @@
 use super::{
     Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
     document::Document,
-    emitters::{Accumulator, AttributeFilter, Sink as _},
     image::{self, FrameKind},
     preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     tags::ExternalLinkKind,
     text_run,
+    transform::{Accumulator, AttributeFilter, Sink as _},
 };
 use core::{fmt::Write as _, ops::Range};
 use either::Either;

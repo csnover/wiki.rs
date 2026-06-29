@@ -2,17 +2,18 @@
 
 use super::{
     Error, LinkKind, Result, State,
-    emitters::{
-        Accumulator, AttributeFilter, DomTree, EmptyTagger, GrafEmitter, ListEmitter,
-        OutlineEmitter, PWrapper, PrettyText, Sink, TemplateTagger, TextStyleEmitter,
+    emitters::{ListEmitter, TableState, TextStyleEmitter},
+    transform::{
+        Chain as _,
+        Accumulator, AttributeFilter, DomTree, EmptyTagger, GrafEmitter,
+        OutlineEmitter, PWrapper, PrettyText, Sink as _, TemplateTagger,
     },
     extension_tags,
     globals::Outline,
     stack::StackFrame,
     surrogate::{self, Surrogate},
-    tags,
+    tags::{self, ExternalLinkKind},
 };
-use crate::{emitters::Chain as _, tags::ExternalLinkKind};
 use either::Either;
 use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
@@ -27,7 +28,12 @@ use libwikitext_parse::{
 };
 use std::borrow::Cow;
 
+/// The chain of render nodes used to render a “half parsed” Wikitext document.
+/// This is equivalent to `Parser::recursiveTagParse`.
+type HalfParsedChain<'a> = AttributeFilter<OutlineEmitter<'a, Accumulator>>;
+
 /// The chain of render nodes used to render the document.
+/// This is equivalent to `Parser::parse` or `Parser::recursiveTagParseFully`.
 type RendererChain<'a> = AttributeFilter<
     OutlineEmitter<
         'a,
@@ -863,92 +869,5 @@ impl Surrogate<Error> for Document<'_> {
             start: sp.source.find_line_col(token.span.start),
             err: Box::new(err),
         })
-    }
-}
-
-/// A Wikitext table frame.
-#[derive(Debug)]
-struct TableState {
-    /// If true, the table has ended, and this state waiting for the line end to
-    /// emit any indent end elements.
-    after_table: bool,
-    /// If true, a Wikitext table row, header, or data token has been seen.
-    has_tbody: bool,
-    /// The indent hack count for this table.
-    indent: u8,
-    /// The tag name of the currently open table caption, header, or data tag.
-    last_tag: Option<&'static str>,
-    /// The half-parsed attributes for a pending table row.
-    tr_attrs: String,
-    /// If true, a `<tr>` has been emitted and needs to be closed.
-    tr_emitted: bool,
-}
-
-impl TableState {
-    /// Creates a new `TableState` with the given `indent`.
-    fn new(indent: u8) -> Self {
-        Self {
-            after_table: <_>::default(),
-            has_tbody: <_>::default(),
-            indent,
-            last_tag: <_>::default(),
-            tr_attrs: <_>::default(),
-            tr_emitted: <_>::default(),
-        }
-    }
-
-    /// Finishes a table frame.
-    fn finish<S: Sink + ?Sized>(mut self, next: &mut S, last: bool) {
-        if !self.after_table {
-            self.table_end(next, last);
-        }
-        for _ in 0..self.indent {
-            next.tag_end("dd");
-            next.tag_end("dl");
-        }
-    }
-
-    /// Closes the table for a table frame.
-    fn table_end<S: Sink + ?Sized>(&mut self, next: &mut S, last: bool) {
-        // Whitespace handling for the `last` case to have byte-exact output
-        // against the PHP parser is annoying because that parser would just
-        // chomp any trailing newline no matter where it came from. In wiki.rs
-        // the newline from the source text is the source of the newline, but
-        // for a half-finished table, the last line needs extra special handling
-        if let Some(name) = self.last_tag {
-            if last {
-                next.new_line();
-                // The original parser has a bug where it always emits `"td"`
-                // and then relies on the HTML5 parser to fix it. This gets
-                // exercised by the test 'Fuzz testing: Parser16', so to pass
-                // the test suite, it is necessary to do this bogus thing.
-                next.tag_end("td");
-                next.new_line();
-            } else {
-                next.tag_end(name);
-            }
-        }
-        if self.tr_emitted {
-            next.tag_end("tr");
-            if last {
-                next.new_line();
-            }
-        }
-        if !self.has_tbody {
-            if last {
-                next.new_line();
-            }
-            next.tag_start_full("tr");
-            next.tag_start_full("td");
-            next.tag_end("td");
-            next.tag_end("tr");
-            if last {
-                next.new_line();
-            }
-        }
-        next.tag_end("table");
-
-        debug_assert!(!self.after_table);
-        self.after_table = true;
     }
 }

@@ -3,8 +3,8 @@
 use super::{
     Result, StackFrame, State, StripMarkers, Surrogate as _,
     document::Document,
-    emitters::Sink,
     tags::{self, LinkKind, LinkKindOptions},
+    transform::Sink,
 };
 use core::fmt::Write as _;
 use libmisc::CowExt as _;

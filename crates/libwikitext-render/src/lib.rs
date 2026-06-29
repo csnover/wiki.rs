@@ -1,4 +1,14 @@
 //! Article rendering types and functions.
+//!
+//! This code is somewhat of a mess, even more than the rest, because it was
+//! originally developed under the incorrect assumption that Wikitext is a
+//! reasonable format and that any Wikitext could be correctly represented by a
+//! unified AST. This is incorrect, but the wrong assumption persists in the way
+//! that preprocessing steps (expanding templates, running extension tags and
+//! replacing them with strip markers, running modules, etc.) are mixed up with
+//! postprocessing steps (extracting the contents of strip markers, running
+//! extension tags glued together by template expansions, converting the
+//! Wikitext DSL into HTML, etc.).
 
 mod document;
 mod emitters;
@@ -12,6 +22,7 @@ mod stack;
 mod surrogate;
 mod tags;
 mod template;
+mod transform;
 
 use core::{fmt, time::Duration};
 use document::Document;
@@ -563,7 +574,7 @@ pub struct Paths {
 
 /// A list of stripped extension tags.
 #[derive(Default)]
-pub(crate) struct StripMarkers(Vec<StripMarker<'static>>);
+struct StripMarkers(Vec<StripMarker<'static>>);
 
 impl StripMarkers {
     /// Invokes callback `f` for each strip marker in the given text.
@@ -713,8 +724,8 @@ impl ArticleState {
 // TODO: This sucks, do something better.
 #[inline]
 fn text_run(text: &str) -> String {
-    use emitters::Sink as _;
-    let mut emitter = emitters::PrettyText::new(emitters::Accumulator::new());
+    use transform::Sink as _;
+    let mut emitter = transform::PrettyText::new(transform::Accumulator::new());
     emitter.text(text);
     emitter.finish()
 }

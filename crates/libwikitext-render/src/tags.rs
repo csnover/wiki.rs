@@ -1,8 +1,8 @@
 //! Plain HTML rendering functions.
 
 use super::{
-    Error, Paths, Result, StackFrame, State, Surrogate, document::Document, emitters::Sink,
-    image::make_media_url,
+    Error, Paths, Result, StackFrame, State, Surrogate, document::Document, image::make_media_url,
+    transform::Sink,
 };
 use libmisc::CowExt as _;
 use libwikitext_common::{
