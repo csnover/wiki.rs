@@ -535,8 +535,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// Table expressions that contain only attributes.
     rule table_single() -> Vec<Spanned<Token>>
-    = t:(table_start() / table_row()) e:line_eol()
-    { iter::once(t).chain(e).collect() }
+    = t:(table_start() / table_row()) c:wikilink_category()? e:line_eol()
+    { iter::once(t).chain(c).chain(e).collect() }
 
     /// The end of the indented table hack.
     ///
@@ -579,8 +579,10 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         space_s()* "|" "-"+
         // Because this table row token might actually be just a plain text `|-`
         // at the start of a line outside of a table, the list of attributes
-        // has to be parsed as a list of any inline thing
-        attributes:inline()*
+        // has to be parsed as a list of any inline thing. The newline guard
+        // exists to suppress an `wikilink_category` ending up in the
+        // attributes.
+        attributes:(!nl() t:inline() { t })*
         { Token::TableRow { attributes: reduce_tree(attributes) } }
     >)
 

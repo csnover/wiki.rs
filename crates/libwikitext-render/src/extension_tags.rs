@@ -648,12 +648,12 @@ fn pre(
             && ((value.starts_with('"') && value.ends_with('"'))
                 || (value.starts_with('\'') && value.ends_with('\'')))
         {
-            &value[1..value.len() - 1]
+            Cow::Borrowed(&value[1..value.len() - 1])
         } else {
-            value.as_ref()
+            decode_html(value.as_ref())
         };
 
-        attrs.tag_attribute_full(&name, &strip::kill(value));
+        attrs.tag_attribute_full(&name, &strip::kill(&value));
     }
     attrs.tag_start_end("pre");
     write!(out, "{}", attrs.finish())?;

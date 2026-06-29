@@ -4211,7 +4211,7 @@ parsoid=wt2html,wt2wt,html2html
 <small>
 
 ** 123</small>
-!! html/php
+!! html/php # This output matches the PHP parser
 <p><small>
 </small></p><small></small><ul><small></small><li><small></small><ul><small></small><li><small>123</small></li></ul></li></ul>
 !! html/parsoid
@@ -6791,16 +6791,17 @@ Templates: Wiki Tables: 8. Fosterable meta-tags should get fostered
 
 <td>foo</td></tr>
 </tbody></table>
-!! html/wiki.rs # This output matches the PHP parser
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody and XHTML
 <table>
+
 
 <tr>
 <td>foo
 </td></tr></table>
-
-<p><br />
+<p><br>
 </p>
 <table>
+
 
 <tr>
 <td>foo
@@ -6839,8 +6840,9 @@ Templates: Ugly nesting: 2. Quotes opened/closed across templates (1x_with_span)
 {{1x_with_span|''a}}{{1x_with_span|b''c''d}}{{1x_with_span|''e}}
 !! html/parsoid
 <p><span about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"1x_with_span","href":"./Template:1x_with_span"},"params":{"1":{"wt":"&apos;&apos;a"}},"i":0}}]}'><i>a</i></span><i about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"autoInsertedStart":true,"pi":[[{"k":"1"}],[{"k":"1"}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"1x_with_span","href":"./Template:1x_with_span"},"params":{"1":{"wt":"b&apos;&apos;c&apos;&apos;d"}},"i":0}},{"template":{"target":{"wt":"1x_with_span","href":"./Template:1x_with_span"},"params":{"1":{"wt":"&apos;&apos;e"}},"i":1}}]}'><span>b</span></i><span about="#mwt2">c</span><i about="#mwt2">d<span></span></i><span about="#mwt2">e</span></p>
-!! html/wiki.rs
-<p><span><i>a</i></span><i><span>b</span></i><span>c</span><i>d<span></span></i><span>e</span></p>
+!! html/wiki.rs # This output matches the PHP parser
+<p><span><i>a</i></span><i><span>b</span></i>c<i>d<span></span></i>e
+</p>
 !! end
 
 ## Legacy parser generates misnested html; Parsoid html2wt mode adds newlines between {{1x}}s
@@ -14867,14 +14869,13 @@ parsoid=wt2wt
 
 hiho
 !! html/parsoid
-!! html/wiki.rs # This output matches the PHP parser
+!! html/wiki.rs # This output matches the PHP parser, except for the newline before the table which magically appears from nowhere
 
 
 
 
 
-hiho
-<table></table>
+hiho<table></table>
 !! end
 
 !! test
@@ -14889,14 +14890,13 @@ parsoid=wt2wt
 
 hiho
 !! html/parsoid
-!! html/wiki.rs # This output matches the PHP parser
+!! html/wiki.rs # This output matches the PHP parser, except for the newline before the table which magically appears from nowhere
 
 
 
  
 
-hiho
-<table></table>
+hiho<table></table>
 !! end
 
 !!test

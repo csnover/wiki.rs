@@ -910,13 +910,22 @@ impl TableState {
 
     /// Closes the table for a table frame.
     fn table_end<S: Sink + ?Sized>(&mut self, next: &mut S, last: bool) {
-        if last {
-            next.new_line();
-        }
+        // Whitespace handling for the `last` case to have byte-exact output
+        // against the PHP parser is annoying because that parser would just
+        // chomp any trailing newline no matter where it came from. In wiki.rs
+        // the newline from the source text is the source of the newline, but
+        // for a half-finished table, the last line needs extra special handling
         if let Some(name) = self.last_tag {
-            next.tag_end(name);
             if last {
                 next.new_line();
+                // The original parser has a bug where it always emits `"td"`
+                // and then relies on the HTML5 parser to fix it. This gets
+                // exercised by the test 'Fuzz testing: Parser16', so to pass
+                // the test suite, it is necessary to do this bogus thing.
+                next.tag_end("td");
+                next.new_line();
+            } else {
+                next.tag_end(name);
             }
         }
         if self.tr_emitted {
@@ -926,6 +935,9 @@ impl TableState {
             }
         }
         if !self.has_tbody {
+            if last {
+                next.new_line();
+            }
             next.tag_start_full("tr");
             next.tag_start_full("td");
             next.tag_end("td");
