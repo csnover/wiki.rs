@@ -736,13 +736,13 @@ impl ArticleState {
 fn eval_plugin(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
-    parse_fully: bool,
+    fully_parse: bool,
     source: &str,
 ) -> Result<String> {
     let sp = sp.clone_with_source(FileMap::new(source));
     let root = state.statics.parser.parse(&sp.source)?;
     let mut outline = <_>::default();
-    Ok(if parse_fully {
+    Ok(if fully_parse {
         let mut out = Document::<ParseFully<'_>>::new(&mut outline);
         out.adopt_tokens(state, &sp, &root)?;
         out.finish()

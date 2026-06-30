@@ -63,8 +63,6 @@ impl PluginExtensionTag for DivTagPf {
             if raw {
                 Cow::Borrowed(body)
             } else {
-                // TODO: This is supposed to be half-parsed, stopping at
-                // GrafEmitter
                 Cow::Owned(args.eval(state, body, raw_html)?)
             }
         } else {

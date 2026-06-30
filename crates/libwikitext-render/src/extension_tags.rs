@@ -190,11 +190,7 @@ impl PluginTagArgs<'_, '_, '_> {
     /// as an HTML string.
     ///
     /// If `unstrip` is false, this is roughly equivalent to `recursiveTagParse`
-    /// except that all Wikitext is fully converted to HTML and only raw strip
-    /// markers remain. (In MediaWiki, this output would also not include
-    /// processing by `GrafEmitter`, all links would be `<!-- LINK -->`
-    /// comments, and there would be no language translation nor HTML
-    /// sanitisation.)
+    /// except that links are not `<!-- LINK -->` comments.
     ///
     /// If `unstrip` is true, this is equivalent to `recursiveTagParseFully`.
     ///
@@ -206,9 +202,9 @@ impl PluginTagArgs<'_, '_, '_> {
         &self,
         state: &mut PluginState<'_, '_, '_, '_>,
         text: &str,
-        unstrip: bool,
+        fully_parse: bool,
     ) -> PluginResult<String> {
-        eval_string(state.0, self.0.sp, text, unstrip).map_err(Into::into)
+        eval_string(state.0, self.0.sp, text, fully_parse).map_err(Into::into)
     }
 
     /// A convenience function for evaluating the body as a Wikitext document
@@ -1329,10 +1325,10 @@ fn eval_string(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     text: &str,
-    unstrip: bool,
+    fully_parse: bool,
 ) -> Result<String> {
     let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
-    eval_plugin(state, sp, unstrip, &source)
+    eval_plugin(state, sp, fully_parse, &source)
 }
 
 /// Re-emits an extension tag.

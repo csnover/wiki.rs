@@ -1,12 +1,12 @@
 //! [`Sink`]s for marking certain elements by adding attributes.
 
-use super::{Sink, chainable, flush_ws, markable_string::Markable};
+use super::{Sink, chainable, flush_ws};
 use crate::{StripMarker, tags::PHRASING_TAGS};
 use libwikitext_parse::VOID_TAGS;
 
 /// Marks elements containing only whitespace.
 #[derive(Debug)]
-pub(crate) struct EmptyTagger<S: Sink> {
+pub(crate) struct EmptyMarker<S: Sink> {
     /// The tag name of a potentially empty element.
     last: Option<&'static str>,
     /// The output.
@@ -15,9 +15,9 @@ pub(crate) struct EmptyTagger<S: Sink> {
     ws_buffer: String,
 }
 
-chainable!(EmptyTagger);
+chainable!(EmptyMarker);
 
-impl<S: Sink> EmptyTagger<S> {
+impl<S: Sink> EmptyMarker<S> {
     /// Creates a new `EmptyTagger` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
@@ -37,7 +37,7 @@ impl<S: Sink> EmptyTagger<S> {
     }
 }
 
-impl<S: Sink + Markable> Sink for EmptyTagger<S> {
+impl<S: Sink> Sink for EmptyMarker<S> {
     #[inline]
     fn comment_end(&mut self) {
         self.next.comment_end();
@@ -134,26 +134,26 @@ impl<S: Sink + Markable> Sink for EmptyTagger<S> {
 
 /// Adds extra `data-wiki-rs` attributes to the root elements of anonymous
 /// templates so they can be identified and styled.
+///
+/// This is a workaround for templates that do not identify themselves for
+/// styling but instead only emit inline styles (like
+/// 'Template:Climate chart'), which need to have their styles overridden
+/// nevertheless, which can be done by adding extra data attributes to identify
+/// the source template.
 #[derive(Debug)]
-pub(crate) struct TemplateTagger<S: Sink> {
+pub(crate) struct TemplateMarker<S: Sink> {
     /// The current depth of the DOM tree.
     depth: u8,
     /// The output.
     next: S,
     /// The template processing stack used to identify which template was the
     /// source of a fragment of the assembled Wikitext document.
-    ///
-    /// This is a workaround for templates that do not identify themselves for
-    /// styling but instead only emit inline styles (like
-    /// 'Template:Climate chart'), which need to have their styles overridden
-    /// nevertheless, which we can do by adding extra data attributes to
-    /// identify the template source of an element.
     tag_blocks: Vec<(u8, String)>,
 }
 
-chainable!(TemplateTagger);
+chainable!(TemplateMarker);
 
-impl<S: Sink> TemplateTagger<S> {
+impl<S: Sink> TemplateMarker<S> {
     /// Creates a new `TemplateTagger` chained to `next`.
     pub fn new(next: S) -> Self {
         Self {
@@ -176,7 +176,7 @@ impl<S: Sink> TemplateTagger<S> {
     }
 }
 
-impl<S: Sink> Sink for TemplateTagger<S> {
+impl<S: Sink> Sink for TemplateMarker<S> {
     #[inline]
     fn comment_end(&mut self) {
         self.next.comment_end();

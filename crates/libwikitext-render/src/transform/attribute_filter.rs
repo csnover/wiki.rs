@@ -8,7 +8,7 @@ use libwikitext_common::{AnchorEncodeMode, decode_html, escape_id};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashSet, sync::LazyLock};
 
-/// Deduplicates and filters invalid HTML attributes using a last-wins rule.
+/// Deduplicates, filters, and sanitises invalid HTML attributes.
 #[derive(Debug)]
 pub(crate) struct AttributeFilter<S: Sink> {
     /// The attribute accumulator.
@@ -18,19 +18,7 @@ pub(crate) struct AttributeFilter<S: Sink> {
     /// The output.
     next: S,
     /// The current state of the filter.
-    state: FilterState,
-}
-
-/// The [`AttributeFilter`] state.
-#[derive(Debug, Default, Eq, PartialEq)]
-enum FilterState {
-    /// Inactive.
-    #[default]
-    Idle,
-    /// Buffering an attribute at the given index in [`AttributeFilter::acc`].
-    Buffering(usize),
-    /// Filtering an attribute.
-    Filtering,
+    state: State,
 }
 
 chainable!(AttributeFilter);
@@ -153,6 +141,137 @@ impl<S: Sink> AttributeFilter<S> {
             }
         }
     }
+}
+
+impl<S: Sink + Markable> Sink for AttributeFilter<S> {
+    #[inline]
+    fn comment_end(&mut self) {
+        if self.state == State::Idle {
+            self.next.comment_end();
+        }
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        if self.state == State::Idle {
+            self.next.comment_start();
+        }
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        match self.state {
+            State::Idle => self.next.entity(value, raw),
+            State::Buffering(index) => self.acc[index].push(value),
+            State::Filtering => {}
+        }
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.next.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        if self.state == State::Idle {
+            self.next.new_line();
+        }
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        if self.state == State::Idle {
+            self.next.strip_marker(marker);
+        }
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, _: &str) {
+        self.state = State::Idle;
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        if let Some(name) = self.is_allowed(name) {
+            let entry = self.acc.entry(name);
+            let index = entry.index();
+            entry.or_default().clear();
+            self.state = State::Buffering(index);
+        } else {
+            self.state = State::Filtering;
+        }
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.next.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.allowed = ALLOWED_ATTRS.get(name).copied().unwrap_or_default();
+        self.next.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.allowed = <_>::default();
+
+        let has_itemscope = self.acc.contains_key("itemscope");
+        for (name, value) in self.acc.drain(..) {
+            if name == "tabindex" && value != "0" {
+                continue;
+            }
+            // TODO: Figure out how to get a config in here without blowing up
+            // borrowck
+            // if matches!(name.as_ref(), "href" | "poster" | "src")
+            //     && !self.config.protocols_pattern.is_match(&value) {
+            //     continue;
+            // }
+            if name == "id" && value.is_empty() {
+                continue;
+            }
+            if !has_itemscope && matches!(name.as_ref(), "itemtype" | "itemid" | "itemref") {
+                continue;
+            }
+
+            self.next.tag_attribute_start(&name);
+            match name.as_ref() {
+                "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
+                    Self::fixup_aria(&mut self.next, &value);
+                }
+                "class" => Self::fixup_class(&mut self.next, &value),
+                "id" => self.next.text(&escape_id(&value, AnchorEncodeMode::Html5)),
+                "style" => Self::fixup_style(&mut self.next, &value),
+                _ => self.next.text(&value),
+            }
+            self.next.tag_attribute_end(&name);
+        }
+
+        self.next.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        match self.state {
+            State::Idle => self.next.text(text),
+            State::Buffering(index) => self.acc[index] += text,
+            State::Filtering => {}
+        }
+    }
+}
+
+/// The [`AttributeFilter`] state.
+#[derive(Debug, Default, Eq, PartialEq)]
+enum State {
+    /// Inactive.
+    #[default]
+    Idle,
+    /// Buffering an attribute at the given index in [`AttributeFilter::acc`].
+    Buffering(usize),
+    /// Filtering an attribute.
+    Filtering,
 }
 
 /// Decodes CSS escape sequences according to the MediaWiki rules, returning
@@ -289,125 +408,6 @@ fn decode_css(style: &str) -> Option<Cow<'_, str>> {
         out += &style[flushed..];
         Cow::Owned(out)
     })
-}
-
-impl<S: Sink + Markable> Sink for AttributeFilter<S> {
-    #[inline]
-    fn comment_end(&mut self) {
-        if self.state == FilterState::Idle {
-            self.next.comment_end();
-        }
-    }
-
-    #[inline]
-    fn comment_start(&mut self) {
-        if self.state == FilterState::Idle {
-            self.next.comment_start();
-        }
-    }
-
-    #[inline]
-    fn entity(&mut self, value: char, raw: &str) {
-        match self.state {
-            FilterState::Idle => self.next.entity(value, raw),
-            FilterState::Buffering(index) => self.acc[index].push(value),
-            FilterState::Filtering => {}
-        }
-    }
-
-    #[inline]
-    fn finish(self) -> String {
-        self.next.finish()
-    }
-
-    #[inline]
-    fn new_line(&mut self) {
-        if self.state == FilterState::Idle {
-            self.next.new_line();
-        }
-    }
-
-    #[inline]
-    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
-        if self.state == FilterState::Idle {
-            self.next.strip_marker(marker);
-        }
-    }
-
-    #[inline]
-    fn tag_attribute_end(&mut self, _: &str) {
-        self.state = FilterState::Idle;
-    }
-
-    #[inline]
-    fn tag_attribute_start(&mut self, name: &str) {
-        if let Some(name) = self.is_allowed(name) {
-            let entry = self.acc.entry(name);
-            let index = entry.index();
-            entry.or_default().clear();
-            self.state = FilterState::Buffering(index);
-        } else {
-            self.state = FilterState::Filtering;
-        }
-    }
-
-    #[inline]
-    fn tag_end(&mut self, name: &str) {
-        self.next.tag_end(name);
-    }
-
-    #[inline]
-    fn tag_start(&mut self, name: &str) {
-        self.allowed = ALLOWED_ATTRS.get(name).copied().unwrap_or_default();
-        self.next.tag_start(name);
-    }
-
-    #[inline]
-    fn tag_start_end(&mut self, name: &str) {
-        self.allowed = <_>::default();
-
-        let has_itemscope = self.acc.contains_key("itemscope");
-        for (name, value) in self.acc.drain(..) {
-            if name == "tabindex" && value != "0" {
-                continue;
-            }
-            // TODO: Figure out how to get a config in here without blowing up
-            // borrowck
-            // if matches!(name.as_ref(), "href" | "poster" | "src")
-            //     && !self.config.protocols_pattern.is_match(&value) {
-            //     continue;
-            // }
-            if name == "id" && value.is_empty() {
-                continue;
-            }
-            if !has_itemscope && matches!(name.as_ref(), "itemtype" | "itemid" | "itemref") {
-                continue;
-            }
-
-            self.next.tag_attribute_start(&name);
-            match name.as_ref() {
-                "aria-describedby" | "aria-flowto" | "aria-labelledby" | "aria-owns" => {
-                    Self::fixup_aria(&mut self.next, &value);
-                }
-                "class" => Self::fixup_class(&mut self.next, &value),
-                "id" => self.next.text(&escape_id(&value, AnchorEncodeMode::Html5)),
-                "style" => Self::fixup_style(&mut self.next, &value),
-                _ => self.next.text(&value),
-            }
-            self.next.tag_attribute_end(&name);
-        }
-
-        self.next.tag_start_end(name);
-    }
-
-    #[inline]
-    fn text(&mut self, text: &str) {
-        match self.state {
-            FilterState::Idle => self.next.text(text),
-            FilterState::Buffering(index) => self.acc[index] += text,
-            FilterState::Filtering => {}
-        }
-    }
 }
 
 /// The allowed list of attributes for the given tags.

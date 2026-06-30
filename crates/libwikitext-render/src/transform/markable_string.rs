@@ -46,20 +46,6 @@ where
     }
 }
 
-/// A bookmarked position in a string.
-#[derive(Debug)]
-pub(super) struct Mark(u16);
-
-#[cfg(debug_assertions)]
-impl Drop for Mark {
-    #[track_caller]
-    fn drop(&mut self) {
-        if !std::thread::panicking() && self.0 != MarkableString::NO_FREE {
-            log::warn!("leaked {}", self.0);
-        }
-    }
-}
-
 /// A string wrapper where positions can be bookmarked and retrieved later. The
 /// bookmarked positions are automatically adjusted in response to mutations to
 /// the underlying string. To reduce memory use, the size of the underlying
@@ -249,5 +235,19 @@ impl fmt::Write for MarkableString {
     #[inline]
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.inner.write_str(s)
+    }
+}
+
+/// A bookmarked position in a string.
+#[derive(Debug)]
+pub(super) struct Mark(u16);
+
+#[cfg(debug_assertions)]
+impl Drop for Mark {
+    #[track_caller]
+    fn drop(&mut self) {
+        if !std::thread::panicking() && self.0 != MarkableString::NO_FREE {
+            log::warn!("leaked {}", self.0);
+        }
     }
 }

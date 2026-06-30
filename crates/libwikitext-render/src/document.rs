@@ -9,8 +9,8 @@ use super::{
     surrogate::{self, Surrogate},
     tags::{self, ExternalLinkKind},
     transform::{
-        Accumulator, AttributeFilter, Chain as _, DomTree, EmptyTagger, GrafEmitter,
-        OutlineEmitter, PWrapper, PrettyText, Sink, TemplateTagger,
+        Accumulator, AttributeFilter, Chain as _, DomTree, EmptyMarker, GrafWrapper,
+        OutlineGenerator, PWrapper, PrettyText, Sink, TemplateMarker,
     },
 };
 use either::Either;
@@ -891,7 +891,7 @@ pub(super) trait DocumentSink: Sink {
 
 /// A [`DocumentSink`] for rendering a “half parsed” Wikitext document.
 /// This is equivalent to `Parser::recursiveTagParse`.
-pub(super) struct ParseHalf<'a>(AttributeFilter<OutlineEmitter<'a, Accumulator>>);
+pub(super) struct ParseHalf<'a>(AttributeFilter<OutlineGenerator<'a, Accumulator>>);
 impl<'a> DocumentSink for ParseHalf<'a> {
     const UNSTRIP_MARKERS: bool = false;
 
@@ -902,7 +902,7 @@ impl<'a> DocumentSink for ParseHalf<'a> {
     where
         Self: Sized,
     {
-        Self(AttributeFilter::new(OutlineEmitter::new(
+        Self(AttributeFilter::new(OutlineGenerator::new(
             args,
             Accumulator::new(),
         )))
@@ -979,9 +979,9 @@ impl Sink for ParseHalf<'_> {
 
 /// The chain of transformers used to fully parse a document.
 type ParseFullyChain<'a> = AttributeFilter<
-    OutlineEmitter<
+    OutlineGenerator<
         'a,
-        GrafEmitter<DomTree<PWrapper<TemplateTagger<PrettyText<EmptyTagger<Accumulator>>>>>>,
+        GrafWrapper<DomTree<PWrapper<TemplateMarker<PrettyText<EmptyMarker<Accumulator>>>>>>,
     >,
 >;
 
@@ -999,10 +999,10 @@ impl<'a> DocumentSink for ParseFully<'a> {
     where
         Self: Sized,
     {
-        Self(AttributeFilter::new(OutlineEmitter::new(
+        Self(AttributeFilter::new(OutlineGenerator::new(
             args,
-            GrafEmitter::new(DomTree::new(PWrapper::new(TemplateTagger::new(
-                PrettyText::new(EmptyTagger::new(Accumulator::new())),
+            GrafWrapper::new(DomTree::new(PWrapper::new(TemplateMarker::new(
+                PrettyText::new(EmptyMarker::new(Accumulator::new())),
             )))),
         )))
     }

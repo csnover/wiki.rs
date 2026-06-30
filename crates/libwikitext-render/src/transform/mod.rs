@@ -5,10 +5,10 @@ mod attribute_filter;
 mod buffer;
 mod debugger;
 mod dom_tree;
-mod early_graf_wrapper;
-mod empty_tagger;
+mod element_marker;
+mod graf_wrapper;
 mod markable_string;
-mod outline_builder;
+mod outline;
 mod pretty_text;
 
 use super::StripMarker;
@@ -16,10 +16,10 @@ pub(super) use accumulator::Accumulator;
 pub(super) use attribute_filter::AttributeFilter;
 use buffer::Buffer;
 pub(super) use dom_tree::{DomTree, PWrapper};
-pub(super) use early_graf_wrapper::GrafEmitter;
-pub(super) use empty_tagger::{EmptyTagger, TemplateTagger};
+pub(super) use element_marker::{EmptyMarker, TemplateMarker};
+pub(super) use graf_wrapper::GrafWrapper;
 use libwikitext_parse::VOID_TAGS;
-pub(super) use outline_builder::OutlineEmitter;
+pub(super) use outline::OutlineGenerator;
 pub(super) use pretty_text::PrettyText;
 
 /// An intermediate sink.

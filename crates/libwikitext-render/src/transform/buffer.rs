@@ -2,17 +2,12 @@
 
 use super::{Accumulator, Sink};
 use crate::StripMarker;
-use libwikitext_parse::MARKER_PREFIX;
 
 /// Buffers a sink sequence for replay.
 #[derive(Default)]
 pub(super) struct Buffer {
-    /// If true, the buffer received anything which is non-ASCII whitespace.
-    contains_non_ascii_whitespace: bool,
     /// The backing store for the buffer.
     inner: Vec<u8>,
-    /// The first character received by the buffer.
-    starts_with: Option<char>,
 }
 
 impl Buffer {
@@ -21,14 +16,7 @@ impl Buffer {
 
     /// Clears the buffer.
     pub fn clear(&mut self) {
-        self.contains_non_ascii_whitespace = false;
         self.inner.clear();
-        self.starts_with = None;
-    }
-
-    /// Returns true if the buffer contains any non-ASCII-whitespace items.
-    pub fn contains_non_ascii_whitespace(&self) -> bool {
-        self.contains_non_ascii_whitespace
     }
 
     /// Flushes the buffer to `next`.
@@ -53,14 +41,14 @@ impl Buffer {
         let mut tag_name = "";
         let mut attr_name = "";
         while let Some((insn, mut data)) = cursor.split_first() {
-            match BufferInsn::try_from(*insn).expect("valid buffer") {
-                BufferInsn::CommentEnd => {
+            match Call::try_from(*insn).expect("valid buffer") {
+                Call::CommentEnd => {
                     next.comment_end();
                 }
-                BufferInsn::CommentStart => {
+                Call::CommentStart => {
                     next.comment_start();
                 }
-                BufferInsn::Entity => {
+                Call::Entity => {
                     let value;
                     (value, data) = slice_term(data);
                     let mut iter = value.chars();
@@ -68,48 +56,48 @@ impl Buffer {
                     let raw = iter.as_str();
                     next.entity(value, raw);
                 }
-                BufferInsn::NewLine => {
+                Call::NewLine => {
                     next.new_line();
                 }
-                BufferInsn::StripMarkerGeneral => {
+                Call::StripMarkerGeneral => {
                     let marker;
                     (marker, data) = slice_term(data);
                     next.strip_marker(&StripMarker::General(marker.into()));
                 }
-                BufferInsn::StripMarkerNoWiki => {
+                Call::StripMarkerNoWiki => {
                     let marker;
                     (marker, data) = slice_term(data);
                     next.strip_marker(&StripMarker::NoWiki(marker.into()));
                 }
-                BufferInsn::StripMarkerWikiRsSourceEnd => {
+                Call::StripMarkerWikiRsSourceEnd => {
                     let marker;
                     (marker, data) = slice_term(data);
                     next.strip_marker(&StripMarker::WikiRsSourceEnd(marker.into()));
                 }
-                BufferInsn::StripMarkerWikiRsSourceStart => {
+                Call::StripMarkerWikiRsSourceStart => {
                     let marker;
                     (marker, data) = slice_term(data);
                     next.strip_marker(&StripMarker::WikiRsSourceStart(marker.into()));
                 }
-                BufferInsn::TagAttributeEnd => {
+                Call::TagAttributeEnd => {
                     next.tag_attribute_end(attr_name);
                 }
-                BufferInsn::TagAttributeStart => {
+                Call::TagAttributeStart => {
                     (attr_name, data) = slice_term(data);
                     next.tag_attribute_start(attr_name);
                 }
-                BufferInsn::TagEnd => {
+                Call::TagEnd => {
                     (tag_name, data) = slice_term(data);
                     next.tag_end(tag_name);
                 }
-                BufferInsn::TagStart => {
+                Call::TagStart => {
                     (tag_name, data) = slice_term(data);
                     next.tag_start(tag_name);
                 }
-                BufferInsn::TagStartEnd => {
+                Call::TagStartEnd => {
                     next.tag_start_end(tag_name);
                 }
-                BufferInsn::Text => {
+                Call::Text => {
                     let text;
                     (text, data) = slice_term(data);
                     if skip_first_char {
@@ -123,23 +111,6 @@ impl Buffer {
             cursor = data;
         }
     }
-
-    /// Updates some metadata used by `GrafEmitter`, which was originally a hack
-    /// and so seems to always require a hack *somewhere* to function.
-    pub fn update_metadata(&mut self, text: &str) {
-        if !self.contains_non_ascii_whitespace {
-            self.contains_non_ascii_whitespace = text.bytes().any(|b| !b.is_ascii_whitespace());
-            if self.starts_with.is_none() {
-                self.starts_with = text.chars().next();
-            }
-        }
-    }
-
-    /// Returns true if the contents of the buffer start with the given
-    /// character.
-    pub fn starts_with(&self, c: char) -> bool {
-        self.starts_with.is_some_and(|ch| ch == c)
-    }
 }
 
 impl core::fmt::Debug for Buffer {
@@ -147,12 +118,7 @@ impl core::fmt::Debug for Buffer {
         let mut inner = Accumulator::new();
         self.write(&mut inner, false);
         f.debug_struct("Buffer")
-            .field(
-                "contains_non_ascii_whitespace",
-                &self.contains_non_ascii_whitespace,
-            )
             .field("inner", &inner.as_str())
-            .field("starts_with", &self.starts_with)
             .finish()
     }
 }
@@ -160,20 +126,17 @@ impl core::fmt::Debug for Buffer {
 impl Sink for Buffer {
     #[inline]
     fn comment_end(&mut self) {
-        self.update_metadata("<");
-        self.inner.push(BufferInsn::CommentEnd as u8);
+        self.inner.push(Call::CommentEnd as u8);
     }
 
     #[inline]
     fn comment_start(&mut self) {
-        self.update_metadata("<");
-        self.inner.push(BufferInsn::CommentStart as u8);
+        self.inner.push(Call::CommentStart as u8);
     }
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
-        self.update_metadata("&");
-        self.inner.push(BufferInsn::Entity as u8);
+        self.inner.push(Call::Entity as u8);
         let mut buffer = [0; 4];
         self.inner
             .extend(value.encode_utf8(&mut buffer[..]).as_bytes());
@@ -188,64 +151,51 @@ impl Sink for Buffer {
 
     #[inline]
     fn new_line(&mut self) {
-        self.update_metadata("\n");
-        self.inner.push(BufferInsn::NewLine as u8);
+        self.inner.push(Call::NewLine as u8);
     }
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker<'_>) {
-        let insn = match marker {
-            StripMarker::General(s) => {
-                // In the original parser, general markers are unstripped for
-                // GrafEmitter
-                self.update_metadata(s);
-                BufferInsn::StripMarkerGeneral
-            }
-            StripMarker::NoWiki(_) => {
-                // In the original parser, nowiki markers are still markers for
-                // GrafEmitter
-                self.update_metadata(MARKER_PREFIX);
-                BufferInsn::StripMarkerNoWiki
-            }
-            StripMarker::WikiRsSourceEnd(_) => BufferInsn::StripMarkerWikiRsSourceEnd,
-            StripMarker::WikiRsSourceStart(_) => BufferInsn::StripMarkerWikiRsSourceStart,
+        let call = match marker {
+            StripMarker::General(_) => Call::StripMarkerGeneral,
+            StripMarker::NoWiki(_) => Call::StripMarkerNoWiki,
+            StripMarker::WikiRsSourceEnd(_) => Call::StripMarkerWikiRsSourceEnd,
+            StripMarker::WikiRsSourceStart(_) => Call::StripMarkerWikiRsSourceStart,
         };
-        self.inner.push(insn as u8);
+        self.inner.push(call as u8);
         self.inner.extend(marker.as_bytes());
         self.inner.push(Self::TERMINATOR);
     }
 
     #[inline]
     fn tag_attribute_end(&mut self, _: &str) {
-        self.inner.push(BufferInsn::TagAttributeEnd as u8);
+        self.inner.push(Call::TagAttributeEnd as u8);
     }
 
     #[inline]
     fn tag_attribute_start(&mut self, name: &str) {
-        self.inner.push(BufferInsn::TagAttributeStart as u8);
+        self.inner.push(Call::TagAttributeStart as u8);
         self.inner.extend(name.as_bytes());
         self.inner.push(Self::TERMINATOR);
     }
 
     #[inline]
     fn tag_end(&mut self, name: &str) {
-        self.update_metadata("<");
-        self.inner.push(BufferInsn::TagEnd as u8);
+        self.inner.push(Call::TagEnd as u8);
         self.inner.extend(name.as_bytes());
         self.inner.push(Self::TERMINATOR);
     }
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
-        self.update_metadata("<");
-        self.inner.push(BufferInsn::TagStart as u8);
+        self.inner.push(Call::TagStart as u8);
         self.inner.extend(name.as_bytes());
         self.inner.push(Self::TERMINATOR);
     }
 
     #[inline]
     fn tag_start_end(&mut self, _: &str) {
-        self.inner.push(BufferInsn::TagStartEnd as u8);
+        self.inner.push(Call::TagStartEnd as u8);
     }
 
     #[inline]
@@ -253,8 +203,7 @@ impl Sink for Buffer {
         if text.is_empty() {
             return;
         }
-        self.update_metadata(text);
-        self.inner.push(BufferInsn::Text as u8);
+        self.inner.push(Call::Text as u8);
         self.inner.extend(text.as_bytes());
         self.inner.push(Self::TERMINATOR);
     }
@@ -262,10 +211,10 @@ impl Sink for Buffer {
 
 /// It generates an enum with a `TryFrom` implementation from a primitive. Wow.
 macro_rules! that_enum_thing_that_should_be_in_std {
-    ($(#[$meta:meta])* enum $id:ident { $($var:ident),* $(,)? }) => {
+    ($(#[$meta:meta])* enum $id:ident { $($(#[$var_meta:meta])* $var:ident),* $(,)? }) => {
         $(#[$meta])*
         enum $id {
-            $($var,)*
+            $($(#[$var_meta])* $var,)*
         }
 
         impl TryFrom<u8> for $id {
@@ -285,20 +234,36 @@ macro_rules! that_enum_thing_that_should_be_in_std {
 that_enum_thing_that_should_be_in_std! {
     /// A buffered sink instruction.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum BufferInsn {
+    enum Call {
+        /// A call to [`Sink::comment_end`].
         CommentEnd,
+        /// A call to [`Sink::comment_start`].
         CommentStart,
+        /// A call to [`Sink::entity`].
         Entity,
+        /// A call to [`Sink::new_line`].
         NewLine,
+        /// A call to [`Sink::strip_marker`] with a [`StripMarker::General`].
         StripMarkerGeneral,
+        /// A call to [`Sink::strip_marker`] with a [`StripMarker::NoWiki`].
         StripMarkerNoWiki,
+        /// A call to [`Sink::strip_marker`] with a
+        /// [`StripMarker::WikiRsSourceEnd`].
         StripMarkerWikiRsSourceEnd,
+        /// A call to [`Sink::strip_marker`] with a
+        /// [`StripMarker::WikiRsSourceStart`].
         StripMarkerWikiRsSourceStart,
+        /// A call to [`Sink::tag_attribute_end`].
         TagAttributeEnd,
+        /// A call to [`Sink::tag_attribute_start`].
         TagAttributeStart,
+        /// A call to [`Sink::tag_end`].
         TagEnd,
+        /// A call to [`Sink::tag_start`].
         TagStart,
+        /// A call to [`Sink::tag_start_end`].
         TagStartEnd,
+        /// A call to [`Sink::text`].
         Text,
     }
 }

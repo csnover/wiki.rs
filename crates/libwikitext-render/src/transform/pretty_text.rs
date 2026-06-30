@@ -25,7 +25,7 @@ pub(crate) struct PrettyText<S: Sink> {
     ///
     /// Context switches occur on input to an attribute, since the content of
     /// an attribute is displayed out of the flow of the rest of the document.
-    saved_contexts: Vec<[char; 2]>,
+    saved_context: Option<[char; 2]>,
 }
 
 chainable!(PrettyText);
@@ -39,7 +39,7 @@ impl<S: Sink> PrettyText<S> {
             in_code: <_>::default(),
             next,
             prev_chars: Self::new_context(),
-            saved_contexts: <_>::default(),
+            saved_context: <_>::default(),
         }
     }
 
@@ -99,15 +99,16 @@ impl<S: Sink> PrettyText<S> {
     #[inline]
     fn pop_context(&mut self) {
         self.prev_chars = self
-            .saved_contexts
-            .pop()
+            .saved_context
+            .take()
             .expect("symmetrical context stack");
     }
 
     /// Push the current look-behind buffer to the stack.
     #[inline]
     fn push_context(&mut self) {
-        self.saved_contexts.push(self.prev_chars);
+        debug_assert!(self.saved_context.is_none());
+        self.saved_context = Some(self.prev_chars);
         self.prev_chars = Self::new_context();
     }
 
