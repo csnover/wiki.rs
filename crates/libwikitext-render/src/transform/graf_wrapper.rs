@@ -158,7 +158,7 @@ impl<S: Sink> GrafWrapper<S> {
         }
 
         if self.pending == Pending::None {
-            self.buffer.flush(&mut self.next, skip_first_char);
+            self.buffer.flush_into(&mut self.next, skip_first_char);
             if !last_line || self.current != State::None {
                 self.next.new_line();
             }

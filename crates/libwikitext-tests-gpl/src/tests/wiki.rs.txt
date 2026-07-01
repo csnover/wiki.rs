@@ -37,3 +37,54 @@ Pathological language conversion
 <p>-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{-{
 </p>
 !!end
+
+# Oops, someone wrote their own HTML5 tree construction algorithm which needs
+# to test edge cases
+
+!! test
+Adoption agency algorithm above limit
+!! wikitext
+<b><i><u><s><tt>a<div><div><div><div><div><div><div><div><div>z</b>y
+!! html/wiki.rs
+<b><i><u><s><tt>a</tt></s></u></i></b><u><s><tt><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b><div>zy</div></b></div></div></div></div></div></div></div></div></tt></s></u>
+!! end
+
+!! test
+Adoption agency algorithm at limit
+!! wikitext
+<b><i><u><s><tt>a<div><div><div><div><div><div><div><div>z</b>y
+!! html/wiki.rs
+<b><i><u><s><tt>a</tt></s></u></i></b><u><s><tt><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b>zy</b></div></div></div></div></div></div></div></div></tt></s></u>
+!! end
+
+!! test
+Adoption agency algorithm below limit
+!! wikitext
+<b><i><u><s><tt>a<div><div><div><div><div><div><div>z</b>y
+!! html/wiki.rs
+<b><i><u><s><tt>a</tt></s></u></i></b><u><s><tt><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b></b><div><b>z</b>y</div></div></div></div></div></div></div></tt></s></u>
+!! end
+
+!! test
+Foster parenting nesting
+!! wikitext
+<table>a<div>b<span>c</span>d</div>e<tr>f<td>g</td>h</tr>i</table>
+!! html/wiki.rs
+a<div>b<span>c</span>d</div>efhi<table><tr><td>g</td></tr></table>
+!! end
+
+!! test
+Foster parenting unclosed
+!! wikitext
+<table>
+a
+<u>
+<br>
+<tr><td></td></tr></table>
+!! html/wiki.rs
+
+a
+<u>
+<br>
+</u><table><tr><td></td></tr></table>
+!! end

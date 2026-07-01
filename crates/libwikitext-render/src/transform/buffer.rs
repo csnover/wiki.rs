@@ -1,6 +1,6 @@
 //! An intermediate [`Sink`] that temporarily buffers input.
 
-use super::{Accumulator, Sink};
+use super::{Sink, debugger::Debugger};
 use crate::StripMarker;
 
 /// Buffers a sink sequence for replay.
@@ -15,28 +15,81 @@ impl Buffer {
     const TERMINATOR: u8 = b'\0';
 
     /// Clears the buffer.
+    #[inline]
     pub fn clear(&mut self) {
         self.inner.clear();
     }
 
+    /// Returns the length of the buffer up to the first open tag.
+    // TODO: This is a ridiculously garbage hack!
+    pub fn first_tag_len(&self) -> usize {
+        let mut cursor = self.inner.as_slice();
+        let mut len = 0;
+        while let Some((insn, mut data)) = cursor.split_first() {
+            match Call::try_from(*insn).expect("valid buffer") {
+                Call::CommentEnd | Call::CommentStart | Call::NewLine | Call::TagAttributeEnd => {}
+                Call::Entity
+                | Call::StripMarkerGeneral
+                | Call::StripMarkerNoWiki
+                | Call::StripMarkerWikiRsSourceEnd
+                | Call::StripMarkerWikiRsSourceStart
+                | Call::TagAttributeStart
+                | Call::TagEnd
+                | Call::TagStart
+                | Call::Text => {
+                    let s;
+                    (s, data) = slice_term(data);
+                    len += s.len();
+                }
+                Call::TagStartEnd => {
+                    return len;
+                }
+            }
+            len += 1;
+            cursor = data;
+        }
+
+        panic!("no first tag")
+    }
+
+    /// Adds `other` to this buffer.
+    #[inline]
+    pub fn extend(&mut self, other: Self) {
+        self.inner.extend(other.inner);
+    }
+
     /// Flushes the buffer to `next`.
-    pub fn flush<S: Sink + ?Sized>(&mut self, next: &mut S, skip_first_char: bool) {
-        self.write(next, skip_first_char);
+    #[inline]
+    pub fn flush_into<S: Sink + ?Sized>(&mut self, next: &mut S, skip_first_char: bool) {
+        self.write_into(next, skip_first_char);
         self.clear();
     }
 
-    /// Writes the buffer to `next` without clearing it.
-    pub fn write<S: Sink + ?Sized>(&self, next: &mut S, mut skip_first_char: bool) {
-        fn slice_term(data: &[u8]) -> (&str, &[u8]) {
-            let end = data
-                .iter()
-                .position(|b| *b == Buffer::TERMINATOR)
-                .expect("terminator");
-            // SAFETY: This data came from a string.
-            let value = unsafe { str::from_utf8_unchecked(&data[..end]) };
-            (value, &data[end + 1..])
-        }
+    /// Insert more calls at `index`.
+    pub fn insert(&mut self, index: usize, f: impl FnOnce(&mut Buffer)) {
+        let start = self.inner.len();
+        f(self);
+        let end = self.inner.len();
+        self.inner[index..end].rotate_right(end - start);
+    }
 
+    /// Returns the length of the buffer, in bytes. This value should be
+    /// considered opaque and used only with `insert`.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Splits the buffer in two `at` the given index.
+    #[inline]
+    pub fn split_off(&mut self, at: usize) -> Buffer {
+        Self {
+            inner: self.inner.split_off(at),
+        }
+    }
+
+    /// Writes the buffer to `next` without clearing it.
+    pub fn write_into<S: Sink + ?Sized>(&self, next: &mut S, mut skip_first_char: bool) {
         let mut cursor = self.inner.as_slice();
         let mut tag_name = "";
         let mut attr_name = "";
@@ -114,12 +167,28 @@ impl Buffer {
 }
 
 impl core::fmt::Debug for Buffer {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let mut inner = Accumulator::new();
-        self.write(&mut inner, false);
-        f.debug_struct("Buffer")
-            .field("inner", &inner.as_str())
-            .finish()
+    fn fmt(&self, mut f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        struct NullSink;
+        impl Sink for NullSink {
+            fn comment_end(&mut self) {}
+            fn comment_start(&mut self) {}
+            fn entity(&mut self, _: char, _: &str) {}
+            fn finish(self) -> String {
+                unreachable!()
+            }
+            fn new_line(&mut self) {}
+            fn strip_marker(&mut self, _: &StripMarker<'_>) {}
+            fn tag_attribute_end(&mut self, _: &str) {}
+            fn tag_attribute_start(&mut self, _: &str) {}
+            fn tag_end(&mut self, _: &str) {}
+            fn tag_start(&mut self, _: &str) {}
+            fn tag_start_end(&mut self, _: &str) {}
+            fn text(&mut self, _: &str) {}
+        }
+
+        write!(f, "Buffer(")?;
+        self.write_into(&mut Debugger::new(&mut f, NullSink), false);
+        write!(f, ")")
     }
 }
 
@@ -266,4 +335,16 @@ that_enum_thing_that_should_be_in_std! {
         /// A call to [`Sink::text`].
         Text,
     }
+}
+
+/// Splits `data` on a string terminator, returning the string and the remaining
+/// data.
+fn slice_term(data: &[u8]) -> (&str, &[u8]) {
+    let end = data
+        .iter()
+        .position(|b| *b == Buffer::TERMINATOR)
+        .expect("terminator");
+    // SAFETY: This data came from a string.
+    let value = unsafe { str::from_utf8_unchecked(&data[..end]) };
+    (value, &data[end + 1..])
 }

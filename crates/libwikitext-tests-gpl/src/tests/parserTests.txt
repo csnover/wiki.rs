@@ -14848,7 +14848,7 @@ parsoid=wt2html
 !! html/wiki.rs # This output matches the PHP parser, minus the tbody and data- attributes
 <figure class="mw-default-size mw-halign-right" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="123"><img alt="123" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a><figcaption><div>123</div></figcaption></figure><table>
 
-<tr><td></td></tr></table>
+</table>
 !! end
 
 !! article

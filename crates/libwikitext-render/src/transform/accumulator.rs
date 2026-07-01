@@ -27,12 +27,6 @@ impl Accumulator {
         Self::default()
     }
 
-    /// Extracts a string slice containing the entire `Accumulator`.
-    #[inline]
-    pub fn as_str(&self) -> &str {
-        self.inner.as_str()
-    }
-
     /// Returns the length of this `Accumulator` in bytes.
     #[inline]
     #[expect(

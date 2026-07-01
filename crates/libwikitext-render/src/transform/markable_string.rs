@@ -92,12 +92,6 @@ impl MarkableString {
         }
     }
 
-    /// Extracts a string slice containing the entire `MarkableString`.
-    #[inline]
-    pub fn as_str(&self) -> &str {
-        self.inner.as_str()
-    }
-
     /// Releases the given mark to the free pool.
     // TODO: It is bad that this has to be done manually, marks will leak!
     #[inline]

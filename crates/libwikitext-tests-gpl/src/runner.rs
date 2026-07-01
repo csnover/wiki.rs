@@ -622,11 +622,6 @@ fn check_test_results(
             let actual = unpretty(actual);
             fail = expected_html != actual;
 
-            if fail && let Cow::Owned(actual) = list_ws(&actual) {
-                heuristic = "unpretty + list ws";
-                fail = expected_html != actual;
-            }
-
             if fail && let Cow::Owned(expected_html) = remove_tbody(expected_html) {
                 heuristic = "unpretty + remove tbody";
                 fail = expected_html != actual;
@@ -839,10 +834,6 @@ fn check_test_results(
     }
 
     fail
-}
-
-fn list_ws(html: &str) -> Cow<'_, str> {
-    strtr(html, &[("</li>\n<li>", "</li><li>")])
 }
 
 fn remove_tbody(html: &str) -> Cow<'_, str> {

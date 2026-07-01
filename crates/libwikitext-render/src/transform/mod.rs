@@ -23,7 +23,7 @@ pub(super) use outline::OutlineGenerator;
 pub(super) use pretty_text::PrettyText;
 
 /// An intermediate sink.
-pub(super) trait Chain: Sink {
+pub(super) trait Chain {
     /// The type of the next sink in the chain.
     type Next;
 
@@ -131,6 +131,68 @@ pub(super) trait Sink {
     ///            ^^^^^  ^^^^            ^^^^^^^
     /// ```
     fn text(&mut self, text: &str);
+}
+
+impl<L: Sink, R: Sink> Sink for either::Either<&mut L, &mut R> {
+    #[inline]
+    fn comment_end(&mut self) {
+        either::for_both!(self, sink => sink.comment_end());
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        either::for_both!(self, sink => sink.comment_start());
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        either::for_both!(self, sink => sink.entity(value, raw));
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        panic!("should not call this")
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        either::for_both!(self, sink => sink.new_line());
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        either::for_both!(self, sink => sink.strip_marker(marker));
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        either::for_both!(self, sink => sink.tag_attribute_end(name));
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        either::for_both!(self, sink => sink.tag_attribute_start(name));
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        either::for_both!(self, sink => sink.tag_end(name));
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        either::for_both!(self, sink => sink.tag_start(name));
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        either::for_both!(self, sink => sink.tag_start_end(name));
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        either::for_both!(self, sink => sink.text(text));
+    }
 }
 
 /// Generates an implementation of [`Chain`] for a generic type with the given
