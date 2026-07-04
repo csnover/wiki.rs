@@ -10,7 +10,7 @@ use super::{
     tags::{self, ExternalLinkKind},
     transform::{
         Accumulator, AttributeFilter, Chain as _, DomTree, EmptyMarker, GrafWrapper,
-        OutlineGenerator, PWrapper, PrettyText, Sink, TemplateMarker,
+        OutlineGenerator, PrettyText, Sink, TemplateMarker,
     },
 };
 use either::Either;
@@ -981,7 +981,7 @@ impl Sink for ParseHalf<'_> {
 type ParseFullyChain<'a> = AttributeFilter<
     OutlineGenerator<
         'a,
-        GrafWrapper<DomTree<PWrapper<TemplateMarker<PrettyText<EmptyMarker<Accumulator>>>>>>,
+        GrafWrapper<DomTree<TemplateMarker<PrettyText<EmptyMarker<Accumulator>>>>>,
     >,
 >;
 
@@ -1001,8 +1001,8 @@ impl<'a> DocumentSink for ParseFully<'a> {
     {
         Self(AttributeFilter::new(OutlineGenerator::new(
             args,
-            GrafWrapper::new(DomTree::new(PWrapper::new(TemplateMarker::new(
-                PrettyText::new(EmptyMarker::new(Accumulator::new())),
+            GrafWrapper::new(DomTree::new(TemplateMarker::new(PrettyText::new(
+                EmptyMarker::new(Accumulator::new()),
             )))),
         )))
     }

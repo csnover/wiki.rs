@@ -1,9 +1,6 @@
 //! A [`Sink`] that serialises its input into an HTML string.
 
-use super::{
-    Sink,
-    markable_string::{Mark, Markable, MarkableString},
-};
+use super::Sink;
 use crate::StripMarker;
 
 /// Final accumulator for HTML.
@@ -15,7 +12,7 @@ use crate::StripMarker;
 #[derive(Debug, Default)]
 pub(crate) struct Accumulator {
     /// The target string buffer.
-    inner: MarkableString,
+    inner: String,
     /// If true, currently in an HTML start tag.
     in_attr: bool,
 }
@@ -44,28 +41,6 @@ impl Accumulator {
     }
 }
 
-impl Markable for Accumulator {
-    #[inline]
-    fn free_mark(&mut self, mark: Mark) {
-        self.inner.free_mark(mark);
-    }
-
-    #[inline]
-    fn mark(&mut self) -> Mark {
-        self.inner.mark()
-    }
-
-    #[inline]
-    fn with_marks<const N: usize, F: FnOnce([Option<usize>; N], &mut MarkableString) -> T, T>(
-        &mut self,
-        marks: [&Mark; N],
-        f: F,
-    ) -> T {
-        let positions = marks.map(|mark| self.inner.restore_mark(mark));
-        f(positions, &mut self.inner)
-    }
-}
-
 impl Sink for Accumulator {
     #[inline]
     fn comment_end(&mut self) {
@@ -87,7 +62,7 @@ impl Sink for Accumulator {
 
     #[inline]
     fn finish(self) -> String {
-        self.inner.into_inner()
+        self.inner
     }
 
     #[inline]
@@ -120,7 +95,7 @@ impl Sink for Accumulator {
     fn tag_end(&mut self, name: &str) {
         self.inner.push_str("</");
         self.inner.push_str(name);
-        self.inner.push_str(">");
+        self.inner.push('>');
     }
 
     #[inline]

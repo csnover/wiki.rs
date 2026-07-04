@@ -7,7 +7,6 @@ mod debugger;
 mod dom_tree;
 mod element_marker;
 mod graf_wrapper;
-mod markable_string;
 mod outline;
 mod pretty_text;
 
@@ -15,7 +14,7 @@ use super::StripMarker;
 pub(super) use accumulator::Accumulator;
 pub(super) use attribute_filter::AttributeFilter;
 use buffer::Buffer;
-pub(super) use dom_tree::{DomTree, PWrapper};
+pub(super) use dom_tree::DomTree;
 pub(super) use element_marker::{EmptyMarker, TemplateMarker};
 pub(super) use graf_wrapper::GrafWrapper;
 use libwikitext_parse::VOID_TAGS;
@@ -205,7 +204,7 @@ macro_rules! chainable {
     ($ty:ident<$($lt:lifetime,)* $s:ident $(, $gen:ident)* $(,)?>) => {
         impl<$($lt,)* $s $(, $gen)*> $crate::transform::Chain for $ty<$($lt,)* $s $(, $gen)*>
         where
-            $s: $crate::transform::Sink + $crate::transform::markable_string::Markable,
+            $s: $crate::transform::Sink,
         {
             type Next = $s;
 

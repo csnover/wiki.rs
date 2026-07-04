@@ -1,6 +1,6 @@
 //! A [`Sink`] for deduplicating, filtering, and sanitising HTML tag attributes.
 
-use super::{Sink, chainable, markable_string::Markable};
+use super::{Sink, chainable};
 use crate::StripMarker;
 use core::fmt::Write as _;
 use indexmap::IndexMap;
@@ -143,7 +143,7 @@ impl<S: Sink> AttributeFilter<S> {
     }
 }
 
-impl<S: Sink + Markable> Sink for AttributeFilter<S> {
+impl<S: Sink> Sink for AttributeFilter<S> {
     #[inline]
     fn comment_end(&mut self) {
         if self.state == State::Idle {

@@ -1,6 +1,6 @@
 //! Transforms “visual whitespace” into HTML paragraphs.
 
-use super::{Buffer, Sink, chainable, markable_string::Markable};
+use super::{Buffer, Sink, chainable};
 use crate::StripMarker;
 use libwikitext_parse::MARKER_PREFIX;
 
@@ -219,7 +219,7 @@ impl<S: Sink> GrafWrapper<S> {
 
 chainable!(GrafWrapper);
 
-impl<S: Sink + Markable> Sink for GrafWrapper<S> {
+impl<S: Sink> Sink for GrafWrapper<S> {
     #[inline]
     fn comment_end(&mut self) {
         if self.in_list {

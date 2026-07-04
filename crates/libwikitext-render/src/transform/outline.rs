@@ -1,8 +1,6 @@
 //! Heading transformers.
 
-use super::{
-    Accumulator, Chain as _, PrettyText, Sink, chainable, markable_string::Markable, tokenise,
-};
+use super::{Accumulator, Chain as _, PrettyText, Sink, chainable, tokenise};
 use crate::{StripMarker, globals::Outline};
 use core::num::NonZeroU32;
 use html_escape::encode_double_quoted_attribute;
@@ -116,7 +114,7 @@ impl<'a, S: Sink> OutlineGenerator<'a, S> {
 
 chainable!(OutlineGenerator<'a, S>);
 
-impl<S: Sink + Markable> Sink for OutlineGenerator<'_, S> {
+impl<S: Sink> Sink for OutlineGenerator<'_, S> {
     fn comment_end(&mut self) {
         if let Some(outline) = self.buffer.last_mut() {
             outline.document_html.comment_end();
