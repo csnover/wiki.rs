@@ -137,11 +137,6 @@ wgFragmentMode=[ "legacy" ]
 <a href="/wiki/Foo#Is_this_great.3F" title="Foo">Foo#Is this great?</a>
 <a href="http://www.usemod.com/cgi-bin/mb.pl?Foo#Is_this_great.3F" class="extiw" title="meatball:Foo">meatball:Foo#Is this great?</a>
 </p>
-!! html/wiki.rs # Legacy encoding does not matter
-<p><a href="#Is_this_great?">#Is this great?</a>
-<a href="/wiki/Foo#Is_this_great?" title="Foo">Foo#Is this great?</a>
-<a href="http://www.usemod.com/cgi-bin/mb.pl?Foo#Is_this_great?" class="extiw" title="meatball:Foo">meatball:Foo#Is this great?</a>
-</p>
 !! end
 
 # Ideally the wikipedia: prefix here should be proto-relative too

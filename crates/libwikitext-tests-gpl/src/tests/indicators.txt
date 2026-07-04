@@ -264,7 +264,7 @@ parsoid=wt2html,selser
 
 <tbody><tr><td>x
 </td></tr></tbody></table>
-!! html/wiki.rs
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody
 <table>
 
 <tr>

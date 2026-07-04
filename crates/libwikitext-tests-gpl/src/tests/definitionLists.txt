@@ -147,9 +147,6 @@ Definition lists: ignore colons inside tags
 !! html
 <dl><dt>one <b>two&#160;: tag <i>fun:</i>:</b></dt>
 <dd>def</dd></dl>
-!! html/wiki.rs
-<dl><dt>one <b>two : tag <i>fun:</i>:</b></dt>
-<dd>def</dd></dl>
 !! end
 
 !! test
