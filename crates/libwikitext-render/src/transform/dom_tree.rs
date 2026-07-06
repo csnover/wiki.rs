@@ -1494,7 +1494,7 @@ impl FormattingList {
                 .truncate(self.elements[index].attr_index.into());
             let marker = self.elements.drain(index..).next().map(|node| node.node);
             if let Some(TagNode::Marker(marker)) = marker {
-                self.marker_index = marker.map(|index| u8::from(index) - 1);
+                self.marker_index = marker.map(|index| index.get() - 1);
             } else {
                 panic!("a marker should always point to the next marker");
             }
@@ -1582,7 +1582,7 @@ impl FormattingList {
             *next -= 1;
             let mut marker = usize::from(*next);
             while let TagNode::Marker(Some(next)) = &mut self.elements[marker].node
-                && let old = u8::from(*next)
+                && let old = next.get()
                 && usize::from(old) > index
             {
                 let new = old - 1;
@@ -1777,7 +1777,7 @@ impl<S: Sink> Stack<S> {
             debug_assert!(!VOID_TAGS.contains(name.as_str()));
             target.tag_end(name.as_str());
             if let TagNode::Table(next) = node {
-                self.table_index = next.map(|index| u8::from(index) - 1);
+                self.table_index = next.map(|index| index.get() - 1);
             }
         }
 

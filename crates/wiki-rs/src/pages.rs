@@ -463,7 +463,7 @@ pub(crate) async fn search(
     log::trace!("Sorted results in {:.2?}", time.elapsed());
 
     let per_page = per_page.map_or(500, usize::from);
-    let page = page.map_or(0, |page| usize::from(page) - 1);
+    let page = page.map_or(0, |page| page.get() - 1);
     let page_count = results.len().div_ceil(per_page);
     let range = page * per_page..results.len().min((page + 1) * per_page);
 
