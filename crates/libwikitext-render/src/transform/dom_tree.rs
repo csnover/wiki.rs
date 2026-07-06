@@ -147,7 +147,7 @@ impl<S: Sink> DomTree<S> {
         // 3..4.18.
         // 4.3. `format_index` is the index of the corresponding start tag of
         // `tag` in the list of formatting elements.
-        let Some(format_index) = self.format.index(|node| *node == tag) else {
+        let Some(format_index) = self.format.rfind_scoped(|node| *node == tag) else {
             // No corresponding formatting start tag after the last marker means
             // this is either a mismatched end tag which will be ignored, or the
             // corresponding start tag is outside the formatting scope, in which
@@ -199,7 +199,7 @@ impl<S: Sink> DomTree<S> {
         let next_format_index = format_index + 1;
         let reopen_end = self
             .format
-            .index(|node| self.stack.contains_after(furthest, node))
+            .rfind_scoped(|node| self.stack.contains_after(furthest, node))
             .unwrap_or(self.format.len());
         let reopen_start = reopen_end.saturating_sub(3).max(next_format_index);
 
@@ -260,17 +260,52 @@ impl<S: Sink> DomTree<S> {
         self.mode = Mode::Row;
     }
 
+    /// Closes the nearest implicit `<p>` wrapper, if one exists.
+    fn close_implicit_p(&mut self, scope: impl FnMut(Tag) -> bool) -> bool {
+        if let Some(index) = self
+            .stack
+            .index_in_scope(|node| node.is_implicit_p(), scope)
+        {
+            // The decision about whether or not p-wrapping should occur needs
+            // to be made before unclosed formatting elements are folded into
+            // the implicit p-wrapper buffer because `<b><i><div>` should *not*
+            // cause p-wrapping, but `<b><i></i><div>` (and `<b><i>a<div>`)
+            // *should*, and there is no way to differentiate `<b><i><div>` from
+            // `<b><i></i><div>` once folding has happened. The original parser
+            // handles this by collecting everything, including block-level
+            // elements, into a `<mw:p-wrap>`, and then because it is building
+            // a whole-ass tree, will walk from the `<div>` up the tree until it
+            // finds either a split candidate or hits the `<mw:p-wrap>`.
+            let end = self.stack.next_non_pwrap(index);
+            let reopen_end = self
+                .format
+                .rfind_scoped(|node| self.stack.contains_after(end, node))
+                .unwrap_or(self.format.len());
+            let reopen_start = self
+                .format
+                .lfind_scoped(|node| self.stack.contains_after(index, node))
+                .unwrap_or(self.format.len());
+            self.stack.pop_range(&self.custom_tags, index..end);
+            self.reformat_range(index, reopen_start..reopen_end);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Closes the nearest `<p>` element “in button scope”, if one exists.
     #[inline]
     fn close_p(&mut self) {
-        // The spec pops all implied end tags first to track errors, but
-        // this implementation does not need to track errors
-        self.pop_in_scope(|node| *node == Tag::P, Tag::is_button_scope);
+        if !self.close_implicit_p(Tag::is_button_scope) {
+            // The spec pops all implied end tags first to track errors, but
+            // this implementation does not need to track errors
+            self.pop_in_scope(|node| *node == Tag::P, Tag::is_button_scope);
+        }
     }
 
     /// Performs special fixups for nested `<a>` tags.
     fn fixup_anchor(&mut self, tag: Tag) {
-        if self.format.index(|node| *node == tag).is_some() {
+        if self.format.rfind_scoped(|node| *node == tag).is_some() {
             self.adopt(tag);
             // “remove that element from the list of active formatting elements
             // and the stack of open elements if the adoption agency algorithm
@@ -279,7 +314,7 @@ impl<S: Sink> DomTree<S> {
             // allowed to nest in the case of fostering, until they are
             // serialised, then they are not. Since this is a serialiser it
             // should be the case that these things never nest.
-            if let Some(index) = self.format.rfind(|node| *node == tag) {
+            if let Some(index) = self.format.rfind_any(|node| *node == tag) {
                 self.format.remove(index);
             }
             self.pop_in_scope(|node| *node == tag, |_| false);
@@ -355,13 +390,29 @@ impl<S: Sink> DomTree<S> {
     fn reformat(&mut self) {
         // TODO: This is O(n^2), but could be made O(n) by having a tag count
         // table for the stack.
-        let Some(first_missing) = self.format.index(|node| !self.stack.contains(node)) else {
-            return;
-        };
+        let first_missing = self
+            .format
+            .rfind_scoped(|node| self.stack.contains(node))
+            .map_or_else(
+                || {
+                    self.format
+                        .marker_index
+                        .map_or(0, |index| usize::from(index) + 1)
+                },
+                |index| index + 1,
+            );
+        self.reformat_range(self.stack.len(), first_missing..);
+    }
 
-        for (tag, attrs) in self.format.iter(first_missing..) {
-            self.stack
-                .insert(&self.custom_tags, self.stack.len(), tag, attrs);
+    /// Reopens formatting elements in the given formatting list `range` at the
+    /// given stack `index`.
+    fn reformat_range<R: core::slice::SliceIndex<[FormattingItem], Output = [FormattingItem]>>(
+        &mut self,
+        index: usize,
+        range: R,
+    ) {
+        for (i, (tag, attrs)) in self.format.iter(range).enumerate() {
+            self.stack.insert(&self.custom_tags, index + i, tag, attrs);
         }
     }
 
@@ -403,9 +454,10 @@ impl<S: Sink> DomTree<S> {
                     self.form_index = None;
                 }
                 if self.stack.rfind(|node| **node == tag).is_some() {
+                    if tag == Tag::Blockquote {
+                        self.close_implicit_p(|tag| tag == Tag::Blockquote);
+                    }
                     self.implied_end(None);
-                    // The spec pops all implied end tags first to track errors,
-                    // but this implementation does not need to track errors
                     self.pop_inclusive(|node| *node == tag);
                 }
             }
@@ -437,6 +489,7 @@ impl<S: Sink> DomTree<S> {
                 }
             }
             Tag::P => {
+                self.close_implicit_p(Tag::is_button_scope);
                 if !self.in_scope(|node| *node == tag, Tag::is_button_scope) {
                     self.tag_start_full("p");
                 }
@@ -930,12 +983,13 @@ impl<S: Sink> Sink for DomTree<S> {
             self.format.buffer_char(value);
             self.stack.target().entity(value, raw);
         } else {
-            if self.mode.reformat_text() {
-                self.reformat();
-            }
             if self.in_table_text() {
                 self.pending_text.push(value);
             } else {
+                self.stack.push_pwrap();
+                if self.mode.reformat_text() {
+                    self.reformat();
+                }
                 self.stack.target().entity(value, raw);
             }
             self.newline_mode = <_>::default();
@@ -943,7 +997,9 @@ impl<S: Sink> Sink for DomTree<S> {
     }
 
     #[inline]
-    fn finish(self) -> String {
+    fn finish(mut self) -> String {
+        // Any implicit p must be explicitly closed to handle e.g. `<b>a<div>␄`
+        self.close_implicit_p(|_| false);
         self.stack.finish(&self.custom_tags)
     }
 
@@ -965,14 +1021,13 @@ impl<S: Sink> Sink for DomTree<S> {
                 self.stack.target().new_line();
             }
             self.newline_mode = <_>::default();
+        } else if self.in_table_text() {
+            self.pending_text.push('\n');
         } else {
+            self.stack.target().new_line();
+            self.stack.push_pwrap();
             if self.mode.reformat_text() {
                 self.reformat();
-            }
-            if self.in_table_text() {
-                self.pending_text.push('\n');
-            } else {
-                self.stack.target().new_line();
             }
         }
     }
@@ -1022,6 +1077,13 @@ impl<S: Sink> Sink for DomTree<S> {
             Mode::Row => self.tag_end_row(tag),
             Mode::Cell => self.tag_end_cell(tag),
         }
+
+        // This is here exclusively to match the whitespace output of the PHP
+        // parser, the `push_pwrap` calls in other places work just fine to
+        // create the correct tree
+        if !tag.is_inline() {
+            self.stack.push_pwrap();
+        }
     }
 
     #[inline]
@@ -1034,6 +1096,9 @@ impl<S: Sink> Sink for DomTree<S> {
         }
 
         let tag = Tag::new(name, &mut self.custom_tags);
+        if tag.is_inline() {
+            self.stack.push_pwrap();
+        }
         if self.tag_start_any(tag) {
             self.in_attr = true;
             self.stack.target().tag_start(name);
@@ -1050,6 +1115,7 @@ impl<S: Sink> Sink for DomTree<S> {
             self.in_attr = false;
             self.format.tag_start_end();
             self.stack.target().tag_start_end(name);
+            self.stack.push_pwrap();
         }
     }
 
@@ -1063,12 +1129,15 @@ impl<S: Sink> Sink for DomTree<S> {
             self.format.buffer_text(text);
             self.stack.target().text(text);
         } else {
-            if self.mode.reformat_text() {
-                self.reformat();
-            }
             if self.in_table_text() {
                 self.pending_text += text;
             } else {
+                if text.contains(|c: char| !c.is_ascii_whitespace()) {
+                    self.stack.push_pwrap();
+                }
+                if self.mode.reformat_text() {
+                    self.reformat();
+                }
                 self.stack.target().text(text);
             }
             self.newline_mode = <_>::default();
@@ -1083,6 +1152,12 @@ struct BufferedNode {
     body_pos: Option<NonZeroU16>,
     /// The body.
     buffer: Buffer,
+    /// If true, the buffer contains something other than ASCII whitespace.
+    contains_non_whitespace: bool,
+    /// If true, currently processing an attribute.
+    in_attr: bool,
+    /// The number of tags in the buffer.
+    tag_count: u16,
 }
 
 impl BufferedNode {
@@ -1096,6 +1171,8 @@ impl BufferedNode {
     /// Adds `other` to this node.
     #[inline]
     fn extend(&mut self, other: BufferedNode) {
+        self.contains_non_whitespace |= other.contains_non_whitespace;
+        self.tag_count += other.tag_count;
         self.buffer.extend(other.buffer);
     }
 
@@ -1103,6 +1180,8 @@ impl BufferedNode {
     #[inline]
     fn flush_into<S: Sink + ?Sized>(&mut self, next: &mut S) {
         self.buffer.flush_into(next, false);
+        self.contains_non_whitespace = false;
+        self.tag_count = 0;
     }
 
     /// Inserts a tag with the given `name` and `attrs` to the start of this
@@ -1113,6 +1192,12 @@ impl BufferedNode {
         self.buffer.insert(usize::from(index), |body| {
             emit_tag(body, name, attrs);
         });
+    }
+
+    /// Returns true if this buffer contains content which should be implicitly
+    /// p-wrapped.
+    fn is_p_wrappable(&self) -> bool {
+        self.contains_non_whitespace || self.tag_count != 0
     }
 }
 
@@ -1129,6 +1214,7 @@ impl Sink for BufferedNode {
 
     #[inline]
     fn entity(&mut self, value: char, raw: &str) {
+        self.contains_non_whitespace |= !self.in_attr;
         self.buffer.entity(value, raw);
     }
 
@@ -1144,6 +1230,7 @@ impl Sink for BufferedNode {
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        log::warn!("TODO: strip marker contains not-whitespace?");
         self.buffer.strip_marker(marker);
     }
 
@@ -1160,11 +1247,13 @@ impl Sink for BufferedNode {
     #[inline]
     fn tag_end(&mut self, name: &str) {
         self.buffer.tag_end(name);
+        self.tag_count += 1;
     }
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
         self.buffer.tag_start(name);
+        self.in_attr = true;
     }
 
     #[inline]
@@ -1172,10 +1261,13 @@ impl Sink for BufferedNode {
         self.buffer.tag_start_end(name);
         self.body_pos
             .get_or_insert_with(|| NonZeroU16::new(self.buffer.len().try_into().unwrap()).unwrap());
+        self.in_attr = false;
     }
 
     #[inline]
     fn text(&mut self, text: &str) {
+        self.contains_non_whitespace |=
+            !self.in_attr && text.contains(|c: char| !c.is_ascii_whitespace());
         self.buffer.text(text);
     }
 }
@@ -1217,6 +1309,13 @@ impl<S: Sink> Buffers<S> {
     fn get_mut(&mut self, index: usize) -> Option<&mut BufferedNode> {
         self.local_index(index)
             .and_then(|index| self.buffered_nodes.get_mut(index))
+    }
+
+    /// Gets a slice of the nodes in the given `range`.
+    #[inline]
+    fn get_range<R: RangeBounds<usize>>(&self, range: R) -> &[BufferedNode] {
+        let range = self.local_range(range);
+        self.buffered_nodes.get(range).unwrap_or_default()
     }
 
     /// Gets a mutable slice of the nodes in the given `range`.
@@ -1293,11 +1392,19 @@ impl<S: Sink> Buffers<S> {
         };
         let split_at = usize::from(victim.body_pos.unwrap().get());
         let buffer = victim.buffer.split_off(split_at);
-        // TODO: This is so fucking stupid.
+        // TODO: This is so fucking stupid. Because the adoption agency
+        // algorithm can leave the final formatting element open if the outer
+        // loop limit is exceeded, it has to be extracted into a separate buffer
+        // or else the stack and buffer lists are desynced.
         let node = BufferedNode {
             body_pos: Some(NonZeroU16::new(buffer.first_tag_len().try_into().unwrap()).unwrap()),
             buffer,
+            contains_non_whitespace: victim.contains_non_whitespace,
+            in_attr: false,
+            tag_count: victim.tag_count,
         };
+        victim.contains_non_whitespace = false;
+        victim.tag_count = 0;
         self.buffered_nodes.insert(index + 1, node);
     }
 
@@ -1404,16 +1511,6 @@ impl FormattingList {
         self.elements.iter().any(|node| node.node == tag)
     }
 
-    /// Finds the index of the rightmost item in [`Self::elements`] that matches
-    /// the given predicate, ending at the rightmost marker.
-    fn index(&self, mut predicate: impl FnMut(&TagNode) -> bool) -> Option<usize> {
-        let min = self.after_marker();
-        self.elements[min..]
-            .iter()
-            .rposition(|node| predicate(&node.node))
-            .map(|index| min + index)
-    }
-
     /// Iterates over all formatting elements in the given `range`, returning
     /// the tag and the list of attributes.
     fn iter<R: core::slice::SliceIndex<[FormattingItem], Output = [FormattingItem]>>(
@@ -1430,6 +1527,16 @@ impl FormattingList {
     #[inline]
     fn len(&self) -> usize {
         self.elements.len()
+    }
+
+    /// Finds the position of the leftmost element matching the given
+    /// `predicate`, stopping at the rightmost marker.
+    fn lfind_scoped(&self, mut predicate: impl FnMut(&TagNode) -> bool) -> Option<usize> {
+        let min = self.after_marker();
+        self.elements[min..]
+            .iter()
+            .position(|node| predicate(&node.node))
+            .map(|index| min + index)
     }
 
     /// Pushes a new tag to the “list of active formatting elements”, enabling
@@ -1493,11 +1600,21 @@ impl FormattingList {
         }
     }
 
-    /// Finds the position of the element with a tag matching the given
+    /// Finds the position of the rightmost element matching the given
     /// `predicate`, ignoring any marker barriers.
     #[inline]
-    fn rfind(&self, predicate: impl Fn(&TagNode) -> bool) -> Option<usize> {
+    fn rfind_any(&self, predicate: impl Fn(&TagNode) -> bool) -> Option<usize> {
         self.elements.iter().rposition(|node| predicate(&node.node))
+    }
+
+    /// Finds the position of the rightmost element matching the given
+    /// `predicate`, stopping at the rightmost marker.
+    fn rfind_scoped(&self, mut predicate: impl FnMut(&TagNode) -> bool) -> Option<usize> {
+        let min = self.after_marker();
+        self.elements[min..]
+            .iter()
+            .rposition(|node| predicate(&node.node))
+            .map(|index| min + index)
     }
 
     /// Moves `from` to `to`, shifting the intermediate elements to the left.
@@ -1640,14 +1757,23 @@ impl<S: Sink> Stack<S> {
             self.next.target()
         };
 
+        let mut emit_tag_end = true;
         if let Some(mut buffer) = buffer {
+            if matches!(node, TagNode::ImplicitP) {
+                if buffer.is_p_wrappable() {
+                    target.tag_start_full("p");
+                } else {
+                    emit_tag_end = false;
+                }
+            }
+
             match &mut target {
                 Either::Left(next) => next.extend(buffer),
                 Either::Right(next) => buffer.flush_into(*next),
             }
         }
 
-        if let Some(name) = node.name(custom_tags) {
+        if emit_tag_end && let Some(name) = node.name(custom_tags) {
             debug_assert!(!VOID_TAGS.contains(name.as_str()));
             target.tag_end(name.as_str());
             if let TagNode::Table(next) = node {
@@ -1778,6 +1904,15 @@ impl<S: Sink> Stack<S> {
         self.inner.len()
     }
 
+    /// Returns the index of the next non-p-wrappable element in the stack.
+    fn next_non_pwrap(&self, index: usize) -> usize {
+        let start = index + 1;
+        self.next.get_range(start..)
+            .iter()
+            .rposition(BufferedNode::is_p_wrappable)
+            .map_or(start, |index| start + index + 1)
+    }
+
     /// Returns the index of the next “special” category element after `start`.
     fn next_special(&self, start: usize) -> Option<usize> {
         let start = start + 1;
@@ -1878,6 +2013,18 @@ impl<S: Sink> Stack<S> {
             self.fostering = None;
         } else {
             self.inc_foster();
+        }
+    }
+
+    /// Pushes a new implicit `<p>` to the stack.
+    fn push_pwrap(&mut self) {
+        if self
+            .inner
+            .last()
+            .is_none_or(|node| *node == Tag::Blockquote)
+        {
+            self.next.insert(self.inner.len(), <_>::default());
+            self.inner.push(TagNode::ImplicitP);
         }
     }
 
@@ -2343,6 +2490,8 @@ enum TagNode {
     /// niche-optimised index of the previous marker in [`DomTree::format`], if
     /// any.
     Marker(Option<NonZeroU8>),
+    /// An implicit p-wrapper.
+    ImplicitP,
     /// An optimised `<table>` element that holds a niche-optimised index of the
     /// previous `<table>` element in [`DomTree::stack`], if any.
     Table(Option<NonZeroU8>),
@@ -2370,6 +2519,7 @@ impl TagNode {
         match self {
             Self::Html(tag) => Some(tag.as_str(custom)),
             Self::ImplicitTbody | Self::Marker(_) => None,
+            Self::ImplicitP => Some(UncasedStr::new("p")),
             Self::Table(_) => Some(UncasedStr::new("table")),
         }
     }
@@ -2391,6 +2541,12 @@ impl TagNode {
     fn is_implied_close(self, except: Option<Tag>) -> bool {
         self.tag()
             .is_some_and(|tag| tag.is_implied_end() && Some(tag) != except)
+    }
+
+    /// Returns true if this is an implicit `<p>` (a Wikitext p-wrapper).
+    #[inline]
+    fn is_implicit_p(self) -> bool {
+        matches!(self, Self::ImplicitP)
     }
 
     /// Returns true if this is a “special” category node.
@@ -2418,6 +2574,7 @@ impl TagNode {
         match self {
             Self::Html(tag) => Some(tag),
             Self::ImplicitTbody => Some(Tag::Tbody),
+            Self::ImplicitP => Some(Tag::P),
             Self::Marker(_) => None,
             Self::Table(_) => Some(Tag::Table),
         }

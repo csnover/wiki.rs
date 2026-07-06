@@ -101,7 +101,7 @@ impl<'a, S: Sink> OutlineGenerator<'a, S> {
 
         #[rustfmt::skip]
         if let Cow::Owned(id) = &id && let Some(end) = entry.id_end {
-            html.replace_range(entry.id_start as usize..u32::from(end) as usize, id);
+            html.replace_range(entry.id_start as usize..end.get() as usize, id);
         } else if entry.id_end.is_none() {
             let id = format!(r#" id="{}""#, encode_double_quoted_attribute(&id));
             html.insert_str(entry.id_start as usize, &id);
