@@ -730,6 +730,11 @@ fn check_test_results(
             if fail && let Cow::Owned(expected_html) = devoid(expected_html) {
                 heuristic = "unpretty + devoid";
                 fail = expected_html != actual;
+
+                if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                    heuristic = "unpretty + devoid + decode html";
+                    fail = expected_html != actual;
+                }
             }
 
             if !fail {
