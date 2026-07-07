@@ -669,8 +669,10 @@ impl core::ops::Deref for StripMarker<'_> {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            StripMarker::WikiRsSourceStart(_) | StripMarker::WikiRsSourceEnd(_) => "",
-            StripMarker::General(s) | StripMarker::NoWiki(s) => s,
+            StripMarker::General(s)
+            | StripMarker::NoWiki(s)
+            | StripMarker::WikiRsSourceStart(s)
+            | StripMarker::WikiRsSourceEnd(s) => s,
         }
     }
 }

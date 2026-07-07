@@ -207,9 +207,8 @@ impl<S: Sink> Sink for TemplateMarker<S> {
         match marker {
             StripMarker::WikiRsSourceEnd(name) => self.pop(name),
             StripMarker::WikiRsSourceStart(name) => self.push(name),
-            _ => {}
+            marker => self.next.strip_marker(marker),
         }
-        self.next.strip_marker(marker);
     }
 
     #[inline]

@@ -71,8 +71,8 @@ impl Sink for Accumulator {
     }
 
     #[inline]
-    fn strip_marker(&mut self, _: &StripMarker<'_>) {
-        panic!("strip markers should be decomposed before now");
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        log::warn!("accumulator received {marker:?}");
     }
 
     #[inline]

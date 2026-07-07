@@ -1258,7 +1258,9 @@ impl Sink for BufferedNode {
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker<'_>) {
-        log::warn!("TODO: strip marker contains not-whitespace?");
+        if matches!(marker, StripMarker::General(_) | StripMarker::NoWiki(_)) {
+            log::warn!("TODO: strip marker contains not-whitespace?");
+        }
         self.buffer.strip_marker(marker);
     }
 
