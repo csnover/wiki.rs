@@ -300,6 +300,18 @@ c
 <p>b</p>
 
 <p>c</p>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody, and without some bizarre reordering of the source at the end by Remex
+<table>
+
+
+</table><table>
+<tr>
+<td>x
+</td></tr></table>
+<p>a
+</p><p>b
+</p><p>
+c</p>
 !! end
 
 !! test
