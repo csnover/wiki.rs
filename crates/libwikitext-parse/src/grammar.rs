@@ -86,9 +86,26 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// Intra-line expressions.
     rule inline() -> Spanned<Token>
     = wikilink()
-    / external_link()
-    / magic_link()
+    / external_link(<no_term()>)
+    / magic_link(<no_term()>)
     / inline_in_tag()
+
+    /// A terminator that never matches.
+    rule no_term() -> ()
+    = #{|_, _| RuleResult::Failed }
+
+    /// Intra-line expressions with a special terminator rule for link
+    /// expressions.
+    // TODO: Could precedence climbing solve this in a less hacky way?
+    rule inline_with_term(term: rule<()>) -> Spanned<Token>
+    = wikilink()
+    / external_link(&term)
+    / magic_link(&term)
+    / inline_in_tag()
+
+    /// A terminator that matches on a pipe.
+    rule pipe_term() -> ()
+    = "|"
 
     /// Expressions allowed inside non-image Wikitext tags.
     rule inline_in_tag() -> Spanned<Token>
@@ -690,29 +707,14 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
     ///                        ^                           ^    ^^              ^    ^^
     /// ```
-    rule table_cell_body(term: rule<()>) -> Vec<Spanned<Token>>
-    = start:position!()
-      (!(space_s()* (term() / nl())) inline_in_tag())*
-      i:#{|input, pos| RuleResult::Matched(pos, &input[..pos]) }
-    {? table_cell_body_content(i, o, start).map_err(|_| "table cell") }
-
-    /// The content of a table cell body.
     ///
-    /// ```wikitext
-    /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
-    ///                        ^                           ^    ^^              ^    ^^
-    /// ```
-    ///
-    /// This contortion is necessary because table cells have higher priority
-    /// than links and trying to thread terminators through the grammar sucks.
-    /// For example, a table line `| [http://example.com||oops]` should be
-    /// `[TableData, "[", Autolink("http://example.com"), TableData, "oops]"`,
-    /// but without this extra work, would be parsed improperly as
+    /// The extra terminator rule is required because table cells have higher
+    /// priority than links. A table line `| [http://example.com||oops]` should
+    /// be `[TableData, "[", Autolink("http://example.com"), TableData, "oops]"`
+    /// but without the extra terminator would be parsed improperly as
     /// `[TableData, ExternalLink("http://example.com||oops")]`.
-    // TODO: Could precedence climbing solve this in a less hacky way?
-    pub(self) rule table_cell_body_content(start_at: usize) -> Vec<Spanned<Token>>
-    = #{|_, _| RuleResult::Matched(start_at, ()) }
-      t:inline()*
+    rule table_cell_body(term: rule<()>) -> Vec<Spanned<Token>>
+    = t:(!(space_s()* (term() / nl())) t:inline_with_term(&term) { t })*
     { reduce_tree(t) }
 
     /// A termination rule for right-side ASCII whitespace trimming expressions.
@@ -730,7 +732,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///        ^^^^^^^^^^^^^^^
     /// ```
     pub rule gallery_image_options() -> Vec<Spanned<Argument>>
-    = spanned(<wikilink_argument_kv(<inline()>, <eolf() {}>)>) ** "|"
+    = spanned(<wikilink_argument_kv(<inline_with_term(<pipe_term()>)>, <eolf() {}>)>) ** "|"
 
     /// A wikilink, category, or image, or some text that looked like a Wikilink
     /// but wasn’t.
@@ -749,7 +751,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // "[[" - A literal "[" followed by maybe an external link (take "[")
       // "[" - Maybe an external link (fail)
       //
-      // Absent is the possibility that this could be a "[" and then a Wikilink
+      // There is no possibility that this could be a "[" and then a Wikilink
       // because the original parser ‘parsed’ by splitting the input on "[["
     / spanned(<"[" &"[" ("[" &"[")? { Token::Text }>)
 
@@ -803,7 +805,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = spanned(<
         "[["
         target:wikilink_image_target()
-        content:wikilink_content(<inline()>)
+        content:wikilink_content(<inline_with_term(<pipe_term()>)>)
         "]]"
         {
             // TODO: Use a different token type
@@ -1071,15 +1073,15 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ```wikitext
     /// [//example.com External site]
     /// ```
-    rule external_link() -> Spanned<Token>
+    rule external_link(term: rule<()>) -> Spanned<Token>
     = spanned(<
         "["
-        target:external_link_target()
+        target:external_link_target(&term)
         unispace()*
         // Wikilinks are allowed inside external links in the original parser
         // because they are processed before external links and replaced by a
         // placeholder which is allowed in the content position
-        content:(!external_link_term() t:(wikilink() / inline_in_tag()) { t })*
+        content:(!(term() / external_link_term()) t:(wikilink() / inline_in_tag()) { t })*
         "]"
         { Token::ExternalLink { content: reduce_tree(content), target } }
       >)
@@ -1090,10 +1092,10 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [//example.com External site]
     ///  ^^^^^^^^^^^^^
     /// ```
-    rule external_link_target() -> Vec<Spanned<Token>>
+    rule external_link_target(term: rule<()>) -> Vec<Spanned<Token>>
     = s:url_scheme()
-      h:(url_ipish() / external_link_url_class())
-      rest:external_link_url_class()*
+      h:(url_ipish() / external_link_url_class(&term))
+      rest:external_link_url_class(&term)*
     { reduce_tree(iter::once(s).chain(iter::once(h)).chain(rest)) }
 
     /// Other tokens valid in the target part of an external link.
@@ -1102,8 +1104,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [//example.com External site]
     ///  ^^^^^^^^^^^^^
     /// ```
-    rule external_link_url_class() -> Spanned<Token>
-    = !url_term() t:inline_in_url()
+    rule external_link_url_class(term: rule<()>) -> Spanned<Token>
+    = !(term() / url_term()) t:inline_in_url()
       !assert(matches!(t.node, Token::Entity('<' | '>')), "&lt; or &gt;")
     { t }
 
@@ -1119,13 +1121,13 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = [']'|'\x00'..='\x08'|'\x0a'..='\x1f'|char::REPLACEMENT_CHARACTER]
 
     /// A character sequence that is interpreted as a link to a resource.
-    rule magic_link() -> Spanned<Token>
-    = &boundary() t:magic_link_item()
+    rule magic_link(term: rule<()>) -> Spanned<Token>
+    = &boundary() t:magic_link_item(term)
     { t }
 
     /// The list of possible magic link expressions.
-    rule magic_link_item() -> Spanned<Token>
-    = magic_auto_link()
+    rule magic_link_item(term: rule<()>) -> Spanned<Token>
+    = magic_auto_link(term)
     / magic_pmid()
     / magic_rfc()
     / magic_isbn()
@@ -1140,18 +1142,18 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// With brackets (http://example.com/p)(ath#hash)
     ///                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule magic_auto_link() -> Spanned<Token>
+    rule magic_auto_link(term: rule<()>) -> Spanned<Token>
     = spanned(<
         p:position!()
         s:(!"//" t:url_scheme() { t })
-        h:(url_ipish() / magic_class(<")" {}>))
-        rest:magic_class(<magic_class_bracket_term(p) {}>)*
+        h:(url_ipish() / magic_class(&term, <")" {}>))
+        rest:magic_class(&term, <magic_class_bracket_term(p) {}>)*
         { Token::Autolink(reduce_tree([s, h].into_iter().chain(rest))) }
     >)
 
     /// A valid character in an magic link URL.
-    rule magic_class(term: rule<()>) -> Spanned<Token>
-    = !(([','|';'|'\\'|'.'|':'|'!'|'?'] / term())* url_term())
+    rule magic_class(term: rule<()>, punct_term: rule<()>) -> Spanned<Token>
+    = !(term() / ([','|';'|'\\'|'.'|':'|'!'|'?'] / punct_term())* url_term())
       t:inline_in_url()
       !assert(matches!(t.node, Token::Entity('<' | '>' | '\u{00a0}')), "&lt; &gt; or &nbsp;")
     { t }
