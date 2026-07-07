@@ -385,6 +385,34 @@ impl<S: Sink> DomTree<S> {
         self.stack.pop(&self.custom_tags);
     }
 
+    /// Pushes a new implicit `<p>` to the stack.
+    fn push_pwrap(&mut self) {
+        // It is not enough to only restore the p-wrapper when the stack is at a
+        // valid root because a case like `<a><table></table>b</a>` will cause
+        // the p-wrapper to be closed at `<table>` and then not restored after
+        // `</table>`. In MediaWiki the p-wrapper never goes away and it just
+        // splits the DOM tree itself every time it encounters some “non-inline”
+        // element. It might be better to emulate the original behaviour more
+        // closely but I just want to be done here, this all sucks and was a bad
+        // idea.
+        let root = self
+            .stack
+            .inner
+            .iter()
+            .enumerate()
+            .rfind(|(_, node)| !node.is_formatting() || **node == Tag::Blockquote);
+        if root.is_none_or(|(_, node)| *node == Tag::Blockquote) {
+            let index = root.map_or(0, |(index, _)| index + 1);
+            if index != self.stack.len() {
+                self.stack.pop_range(&self.custom_tags, index..);
+                self.reformat();
+            }
+
+            self.stack.next.insert(index, <_>::default());
+            self.stack.inner.insert(index, TagNode::ImplicitP);
+        }
+    }
+
     /// Reopens any formatting elements which were closed due to element
     /// splitting.
     fn reformat(&mut self) {
@@ -986,7 +1014,7 @@ impl<S: Sink> Sink for DomTree<S> {
             if self.in_table_text() {
                 self.pending_text.push(value);
             } else {
-                self.stack.push_pwrap();
+                self.push_pwrap();
                 if self.mode.reformat_text() {
                     self.reformat();
                 }
@@ -1025,7 +1053,7 @@ impl<S: Sink> Sink for DomTree<S> {
             self.pending_text.push('\n');
         } else {
             self.stack.target().new_line();
-            self.stack.push_pwrap();
+            self.push_pwrap();
             if self.mode.reformat_text() {
                 self.reformat();
             }
@@ -1082,7 +1110,7 @@ impl<S: Sink> Sink for DomTree<S> {
         // parser, the `push_pwrap` calls in other places work just fine to
         // create the correct tree
         if !tag.is_inline() {
-            self.stack.push_pwrap();
+            self.push_pwrap();
         }
     }
 
@@ -1097,7 +1125,7 @@ impl<S: Sink> Sink for DomTree<S> {
 
         let tag = Tag::new(name, &mut self.custom_tags);
         if tag.is_inline() {
-            self.stack.push_pwrap();
+            self.push_pwrap();
         }
         if self.tag_start_any(tag) {
             self.in_attr = true;
@@ -1115,7 +1143,7 @@ impl<S: Sink> Sink for DomTree<S> {
             self.in_attr = false;
             self.format.tag_start_end();
             self.stack.target().tag_start_end(name);
-            self.stack.push_pwrap();
+            self.push_pwrap();
         }
     }
 
@@ -1133,7 +1161,7 @@ impl<S: Sink> Sink for DomTree<S> {
                 self.pending_text += text;
             } else {
                 if text.contains(|c: char| !c.is_ascii_whitespace()) {
-                    self.stack.push_pwrap();
+                    self.push_pwrap();
                 }
                 if self.mode.reformat_text() {
                     self.reformat();
@@ -1907,7 +1935,8 @@ impl<S: Sink> Stack<S> {
     /// Returns the index of the next non-p-wrappable element in the stack.
     fn next_non_pwrap(&self, index: usize) -> usize {
         let start = index + 1;
-        self.next.get_range(start..)
+        self.next
+            .get_range(start..)
             .iter()
             .rposition(BufferedNode::is_p_wrappable)
             .map_or(start, |index| start + index + 1)
@@ -2013,18 +2042,6 @@ impl<S: Sink> Stack<S> {
             self.fostering = None;
         } else {
             self.inc_foster();
-        }
-    }
-
-    /// Pushes a new implicit `<p>` to the stack.
-    fn push_pwrap(&mut self) {
-        if self
-            .inner
-            .last()
-            .is_none_or(|node| *node == Tag::Blockquote)
-        {
-            self.next.insert(self.inner.len(), <_>::default());
-            self.inner.push(TagNode::ImplicitP);
         }
     }
 
@@ -2528,6 +2545,12 @@ impl TagNode {
     #[inline]
     fn is_dl_item(self) -> bool {
         self.tag().is_some_and(Tag::is_dl_item)
+    }
+
+    /// Returns true if this is in the HTML5 formatting category.
+    #[inline]
+    fn is_formatting(self) -> bool {
+        self.tag().is_some_and(Tag::is_formatting)
     }
 
     /// Returns true if this is an HTML heading node.
