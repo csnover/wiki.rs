@@ -3492,7 +3492,7 @@ Image: Block level image should have \n before and after
 !! html/wiki.rs # This output matches the PHP parser, minus data attributes
 <p>123
 </p>
-<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="150" height="18" class="mw-file-element"></a><figcaption></figcaption></figure>
+<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg" decoding="async" width="150" height="18" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/225px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 2x" ></a><figcaption></figcaption></figure>
 <p>456
 </p>
 !! end
@@ -3788,6 +3788,14 @@ File with table in caption with extra table attribute spaces
 <tbody><tr data-parsoid='{"startTagSrc":"|-"}'>  
 <td>hi</td></tr>
 </tbody></table>
+</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody, and whitespace, and data- attrs
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>
+<table>
+
+<tr>
+<td>hi
+</td></tr></table>
 </figcaption></figure>
 !! end
 
