@@ -4182,7 +4182,7 @@ parsoid=wt2html,wt2wt,html2html
 <small>
 
 ** 123</small>
-!! html/php # This output matches the PHP parser
+!! html/php
 <p><small>
 </small></p><small></small><ul><small></small><li><small></small><ul><small></small><li><small>123</small></li></ul></li></ul>
 !! html/parsoid

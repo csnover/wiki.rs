@@ -1,6 +1,6 @@
 //! HTML5(-ish) tree transformer.
 
-use super::{Buffer, Chain, Sink};
+use super::{Buffer, Chain, Sink, buffer::Call};
 use crate::StripMarker;
 use core::{
     num::{NonZeroU8, NonZeroU16},
@@ -392,9 +392,8 @@ impl<S: Sink> DomTree<S> {
         // the p-wrapper to be closed at `<table>` and then not restored after
         // `</table>`. In MediaWiki the p-wrapper never goes away and it just
         // splits the DOM tree itself every time it encounters some “non-inline”
-        // element. It might be better to emulate the original behaviour more
-        // closely but I just want to be done here, this all sucks and was a bad
-        // idea.
+        // element, and perhaps it would be a good idea to implement that way
+        // instead, but I just want to be done here, this sucks!
         let root = self
             .stack
             .inner
@@ -405,7 +404,6 @@ impl<S: Sink> DomTree<S> {
             let index = root.map_or(0, |(index, _)| index + 1);
             if index != self.stack.len() {
                 self.stack.pop_range(&self.custom_tags, index..);
-                self.reformat();
             }
 
             self.stack.next.insert(index, <_>::default());
@@ -1052,11 +1050,11 @@ impl<S: Sink> Sink for DomTree<S> {
         } else if self.in_table_text() {
             self.pending_text.push('\n');
         } else {
-            self.stack.target().new_line();
             self.push_pwrap();
             if self.mode.reformat_text() {
                 self.reformat();
             }
+            self.stack.target().new_line();
         }
     }
 
@@ -1105,13 +1103,6 @@ impl<S: Sink> Sink for DomTree<S> {
             Mode::Row => self.tag_end_row(tag),
             Mode::Cell => self.tag_end_cell(tag),
         }
-
-        // This is here exclusively to match the whitespace output of the PHP
-        // parser, the `push_pwrap` calls in other places work just fine to
-        // create the correct tree
-        if !tag.is_inline() {
-            self.push_pwrap();
-        }
     }
 
     #[inline]
@@ -1143,7 +1134,6 @@ impl<S: Sink> Sink for DomTree<S> {
             self.in_attr = false;
             self.format.tag_start_end();
             self.stack.target().tag_start_end(name);
-            self.push_pwrap();
         }
     }
 
@@ -1196,6 +1186,47 @@ impl BufferedNode {
         this
     }
 
+    /// Drains all calls that are excluded from the start of a p-wrapper into
+    /// `next`.
+    fn drain_non_pwrap_into<S: Sink>(&mut self, next: &mut S) {
+        fn find_end(buffer: &Buffer) -> usize {
+            let mut iter = buffer.iter().peekable();
+            while let Some((pos, call)) = iter.next() {
+                if !skip_pwrap(&call) {
+                    return pos;
+                } else if matches!(call, Call::NewLine) {
+                    // Newlines were treated as part of a single text node in
+                    // the original parser, so if a newline is encountered, it
+                    // needs to not be excluded if it is followed by a text call
+                    // without whitespace in it. And maybe there are many of
+                    // them in a row…
+                    while iter
+                        .next_if(|(_, call)| matches!(call, Call::NewLine))
+                        .is_some()
+                    {}
+                    if iter.peek().is_some_and(|(_, call)| is_non_whitespace(call)) {
+                        return pos;
+                    }
+                }
+            }
+            buffer.len()
+        }
+
+        fn is_non_whitespace(call: &Call<'_>) -> bool {
+            matches!(call, Call::Text(text) if text.contains(|c: char| !c.is_ascii_whitespace()))
+        }
+
+        fn skip_pwrap(call: &Call<'_>) -> bool {
+            matches!(call, Call::CommentEnd | Call::CommentStart | Call::NewLine)
+                || matches!(call, Call::Text(text) if text.bytes().all(|b| b.is_ascii_whitespace()))
+        }
+
+        let end = find_end(&self.buffer);
+        for (_, call) in self.buffer.drain(..end) {
+            call.emit(next);
+        }
+    }
+
     /// Adds `other` to this node.
     #[inline]
     fn extend(&mut self, other: BufferedNode) {
@@ -1224,6 +1255,7 @@ impl BufferedNode {
 
     /// Returns true if this buffer contains content which should be implicitly
     /// p-wrapped.
+    #[inline]
     fn is_p_wrappable(&self) -> bool {
         self.contains_non_whitespace || self.tag_count != 0
     }
@@ -1791,6 +1823,7 @@ impl<S: Sink> Stack<S> {
         if let Some(mut buffer) = buffer {
             if matches!(node, TagNode::ImplicitP) {
                 if buffer.is_p_wrappable() {
+                    buffer.drain_non_pwrap_into(&mut target);
                     target.tag_start_full("p");
                 } else {
                     emit_tag_end = false;
