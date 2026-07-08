@@ -41,7 +41,7 @@ pub(super) fn render_external_link<S: DocumentSink>(
     // RFC 3986 so it mixes up authority and path when the scheme is missing,
     // but adding a whole new dependency just for this one case is too much.
     let link = LinkKind::External(
-        target,
+        Cow::Borrowed(target.as_ref()),
         if auto_link {
             ExternalLinkKind::Free
         } else if content.is_empty() {
@@ -52,12 +52,7 @@ pub(super) fn render_external_link<S: DocumentSink>(
     );
     render_start_link(&mut out.next, state, &link);
     if auto_link {
-        let options = LinkKindOptions {
-            base_uri: &state.statics.base_uri,
-            interwiki_map: &state.statics.db.config().interwiki_map,
-            paths: &state.statics.paths,
-        };
-        out.next.text(&link.to_string(&options, None));
+        out.next.text(decode_raw_url(&target).as_str());
     } else if content.is_empty() {
         let ordinal = &mut state.globals.external_link_ordinal;
         *ordinal += 1;
@@ -271,6 +266,74 @@ pub(super) enum LinkKind<'a> {
     Internal(Title),
 }
 
+impl LinkKind<'_> {
+    /// Converts the link to a URI-encoded string suitable for use in an HTML
+    /// `href` attribute.
+    pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
+        match self {
+            Self::External(url, _) => {
+                // TODO: Should this decoding really be done here and not at the
+                // site where the LinkKind is created?
+                let url = decode_raw_url(url);
+
+                if let Some(external) = options.paths.external
+                    && url.authority() != options.base_uri.authority()
+                {
+                    make_url(
+                        options.base_uri,
+                        None,
+                        format_args!("{external}/{url}"),
+                        None,
+                        None,
+                    )
+                } else {
+                    url.to_string()
+                }
+            }
+            Self::Internal(title) => {
+                if let Some(iw) = title
+                    .interwiki()
+                    .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
+                {
+                    let url = iw.replace("$1", &title.partial_url());
+                    if let Some(external) = options.paths.external {
+                        make_url(
+                            options.base_uri,
+                            None,
+                            format_args!("{external}/{url}"),
+                            None,
+                            title.fragment(),
+                        )
+                    } else if let Some(fragment) = title.fragment_url(AnchorEncodeMode::Html5)
+                        && !fragment.is_empty()
+                    {
+                        format!("{url}#{fragment}")
+                    } else {
+                        url
+                    }
+                } else if title.prefixed_text().is_empty() {
+                    format!(
+                        "#{}",
+                        title
+                            .fragment_url(AnchorEncodeMode::Html5)
+                            .unwrap_or_default(),
+                    )
+                } else if title.namespace().id == Namespace::MEDIA {
+                    make_media_url(options.base_uri, options.paths.media, &title.text_url())
+                } else {
+                    make_url(
+                        options.base_uri,
+                        None,
+                        format_args!("{}/{}", options.paths.article, title.partial_url()),
+                        query,
+                        title.fragment(),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /// Cleans up a URL authority part according to the MediaWiki rules.
 fn clean_url(mut url: Url) -> Url {
     fn valid_idn(c: char) -> bool {
@@ -345,72 +408,11 @@ fn clean_url(mut url: Url) -> Url {
     url
 }
 
-impl LinkKind<'_> {
-    /// Converts the link to a URI-encoded string suitable for use in an HTML
-    /// `href` attribute.
-    pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
-        match self {
-            LinkKind::External(url, _) => {
-                let url = Url::lax(&decode_html(url).map(url_encode_sanitized))
-                    .map(clean_url)
-                    .unwrap();
-
-                if let Some(external) = options.paths.external
-                    && url.authority() != options.base_uri.authority()
-                {
-                    make_url(
-                        options.base_uri,
-                        None,
-                        format_args!("{external}/{url}"),
-                        None,
-                        None,
-                    )
-                } else {
-                    url.to_string()
-                }
-            }
-            LinkKind::Internal(title) => {
-                if let Some(iw) = title
-                    .interwiki()
-                    .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
-                {
-                    let url = iw.replace("$1", &title.partial_url());
-                    if let Some(external) = options.paths.external {
-                        make_url(
-                            options.base_uri,
-                            None,
-                            format_args!("{external}/{url}"),
-                            None,
-                            title.fragment(),
-                        )
-                    } else if let Some(fragment) = title.fragment_url(AnchorEncodeMode::Html5)
-                        && !fragment.is_empty()
-                    {
-                        format!("{url}#{fragment}")
-                    } else {
-                        url
-                    }
-                } else if title.prefixed_text().is_empty() {
-                    format!(
-                        "#{}",
-                        title
-                            .fragment_url(AnchorEncodeMode::Html5)
-                            .unwrap_or_default(),
-                    )
-                } else if title.namespace().id == Namespace::MEDIA {
-                    make_media_url(options.base_uri, options.paths.media, &title.text_url())
-                } else {
-                    make_url(
-                        options.base_uri,
-                        None,
-                        format_args!("{}/{}", options.paths.article, title.partial_url()),
-                        query,
-                        title.fragment(),
-                    )
-                }
-            }
-        }
-    }
+/// Decodes a raw URL string into a cleaned `Url` object.
+fn decode_raw_url(url: &str) -> Url {
+    Url::lax(&decode_html(url).map(url_encode_sanitized))
+        .map(clean_url)
+        .unwrap()
 }
 
 /// Serialises values which are structured like
