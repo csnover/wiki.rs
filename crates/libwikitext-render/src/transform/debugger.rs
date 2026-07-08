@@ -4,6 +4,10 @@
 use super::{Chain, Sink};
 use crate::StripMarker;
 
+/// An emitter debugger outputting to stderr.
+#[allow(clippy::allow_attributes, dead_code, reason = "debugging code")]
+pub(super) type StderrDebugger<S> = Debugger<std::io::Stderr, S>;
+
 /// An emitter debugger.
 #[derive(Debug)]
 pub(super) struct Debugger<W, S> {
@@ -14,9 +18,21 @@ pub(super) struct Debugger<W, S> {
 }
 
 impl<W, S> Debugger<W, S> {
-    /// Creates a new `Debugger` which emits to `next`.
+    /// Creates a new `Debugger` which emits debug messages to `fmt` and calls
+    /// to `next`.
     pub fn new(fmt: W, next: S) -> Self {
         Self { fmt, next }
+    }
+}
+
+impl<S> Debugger<std::io::Stderr, S> {
+    /// Creates a new `Debugger` which emits to `next`.
+    #[allow(clippy::allow_attributes, dead_code, reason = "debugging code")]
+    pub fn stderr(next: S) -> Self {
+        Self {
+            fmt: std::io::stderr(),
+            next,
+        }
     }
 }
 
