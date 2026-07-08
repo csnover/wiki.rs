@@ -88,3 +88,13 @@ a
 <br>
 </u><table><tr><td></td></tr></table>
 !! end
+
+!! test
+Newlines in attributes
+!! wikitext
+<span style="color:
+rebeccapurple"></span>
+!! html/wiki.rs
+<p><span style="--mw-output-color:rebeccapurple;"></span>
+</p>
+!! end

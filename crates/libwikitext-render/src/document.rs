@@ -74,7 +74,13 @@ where
         let name = to_ascii_lower(name.trim_ascii());
         let value = attribute.value();
         self.next.tag_attribute_start(&name);
-        self.adopt_tokens(state, sp, value)?;
+        // TODO: This should probably use its own visitor?
+        for token in value {
+            match token.node {
+                Token::NewLine => self.next.new_line(),
+                _ => self.adopt_token(state, sp, token)?,
+            }
+        }
         self.next.tag_attribute_end(&name);
         Ok(())
     }
