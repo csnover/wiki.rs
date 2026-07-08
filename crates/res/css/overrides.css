@@ -25,6 +25,10 @@
     font-weight: var(--normal-weight);
 }
 
+.mw-empty-elt {
+    display: none;
+}
+
 .floatleft,
 .mw-halign-left {
     @apply --float-left;
