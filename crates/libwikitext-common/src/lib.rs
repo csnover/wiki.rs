@@ -13,6 +13,7 @@ use libmisc::{CowExt as _, to_ascii_lower, to_ascii_upper};
 use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval, ucfirst};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
+use uncased::UncasedStr;
 
 /// An i18n message library.
 pub struct Messages<'a, Db> {
@@ -170,6 +171,19 @@ pub enum AnchorEncodeMode {
     Html5,
     /// The legacy anchor encoding algorithm.
     Legacy,
+}
+
+/// Converts a BCP-47 code to its corresponding MediaWiki language code.
+#[must_use]
+pub fn bcp47_to_lang(code: &str) -> Cow<'_, str> {
+    let code = NON_STANDARD_BCP47_CODES
+        .get(code.into())
+        .copied()
+        .unwrap_or(code);
+    DEPRECATED_LANGUAGE_CODES
+        .get(code.into())
+        .copied()
+        .map_or(to_ascii_lower(code), Cow::Borrowed)
 }
 
 /// Decodes HTML entities according to the Wikitext rules.
@@ -489,37 +503,14 @@ where
 /// Converts a MediaWiki language code to its corresponding BCP-47 code.
 #[must_use]
 pub fn lang_to_bcp47(code: &str) -> Cow<'_, str> {
-    const NON_STANDARD: phf::Map<&str, &str> = phf::phf_map! {
-        "cbk-zam" => "cbk",
-        "de-formal" => "de-x-formal",
-        "eml" => "egl",
-        "en-rtl" => "en-x-rtl",
-        "es-formal" => "es-x-formal",
-        "hu-formal" => "hu-x-formal",
-        "map-bms" => "jv-x-bms",
-        "mo" => "ro-Cyrl-MD",
-        "nrm" => "nrf",
-        "nl-informal" => "nl-x-informal",
-        "roa-tara" => "nap-x-tara",
-        "simple" => "en-simple",
-        "sr-ec" => "sr-Cyrl",
-        "sr-el" => "sr-Latn",
-        "crh-ro" => "crh-Latn-RO",
-        "kk-cn" => "kk-Arab-CN",
-        "kk-tr" => "kk-Latn-TR",
-        "zh-cn" => "zh-Hans-CN",
-        "zh-sg" => "zh-Hans-SG",
-        "zh-my" => "zh-Hans-MY",
-        "zh-tw" => "zh-Hant-TW",
-        "zh-hk" => "zh-Hant-HK",
-        "zh-mo" => "zh-Hant-MO",
-    };
-
     let code = DEPRECATED_LANGUAGE_CODES
-        .get(&to_ascii_lower(code))
+        .get(code.into())
         .copied()
         .unwrap_or(code);
-    let code = NON_STANDARD.get(code).copied().unwrap_or(code);
+    let code = NON_STANDARD_LANGUAGE_CODES
+        .get(code.into())
+        .copied()
+        .unwrap_or(code);
     let mut out = String::new();
     let mut flushed = 0;
     let mut last = 0;
@@ -779,16 +770,59 @@ pub fn url_encode_sanitized(input: &str) -> Cow<'_, str> {
 
 /// A map from deprecated MediaWiki language codes to their non-deprecated
 /// replacements.
-pub const DEPRECATED_LANGUAGE_CODES: phf::Map<&str, &str> = phf::phf_map! {
-    "als" => "gsw",
-    "bat-smg" => "sgs",
-    "be-x-old" => "be-tarask",
-    "fiu-vro" => "vro",
-    "roa-rup" => "rup",
-    "zh-classical" => "lzh",
-    "zh-min-nan" => "nan",
-    "zh-yue" => "yue",
+pub const DEPRECATED_LANGUAGE_CODES: phf::Map<&UncasedStr, &str> = phf::phf_map! {
+    UncasedStr::new("als") => "gsw",
+    UncasedStr::new("bat-smg") => "sgs",
+    UncasedStr::new("be-x-old") => "be-tarask",
+    UncasedStr::new("fiu-vro") => "vro",
+    UncasedStr::new("roa-rup") => "rup",
+    UncasedStr::new("zh-classical") => "lzh",
+    UncasedStr::new("zh-min-nan") => "nan",
+    UncasedStr::new("zh-yue") => "yue",
 };
+
+/// Creates maps between irregular MediaWiki language codes and their BCP-47
+/// equivalents.
+macro_rules! non_standard_lang_codes {
+    ($($from:literal => $to:literal),* $(,)?) => {
+        /// A map from an irregular language code to its BCP-47 equivalent.
+        const NON_STANDARD_LANGUAGE_CODES: phf::Map<&UncasedStr, &str> = phf::phf_map! {
+            $(UncasedStr::new($from) => $to),*
+        };
+
+        /// A map from a BCP-47 code to its irregular MediaWiki language code
+        /// equivalent.
+        const NON_STANDARD_BCP47_CODES: phf::Map<&UncasedStr, &str> = phf::phf_map! {
+            $(UncasedStr::new($to) => $from),*
+        };
+    };
+}
+
+non_standard_lang_codes! {
+    "cbk-zam" => "cbk",
+    "de-formal" => "de-x-formal",
+    "eml" => "egl",
+    "en-rtl" => "en-x-rtl",
+    "es-formal" => "es-x-formal",
+    "hu-formal" => "hu-x-formal",
+    "map-bms" => "jv-x-bms",
+    "mo" => "ro-Cyrl-MD",
+    "nrm" => "nrf",
+    "nl-informal" => "nl-x-informal",
+    "roa-tara" => "nap-x-tara",
+    "simple" => "en-simple",
+    "sr-ec" => "sr-Cyrl",
+    "sr-el" => "sr-Latn",
+    "crh-ro" => "crh-Latn-RO",
+    "kk-cn" => "kk-Arab-CN",
+    "kk-tr" => "kk-Latn-TR",
+    "zh-cn" => "zh-Hans-CN",
+    "zh-sg" => "zh-Hans-SG",
+    "zh-my" => "zh-Hans-MY",
+    "zh-tw" => "zh-Hant-TW",
+    "zh-hk" => "zh-Hant-HK",
+    "zh-mo" => "zh-Hant-MO",
+}
 
 /// The alphabet of characters to percent-encode when encoding URLs.
 ///

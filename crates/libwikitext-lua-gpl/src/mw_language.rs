@@ -13,8 +13,8 @@ use gc_arena::Rootable;
 use libmisc::{to_lower, to_upper};
 use libphp_rs::strval;
 use libwikitext_common::{
-    config::Configuration, db::DatabaseProvider, format_date_mediawiki, format_number,
-    parse_formatted_number, to_lower_first, to_upper_first,
+    bcp47_to_lang, config::Configuration, db::DatabaseProvider, format_date_mediawiki,
+    format_number, parse_formatted_number, to_lower_first, to_upper_first,
 };
 use libwikitext_lua::WallTime;
 use piccolo::StashedString;
@@ -307,10 +307,11 @@ impl LanguageLibrary<'_> {
     fn is_known_language_tag<'gc>(
         &self,
         _: Context<'_>,
-        lang: VmString<'gc>,
+        code: VmString<'gc>,
     ) -> Result<bool, VmError<'gc>> {
-        log::warn!("stub: mw.language.isKnownLanguageTag({lang:?})");
-        Ok(true)
+        // log::trace!("mw.language.isKnownLanguageTag({code:?})");
+        let code = bcp47_to_lang(code.to_str()?);
+        Ok(self.config().languages.contains_key(&code))
     }
 
     /// Returns true if the language with the given language code is written

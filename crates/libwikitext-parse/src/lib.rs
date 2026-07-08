@@ -80,7 +80,7 @@ impl<'config> Parser<'config> {
             .collect::<HashSet<_>>();
         for (&k, &v) in &DEPRECATED_LANGUAGE_CODES {
             if lang.contains(v) {
-                lang.insert(Cow::Borrowed(k));
+                lang.insert(Cow::Borrowed(k.as_str()));
             }
         }
 
