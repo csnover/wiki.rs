@@ -154,7 +154,7 @@ pub(crate) async fn article(
         let url = make_url(
             &state.base_uri,
             None,
-            target.partial_url(),
+            format_args!("article/{}", target.partial_url()),
             Some(&query),
             target.fragment(),
         );
@@ -474,7 +474,7 @@ pub(crate) async fn search(
         let url = make_url(
             &state.base_uri,
             None,
-            target.partial_url(),
+            format_args!("article/{}", target.partial_url()),
             None,
             target.fragment(),
         );
