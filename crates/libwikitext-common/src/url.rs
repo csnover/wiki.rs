@@ -134,12 +134,6 @@ impl Url {
         &self.data[usize::from(self.fragment)..]
     }
 
-    /// Returns true if this URL looks like it points to another origin.
-    #[must_use]
-    pub fn is_absolute(&self) -> bool {
-        self.scheme().is_some() || self.authority().is_some()
-    }
-
     /// Gets the URL path.
     ///
     /// ```text

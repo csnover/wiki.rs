@@ -355,10 +355,8 @@ impl LinkKind<'_> {
                     .map(clean_url)
                     .unwrap();
 
-                // TODO: Hack together some URL parsing good enough that there
-                // is an actual way to check that the origin is the same
                 if let Some(external) = options.paths.external
-                    && url.is_absolute()
+                    && url.authority() != options.base_uri.authority()
                 {
                     make_url(
                         options.base_uri,
