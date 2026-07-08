@@ -553,7 +553,7 @@ pub struct Statics<'config, 'dict> {
     #[builder(default, setter(doc = "Sets the global template cache.", strip_option))]
     template_cache: Option<TemplateCache>,
     /// The Lua interpreter.
-    #[builder(default = lua::new_vm(base_uri, db, parser).unwrap(), setter(skip))]
+    #[builder(default = lua::new_vm(&base_uri.clone().extend_path(paths.article), db, parser).unwrap(), setter(skip))]
     pub vm: Lua,
     /// VM module cache.
     #[builder(default = LruMap::new(schnellru::UnlimitedCompact), setter(skip))]

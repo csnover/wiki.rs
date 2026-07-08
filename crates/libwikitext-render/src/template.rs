@@ -688,7 +688,11 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
     let href = make_url(
         &state.statics.base_uri,
         None,
-        page_name.partial_url(),
+        format_args!(
+            "{}/{}",
+            state.statics.paths.article,
+            page_name.partial_url()
+        ),
         Some("mode=module"),
         page_name.fragment(),
     );

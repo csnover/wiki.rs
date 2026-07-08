@@ -103,6 +103,26 @@ impl Url {
             .then_some(&self.data[usize::from(self.authority)..usize::from(self.path)])
     }
 
+    /// Extends the path.
+    ///
+    /// # Panics
+    ///
+    /// * `path` makes the URL >64k
+    #[must_use]
+    pub fn extend_path(mut self, path: &str) -> Self {
+        let mut at = usize::from(self.query);
+        let mut delta = u16::try_from(path.len()).unwrap();
+        if !self.path().ends_with('/') {
+            self.data.to_mut().insert(at, '/');
+            at += 1;
+            delta += 1;
+        }
+        self.data.to_mut().insert_str(at, path);
+        self.query = self.query.strict_add(delta);
+        self.fragment = self.fragment.strict_add(delta);
+        self
+    }
+
     /// Gets the URL fragment.
     ///
     /// ```text
@@ -290,3 +310,41 @@ peg::parser! {grammar rfc_3986ish() for str {
     rule digit() = ['0'..='9']
     rule hexdig() = digit() / ['A'..='F'|'a'..='f']
 }}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url() {
+        let mut url = Url::from_static("http://example.com/?foo#bar").unwrap();
+        assert_eq!(url.scheme(), Some("http:"));
+        assert_eq!(url.authority(), Some("//example.com"));
+        assert_eq!(url.path(), "/");
+        assert_eq!(url.query(), "?foo");
+        assert_eq!(url.fragment(), "#bar");
+
+        // Shrink
+        url.set_authority("//zombo.com");
+        assert_eq!(url.authority(), Some("//zombo.com"));
+        assert_eq!(url.path(), "/");
+        assert_eq!(url.query(), "?foo");
+        assert_eq!(url.fragment(), "#bar");
+
+        // Grow
+        url.set_authority("//example.com");
+        assert_eq!(url.authority(), Some("//example.com"));
+        assert_eq!(url.path(), "/");
+        assert_eq!(url.query(), "?foo");
+        assert_eq!(url.fragment(), "#bar");
+
+        let url = url.extend_path("lol");
+        assert_eq!(url.path(), "/lol");
+        assert_eq!(url.query(), "?foo");
+        assert_eq!(url.fragment(), "#bar");
+        let url = url.extend_path("kek");
+        assert_eq!(url.path(), "/lol/kek");
+        assert_eq!(url.query(), "?foo");
+        assert_eq!(url.fragment(), "#bar");
+    }
+}

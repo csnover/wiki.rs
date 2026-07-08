@@ -232,10 +232,9 @@ where
         let proto = match which.as_bytes() {
             b"fullUrl" => match proto.map(VmString::to_str).transpose()? {
                 proto @ Some("http" | "https") => proto,
-                Some("relative") => Some(""),
+                Some("relative") | None => Some(""),
                 Some("canonical") => base_uri.scheme().or(Some("")),
                 Some(_) => return Err("invalid 'proto' argument".into_value(ctx).into()),
-                None => None,
             },
             b"canonicalUrl" => base_uri.scheme().or(Some("")),
             b"localUrl" => None,
