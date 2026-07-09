@@ -2,12 +2,15 @@
 //!
 //! Because Wikitext uses an HTML whitelist which can never really be updated
 //! (because this would change the rendering of old Wikitext documents that
-//! expects those character sequences to be treated as plain text), extension
-//! tags are the only way to emit all sorts of useful HTML tags like `<figure>`,
-//! `<svg>`, `<math>`, etc. And because extension tags *can* emit such useful
-//! HTML, their outputs cannot ever be sent to a Wikitext parser or they will be
-//! mangled. Instead, strip markers must be used to smuggle extension tag
-//! content through the parser to the final HTML document.
+//! expects those character sequences to be treated as plain text, although this
+//! does not stop WMF developers from constantly making incompatible changes to
+//! Wikitext that require rolling updates of every article using lints and
+//! automation, lol fml), extension tags are the only way to emit all sorts of
+//! useful HTML tags like `<figure>`, `<svg>`, `<math>`, etc. And because
+//! extension tags *can* emit such useful HTML, their outputs cannot ever be
+//! sent to a Wikitext parser or they will be mangled. Instead, strip markers
+//! must be used to smuggle extension tag content through the parser to the
+//! final HTML document.
 //!
 //! Unfortunately, because Wikitext is truly the recurrent laryngeal nerve of
 //! text formats, it is not so simple to just have all extension tags emit HTML
@@ -18,21 +21,17 @@
 //!
 //! The insane Wikitext algorithm for wrapping phrasing content into HTML
 //! paragraphs relies on being able to know whether a line of Wikitext contains
-//! certain HTML elements. Since this implementation treats the output of an
-//! extension tag as opaque HTML, it is necessary to attach some extra metadata
-//! to the output that can be used as a signal for the graf wrapper to know
-//! whether the extension tag output should be considered phrasing content or
-//! block-level content. This ends up not being very different to MW, which also
-//! has a mechanism for returning this kind of metadata, though for different
-//! stupid reasons.
+//! certain HTML elements. This means that extension tags that return HTML (vs.
+//! `<nowiki>`, which even more stupidly remains as a strip marker and so
+//! triggers the graf emitter to think a line has content on it even if it does
+//! not) need to be unstripped and tokenised at the output time.
 //!
 //! ## Stupid edge case #2: Extension tags inside extension tags
 //!
-//! Since this implementation treats the output from extension tags as blobs of
-//! ready-to-concatenate HTML, extension tags themselves have to unstrip all
-//! strip markers instead of relying on some other processor to do it for them.
-//! If they don’t, the marker will be emitted instead of its content, which is
-//! wrong.
+//! This causes strip markers to appear inside strip markers, which means that
+//! strip markers have to be recursively unstripped, which also means that they
+//! have to guard against circular references and other situations which could
+//! cause resource bombs.
 //!
 //! ## Stupid edge case #3: The `#tag` parser function
 //!
@@ -47,9 +46,9 @@
 //! of 'Template:Foo'. `{{#tag:pre|{{Foo}}}}` will do that for you. (This
 //! could’ve been stated plainly in the documentation, but different choices
 //! were made, so I got to waste a bunch of time reading impenetrable jarson
-//! about the *irrelevant* concept of a “pre-save transform”.) This means that
-//! extension tags that do not actually support Wikitext when written as XML
-//! have to deal with things like strip markers anyway.
+//! about the unrelated and irrelevant concept of a “pre-save transform”.) This
+//! means that extension tags that do not actually support Wikitext when written
+//! as XML still have to deal with things like strip markers anyway.
 //!
 //! ## Stupid edge case #3(b): Wikitext and XML attributes aren’t syntactically
 //!    compatible
@@ -58,37 +57,23 @@
 //! compatible with XML attributes. This means extra work has to be done to fix
 //! attribute values when authors inevitably write
 //! `{{#tag:foo||key="value"}}` when they actually meant `key=value`. (And
-//! because `key=multiple words` is also only a valid template argument, it is
-//! not good enough to just pass the whole argument as-is.)
+//! `key=multiple words` is a valid *single* argument in template syntax, unlike
+//! XML.)
 //!
 //! ## Stupid edge case #3(c): Scripts can also use `#tag`
 //!
 //! Some scripts expect to be able to use `#tag` and get back some value that
 //! they can cache globally and reuse (particularly `<templatestyles>`). Because
-//! wiki.rs caches modules themselves across multiple page loads, it is not good
-//! enough to return a strip marker in this case because those are only valid
-//! for a single page render.
-//!
-//! Since the output of a module has to make at least one trip through the
-//! Wikitext parser and modules are allowed to emit raw XML extension tags that
-//! get processed later, it ends up being good enough to just return the
-//! XML form of the extension tag and actually process it after the module is
-//! done running.
-//!
-//! ## Stupid edge case #3(d): Scripts can return XML extension tags
-//!
-//! The solution to one problem becomes the cause of another problem. Because
-//! scripts can return XML extension tags like `<ref>`, other extension tags
-//! like `<references>` written directly in the original source text cannot be
-//! evaluated during the preprocessing stage or they might miss refs that are
-//! not inserted until the postprocessing stage.
+//! wiki.rs caches modules themselves across multiple page loads for performance
+//! reasons, it is not good enough to return a normal strip marker because those
+//! are only valid for a single page render.
 //!
 //! ## Stupid edge case #4: `<nowiki>`
 //!
 //! Inside `<nowiki>`, *most* Wikitext rules stop applying, but not all of them.
-//! HTML entity handling rules still apply, so valid HTML entities are left
-//! alone whilst invalid ones get their ampersands entity-encoded. `<` and `>`
-//! and `-{` and `}-` are all explicitly entity-encoded.
+//! The special Wikitext HTML entity rules still apply, so valid HTML entities
+//! are left alone whilst invalid ones get their ampersands entity-encoded. `<`
+//! and `>` and `-{` and `}-` are all explicitly entity-encoded.
 //!
 //! But wait! Unlike any other extension tag, scripts can call to `mw.text` to
 //! replace the strip markers for `<nowiki>` elements with *either* the raw text
@@ -98,36 +83,25 @@
 //! evaluated because the transformations are not reversible:
 //! `<nowiki>&lt;<</nowiki>`, after processing, is `&lt;&lt;`.
 //!
-//! TODO: Somehow, it also needs to be the case that `<<nowiki/>pre>` produces
-//! `&lt;pre&gt;`, but `&<nowiki/>amp;` produces `&amp;`, which suggests that
-//! entity processing has to happen *extremely* late. Like, possibly *too* late.
-//!
 //! ## Stupid edge case #5: `<pre>`
 //!
 //! `<pre>` is an extension tag. It is also an HTML tag. As a result, it is an
 //! extension tag which emits *itself*, but when it is emitting itself, it is
 //! emitting an HTML tag, and not an extension tag. This means that it *cannot*
 //! be emitted in a way that causes its output to *ever* be passed through the
-//! Wikitext parser.
+//! preprocessor or treated as containing extension tags.
 //!
-//! `<pre>` is also `<nowiki>`, except it is not `<nowiki>`. It encodes only `<`
-//! and `>`, not `-{` or `}-`. Sure, why not.
+//! Rather than simply adding an attribute to allow Wikitext to be parsed inside
+//! a `<pre>` (though this did eventually finally happen, in 2026, because
+//! Parsoid was broken), someone once figured out that it is possible to defeat
+//! the preprocessor and get it to emit a raw HTML `<pre>` by breaking it with
+//! an empty inclusion control tag immediately after the tag name, like
+//! `<pre<includeonly/>`, and so now this is a hack that must be allowed for
+//! forever. So that’s nice.
 //!
-//! ## Stupid edge case #6: Smart quotes (a wiki.rs exclusive!)
-//!
-//! Because `<nowiki>` can be used in any position, its output must be treated
-//! as a run of text, rather than as opaque HTML which can be emitted as-is
-//! directly into the output stream.
-//!
-//! This is actually technically true of *all* extension tag content, but all
-//! the other extension tags fall into some special category where it doesn’t
-//! matter:
-//!
-//! 1. They emit code, which should not have smart quotes anyway (`<pre>`,
-//!    `<syntaxhighlight>`)
-//! 2. They emit block content, and so will not be interleaved with other runs
-//!    of text (`<poem>`, `<references>`, `<timeline>`), and so can do their own
-//!    typographical beautification
+//! `<pre>` is also like `<nowiki>`, except it is not `<nowiki>` and encodes
+//! only `<` and `>`, not `-{` or `}-`, so things can’t be HTML, but they can be
+//! translated. Sure, why not.
 
 use super::{
     Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
@@ -279,9 +253,6 @@ struct ExtensionTag<'args, 'call, 'sp> {
     body: Option<&'call str>,
     /// If true, the extension tag is actually a `{{#tag}}` call.
     from_parser_fn: bool,
-    /// If true, the extension tag is being rendered by a [`Document`].
-    // TODO: This sucks, is there really no better way to signal this?
-    in_document: bool,
 }
 
 impl<'args, 'call, 'sp> core::ops::Deref for ExtensionTag<'args, 'call, 'sp> {
@@ -665,15 +636,6 @@ fn pre(
             .map(|body| strtr(body, &[("<", "&lt;"), (">", "&gt;")]))
     };
 
-    // 'Template:Blockquote' dumps a `<syntaxhighlight>` into
-    // 'Template:Markup' which blindly dumps that into a `<pre>`.
-    // Unstripping strip markers *before* encoding the rest of the body will
-    // result in double-encoding of the markup. MW does things differently
-    // and does not unstrip markers at all in its tag hooks, obviously
-    // preferring to commit a crime somewhere else to get the strip marker
-    // content out (maybe it works out because of the stupid incantation of
-    // unstripping general, then nowiki, then general again?).
-    let body = state.strip_markers.unstrip(&body);
     write!(out, "{body}</pre>")?;
     Ok(OutputMode::Html)
 }
@@ -909,26 +871,6 @@ fn references(
         // matching the group attribute of the `<references>` tag, not the
         // empty group.
         arguments.eval_body(state)?;
-    }
-
-    // If some template expansion emits a `<ref>` tag, the content of that
-    // reference will be lost if `<references>` is also processed during
-    // template expansion. Because wiki.rs converts `#tag` calls from scripts
-    // into XML tags to be processed during the final pass, scripts that call
-    // that also will break if `<references>` processing is not deferred.
-    // TODO: This may be no longer true since implementation closer to the
-    // original parser was necessary in other places.
-    if !arguments.in_document {
-        return render_raw(
-            state,
-            arguments.sp,
-            arguments.callee,
-            // The body was processed, only the output remains.
-            None,
-            // buffalo buffalo buffalo 😵‍💫
-            &arguments.arguments.arguments,
-            out,
-        );
     }
 
     let group = arguments
@@ -1255,7 +1197,6 @@ pub(super) fn render_extension_tag(
     callee: &str,
     arguments: &InArgs<'_, '_>,
     body: Option<&str>,
-    in_document: bool,
 ) -> Result<Option<Either<StripMarker<'static>, String>>> {
     let (arguments, from_parser_fn) = match arguments {
         InArgs::ParserFn(kvs) => (Cow::Borrowed(*kvs), true),
@@ -1275,27 +1216,23 @@ pub(super) fn render_extension_tag(
         },
         body,
         from_parser_fn,
-        in_document,
     };
     let mut out = String::new();
     let mode = if let Some(extension_tag) = state.statics.extension_tags.get(callee) {
         extension_tag
             .call(&mut out, &mut PluginState(state), PluginTagArgs(&args))
             .map_err(Error::Plugin)?
-    } else if let Some(extension_tag) = EXTENSION_TAGS.get(callee)
-        && let Some(span) = span
-    {
-        // At least 'Module:Navbox/configuration' invokes the `#tag` parser
-        // function and then stores the returned value, expecting that the
-        // return value can be cached and reused, which a strip marker cannot.
-        // So, give it a value that *can* be cached and reused by only actually
-        // invoking extension tags when there is an associated span, which means
-        // that it came from a document and not from a parser function.
-        extension_tag(&mut out, state, &args).map_err(|err| Error::Node {
-            frame: sp.name.to_string() + "$<" + callee + ">",
-            start: sp.source.find_line_col(span.start),
-            err: Box::new(err),
-        })?
+    } else if let Some(extension_tag) = EXTENSION_TAGS.get(callee) {
+        let result = extension_tag(&mut out, state, &args);
+        if let Some(span) = span {
+            result.map_err(|err| Error::Node {
+                frame: format!("{}$<{callee}>", sp.name),
+                start: sp.source.find_line_col(span.start),
+                err: Box::new(err),
+            })?
+        } else {
+            result?
+        }
     } else if span.is_some() && state.statics.db.config().extension_tags.contains(callee) {
         log::warn!("TODO: {callee} tag");
         write!(
@@ -1308,37 +1245,76 @@ pub(super) fn render_extension_tag(
         // Any arbitrary tag name can be passed to the `#tag` parser function
         // and then expect that a tag will be emitted as if the equivalent
         // HTML was written in its place.
-        render_raw(state, sp, callee, body, &args.arguments.arguments, &mut out)?
+        render_raw(&mut out, state, sp, callee, body, &args.arguments.arguments)?
     };
 
-    Ok(match mode {
-        OutputMode::Empty => None,
-        OutputMode::Html => Some(Either::Left(StripMarker::General(out.into()))),
-        OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out.into()))),
-        OutputMode::Raw => Some(Either::Right(out)),
+    // At least 'Module:Navbox/configuration' invokes the `#tag` parser function
+    // and then stores the returned value, expecting that it can be reused. It
+    // cannot, because the module is cached across page loads, so a cached strip
+    // marker would be bogus if reused on subsequent pages.
+    //
+    // A naïve approach would be to just emit a raw extension tag and process it
+    // only once it comes out the other side of the module, but this does not
+    // work for a few reasons reasons: one, Wikitext can’t contain extension
+    // tags like `<pre>`, and modules expect to emit HTML `<pre>`; two, running
+    // the extension tag out of order for non-cached calls will cause things to
+    // end up missing or in the wrong order (e.g. `{{#tag:ref}}` in a module,
+    // followed by `<references>` in a template, would cause the ref to
+    // disappear or end up in a different, wrong `<references>`).
+    //
+    // The ‘solution’ in this case is to run the extension tag normally, but
+    // instead of emitting a strip marker, emit a hybrid that contains both the
+    // strip marker ID (used for the current page) and the original tag data
+    // (for all future pages). In the latter case there is still a chance that
+    // the call shows up too late since once the module reuses the cached string
+    // there is no catching it until after the module returns, but surely nobody
+    // would ever write a module *that* dumb, right? Right?
+    Ok(if span.is_none() && !matches!(mode, OutputMode::Raw) {
+        let marker = state.strip_markers.push_indexed(match mode {
+            OutputMode::Empty | OutputMode::Html => StripMarker::General(out.into()),
+            OutputMode::Nowiki => StripMarker::NoWiki(out.into()),
+            OutputMode::Raw => panic!(),
+        });
+        let id = state.statics.vm_cache_marker_id;
+        state.statics.vm_cache_marker_id += 1;
+        let mut tag = format!(r#"<wiki-rs-cached id="{id}" marker="{callee}-{marker:x}">"#);
+        render_raw(&mut tag, state, sp, callee, body, &args.arguments.arguments)?;
+        tag.push_str("</wiki-rs-cached>");
+        state.vm_request_cache.insert(id);
+        Some(Either::Right(tag))
+    } else {
+        match mode {
+            OutputMode::Empty => None,
+            OutputMode::Html => Some(Either::Left(StripMarker::General(out.into()))),
+            OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out.into()))),
+            OutputMode::Raw => Some(Either::Right(out)),
+        }
     })
 }
 
 /// Evaluates a Wikitext string as a document fragment, returning the rendered
 /// fragment.
-fn eval_string(
+pub(super) fn eval_string(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     text: &str,
     fully_parse: bool,
 ) -> Result<String> {
+    // TODO: Is this really the correct mode? Should there be a third mode for
+    // extensions and modules, which does not erase `\x7f` from the source,
+    // since that is only supposed to be illegal coming from article sources?
     let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
     eval_plugin(state, sp, fully_parse, &source)
 }
 
 /// Re-emits an extension tag.
 fn render_raw(
+    out: &mut String,
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
     callee: &str,
     body: Option<&str>,
     arguments: &KeyCacheKvs<'_, '_>,
-    out: &mut String,
 ) -> Result {
     write!(out, "<{callee}")?;
     for attr in arguments.iter() {

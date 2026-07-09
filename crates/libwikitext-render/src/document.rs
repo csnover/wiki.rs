@@ -23,7 +23,7 @@ use libwikitext_common::{
 };
 use libwikitext_parse::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
-    MagicLink, Output, Span, Spanned, TextStyle, Token,
+    MARKER_PREFIX, MARKER_SUFFIX, MagicLink, Output, Span, Spanned, TextStyle, Token,
 };
 use std::borrow::Cow;
 
@@ -274,33 +274,66 @@ where
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        span: Span,
+        _span: Span,
         name: &str,
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
+        // TODO: This is all outrageously hacky.
         let name = to_ascii_lower(name);
-        match extension_tags::render_extension_tag(
-            state,
-            sp,
-            Some(span),
-            &name,
-            &extension_tags::InArgs::Wikitext(attributes),
-            content,
-            true,
-        )? {
-            Some(Either::Left(marker)) => {
-                if S::UNSTRIP_MARKERS {
-                    let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
-                    self.next.strip_marker(&marker);
-                } else {
-                    let id = &mut String::new();
-                    state.strip_markers.push(id, &name, marker);
-                    self.next.text(id);
-                }
+        assert_eq!(name, "wiki-rs-cached");
+
+        let id = sp
+            .eval(state, attributes[0].value())
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        let marker = sp.eval(state, attributes[1].value()).unwrap();
+
+        if state.vm_request_cache.contains(&id) {
+            if S::UNSTRIP_MARKERS {
+                let marker = state.strip_markers.get(&marker).unwrap();
+                let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
+                self.next.strip_marker(&marker);
+            } else {
+                self.next.text(MARKER_PREFIX);
+                self.next.text(&marker);
+                self.next.text(MARKER_SUFFIX);
             }
-            Some(Either::Right(_)) => todo!("this should never happen?"),
-            None => {}
+        } else {
+            let source = content.unwrap();
+            let sp = sp.clone_with_source(FileMap::new(source));
+            let tree = state.statics.parser.preprocess(source, false)?;
+            #[rustfmt::skip]
+            let [ Spanned { span, node: Token::Extension {
+                attributes, content, name,
+            } } ] = tree.root.as_slice() else {
+                panic!("should have been a single extension tag");
+            };
+            let name = &source[name.into_range()];
+            let content = content.map(|span| &source[span.into_range()]);
+            match extension_tags::render_extension_tag(
+                state,
+                &sp,
+                Some(*span),
+                name,
+                &extension_tags::InArgs::Wikitext(attributes),
+                content,
+            )? {
+                Some(Either::Left(marker)) => {
+                    if S::UNSTRIP_MARKERS {
+                        let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
+                        self.next.strip_marker(&marker);
+                    } else {
+                        state.vm_request_cache.insert(id);
+                        let id = &mut String::new();
+                        state.strip_markers.push(id, name, marker);
+                        self.next.text(id);
+                    }
+                }
+                Some(Either::Right(_)) => todo!("this should never happen?"),
+                None => {}
+            }
         }
 
         Ok(())

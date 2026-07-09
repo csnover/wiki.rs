@@ -46,7 +46,7 @@ use schnellru::LruMap;
 use stack::{Kv, StackFrame};
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, PoisonError, RwLock},
 };
 use surrogate::Surrogate;
@@ -335,6 +335,7 @@ fn render_preprocess<'a, 'b, 'c>(
         statics,
         strip_markers: <_>::default(),
         timing: <_>::default(),
+        vm_request_cache: <_>::default(),
     };
 
     let mut out = String::new();
@@ -558,6 +559,10 @@ pub struct Statics<'config, 'dict> {
     /// VM module cache.
     #[builder(default = LruMap::new(schnellru::UnlimitedCompact), setter(skip))]
     vm_cache: LruMap<ArticleId, lua::VmCacheEntry, schnellru::UnlimitedCompact>,
+    /// The next globally unique ID for a VM cache marker. This must be global
+    /// because it must persist across requests.
+    #[builder(default)]
+    vm_cache_marker_id: u64,
 }
 
 /// URI resource paths.
@@ -608,6 +613,14 @@ impl StripMarkers {
             self.0.len()
         );
         self.0.push(marker);
+    }
+
+    /// Pushes a new strip marker to the list, returning its index.
+    #[inline]
+    fn push_indexed(&mut self, marker: StripMarker<'static>) -> usize {
+        let index = self.0.len();
+        self.0.push(marker);
+        index
     }
 
     /// Recursively replaces all strip markers in the given `text` with their
@@ -689,6 +702,8 @@ pub(crate) struct State<'s, 'config, 'dict> {
     pub strip_markers: StripMarkers,
     /// Page performance timing data.
     timing: HashMap<String, (usize, Duration)>,
+    /// VM cache marker IDs already rendered for this rendering request.
+    vm_request_cache: HashSet<u64>,
 }
 
 /// Shared article data.

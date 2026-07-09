@@ -109,7 +109,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// Expressions allowed inside non-image Wikitext tags.
     rule inline_in_tag() -> Spanned<Token>
-    = extension_tag()
+    = vm_cache_hack()
     / html_tag()
     / text_style()
     / behavior_switch()
@@ -140,6 +140,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     // Redirect //
     //////////////
 
+    /// The raw text of a redirect target link.
     #[no_eof]
     pub rule single_redirect() -> &'input str
     = r:redirect()
@@ -1455,6 +1456,24 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         Token::Comment { content: c.span, unclosed: end.is_empty() }
     }>)
 
+    /// A `<wiki-rs-cached>` extension tag. The only official extension tag of
+    /// the 2026 Winter Olymp—Wikitext.
+    ///
+    /// See `libwikitext_render::extension_tags::render_extension_tag` for
+    /// details about this stupid thing.
+    rule vm_cache_hack() -> Spanned<Token>
+    = t:extension_tag()
+      t:#{|input, pos| {
+        if let Token::Extension { name, .. } = &t.node
+            && &input[name.into_range()] == "wiki-rs-cached"
+        {
+            RuleResult::Matched(pos, t)
+        } else {
+            RuleResult::Failed
+        }
+      }}
+    { t }
+
     /// An extension tag. The entire tag and its contents are consumed at once.
     ///
     /// ```wikitext
@@ -1511,7 +1530,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule extension_tag_name()
     = name:$([^' '|'\t'|'\n'|'\r'|'\x0c'|'/'|'>']+)
       &assert(
-        contains_ignore_case_unicode(&o.config.extension_tags, name),
+        name == "wiki-rs-cached" || contains_ignore_case_unicode(&o.config.extension_tags, name),
         "extension tag"
       )
 
@@ -2041,7 +2060,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// Wikitext.
     rule pp_illegal() -> Spanned<Token>
     = spanned(<"\0"+ { Token::Generated(<_>::default()) }>)
-    / spanned(<t:$("\x7f"+) { Token::Generated("?".repeat(t.len())) }>)
+    // TODO: This replacement is only supposed to happen for the raw text of an
+    // article, it is not supposed to happen for runtime preprocessed stuff like
+    // extension tags. Allowing strip markers to not be escaped is a hack.
+    / t:strip_marker() { t.map_node(|_| Token::Text) }
+    / spanned(<t:$((!strip_marker() "\x7f")+) { Token::Generated("?".repeat(t.len())) }>)
 
     /// An extension tag which has been replaced by a strip marker.
     rule strip_marker() -> Spanned<Token>
