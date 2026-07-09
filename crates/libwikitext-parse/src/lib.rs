@@ -854,9 +854,6 @@ pub const MARKER_PREFIX: &str = "\x7f'\"`UNIQ-";
 /// The strip marker suffix.
 pub const MARKER_SUFFIX: &str = "-QINU`\"'\x7f";
 
-/// All characters that can start syntactic structures in the middle of a line.
-pub const STOP_CHAR: &str = "\x7f-'<[{\n\r:;]}|!=&";
-
 /// Void HTML5 tags.
 pub const VOID_TAGS: phf::Set<&str> = phf::phf_set! {
     "area", "base", "br", "col", "embed", "hr", "img",
