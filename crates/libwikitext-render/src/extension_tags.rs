@@ -657,6 +657,9 @@ pub(crate) struct References {
     groups: HashMap<String, Vec<Range<usize>>>,
     /// Named references. Value is an index into `groups[key.group]`.
     named: HashMap<RefKey, usize>,
+    /// Stack of `<references>` group names. Used for `<ref>`s inside of
+    /// `<references>`.
+    stack: Vec<String>,
     /// Bump allocation of reference text.
     text: String,
 }
@@ -804,10 +807,18 @@ fn r#ref(
     // retaining the stack frame too
     let reference = eval_string(state, arguments.sp, arguments.body().trim_ascii(), false)?;
 
-    let group = arguments
-        .get(state, "group")?
-        .as_deref()
-        .map_or(<_>::default(), str::to_owned);
+    let group = arguments.get(state, "group")?.as_deref().map_or_else(
+        || {
+            state
+                .globals
+                .references
+                .stack
+                .last()
+                .cloned()
+                .unwrap_or_default()
+        },
+        str::to_owned,
+    );
 
     if let Some(follow) = arguments.get(state, "follow")? {
         state.globals.references.append_named(
@@ -855,9 +866,14 @@ fn r#ref(
 /// <https://www.mediawiki.org/wiki/Special:MyLanguage/Extension:Cite>
 fn references(
     out: &mut String,
-    state: &mut State<'_, '_, '_>,
+    mut state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
+    let group = arguments
+        .get(state, "group")?
+        .as_deref()
+        .map_or(<_>::default(), str::to_owned);
+
     // Here, someone vibed the idea that the references tag -- which is supposed
     // to be an output -- should also accept content, which we must now evaluate
     // purely for the side effect that someone shoved a `<ref>` in there. This
@@ -867,16 +883,12 @@ fn references(
     // me, since it means someone thought about what happens when you have refs
     // inside refs, and that sounds like a cursed thing to have to think about.
     if arguments.body.is_some() {
-        // TODO: Any refs inside here are supposed to be added to the group
-        // matching the group attribute of the `<references>` tag, not the
-        // empty group.
-        arguments.eval_body(state)?;
+        state.globals.references.stack.push(group.clone());
+        let mut state = scopeguard::guard(&mut state, |state| {
+            state.globals.references.stack.pop();
+        });
+        arguments.eval_body(&mut state)?;
     }
-
-    let group = arguments
-        .get(state, "group")?
-        .as_deref()
-        .map_or(<_>::default(), str::to_owned);
 
     // TODO: For multiple references to the same name, there should be backrefs
     // to all of them, not just the first one.
