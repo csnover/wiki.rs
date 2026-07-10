@@ -784,7 +784,7 @@ fn to_attr<'a>(strip_markers: &StripMarkers, arg: Cow<'a, str>) -> Cow<'a, str> 
     const STYLES: &[(&str, &str)] = &[("'''''", ""), ("'''", ""), ("''", "")];
     let arg = arg
         .map(|arg| strtr(arg, STYLES))
-        .map(|arg| strip_markers.unstrip(arg));
+        .map(|arg| strip_markers.unstrip_all(arg));
 
     let mut out = String::new();
     let mut flushed = 0;

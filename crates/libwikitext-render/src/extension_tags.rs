@@ -122,7 +122,7 @@ use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode,
     db::DatabaseProvider,
-    decode_html, escape, escape_id, escape_id_url, escape_no_wiki,
+    decode_html, escape, escape_all, escape_id, escape_id_url, escape_no_wiki,
     title::{Namespace, Title},
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, strip};
@@ -499,7 +499,7 @@ fn math(
             write!(
                 out,
                 r#"<span class="error texerror">{}</span>"#,
-                escape_no_wiki(&err.to_string())
+                escape_all(&err.to_string())
             )?;
         }
     }
@@ -510,20 +510,10 @@ fn math(
 /// The `<nowiki>` extension tag.
 fn no_wiki(
     out: &mut String,
-    state: &mut State<'_, '_, '_>,
+    _: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    let body = strtr(
-        arguments.body(),
-        &[
-            ("-{", "-&#123;"),
-            ("}-", "&#125;-"),
-            ("<", "&lt;"),
-            (">", "&gt;"),
-        ],
-    );
-    let body = state.strip_markers.unstrip(&body);
-    write!(out, "{body}")?;
+    write!(out, "{}", escape_no_wiki(arguments.body()))?;
     Ok(OutputMode::Nowiki)
 }
 
@@ -574,7 +564,7 @@ fn poem(
     write!(text, "{nl}</div>")?;
 
     let body = eval_string(state, arguments.sp, &text, false)?.replace("<hr><br>", "<hr>");
-    let body = state.strip_markers.unstrip(&body);
+    let body = state.strip_markers.unstrip_all(&body);
     write!(out, "{body}")?;
 
     Ok(OutputMode::Html)
@@ -985,15 +975,6 @@ fn syntax_highlight(
         themes.themes["InspiredGitHub"].clone()
     });
 
-    let (tag, attrs) = if arguments.get(state, "inline")?.is_some() {
-        ("code", "")
-    } else {
-        // Because this might get dumped into a `<pre>` (see the `pre` function
-        // for more detailed and thrilling commentary about this), make it a
-        // `<div>` like how the MW extension does it.
-        ("div", r#" role="code""#)
-    };
-
     // TODO: `line`, `start`, `linelinks`, `highlight`, `class`, `style`, and
     // `copy` attributes, plus undocumented `id` and `dir` attributes
 
@@ -1005,22 +986,68 @@ fn syntax_highlight(
         .find_syntax_by_token(&lang)
         .unwrap_or(SS.find_syntax_plain_text());
 
-    let body = state.strip_markers.unstrip(arguments.body());
-    let body = body.trim_start_matches('\n').trim_ascii_end();
+    let is_inline = arguments.get(state, "inline")?.is_some();
+
+    let (tag, attrs) = if is_inline {
+        ("code", "")
+    } else {
+        // Because this might get dumped into a `<pre>`, make it a `<div>` like
+        // how the MW extension does it.
+        ("div", r#" role="code""#)
+    };
 
     write!(out, r#"<{tag}{attrs} class="mw-highlight">"#)?;
+
+    let body = state.strip_markers.unstrip_no_wiki(arguments.body());
+    let body = if is_inline {
+        body.trim_ascii()
+    } else {
+        body.trim_start_matches('\n').trim_ascii_end()
+    };
+
+    // To prevent graf wrapping, wrap the contents in a strip marker. The MW
+    // extension does this.
+    let mut no_graf_hack = String::new();
+
+    let target = if is_inline {
+        &mut *out
+    } else {
+        &mut no_graf_hack
+    };
 
     let mut highlighter = syntect::easy::HighlightLines::new(syntax, &THEME);
     for line in syntect::util::LinesWithEndings::from(body) {
         let regions = highlighter
-            .highlight_line(line, &SS)
+            .highlight_line(
+                if is_inline {
+                    line.trim_end_matches('\n')
+                } else {
+                    line
+                },
+                &SS,
+            )
             .map_err(|err| Error::Extension(Box::new(err)))?;
         syntect::html::append_highlighted_html_for_styled_line(
             &regions[..],
             syntect::html::IncludeBackground::No,
-            out,
+            target,
         )
         .map_err(|err| Error::Extension(Box::new(err)))?;
+        if is_inline && line.ends_with('\n') {
+            target.push(' ');
+        }
+    }
+
+    if target.ends_with('\n') {
+        target.truncate(target.len() - 1);
+    }
+
+    if !is_inline {
+        state.strip_markers.push(
+            out,
+            "syntaxhighlightinner",
+            StripMarker::NoWiki(Cow::Owned(no_graf_hack)),
+        );
     }
 
     write!(out, "</{tag}>")?;

@@ -10,10 +10,10 @@ use core::{ops::ControlFlow, pin::Pin};
 use gc_arena::Rootable;
 use libmisc::CowExt as _;
 use libphp_rs::DateTime;
-use libphp_rs::strtr;
 use libwikitext_common::{
     Messages,
     db::{Article, DynDatabaseProvider},
+    escape_no_wiki,
     title::{Namespace, Title},
     url::Url,
 };
@@ -539,48 +539,29 @@ fn unstrip(
         let text = ctx.fetch(text);
 
         let result = match mode {
-            UnstripMode::OrigText => {
-                state
-                    .strip_markers
-                    .for_each_marker(text.to_str()?, |marker| {
-                        if let StripMarker::NoWiki(text) = marker {
-                            Some(Cow::Borrowed(text))
-                        } else {
-                            None
-                        }
-                    })
-            }
+            UnstripMode::OrigText => state.strip_markers.unstrip_no_wiki(text.to_str()?),
             UnstripMode::UnstripNoWiki => {
+                // TODO: This is also supposed to erase any `</?nowiki[^>]*>`
+                // for some reason?
+                // Not recursively removing markers is deliberate and matches
+                // the MW behaviour
                 state
                     .strip_markers
                     .for_each_marker(text.to_str()?, |marker| {
                         if let StripMarker::NoWiki(text) = marker {
-                            // TODO: This is supposed to be a call to the
-                            // `<nowiki>` extension tag; this should be doing
-                            // the equivalent thing, but is it?
-                            Some(strtr(
-                                text,
-                                &[
-                                    ("-{", "-&#123;"),
-                                    ("}-", "&#125;-"),
-                                    ("<", "&lt;"),
-                                    (">", "&gt;"),
-                                ],
-                            ))
+                            Some(escape_no_wiki(text))
                         } else {
                             None
                         }
                     })
             }
-            UnstripMode::Unstrip => state
-                .strip_markers
-                .for_each_marker(text.to_str()?, |marker| {
-                    Some(Cow::Borrowed(if let StripMarker::NoWiki(text) = marker {
-                        text
-                    } else {
-                        ""
-                    }))
-                }),
+            UnstripMode::Unstrip => state.strip_markers.unstrip_with(text.to_str()?, |marker| {
+                Some(Cow::Borrowed(if let StripMarker::NoWiki(text) = marker {
+                    text
+                } else {
+                    ""
+                }))
+            }),
         };
 
         Ok(ctx.stash(result.owned_or_else(text, |text| ctx.intern(text.as_bytes()))))

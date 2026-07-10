@@ -336,7 +336,7 @@ pub fn escape_id_url(s: &str, mode: AnchorEncodeMode) -> Cow<'_, str> {
 
 /// Escapes all Wikitext and HTML control sequences.
 #[must_use]
-pub fn escape_no_wiki(text: &str) -> Cow<'_, str> {
+pub fn escape_all(text: &str) -> Cow<'_, str> {
     static REPLS: &[(&str, &str)] = &[
         ("ISBN", "&#73;SBN"),
         ("PMID", "&#80;MID"),
@@ -360,6 +360,20 @@ pub fn escape_no_wiki(text: &str) -> Cow<'_, str> {
     ];
 
     strtr(text, REPLS)
+}
+
+/// Escapes HTML inside a `<nowiki>` tag.
+#[must_use]
+pub fn escape_no_wiki(text: &str) -> Cow<'_, str> {
+    strtr(
+        text,
+        &[
+            ("-{", "-&#123;"),
+            ("}-", "&#125;-"),
+            ("<", "&lt;"),
+            (">", "&gt;"),
+        ],
+    )
 }
 
 /// Formats a date according to the given `format` string.

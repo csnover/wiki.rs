@@ -293,7 +293,7 @@ where
         if state.vm_request_cache.contains(&id) {
             if S::UNSTRIP_MARKERS {
                 let marker = state.strip_markers.get(&marker).unwrap();
-                let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
+                let marker = marker.map_ref(|s| state.strip_markers.unstrip_all(s));
                 self.next.strip_marker(&marker);
             } else {
                 self.next.text(MARKER_PREFIX);
@@ -322,7 +322,7 @@ where
             )? {
                 Some(Either::Left(marker)) => {
                     if S::UNSTRIP_MARKERS {
-                        let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
+                        let marker = marker.map_ref(|s| state.strip_markers.unstrip_all(s));
                         self.next.strip_marker(&marker);
                     } else {
                         state.vm_request_cache.insert(id);
@@ -735,7 +735,7 @@ where
         self.in_pre |= name == "pre";
         let attributes = sp
             .eval(state, attributes)?
-            .map(|out| state.strip_markers.unstrip(out));
+            .map(|out| state.strip_markers.unstrip_all(out));
         self.write_start_tag(state, sp, &name, &attributes)
     }
 
@@ -748,7 +748,7 @@ where
     ) -> Result {
         if S::UNSTRIP_MARKERS {
             if let Some(marker) = state.strip_markers.get(marker) {
-                let marker = marker.map_ref(|s| state.strip_markers.unstrip(s));
+                let marker = marker.map_ref(|s| state.strip_markers.unstrip_all(s));
                 self.next.strip_marker(&marker);
                 Ok(())
             } else {
@@ -817,7 +817,7 @@ where
         if let Some(table) = self.table_emitter.last_mut() {
             let attributes = sp
                 .eval(state, attributes)?
-                .map(|out| state.strip_markers.unstrip(out));
+                .map(|out| state.strip_markers.unstrip_all(out));
             table.has_tbody = true;
             table.tr_attrs = attributes.into_owned();
             if let Some(name) = table.last_tag.take() {

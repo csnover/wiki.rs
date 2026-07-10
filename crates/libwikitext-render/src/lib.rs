@@ -28,6 +28,7 @@ use core::{fmt, time::Duration};
 use document::{Document, ParseFully, ParseHalf};
 use expand_templates::{ExpandMode, ExpandTemplates};
 pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
+use libmisc::CowExt as _;
 use libphp_rs::DateTime;
 use libwikitext_common::{
     Messages,
@@ -98,7 +99,7 @@ impl PluginState<'_, '_, '_, '_> {
     #[inline]
     #[must_use]
     pub fn unstrip<'a>(&self, text: &'a str) -> Cow<'a, str> {
-        self.0.strip_markers.unstrip(text)
+        self.0.strip_markers.unstrip_all(text)
     }
 }
 
@@ -587,9 +588,9 @@ impl StripMarkers {
     /// The callback should return `Some(string)` if it wants to replace the
     /// marker, or `None` if it wants the marker to be kept as-is in the text.
     #[inline]
-    pub fn for_each_marker<'a, F>(&self, body: &'a str, mut f: F) -> Cow<'a, str>
+    pub fn for_each_marker<'a, 'b, F>(&'b self, body: &'a str, mut f: F) -> Cow<'a, str>
     where
-        for<'m> F: FnMut(&'m StripMarker<'_>) -> Option<Cow<'m, str>>,
+        F: FnMut(&'b StripMarker<'b>) -> Option<Cow<'b, str>>,
     {
         strip::for_each_marker_key(body, |key| f(&self.0[strip::key_index(key)]))
     }
@@ -628,23 +629,49 @@ impl StripMarkers {
 
     /// Recursively replaces all strip markers in the given `text` with their
     /// original contents.
-    #[inline]
-    fn unstrip<'a>(&self, text: &'a str) -> Cow<'a, str> {
-        self.unstrip_recursive(text, 0)
+    fn unstrip_all<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        self.unstrip_recursive(text, 0, &|marker| Some(Cow::Borrowed(marker.as_ref())))
     }
 
-    /// Recursively replaces all strip markers in the given `text` with their
-    /// original contents.
+    /// Recursively replaces `<nowiki>` strip markers in the given `text` with
+    /// their original contents.
+    fn unstrip_no_wiki<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        self.unstrip_recursive(text, 0, &|marker| {
+            if let StripMarker::NoWiki(text) = marker {
+                Some(Cow::Borrowed(text))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// An internal function for recursively replacing strip markers in the
+    /// given `text` using `f`.
     #[inline]
-    fn unstrip_recursive<'a>(&self, text: &'a str, level: u8) -> Cow<'a, str> {
+    fn unstrip_recursive<'a, F>(&self, text: &'a str, level: u8, f: &F) -> Cow<'a, str>
+    where
+        for<'b> F: Fn(&'b StripMarker<'b>) -> Option<Cow<'b, str>>,
+    {
         if level == 20 {
             log::error!("unstrip recursed over 20 times");
             Cow::Borrowed(text)
         } else {
             self.for_each_marker(text, |marker| {
-                Some(self.unstrip_recursive(marker, level + 1))
+                f(marker).map(|text| text.map(|text| self.unstrip_recursive(text, level + 1, f)))
             })
         }
+    }
+
+    /// Recursively replaces strip markers in the given `text` using a callback
+    /// `f`.
+    ///
+    /// When `f` returns `Some(replacement)`, the associated strip marker is
+    /// replaced with the result of calling this function on `replacement`.
+    fn unstrip_with<'a, F>(&self, text: &'a str, f: F) -> Cow<'a, str>
+    where
+        for<'b> F: Fn(&'b StripMarker<'b>) -> Option<Cow<'b, str>>,
+    {
+        self.unstrip_recursive(text, 0, &f)
     }
 }
 
