@@ -324,7 +324,7 @@ impl fmt::Debug for TokenInspector<'_> {
                     .field("(raw)", &&self.0[self.1.span.into_range()])
                     .finish(),
             },
-            Token::NewLine => f.write_str("\\n"),
+            Token::NewLine => f.write_str("(newline)"),
             Token::Parameter { name, default } => f
                 .debug_struct(&span_name("Parameter", self.0, self.1))
                 .field("name", &VInspector::<TokenInspector<'_>>(self.0, name))
