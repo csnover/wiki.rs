@@ -13,7 +13,7 @@ mod tests;
 use super::prelude::*;
 use core::cell::Cell;
 use libmisc::{to_lower, to_upper};
-use libwikitext_common::db::DatabaseProvider;
+use libwikitext_common::{Messages, db::DatabaseProvider};
 use libwikitext_lua::stdlib::{
     calculate_start_count, find_lua, gmatch_next, gsub_lua, match_lua, sub_lua,
 };
@@ -354,7 +354,7 @@ impl MwInterface for UstringLibrary {
     )]
     fn setup<'gc, Db: DatabaseProvider>(
         &self,
-        _: &Db,
+        _: &Messages<'_, Db>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {

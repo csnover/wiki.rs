@@ -21,7 +21,7 @@ mod mw_ustring;
 mod prelude;
 
 use gc_arena::Rootable;
-use libwikitext_common::db::DatabaseProvider;
+use libwikitext_common::{Messages, db::DatabaseProvider};
 use libwikitext_lua::HostFrame;
 pub use mw::LuaEngine;
 pub use mw_language::LanguageLibrary;
@@ -37,9 +37,10 @@ use prelude::*;
 /// # Errors
 ///
 /// * An interface fails to initialise
-pub fn init<Db, Sp>(vm: &mut Lua, db: &Db) -> Result<(), RuntimeError>
+pub fn init<Db, Sp>(vm: &mut Lua, db: &Messages<'_, Db>) -> Result<(), RuntimeError>
 where
     Db: DatabaseProvider + 'static,
+    RuntimeError: From<Db::Error>,
     Sp: HostFrame + 'static,
     for<'a> VmError<'a>: From<Db::Error>,
 {
@@ -85,10 +86,12 @@ fn init_first(vm: &mut Lua) -> Result<(), RuntimeError> {
 }
 
 /// Initialises a single interface.
-fn init_interface<T: MwInterface + 'static, Db: DatabaseProvider>(
-    vm: &mut Lua,
-    db: &Db,
-) -> Result<(), RuntimeError> {
+fn init_interface<T, Db>(vm: &mut Lua, db: &Messages<'_, Db>) -> Result<(), RuntimeError>
+where
+    T: MwInterface + 'static,
+    Db: DatabaseProvider,
+    RuntimeError: From<Db::Error>,
+{
     log::debug!("Initialising lua module {}", T::NAME);
 
     let executor = vm.try_enter(|ctx| {

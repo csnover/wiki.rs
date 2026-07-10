@@ -10,6 +10,7 @@
 use super::prelude::*;
 use core::cell::{Ref, RefCell};
 use libwikitext_common::{
+    Messages,
     db::DatabaseProvider,
     title::{Namespace, Title},
 };
@@ -422,7 +423,7 @@ where
 
     fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
-        _: &SetupDb,
+        _: &Messages<'_, SetupDb>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {

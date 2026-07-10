@@ -8,7 +8,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use libwikitext_common::db::DatabaseProvider;
+use libwikitext_common::{Messages, db::DatabaseProvider};
 use libwikitext_common_gpl::expr::do_expression;
 
 /// MediaWiki `ParserFunctions` extension.
@@ -37,7 +37,7 @@ impl MwInterface for LuaLibrary {
 
     fn setup<'gc, Db: DatabaseProvider>(
         &self,
-        _: &Db,
+        _: &Messages<'_, Db>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
         Ok(Table::new(&ctx))

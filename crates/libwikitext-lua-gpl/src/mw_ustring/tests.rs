@@ -5,11 +5,12 @@
 // SPDX-License-Identifier: MIT
 
 use crate::{HostFrame, init};
-use libwikitext_common::{db::MockDatabase, title::Title};
+use libwikitext_common::{Messages, db::MockDatabase, title::Title};
 use libwikitext_data::CONFIG;
 use libwikitext_lua::{new_vm_core, prelude::*};
 use piccolo::{Closure, Executor, ExternError, io};
 use std::{
+    collections::HashMap,
     fs::{File, read_dir},
     io::{Read as _, Write as _, stdout},
 };
@@ -18,8 +19,9 @@ const BASE_DIR: &str = "./src/mw_ustring/tests";
 
 fn run_lua_code(name: &str, code: &[u8]) -> Result<(), ExternError> {
     let db = MockDatabase::new("Mock", &CONFIG);
+    let messages = Messages::new(db, HashMap::new());
     let mut lua = new_vm_core()?;
-    init::<_, MockFrame>(&mut lua, &db)?;
+    init::<_, MockFrame>(&mut lua, &messages)?;
 
     let exec = lua.try_enter(|ctx| {
         piccolo::stdlib::load_io(ctx);

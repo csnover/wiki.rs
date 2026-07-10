@@ -13,7 +13,7 @@ use gc_arena::Rootable;
 use libmisc::{to_lower, to_upper};
 use libphp_rs::strval;
 use libwikitext_common::{
-    bcp47_to_lang, config::Configuration, db::DatabaseProvider, format_date_mediawiki,
+    Messages, bcp47_to_lang, config::Configuration, db::DatabaseProvider, format_date_mediawiki,
     format_number, parse_formatted_number, to_lower_first, to_upper_first,
 };
 use libwikitext_lua::WallTime;
@@ -435,10 +435,10 @@ impl<'db: 'static> MwInterface for LanguageLibrary<'db> {
 
     fn setup<'gc, Db: DatabaseProvider>(
         &self,
-        db: &Db,
+        messages: &Messages<'_, Db>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
-        let lang = VmString::from_static(&ctx, db.config().language);
+        let lang = VmString::from_static(&ctx, messages.db().config().language);
         *self.content_language_code.borrow_mut() = Some(ctx.stash(lang));
         Ok(Table::new(&ctx))
     }

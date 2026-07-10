@@ -8,9 +8,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use core::cell::RefCell;
+use core::{cell::RefCell, fmt::Write as _};
 use libmisc::CowExt as _;
-use libwikitext_common::db::DatabaseProvider;
+use libwikitext_common::{Messages, db::DatabaseProvider};
 use libwikitext_lua::{HostCall, UnstripMode};
 use libwikitext_parse::strip;
 use piccolo::{Stack, StashedTable, UserData};
@@ -147,18 +147,64 @@ impl MwInterface for TextLibrary {
         }
     }
 
-    fn setup<'gc, Db: DatabaseProvider>(
+    fn setup<'gc, Db>(
         &self,
-        _: &Db,
+        messages: &Messages<'_, Db>,
         ctx: Context<'gc>,
-    ) -> Result<Table<'gc>, RuntimeError> {
+    ) -> Result<Table<'gc>, RuntimeError>
+    where
+        Db: DatabaseProvider,
+        RuntimeError: From<Db::Error>,
+    {
+        // MW uses its `format_message` equivalent here, but there are no
+        // arguments to interpolate
+        let and = format!(
+            "{}{}",
+            messages.find_or_default(["and"], None, true)?,
+            messages.find_or_default(["word-separator"], None, true)?
+        );
+        let comma = messages.find_or_default(["comma-separator"], None, true)?;
+        let ellipsis = messages.find_or_default(["ellipsis"], None, true)?;
+
+        let nowiki_protocols = Table::new(&ctx);
+        for proto in messages
+            .db()
+            .config()
+            .protocols
+            .iter()
+            .copied()
+            .filter_map(|proto| proto.strip_suffix(':'))
+        {
+            let mut pattern = String::from("(");
+            for c in proto.chars() {
+                if c.is_ascii_alphabetic() {
+                    write!(
+                        pattern,
+                        "[{}{}]",
+                        c.to_ascii_lowercase(),
+                        c.to_ascii_uppercase()
+                    )?;
+                } else if matches!(
+                    c,
+                    '(' | ')' | '^' | '$' | '%' | '.' | '[' | ']' | '*' | '+' | '?' | '-'
+                ) {
+                    write!(pattern, "%{c}")?;
+                } else {
+                    pattern.push(c);
+                }
+            }
+            // what a sad face! me too. hang in there, whoever you are.
+            pattern.push_str("):");
+            nowiki_protocols.set(ctx, pattern, "%1&#58;")?;
+        }
+
         Ok(table! {
             using ctx;
 
-            and = " and ",
-            comma = ", ",
-            ellipsis = "…",
-            nowiki_protocols = Table::new(&ctx),
+            and = ctx.intern(and.as_bytes()),
+            comma = ctx.intern(comma.as_bytes()),
+            ellipsis = ctx.intern(ellipsis.as_bytes()),
+            nowiki_protocols = nowiki_protocols,
         })
     }
 }

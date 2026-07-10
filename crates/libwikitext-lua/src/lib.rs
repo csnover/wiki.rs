@@ -8,7 +8,7 @@ pub mod stdlib;
 use core::cell::Cell;
 use gc_arena::{Collect, Rootable};
 use libphp_rs::DateTime;
-use libwikitext_common::{db::DatabaseProvider, title::Title};
+use libwikitext_common::{Messages, db::DatabaseProvider, title::Title};
 use piccolo::{ExternError, Lua, StashedString, StashedTable};
 use prelude::*;
 
@@ -90,11 +90,14 @@ pub trait MwInterface: Collect + Default + Sized {
     /// # Errors
     ///
     /// * The Lua setup function raised an error
-    fn setup<'gc, Db: DatabaseProvider>(
+    fn setup<'gc, Db>(
         &self,
-        _: &Db,
+        _: &Messages<'_, Db>,
         ctx: Context<'gc>,
-    ) -> Result<Table<'gc>, RuntimeError>;
+    ) -> Result<Table<'gc>, RuntimeError>
+    where
+        Db: DatabaseProvider,
+        RuntimeError: From<Db::Error>;
 }
 
 /// A call from a Lua module back into the renderer.

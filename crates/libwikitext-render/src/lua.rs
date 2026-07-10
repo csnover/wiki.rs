@@ -289,11 +289,11 @@ fn memory_exceeded(state: &mut State<'_, '_, '_>) -> bool {
 /// * VM initialisation fails
 pub(super) fn new_vm<'config>(
     base_uri: &Url,
-    db: &Arc<dyn DynDatabaseProvider>,
+    messages: &Messages<'_, Arc<dyn DynDatabaseProvider>>,
     parser: &Parser<'config>,
 ) -> Result<Lua, ExternError> {
     let mut vm = libwikitext_lua::new_vm_core()?;
-    libwikitext_lua_gpl::init::<_, Pin<&StackFrame<'_>>>(&mut vm, db)?;
+    libwikitext_lua_gpl::init::<_, Pin<&StackFrame<'_>>>(&mut vm, messages)?;
 
     // TODO: Express this unsafe relationship in a way where it is harder to
     // violate.
@@ -302,7 +302,7 @@ pub(super) fn new_vm<'config>(
     let (db, parser) = unsafe {
         (
             core::mem::transmute::<&Arc<dyn DynDatabaseProvider>, &Arc<dyn DynDatabaseProvider>>(
-                db,
+                messages.db(),
             ),
             core::mem::transmute::<&Parser<'_>, &Parser<'static>>(parser),
         )

@@ -13,6 +13,7 @@ use core::{
     fmt::Write as _,
 };
 use libwikitext_common::{
+    Messages,
     config::Configuration,
     db::{Article, DatabaseProvider},
     make_url,
@@ -404,7 +405,7 @@ where
 
     fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
-        _: &SetupDb,
+        _: &Messages<'_, SetupDb>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
         // The title will get filled in later by `set_title` when a new page is

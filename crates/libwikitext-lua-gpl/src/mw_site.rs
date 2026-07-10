@@ -10,6 +10,7 @@
 use super::prelude::*;
 use core::cell::Cell;
 use libwikitext_common::{
+    Messages,
     config::Configuration,
     db::DatabaseProvider,
     title::{Namespace, NamespaceCase},
@@ -149,9 +150,10 @@ impl<'db: 'static> MwInterface for SiteLibrary<'db> {
 
     fn setup<'gc, Db: DatabaseProvider>(
         &self,
-        db: &Db,
+        messages: &Messages<'_, Db>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
+        let db = messages.db();
         let namespaces = make_namespaces(db.config(), ctx)?;
 
         // TODO: Correct path information should come from base_uri

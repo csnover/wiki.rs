@@ -13,7 +13,7 @@ use core::{
     marker::PhantomData,
 };
 use gc_arena::Rootable;
-use libwikitext_common::{AnchorEncodeMode, db::DatabaseProvider};
+use libwikitext_common::{AnchorEncodeMode, Messages, db::DatabaseProvider};
 use libwikitext_parse::Parser;
 
 /// The URI support library.
@@ -130,7 +130,7 @@ where
 
     fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
-        _: &SetupDb,
+        _: &Messages<'_, SetupDb>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
         Ok(table! {

@@ -167,14 +167,13 @@ where
 
     fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
-        _: &SetupDb,
+        messages: &Messages<'_, SetupDb>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
+        let lang = VmString::from_static(&ctx, messages.db().config().language);
         Ok(table! {
             using ctx;
-
-            // TODO: Get this information from the dictionary.
-            lang = "en",
+            lang = lang,
         })
     }
 }
