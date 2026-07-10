@@ -185,7 +185,14 @@ impl<'a> StackFrame<'a> {
 
 impl HostFrame for Pin<&StackFrame<'_>> {
     fn child_frame_exists(&self, name: &str) -> bool {
-        self.children.borrow().contains_key(name)
+        let mut frame = Some(&**self);
+        while let Some(sp) = frame {
+            if sp.children.borrow().contains_key(name) {
+                return true;
+            }
+            frame = sp.parent.as_deref();
+        }
+        false
     }
 
     fn expand_all_cached<'gc>(

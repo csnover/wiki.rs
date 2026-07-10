@@ -15,7 +15,9 @@ use prelude::*;
 /// A trait for interacting with the stack frame of the current Lua call in the
 /// renderer.
 pub trait HostFrame {
-    /// Returns true if a child frame with the given `frame_id` exists.
+    /// Returns true if a child frame with the given `frame_id` exists. The
+    /// `"empty"`, `"current"`, and `"parent"` frames do *not* need to be
+    /// handled by this function.
     fn child_frame_exists(&self, frame_id: &str) -> bool;
 
     /// Returns all cached arguments for the given Lua context from the given

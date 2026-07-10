@@ -607,8 +607,14 @@ where
         && let Some(parent) = sp.parent
     {
         return f(&parent);
-    } else if let Some(child) = sp.children.borrow().get(frame_id) {
-        return f(&sp.chain(child.title.clone(), FileMap::new(""), &child.arguments)?);
+    }
+
+    let mut frame = Some(sp);
+    while let Some(sp) = frame {
+        if let Some(child) = sp.children.borrow().get(frame_id) {
+            return f(&sp.chain(child.title.clone(), FileMap::new(""), &child.arguments)?);
+        }
+        frame = sp.parent.as_deref();
     }
 
     Err(RuntimeError::new(anyhow::anyhow!("missing sp")))?
