@@ -4,7 +4,7 @@
 use super::{Argument, LangFlags, LangVariant, MagicLink, Output, Spanned, Token, visit::Visitor};
 use core::convert::Infallible;
 use libwikitext_common::lru_limiter::HeapUsageCalculator;
-use std::collections::HashSet;
+use std::{borrow::Cow, collections::HashSet};
 
 impl HeapUsageCalculator for Output {
     #[inline]
@@ -98,7 +98,7 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
                 self.visit_tokens(target)?;
                 self.visit_tokens(content)?;
             }
-            Token::Generated(text) | Token::MagicLink(MagicLink::Isbn(text)) => {
+            Token::Generated(Cow::Owned(text)) | Token::MagicLink(MagicLink::Isbn(text)) => {
                 self.size += text.capacity();
             }
             Token::LangVariant {
@@ -147,6 +147,7 @@ impl<'tt> Visitor<'tt, Infallible> for OutputSizeCalculator {
             | Token::EndInclude(_)
             | Token::EndTag { .. }
             | Token::Entity { .. }
+            | Token::Generated(Cow::Borrowed(_))
             | Token::HorizontalRule
             | Token::InlineListItem
             | Token::MagicLink(_)

@@ -487,7 +487,7 @@ pub enum Token {
         target: Vec<Spanned<Token>>,
     },
     /// Generated content, not part of the original input.
-    Generated(String),
+    Generated(Cow<'static, str>),
     /// A heading.
     Heading {
         /// The heading content.

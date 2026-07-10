@@ -445,7 +445,7 @@ fn split_target<'tt>(
                 )]
                 let span = Span::new(part.span.end - rhs.len() as u32, part.span.end);
                 let node = if matches!(text, Cow::Owned(_)) {
-                    Token::Generated(rhs.to_owned())
+                    Token::Generated(rhs.to_owned().into())
                 } else {
                     Token::Text
                 };

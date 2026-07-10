@@ -12,6 +12,7 @@ use super::{
     TextStylePosition, Token, VOID_TAGS,
 };
 use core::iter;
+use either::Either;
 use libmisc::{to_ascii_lower, to_lower};
 use libphp_rs::strtr;
 use libwikitext_common::{
@@ -227,8 +228,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     / !assert(flags.in_heading() || flags.contains(PpTerm::EQUALS), "=") "="+
     / !assert(flags.contains(PpTerm::PIPE), "|") "|"+
     / !assert(flags.in_link(), "]]") "]"+
-    / !assert(flags.in_parameter() || flags.in_template() || flags.in_convert(), "}}") "}"+
-    / !assert(flags.in_template() || flags.in_convert(), "}") "}}" !"}"
+    / !assert(flags.in_template() || flags.in_convert(), "}}") "}"+
     / !assert(flags.in_convert(), "}-") "}-"
     / "-" !"{"
     / "[" !"["
@@ -1298,69 +1298,88 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// 7 `{ {{{ {{{`
     /// 8 `{{ {{{ {{{`
     ///
-    /// TODO: This is not working correctly in all cases because the original
-    /// parser actually seems to work by counting up and down. So
-    /// `{{{{1x|1}}{{1x|x}}|foo}}}` should be `{{ {{ }} {{ }} }} "}"`, but using
-    /// a “right-most” rule as the ABNF implies actually results in
-    /// `"{" {{{ "}}" {{ }} }}}`. Neato!
+    /// etc.
     #[cache]
     rule pp_template(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
-    = // 2, 5, 8, ...
-      &("{{" &("{{{"* !"{")) t:template_expansion(pp) { vec![t] }
-      // 3, 4 (1+3); 6 (3+3), 7; ...
-    / template_parameter(pp)
-      // 4 (2+2), 6 (2+?), ...
-    / &"{{{{" t:template_expansion(pp) { vec![t] }
-      // 1
-    / t:spanned(<"{" { Token::Text }>) { vec![t] }
+    = start:position!()
+      open:(t:$("{"+) { t.len() })
+      t:template_right(pp, start, open)
+    { t }
 
-    /// A template parameter.
+    /// The recursively parsed right-hand side of a template expression.
     ///
     /// ```wikitext
-    /// {{{parameter_name|default}}}
+    /// {{{{Inner}}Outer}}
+    ///   ^^^^^^^^^^^^^^^^
+    /// {{{{{{inner}}}outer}}}
+    ///       ^^^^^^^^^^^^^^^^
     /// ```
-    rule template_parameter(pp: &PreprocessorOptions) -> Vec<Spanned<Token>>
-      // 4, 7, ...
-    = p:spanned(<"{" &("{{{"+ !"{") { Token::Text }>)?
-      // 3, 6, ...
-      t:template_or_parameter(pp, PpTerm::IN_PARAMETER, <"{{{" !("{{"+ !"{")>, <"}}}">)
+    // TODO: This could probably be written more legibly with left-recursion.
+    rule template_right(pp: &PreprocessorOptions, start: usize, open: usize) -> Vec<Spanned<Token>>
+    = assert(open >= 2, "{{")
+      inner:template_content(pp, start, open)
+      close:(t:$("}"*<2,{open.min(3)}>) { t.len() })
+      assert(open >= close, "open >= close")
+      end:position!()
+      outer:template_right(pp, start, open - close)?
     {
-        let t = t.map_node(|(name, arguments)| {
-            let default = arguments.into_iter().next().map(|a| a.node.content);
-            Token::Parameter { default, name }
-        });
-        p.into_iter().chain(iter::once(t)).collect()
+        let start = (start + open - close) as u32;
+        let end = end as u32;
+        let inner = match inner {
+            Either::Left(name) => if close == 2 {
+                Token::Generated("|".into())
+            } else {
+                Token::Parameter { default: None, name: vec![name] }
+            },
+            Either::Right((name, arguments)) => if close == 2 {
+                Token::Template { target: name, arguments }
+            } else {
+                let default = arguments.into_iter().next().map(|a| a.node.content);
+                Token::Parameter { default, name }
+            }
+        };
+
+        let inner = Spanned::new(inner, start, end);
+
+        // This is a left-recursive rule pretending to be right-recursive. The
+        // last thing that was parsed is actually the outermost token in the AST
+        if let Some(mut outer) = outer {
+            if let Some(Spanned {
+                node: Token::Parameter { name, .. }
+                | Token::Template { target: name, .. }, ..
+            }) = outer.last_mut() {
+                name.insert(0, inner);
+            } else if matches!(outer.first(), Some(Spanned { node: Token::Text, .. })) {
+                // Consuming a whole run of `{` means that there may have
+                // actually been some extra ones at the start, followed by
+                // `inner`
+                outer.push(inner);
+            }
+            outer
+        } else {
+            vec![inner]
+        }
     }
+      // an imbalance of open brackets
+    / assert(open > 0, "{")
+    { vec![Spanned::new(Token::Text, start as u32, (start + open) as u32)] }
 
-    /// A template expansion.
+    /// The content part of a template expression.
     ///
     /// ```wikitext
-    /// {{Template name|numbered argument|key=value}}
+    /// {{{{Inner}}Outer}}
+    ///     ^^^^^  ^^^^^
+    /// {{{{{{inner}}}outer}}}
+    ///       ^^^^^   ^^^^^
     /// ```
-    rule template_expansion(pp: &PreprocessorOptions) -> Spanned<Token>
-      // Converting `{{!}}` into a token early is a performance optimisation
-    = spanned(<"{{!}}" { Token::Generated("|".into()) }>)
-    / t:template_or_parameter(pp, PpTerm::IN_TEMPLATE, <"{{">, <"}}">)
-    { t.map_node(|(target, arguments)| {
-        Token::Template { arguments, target }
-    })}
-
-    /// A generic rule for template expansions or template parameters.
-    ///
-    /// ```wikitext
-    /// {{Template name|numbered argument|key=value}}
-    ///
-    /// {{{parameter_name|default}}}
-    /// ```
-    rule template_or_parameter(pp: &PreprocessorOptions, flags: PpTerm, before: rule<()>, after: rule<()>)
-        -> Spanned<(Vec<Spanned<Token>>, Vec<Spanned<Argument>>)>
-    = spanned(<
-        before()
-        name:pp_items(pp, flags | PpTerm::PIPE)
-        arguments:template_argument(pp, flags)*
-        after()
-        { (name, arguments) }
-    >)
+    rule template_content(pp: &PreprocessorOptions, start: usize, open: usize) -> TemplateContent
+      // Converting `{{!}}` into a token directly in the parser is a performance
+      // optimisation
+    = t:spanned(<"!" &"}}" { Token::Text }>)
+    { Either::Left(t) }
+    / name:pp_items(pp, PpTerm::IN_TEMPLATE | PpTerm::PIPE)
+      arguments:template_argument(pp, PpTerm::IN_TEMPLATE)*
+    { Either::Right((name, arguments)) }
 
     /// A template argument with pipe delimiter.
     ///
@@ -2064,7 +2083,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     // article, it is not supposed to happen for runtime preprocessed stuff like
     // extension tags. Allowing strip markers to not be escaped is a hack.
     / t:strip_marker() { t.map_node(|_| Token::Text) }
-    / spanned(<t:$((!strip_marker() "\x7f")+) { Token::Generated("?".repeat(t.len())) }>)
+    / spanned(<t:$((!strip_marker() "\x7f")+) { Token::Generated("?".repeat(t.len()).into()) }>)
 
     /// An extension tag which has been replaced by a strip marker.
     rule strip_marker() -> Spanned<Token>
@@ -2696,14 +2715,12 @@ bitflags::bitflags! {
         const IN_MASK      = Self::EQUALS.bits() - 1;
         /// Last token was `[[`, next close can only be `]]`
         const IN_LINK      = 1;
-        /// Last token was `{{{`, next close can only be `}}}`
-        const IN_PARAMETER = 2;
         /// Last token was `{{`, next close can only be `}}`
-        const IN_TEMPLATE  = 3;
+        const IN_TEMPLATE  = 2;
         /// Last token was `\n`, next close can only be `\n`
-        const IN_HEADING   = 4;
+        const IN_HEADING   = 3;
         /// Last token was `-{`, next close can only be `}-`
-        const IN_CONVERT   = 5;
+        const IN_CONVERT   = 4;
 
         /// `=` starts a new expression.
         const EQUALS       = 1 << 3;
@@ -2714,26 +2731,25 @@ bitflags::bitflags! {
 
 impl PpTerm {
     /// Returns true if the parser is inside a language conversion tag.
+    #[inline]
     fn in_convert(self) -> bool {
         self & Self::IN_MASK == Self::IN_CONVERT
     }
 
     /// Returns true if the parser is inside a Wikitext heading.
+    #[inline]
     fn in_heading(self) -> bool {
         self & Self::IN_MASK == Self::IN_HEADING
     }
 
     /// Returns true if the parser is inside a Wikilink.
+    #[inline]
     fn in_link(self) -> bool {
         self & Self::IN_MASK == Self::IN_LINK
     }
 
-    /// Returns true if the parser is inside a template parameter tag.
-    fn in_parameter(self) -> bool {
-        self & Self::IN_MASK == Self::IN_PARAMETER
-    }
-
     /// Returns true if the parser is inside a template expansion tag.
+    #[inline]
     fn in_template(self) -> bool {
         self & Self::IN_MASK == Self::IN_TEMPLATE
     }
@@ -2751,6 +2767,9 @@ impl peg::Cacheable for PpTerm {
         *self
     }
 }
+
+/// The intermediate content of a template expression.
+type TemplateContent = Either<Spanned<Token>, (Vec<Spanned<Token>>, Vec<Spanned<Argument>>)>;
 
 /// A state machine for balancing text styles in a line.
 #[derive(Default)]
