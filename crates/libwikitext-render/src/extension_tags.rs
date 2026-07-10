@@ -1289,7 +1289,7 @@ pub(super) fn render_extension_tag(
         });
         let id = state.statics.vm_cache_marker_id;
         state.statics.vm_cache_marker_id += 1;
-        let mut tag = format!(r#"<wiki-rs-cached id="{id}" marker="{callee}-{marker:x}">"#);
+        let mut tag = format!(r#"<wiki-rs-cached id="{id}" marker="-{callee}-{marker:x}">"#);
         render_raw(&mut tag, state, sp, callee, body, &args.arguments.arguments)?;
         tag.push_str("</wiki-rs-cached>");
         state.vm_request_cache.insert(id);

@@ -607,9 +607,12 @@ impl StripMarkers {
         tag_name: &str,
         marker: StripMarker<'static>,
     ) {
+        // The extra hyphen is just part of the joy of required bug-accuracy,
+        // as these values are exposed to modules and then the modules expect
+        // the unnecessary extra hyphen
         let _ = write!(
             out,
-            "{MARKER_PREFIX}{tag_name}-{:x}{MARKER_SUFFIX}",
+            "{MARKER_PREFIX}-{tag_name}-{:x}{MARKER_SUFFIX}",
             self.0.len()
         );
         self.0.push(marker);

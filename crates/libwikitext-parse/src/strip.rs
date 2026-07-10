@@ -86,7 +86,11 @@ where
 /// * `key` is malformed
 #[must_use]
 pub fn key_index(key: &str) -> usize {
-    let (_, index) = key.rsplit_once('-').expect("hyphenated marker key");
+    let (_, index) = key
+        .strip_prefix('-')
+        .expect("buggy hyphen")
+        .rsplit_once('-')
+        .expect("hyphenated marker key");
     usize::from_str_radix(index, 16).expect("hexadecimal index")
 }
 
@@ -112,7 +116,7 @@ mod tests {
     #[test]
     fn test_strip_markers() {
         let text = format!(
-            "0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}abcd{MARKER_PREFIX}b-a{MARKER_SUFFIX}4567"
+            "0123{MARKER_PREFIX}-a-0{MARKER_SUFFIX}{MARKER_PREFIX}-a-1{MARKER_SUFFIX}abcd{MARKER_PREFIX}-b-a{MARKER_SUFFIX}4567"
         );
         let result = for_each_marker_key(&text, |key| {
             let index = key_index(key);
@@ -128,14 +132,14 @@ mod tests {
         });
         assert_eq!(
             result,
-            Cow::Owned::<str>(format!("0123?{MARKER_PREFIX}a-1{MARKER_SUFFIX}abcd!4567"))
+            Cow::Owned::<str>(format!("0123?{MARKER_PREFIX}-a-1{MARKER_SUFFIX}abcd!4567"))
         );
     }
 
     #[test]
     fn test_strip_non_markers() {
         let text = format!(
-            "0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}abcd{MARKER_PREFIX}b-a{MARKER_SUFFIX}4567"
+            "0123{MARKER_PREFIX}-a-0{MARKER_SUFFIX}{MARKER_PREFIX}-a-1{MARKER_SUFFIX}abcd{MARKER_PREFIX}-b-a{MARKER_SUFFIX}4567"
         );
         let result = for_each_non_marker(&text, |text| {
             if text == "0123" {
@@ -153,7 +157,7 @@ mod tests {
         assert_eq!(
             result,
             Cow::Owned::<str>(format!(
-                "?{MARKER_PREFIX}a-0{MARKER_SUFFIX}.{MARKER_PREFIX}a-1{MARKER_SUFFIX}!{MARKER_PREFIX}b-a{MARKER_SUFFIX}4567"
+                "?{MARKER_PREFIX}-a-0{MARKER_SUFFIX}.{MARKER_PREFIX}-a-1{MARKER_SUFFIX}!{MARKER_PREFIX}-b-a{MARKER_SUFFIX}4567"
             ))
         );
     }
@@ -161,7 +165,7 @@ mod tests {
     #[test]
     fn test_strip_non_markers_end() {
         let text =
-            format!("0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}4567");
+            format!("0123{MARKER_PREFIX}-a-0{MARKER_SUFFIX}{MARKER_PREFIX}-a-1{MARKER_SUFFIX}4567");
         let result = for_each_non_marker(&text, |text| {
             if text == "0123" || text.is_empty() {
                 None
@@ -174,7 +178,7 @@ mod tests {
         assert_eq!(
             result,
             Cow::Owned::<str>(format!(
-                "0123{MARKER_PREFIX}a-0{MARKER_SUFFIX}{MARKER_PREFIX}a-1{MARKER_SUFFIX}!"
+                "0123{MARKER_PREFIX}-a-0{MARKER_SUFFIX}{MARKER_PREFIX}-a-1{MARKER_SUFFIX}!"
             ))
         );
     }
