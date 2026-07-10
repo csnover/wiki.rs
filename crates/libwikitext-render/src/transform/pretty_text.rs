@@ -13,6 +13,9 @@ pub(crate) struct PrettyText<S: Sink> {
     ///
     /// Pretty typography does not apply in code contexts.
     in_code: u8,
+    /// The DOM depth for a code context entered by a `[role=code]` attribute,
+    /// as used by `<syntaxhighlight>`.
+    in_code_role: CodeRole,
     /// The output.
     next: S,
     /// The previous characters.
@@ -37,6 +40,7 @@ impl<S: Sink> PrettyText<S> {
         Self {
             in_attr: <_>::default(),
             in_code: <_>::default(),
+            in_code_role: <_>::default(),
             next,
             prev_chars: Self::new_context(),
             saved_context: <_>::default(),
@@ -165,6 +169,9 @@ impl<S: Sink> Sink for PrettyText<S> {
     fn tag_attribute_end(&mut self, name: &str) {
         if !matches!(name, "alt" | "title") {
             self.in_code -= 1;
+            if self.in_code_role == CodeRole::Maybe {
+                self.in_code_role = <_>::default();
+            }
         }
         self.pop_context();
         self.next.tag_attribute_end(name);
@@ -174,6 +181,9 @@ impl<S: Sink> Sink for PrettyText<S> {
     fn tag_attribute_start(&mut self, name: &str) {
         if !matches!(name, "alt" | "title") {
             self.in_code += 1;
+            if name == "role" {
+                self.in_code_role = CodeRole::Maybe;
+            }
         }
         self.push_context();
         self.next.tag_attribute_start(name);
@@ -186,6 +196,13 @@ impl<S: Sink> Sink for PrettyText<S> {
             self.push_char(' ');
         }
         self.next.tag_end(name);
+        if let CodeRole::Yes(depth) = &mut self.in_code_role {
+            *depth -= 1;
+            if *depth == 0 {
+                self.in_code -= 1;
+                self.in_code_role = <_>::default();
+            }
+        }
     }
 
     #[inline]
@@ -202,6 +219,12 @@ impl<S: Sink> Sink for PrettyText<S> {
     fn tag_start_end(&mut self, name: &str) {
         self.in_attr = false;
         self.next.tag_start_end(name);
+        if let CodeRole::Yes(depth) = &mut self.in_code_role {
+            if *depth == 0 {
+                self.in_code += 1;
+            }
+            *depth = depth.checked_add(1).unwrap();
+        }
     }
 
     fn text(&mut self, text: &str) {
@@ -282,5 +305,25 @@ impl<S: Sink> Sink for PrettyText<S> {
         if flushed != text.len() {
             self.next.text(&text[flushed..]);
         }
+
+        if self.in_code_role == CodeRole::Maybe {
+            if text == "code" {
+                self.in_code_role = CodeRole::Yes(0);
+            } else {
+                self.in_code_role = CodeRole::No;
+            }
+        }
     }
+}
+
+/// A tracking state for an element which may contain a `role="code"` attribute.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum CodeRole {
+    /// No code role.
+    #[default]
+    No,
+    /// Found `role`, awaiting value.
+    Maybe,
+    /// In a code role at the given DOM depth.
+    Yes(u8),
 }
