@@ -1481,17 +1481,19 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// See `libwikitext_render::extension_tags::render_extension_tag` for
     /// details about this stupid thing.
     rule vm_cache_hack() -> Spanned<Token>
-    = t:extension_tag()
-      t:#{|input, pos| {
-        if let Token::Extension { name, .. } = &t.node
-            && &input[name.into_range()] == "wiki-rs-cached"
-        {
-            RuleResult::Matched(pos, t)
-        } else {
-            RuleResult::Failed
-        }
-      }}
-    { t }
+    = spanned(<
+      "<"
+      name:spanned(<"wiki-rs-cached" {}>)
+      attributes:extension_tag_attributes(<">">)
+      ">"
+      content:spanned(<(vm_cache_hack() {} / !"</wiki-rs-cached>" [_] {})*>)
+      "</wiki-rs-cached>"
+      { Token::Extension {
+        name: name.span,
+        attributes,
+        content: Some(content.span)
+      } }
+    >)
 
     /// An extension tag. The entire tag and its contents are consumed at once.
     ///
