@@ -165,9 +165,14 @@ impl<S: Sink> TemplateMarker<S> {
 
     /// Ends a template section for a template with the given `name`.
     pub fn pop(&mut self, name: &str) {
-        self.tag_blocks
-            .pop_if(|(_, other)| name == other)
-            .expect("valid tag block stack");
+        if self.tag_blocks.pop_if(|(_, other)| name == other).is_none() {
+            // If this is happening it is *probably* caused by `buffer.clear()`
+            // in `GrafWrapper` discarding the start marker
+            log::warn!(
+                "TemplateMarker stack corruption for {name:?}: {:?}",
+                self.tag_blocks
+            );
+        }
     }
 
     /// Starts a template section for a template with the given `name`.

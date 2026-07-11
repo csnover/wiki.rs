@@ -304,22 +304,34 @@ pub(super) fn render_template<'tt>(
         !line_start && (partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*']));
 
     if let Some(key) = wrapper_key {
-        // It is necessary to inject strip markers rather than extension tags
-        // or else the start-of-line rules break
-        state.strip_markers.push(
-            out.out(),
-            "wiki-rs",
-            StripMarker::WikiRsSourceStart(key.clone().into()),
-        );
         if needs_newline {
             writeln!(out.out())?;
         }
-        write!(out.out(), "{partial}")?;
-        state.strip_markers.push(
-            out.out(),
-            "wiki-rs",
-            StripMarker::WikiRsSourceEnd(key.into()),
-        );
+
+        // Since a template may emit whitespace at the start and end which
+        // gets manhandled by GrafWrapper, make sure the source marker is placed
+        // adjacent to the nearest non-whitespace at the start and end instead
+        // of being put around the whole template
+        let start = partial.find(|c: char| !c.is_ascii_whitespace());
+        let end = partial
+            .rfind(|c: char| !c.is_ascii_whitespace())
+            .map(|index| index + 1);
+        if let (Some(start), Some(end)) = (start, end) {
+            let out = out.out();
+            *out += &partial[..start];
+            state.strip_markers.push(
+                out,
+                "wiki-rs",
+                StripMarker::WikiRsSourceStart(key.clone().into()),
+            );
+            *out += &partial[start..end];
+            state
+                .strip_markers
+                .push(out, "wiki-rs", StripMarker::WikiRsSourceEnd(key.into()));
+            *out += &partial[end..];
+        } else {
+            write!(out.out(), "{partial}")?;
+        }
     } else {
         if needs_newline {
             writeln!(out.out())?;
