@@ -13,7 +13,7 @@ use core::{
     iter,
 };
 use indexmap::IndexSet;
-use libmisc::to_lower;
+use libmisc::{CowExt as _, to_lower};
 use libwikitext_common::{
     config::Configuration,
     db::{Article, DatabaseProvider as _, resolve_redirects},
@@ -84,12 +84,18 @@ pub(super) fn call_module(
         return render_fallback(out, state);
     }
 
-    let Some(callee) = arguments.eval(state, sp, 0)? else {
+    let Some(callee) = arguments
+        .eval(state, sp, 0)?
+        .map(|s| s.map_ref(str::trim_ascii))
+    else {
         log::warn!("tried to call #invoke with no module name");
         return Ok(());
     };
 
-    let Some(fn_name) = arguments.eval(state, sp, 1)? else {
+    let Some(fn_name) = arguments
+        .eval(state, sp, 1)?
+        .map(|s| s.map_ref(str::trim_ascii))
+    else {
         return Err(Error::MissingFunctionName);
     };
 
@@ -472,6 +478,7 @@ fn split_target<'tt>(
             // It is important to actually not pass a zeroth argument if there
             // is not one because this changes behaviour (e.g. `{{VAR}}` gets
             // `VAR`; `{{VAR:}}` calls `VAR` with an empty string)
+            // TODO: This is supposed to have stripped whitespace always :-(
             let first = has_colon
                 .then(|| Kv::Partial(first.as_ref().into_iter().chain(rest.iter()).collect()));
 
