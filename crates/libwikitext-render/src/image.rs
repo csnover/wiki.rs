@@ -793,25 +793,26 @@ fn to_attr<'a>(strip_markers: &StripMarkers, arg: Cow<'a, str>) -> Cow<'a, str> 
     {
         match token {
             Ok(Token::StartTag(tag)) => {
+                out += &decode_html(&arg[flushed..tag.span.start]);
+                flushed = tag.span.end;
+
                 if matches!(tag.name.as_ref(), b"script" | b"style") {
                     in_skip += u32::from(!tag.self_closing);
                     continue;
                 }
 
-                out += &arg[flushed..tag.span.start];
-                flushed = tag.span.end;
                 if BLOCK.contains(tag.name.as_ref()) {
                     out.push(' ');
                 }
             }
             Ok(Token::EndTag(tag)) => {
+                flushed = tag.span.end;
+
                 if matches!(tag.name.as_ref(), b"script" | b"style") {
                     in_skip = in_skip.saturating_sub(1);
                     continue;
                 }
 
-                out += &arg[flushed..tag.span.start];
-                flushed = tag.span.end;
                 if BLOCK.contains(tag.name.as_ref()) {
                     out.push(' ');
                 }
@@ -821,11 +822,12 @@ fn to_attr<'a>(strip_markers: &StripMarkers, arg: Cow<'a, str>) -> Cow<'a, str> 
                 | Token::Doctype(Spanned { span, .. })
                 | Token::Error(Spanned { span, .. }),
             ) => {
+                out += &decode_html(&arg[flushed..span.start]);
                 flushed = span.end;
             }
             Ok(Token::String(html)) => {
                 if in_skip == 0 {
-                    let text = decode_html(&arg[flushed..html.span.end]);
+                    let text = decode_html(&arg[html.span.start..html.span.end]);
                     if flushed != 0 || matches!(text, Cow::Owned(_)) {
                         out += &text;
                         flushed = html.span.end;
@@ -838,12 +840,7 @@ fn to_attr<'a>(strip_markers: &StripMarkers, arg: Cow<'a, str>) -> Cow<'a, str> 
         }
     }
 
-    let attr = if flushed == 0 {
-        arg
-    } else {
-        out += &arg[flushed..];
-        Cow::Owned(out)
-    };
+    let attr = if flushed == 0 { arg } else { Cow::Owned(out) };
 
     attr.map(|attr| normalize_whitespace::<true>(attr, spacelike, spacelike))
 }
