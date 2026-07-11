@@ -1429,14 +1429,17 @@ fn render_raw(
 ) -> Result {
     write!(out, "<{callee}")?;
     for attr in arguments.iter() {
-        let value = attr.value(state, sp)?;
-        if let Some(name) = attr.name(state, sp)? {
+        let value = attr.value(state, sp)?.map(html_escape::encode_safe);
+        if let Some(name) = attr
+            .name(state, sp)?
+            .map(|s| s.map(html_escape::encode_safe))
+        {
             write!(out, " {name}")?;
             if !value.is_empty() {
                 write!(out, r#"="{value}""#)?;
             }
         } else if !value.is_empty() {
-            write!(out, " {}", attr.value(state, sp)?)?;
+            write!(out, " {value}")?;
         }
     }
     if let Some(body) = body
