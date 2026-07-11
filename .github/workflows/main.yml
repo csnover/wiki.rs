@@ -20,9 +20,9 @@ jobs:
       - name: Check versions
         run: |
           tag_name=${GITHUB_REF#refs/tags/}
-          v=$(grep -m 1 "^version" Cargo.toml|sed -e "s|version = \"\(.*\)\"|\1|")
+          v=$(grep -m 1 "^version" crates/wiki-rs/Cargo.toml|sed -e "s|version = \"\(.*\)\"|\1|")
           if ! echo $tag_name|grep -q $v; then
-             echo "Mistmatch of the version:"
+             echo "Mismatch of the version:"
              echo "Cargo.toml says $v while the tag is $tag_name"
              exit 2
           fi
@@ -59,7 +59,9 @@ jobs:
           checksum: sha512
           include: LICENSE,README.md
           leading-dir: true
+          manifest-path: crates/Cargo.toml
           no-default-features: true
+          package: wiki-rs
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           tar: none
