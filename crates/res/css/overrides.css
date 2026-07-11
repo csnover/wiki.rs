@@ -818,6 +818,22 @@ blockquote,
     padding-block-start: 0;
 }
 
+/*= Template:Fraction */
+
+.frac {
+    .num,
+    .den {
+        font-size: inherit;
+        line-height: inherit;
+        vertical-align: baseline;
+        font-variant-position: super;
+    }
+
+    .den {
+        font-variant-position: sub;
+    }
+}
+
 /*= Template:Gallery */
 
 .mod-gallery,
