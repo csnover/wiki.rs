@@ -630,6 +630,28 @@ fn pre(
     Ok(OutputMode::Html)
 }
 
+/// A stored citation reference group.
+#[derive(Debug, Default)]
+struct RefGroup {
+    /// The next page-unique base ID for any items in this group. This is
+    /// required because group entries are drained by their corresponding
+    /// `<references>`, but then more things can be added to the same group
+    /// again later.
+    base_id: usize,
+    /// A map of ranges into [`References::text`].
+    entries: Vec<Range<usize>>,
+}
+
+/// A set of citation reference group identifiers.
+#[derive(Debug)]
+struct RefIds {
+    /// The group display identifier. For groups that are reused, this may be
+    /// duplicated on a page.
+    display: String,
+    /// The globally unique identifier.
+    global: String,
+}
+
 /// A reference key.
 #[derive(Debug, Eq, Hash, PartialEq)]
 struct RefKey {
@@ -644,7 +666,7 @@ struct RefKey {
 pub(crate) struct References {
     /// References in a group. Value is a map of ranges into `text`. For
     /// compatibility, the default group is an empty string.
-    groups: HashMap<String, Vec<Range<usize>>>,
+    groups: HashMap<String, RefGroup>,
     /// Named references. Value is an index into `groups[key.group]`.
     named: HashMap<RefKey, usize>,
     /// Stack of `<references>` group names. Used for `<ref>`s inside of
@@ -660,9 +682,9 @@ impl References {
     fn append_named(&mut self, name: RefKey, value: &str) {
         let group = self.groups.entry(name.group.clone()).or_default();
 
-        let index = self.named.entry(name).or_insert(group.len());
+        let index = self.named.entry(name).or_insert(group.entries.len());
 
-        if let Some(range) = group.get_mut(*index) {
+        if let Some(range) = group.entries.get_mut(*index) {
             if range.end == self.text.len() {
                 if !Range::is_empty(range) {
                     self.text.push(' ');
@@ -682,18 +704,21 @@ impl References {
         } else {
             let range = self.text.len()..(self.text.len() + value.len());
             self.text += value;
-            group.push(range);
+            group.base_id += 1;
+            group.entries.push(range);
         }
     }
 
     /// Adds a named reference with the given text. If the reference already
-    /// exists and contains text, this call does nothing. Returns the
-    /// page-unique ID of the reference.
-    fn insert_named(&mut self, name: RefKey, value: &str) -> String {
+    /// exists and contains text, this call does nothing. Returns the IDs
+    /// of the reference.
+    fn insert_named(&mut self, name: RefKey, value: &str) -> RefIds {
         if let Some(index) = self.named.get(&name) {
-            let key = Self::make_id(&name.group, *index);
+            let group = &self.groups[&name.group];
+            let display = Self::make_id(&name.group, *index);
+            let global = Self::make_id(&name.group, group.base_id + *index);
             // TODO: 'cite_error_references_duplicate_key'
-            let range = &self.groups[&name.group][*index];
+            let range = &self.groups[&name.group].entries[*index];
 
             // Some pages like 'Wikidata' create empty named refs and then
             // populate the data later
@@ -701,48 +726,40 @@ impl References {
                 self.append_named(name, value);
             }
 
-            return key;
+            return RefIds { display, global };
         }
 
         let range = self.text.len()..(self.text.len() + value.len());
         self.text += value;
 
         let group = self.groups.entry(name.group.clone()).or_default();
-        let index = group.len();
-        let key = Self::make_id(&name.group, index);
+        let index = group.entries.len();
+        let display = Self::make_id(&name.group, index);
+        let global = Self::make_id(&name.group, group.base_id + index);
         self.named.insert(name, index);
-        group.push(range);
-        key
+        group.entries.push(range);
+        RefIds { display, global }
     }
 
-    /// Adds an named reference with the given text. Returns the page-unique
-    /// numeric ID of the reference.
-    fn insert_unnamed(&mut self, group: String, value: &str) -> String {
+    /// Adds an named reference with the given text. Returns the IDs of the
+    /// reference.
+    fn insert_unnamed(&mut self, group: String, value: &str) -> RefIds {
         let range = self.text.len()..(self.text.len() + value.len());
         self.text += value;
 
         let name = group.clone();
         let group = self.groups.entry(group).or_default();
-        let key = Self::make_id(&name, group.len());
-        group.push(range);
-        key
-    }
-
-    /// Returns an iterator over the references in the given group.
-    fn iter_group(&self, group_name: &String) -> Option<impl Iterator<Item = (String, &str)>> {
-        self.groups.get(group_name).map(|group| {
-            group
-                .iter()
-                .enumerate()
-                .map(|(index, range)| (Self::make_id(group_name, index), &self.text[range.clone()]))
-        })
+        let display = Self::make_id(&name, group.entries.len());
+        let global = Self::make_id(&name, group.base_id + group.entries.len());
+        group.entries.push(range);
+        RefIds { display, global }
     }
 
     /// Encodes forward and backward reference anchors for an ID.
     fn make_anchors(id: &str) -> (String, String) {
         (
             escape_id(&format!("cite_ref-{id}"), AnchorEncodeMode::Html5).into_owned(),
-            escape_id_url(&format!("ref_{id}"), AnchorEncodeMode::Html5).into_owned(),
+            escape_id_url(&format!("cite_note-{id}"), AnchorEncodeMode::Html5).into_owned(),
         )
     }
 
@@ -782,6 +799,22 @@ impl References {
             }
         }
         buf[..index].iter().rev().collect()
+    }
+
+    /// Takes the accumulated references for the given group, returning an
+    /// iterator over the references.
+    fn take_group(&mut self, group_name: &str) -> Option<impl Iterator<Item = (String, &str)>> {
+        let group = self.groups.get_mut(group_name)?;
+        let base_id = group.base_id;
+        group.base_id += group.entries.len();
+        let entries = core::mem::take(&mut group.entries);
+        let text = &self.text;
+        Some(entries.into_iter().enumerate().map(move |(index, range)| {
+            (
+                Self::make_id(group_name, base_id + index),
+                &text[range.clone()],
+            )
+        }))
     }
 }
 
@@ -840,11 +873,11 @@ fn r#ref(
         None
     };
 
-    Ok(if let Some(id) = id {
-        let (from, to) = References::make_anchors(&id);
+    Ok(if let Some(RefIds { display, global }) = id {
+        let (from, to) = References::make_anchors(&global);
         write!(
             out,
-            r##"<span class="reference" id="{from}"><a href="#{to}">{id}</a></span>"##
+            r##"<span class="reference" id="{from}"><a href="#{to}">{display}</a></span>"##
         )?;
         OutputMode::Html
     } else {
@@ -883,7 +916,7 @@ fn references(
     // TODO: For multiple references to the same name, there should be backrefs
     // to all of them, not just the first one.
     Ok(
-        if let Some(refs) = state.globals.references.iter_group(&group) {
+        if let Some(refs) = state.globals.references.take_group(&group) {
             write!(out, r#"<ol class="references">"#)?;
             for (index, (id, text)) in refs.enumerate() {
                 if !text.is_empty() {
