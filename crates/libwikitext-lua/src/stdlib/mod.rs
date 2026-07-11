@@ -38,6 +38,34 @@ pub(crate) fn load_compat(ctx: Context<'_>) {
     if ctx.get_global_value("io").is_nil() {
         ctx.set_global("io", Table::new(&ctx));
     }
+
+    let to_number = ctx.stash(ctx.get_global::<Callback<'_>>("tonumber").unwrap());
+    ctx.set_global(
+        "tonumber",
+        Callback::from_fn(&ctx, move |ctx, exec, mut stack| {
+            let (value, radix) = (stack.get(0), stack.get(1));
+            if value.is_nil() && (radix.is_nil() || radix.to_integer() == Some(10)) {
+                stack.drain(1..);
+                Ok(CallbackReturn::Return)
+            } else {
+                ctx.fetch(&to_number).call(ctx, exec, stack)
+            }
+        }),
+    );
+
+    let to_string = ctx.stash(ctx.get_global::<Callback<'_>>("tostring").unwrap());
+    ctx.set_global(
+        "tostring",
+        Callback::from_fn(&ctx, move |ctx, exec, mut stack| {
+            #[expect(clippy::cast_possible_truncation, reason = "truncation is the point")]
+            if let Value::Number(n) = stack.get(0)
+                && n.fract() == 0.0
+            {
+                stack[0] = Value::Integer(n as i64);
+            }
+            ctx.fetch(&to_string).call(ctx, exec, stack)
+        }),
+    );
 }
 
 /// Loads helpful debugging functionality.

@@ -65,7 +65,13 @@ pub fn load_math(ctx: Context<'_>) -> Result<(), TypeError> {
         "pow",
         Callback::from_fn(&ctx, |ctx, _, mut stack| {
             let (lhs, rhs) = stack.consume::<(f64, f64)>(ctx)?;
-            stack.replace(ctx, lhs.powf(rhs));
+            let value = lhs.powf(rhs);
+            #[expect(clippy::cast_possible_truncation, reason = "truncation is the point")]
+            if value.fract() == 0.0 {
+                stack.replace(ctx, value as i64);
+            } else {
+                stack.replace(ctx, value);
+            }
             Ok(CallbackReturn::Return)
         }),
     );
