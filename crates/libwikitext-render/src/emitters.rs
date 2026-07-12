@@ -225,9 +225,10 @@ impl From<u8> for ListKind {
 /// A Wikitext table frame.
 #[derive(Debug)]
 pub(super) struct TableState {
-    /// If true, the table has ended, and this state waiting for the line end to
-    /// emit any indent end elements.
-    pub after_table: bool,
+    /// If `Some`, the table has ended, and this state waiting for the line end
+    /// to chomp trailing whitespace and emit any indent end elements. The
+    /// string contains any whitespace that maybe needs to be chomped.
+    pub after_table: Option<String>,
     /// If true, a Wikitext table row, header, or data token has been seen.
     pub has_tbody: bool,
     /// The indent hack count for this table.
@@ -242,6 +243,7 @@ pub(super) struct TableState {
 
 impl TableState {
     /// Creates a new `TableState` with the given `indent`.
+    #[inline]
     pub fn new(indent: u8) -> Self {
         Self {
             after_table: <_>::default(),
@@ -253,14 +255,44 @@ impl TableState {
         }
     }
 
+    /// Buffers or emits `text` to `next` depending on the [`Self::after_table`]
+    /// and [`Self::indent`].
+    pub fn after_table_text<S: Sink + ?Sized>(&mut self, next: &mut S, text: &str) {
+        if self.indent != 0
+            && let Some(ws) = &mut self.after_table
+        {
+            let trimmed = text.trim_ascii_end();
+            if !trimmed.is_empty() {
+                next.text(ws);
+                ws.clear();
+            }
+            next.text(trimmed);
+            ws.push_str(&text[trimmed.len()..]);
+        } else {
+            next.text(text);
+        }
+    }
+
     /// Finishes a table frame.
     pub fn finish<S: Sink + ?Sized>(mut self, next: &mut S, last: bool) {
-        if !self.after_table {
+        if self.after_table.is_none() {
             self.table_end(next, last);
         }
         for _ in 0..self.indent {
             next.tag_end("dd");
             next.tag_end("dl");
+        }
+    }
+
+    /// Flushes any whitespace stored in the [`Self::after_table`] buffer to
+    /// `next`.
+    #[inline]
+    pub fn flush_after_table<S: Sink + ?Sized>(&mut self, next: &mut S) {
+        if let Some(ws) = &mut self.after_table
+            && !ws.is_empty()
+        {
+            next.text(ws);
+            ws.clear();
         }
     }
 
@@ -304,8 +336,8 @@ impl TableState {
         }
         next.tag_end("table");
 
-        debug_assert!(!self.after_table);
-        self.after_table = true;
+        debug_assert!(self.after_table.is_none());
+        self.after_table.get_or_insert_default();
     }
 }
 

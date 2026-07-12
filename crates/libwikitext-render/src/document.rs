@@ -109,6 +109,31 @@ where
         }
     }
 
+    /// Flushes the whitespace from the table end trim buffer to the next
+    /// output.
+    ///
+    /// Because this step ran first in the original parser, inline items that
+    /// emit nothing, like behaviour switches and category wikilinks, still
+    /// cause whitespace to be emitted.
+    fn flush_after_table(&mut self) {
+        if let Some(table) = self.table_emitter.last_mut() {
+            table.flush_after_table(&mut self.next);
+        }
+    }
+
+    /// Handles a run of plain text that may need to be right-trimmed after a
+    /// table end.
+    // TODO: This sucks and seems like it ought to be handled in the grammar
+    // by emitting some ambiguous token at the end of the table end line instead
+    // of having to dump flushes all over the place.
+    fn text_run(&mut self, text: &str) {
+        if let Some(table) = self.table_emitter.last_mut() {
+            table.after_table_text(&mut self.next, text);
+        } else {
+            self.next.text(text);
+        }
+    }
+
     /// Writes an HTML start tag with the given lowercase `name` and bag of
     /// crap `attributes`.
     fn write_start_tag(
@@ -185,6 +210,7 @@ where
         _span: Span,
         target: &[Spanned<Token>],
     ) -> Result {
+        self.flush_after_table();
         tags::render_external_link(self, state, sp, target, &[], true)
     }
 
@@ -195,6 +221,7 @@ where
         _span: Span,
         name: &str,
     ) -> Result {
+        self.flush_after_table();
         match name {
             "hiddencat" if state.globals.title.namespace().id == Namespace::CATEGORY => {
                 state
@@ -215,7 +242,7 @@ where
         content: &str,
         _unclosed: bool,
     ) -> Result {
-        // If we are in an attribute, comments are actually text content!
+        self.flush_after_table();
         self.next.comment_start();
         self.next.text(content);
         self.next.comment_end();
@@ -253,6 +280,7 @@ where
         _span: Span,
         name: &str,
     ) -> Result {
+        self.flush_after_table();
         let name = to_ascii_lower(name);
         self.in_pre &= name != "pre";
         self.next.tag_end(&name);
@@ -266,6 +294,7 @@ where
         span: Span,
         value: char,
     ) -> Result {
+        self.flush_after_table();
         self.next.entity(value, &sp.source[span.into_range()]);
         Ok(())
     }
@@ -279,6 +308,7 @@ where
         attributes: &[Spanned<Argument>],
         content: Option<&str>,
     ) -> Result {
+        self.flush_after_table();
         // TODO: This is all outrageously hacky.
         let name = to_ascii_lower(name);
         assert_eq!(name, "wiki-rs-cached");
@@ -347,6 +377,7 @@ where
         target: &[Spanned<Token>],
         content: &[Spanned<Token>],
     ) -> Result {
+        self.flush_after_table();
         tags::render_external_link(self, state, sp, target, content, false)
     }
 
@@ -357,7 +388,7 @@ where
         _span: Option<Span>,
         text: &str,
     ) -> Result {
-        self.next.text(text);
+        self.text_run(text);
         Ok(())
     }
 
@@ -393,9 +424,9 @@ where
         _flags: &LangFlags,
         _variants: &[LangVariant],
     ) -> Result {
-        // TODO: It is extremely unclear what these tokens are supposed to do
-        // given that they do not seem to do anything at all on MW and just emit
-        // plain text like this.
+        self.flush_after_table();
+        // TODO: Implement language conversion.
+        log::warn!("TODO: language conversion");
         self.next.text(&sp.source[span.into_range()]);
         Ok(())
     }
@@ -410,6 +441,7 @@ where
         content: &[Spanned<Argument>],
         trail: &[Spanned<Token>],
     ) -> Result {
+        self.flush_after_table();
         let title = sp.eval(state, target)?.map(title_decode);
         let title = title.trim_start_matches(' ');
         let force_link = title.starts_with(':');
@@ -567,6 +599,8 @@ where
         _span: Span,
         magic: &MagicLink,
     ) -> Result {
+        self.flush_after_table();
+
         let (link, content, tracking) = match magic {
             MagicLink::Isbn(id) => {
                 const BOOKSOURCES: &str = "Booksources";
@@ -642,7 +676,10 @@ where
             self.next.new_line();
             self.next.set_in_list(false);
         } else {
-            if let Some(table) = self.table_emitter.pop_if(|table| table.after_table) {
+            if let Some(table) = self
+                .table_emitter
+                .pop_if(|table| table.after_table.is_some())
+            {
                 table.finish(&mut self.next, false);
             }
             self.next.new_line();
@@ -731,6 +768,7 @@ where
         attributes: &[Spanned<Token>],
         _self_closing: bool,
     ) -> Result {
+        self.flush_after_table();
         let name = to_ascii_lower(name);
         self.in_pre |= name == "pre";
         let attributes = sp
@@ -746,6 +784,7 @@ where
         span: Span,
         marker: &str,
     ) -> Result {
+        self.flush_after_table();
         if S::UNSTRIP_MARKERS {
             if let Some(marker) = state.strip_markers.get(marker) {
                 let marker = marker.map_ref(|s| state.strip_markers.unstrip_all(s));
@@ -870,7 +909,7 @@ where
         _span: Span,
         text: &str,
     ) -> Result {
-        self.next.text(text);
+        self.text_run(text);
         Ok(())
     }
 
@@ -881,6 +920,7 @@ where
         _span: Span,
         style: TextStyle,
     ) -> Result {
+        self.flush_after_table();
         self.text_style_emitter
             .last_mut()
             .unwrap()
