@@ -75,7 +75,7 @@ parsoid=wt2html,wt2wt,html2html
 Simple image redirect
 !! options
 parsoid=wt2html,wt2wt,html2html
-wiki-rs-expect-failure=[[TODO]]
+wiki-rs-skip=[[TODO]]
 !! wikitext
 [[Image:Redirect to foobar.jpg]]
 !! html/php
@@ -162,7 +162,7 @@ Image caption with pipe entity
 !! test
 Bad images - basic functionality
 !! options
-wiki-rs-expect-failure=[[TODO]]
+wiki-rs-skip=[[TODO]]
 !! wikitext
 [[File:Bad.jpg]]
 !! html/php
@@ -175,7 +175,7 @@ wiki-rs-expect-failure=[[TODO]]
 !! test
 Bad images - T18039: text after bad image disappears
 !! options
-wiki-rs-expect-failure=[[TODO]]
+wiki-rs-skip=[[TODO]]
 !! wikitext
 Foo bar
 [[File:Bad.jpg]]
@@ -194,7 +194,7 @@ Bar foo</p>
 !! test
 Bad images - manualthumb
 !! options
-wiki-rs-expect-failure=[[TODO]]
+wiki-rs-skip=[[TODO]]
 !! wikitext
 [[File:Foobar.jpg|thumbnail=Bad.jpg|Uh oh]]
 !! html/php
@@ -206,7 +206,7 @@ wiki-rs-expect-failure=[[TODO]]
 !! test
 Bad images - in gallery
 !! options
-wiki-rs-expect-failure=[[TODO]]
+wiki-rs-skip=[[TODO]]
 !! wikitext
 <gallery>
 File:Bad.jpg

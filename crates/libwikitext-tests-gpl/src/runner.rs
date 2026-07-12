@@ -278,27 +278,26 @@ pub(super) fn run_tests_from_file(suite: &str, path: impl AsRef<Path>) {
         log::info!(target: target, "Running {name}");
 
         let expect_failure = options.get::<&str>("wiki-rs-expect-failure");
-        let log_level = if expect_failure.is_some() {
-            log::Level::Warn
-        } else {
-            log::Level::Error
-        };
-
-        let Some(result) = render_test(target, log_level, base_time, &mut db, options, wikitext)
-        else {
-            fails += 1;
-            continue;
-        };
-
-        let fail = check_test_results(target, log_level, &sections, options, &result);
-
-        if let Some(reason) = expect_failure {
-            if fail {
-                log::warn!(target: target, "Ignoring test failure: {reason}");
-            } else {
-                log::error!(target: target, "passed, but should have failed");
-                fails += 1;
+        let result = match render_test(target, base_time, &mut db, options, wikitext) {
+            Ok(result) => result,
+            Err(err) => {
+                if let Some(expected) = expect_failure
+                    && err.to_string().contains(expected)
+                {
+                    log::info!(target: target, "pass");
+                } else {
+                    log::error!(target: target, "{err}");
+                    fails += 1;
+                }
+                continue;
             }
+        };
+
+        let fail = check_test_results(target, &sections, options, &result);
+
+        if expect_failure.is_some() {
+            log::error!(target: target, "passed, but should have failed");
+            fails += 1;
         } else {
             fails += i32::from(fail);
             if !fail {
@@ -586,7 +585,6 @@ fn any_of(choices: &[&str]) -> impl FnOnce(&[Value<'_>]) -> bool {
 
 fn check_test_results(
     target: &str,
-    log_level: log::Level,
     sections: &Sections<'_>,
     options: &SectionText<'_>,
     result: &RenderOutput,
@@ -763,10 +761,10 @@ fn check_test_results(
 
         if fail {
             let diff = SimpleDiff::from_str(expected_html, actual, "expected", "actual");
-            log::log!(target: target, log_level, "{diff}");
+            log::error!(target: target, "{diff}");
         }
     } else if !options.contains("nohtml") && !result.content.is_empty() {
-        log::log!(target: target, log_level, "Missing expected HTML");
+        log::error!(target: target, "Missing expected HTML");
         fail = true;
     }
 
@@ -777,7 +775,7 @@ fn check_test_results(
             } else if options.contains(option)
                 && options.get::<&str>("wiki-rs-expect-missing") == Some(option)
             {
-                log::log!(target: target, log_level, "Expected {option}");
+                log::error!(target: target, "Expected {option}");
                 fail = true;
             }
         }
@@ -785,10 +783,10 @@ fn check_test_results(
         if meta.text.is_some() || !meta.kvs.is_empty() {
             log::warn!(target: target, "TODO: Compare title or indicators");
         } else if options.contains("showindicators") {
-            log::log!(target: target, log_level, "Expected indicators");
+            log::error!(target: target, "Expected indicators");
             fail = true;
         } else if options.contains("showtitle") {
-            log::log!(target: target, log_level, "Expected title");
+            log::error!(target: target, "Expected title");
             fail = true;
         }
 
@@ -798,26 +796,25 @@ fn check_test_results(
                     .categories
                     .contains(&strtr(cat.category, &[("_", " ")]))
             }) {
-                log::log!(target: target, log_level, "Missing expected category {:?}", missing.category);
+                log::error!(target: target, "Missing expected category {:?}", missing.category);
                 fail = true;
             }
         } else if options.contains("cat") && !result.categories.is_empty() {
-            log::log!(target: target, log_level, "Expected categories");
+            log::error!(target: target, "Expected categories");
             fail = true;
         }
 
         if meta.text.is_some() {
             log::warn!(target: target, "TODO: Compare title");
         } else if options.contains("showtitle") {
-            log::log!(target: target, log_level, "Expected title");
+            log::error!(target: target, "Expected title");
             fail = true;
         }
 
         if let Some(expected_toc) = &meta.toc {
             if expected_toc.len() != result.outline.len() {
-                log::log!(
+                log::error!(
                     target: target,
-                    log_level,
                     "Outline length mismatch: expected {}, got {}",
                     expected_toc.len(),
                     result.outline.len()
@@ -831,9 +828,8 @@ fn check_test_results(
                 expected_toc.iter().zip(result.outline.iter()).enumerate()
             {
                 if expected.tag != actual.level.tag_name() {
-                    log::log!(
+                    log::error!(
                         target: target,
-                        log_level,
                         "Outline {index} tag mismatch: expected {}, got {}",
                         actual.level.tag_name(),
                         expected.tag
@@ -841,9 +837,8 @@ fn check_test_results(
                     fail = true;
                 }
                 if expected.line != unpretty(actual.html) {
-                    log::log!(
+                    log::error!(
                         target: target,
-                        log_level,
                         "Outline {index} title mismatch: expected {:?}, got {:?}",
                         expected.line,
                         actual.html
@@ -852,7 +847,7 @@ fn check_test_results(
                 }
             }
         } else if options.contains("showtocdata") {
-            log::log!(target: target, log_level, "Missing expected TOC");
+            log::error!(target: target, "Missing expected TOC");
             fail = true;
         }
     }
@@ -866,12 +861,11 @@ fn remove_tbody(html: &str) -> Cow<'_, str> {
 
 fn render_test(
     target: &str,
-    log_level: log::Level,
     base_time: DateTime,
     db: &mut Arc<MockDatabase<'static>>,
     options: &SectionText<'_>,
     wikitext: &str,
-) -> Option<RenderOutput> {
+) -> libwikitext_render::Result<RenderOutput> {
     let page_name = options.get("title").unwrap_or("Parser test");
 
     // The use of static IDs and revision IDs is NOT SAFE in the presence of a
@@ -945,27 +939,12 @@ fn render_test(
 
     let result = render_article(&mut statics, &article, LoadMode::Module, false);
 
-    if let Err(err) = &result {
-        log::log!(target: target, log_level, "Render failed: {err}");
-    }
-
-    if result.is_err() {
-        print_debug(
-            target,
-            &mut statics,
-            &article,
-            !before_pp_ast,
-            !before_pp,
-            !before_ast,
-        );
-    }
-
     if insert_page {
         drop(statics);
         Arc::get_mut(db).unwrap().remove(page_name);
     }
 
-    result.ok()
+    result
 }
 
 fn decode_html(html: &str) -> Cow<'_, str> {

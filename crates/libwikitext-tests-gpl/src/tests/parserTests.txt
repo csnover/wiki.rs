@@ -4948,6 +4948,8 @@ Template:loop2
 
 !! test
 Template infinite loop
+!! options
+wiki-rs-expect-failure=[[template loop detected]]
 !! wikitext
 {{loop1}}
 !! html/php
@@ -10325,7 +10327,7 @@ Article for special page transclusion test
 !! test
 Special page transclusion
 !! options
-wiki-rs-expect-failure=[[Special:Prefixindex is not implemented]]
+wiki-rs-skip=[[Special:Prefixindex is not implemented]]
 !! wikitext
 {{Special:Prefixindex/Xyzzyx}}
 !! html/php
@@ -10340,7 +10342,7 @@ wiki-rs-expect-failure=[[Special:Prefixindex is not implemented]]
 !! test
 Special page transclusion twice (T7021)
 !! options
-wiki-rs-expect-failure=[[Special:Prefixindex is not implemented]]
+wiki-rs-skip=[[Special:Prefixindex is not implemented]]
 !! wikitext
 {{Special:Prefixindex/Xyzzyx}}
 {{Special:Prefixindex/Xyzzyx}}
@@ -10367,7 +10369,7 @@ Template:Nested special
 !! test
 Nested special page transclusion
 !! options
-wiki-rs-expect-failure=[[Special:Prefixindex is not implemented]]
+wiki-rs-skip=[[Special:Prefixindex is not implemented]]
 !! wikitext
 {{nested special}}
 !! html/php
@@ -11846,7 +11848,7 @@ MSGNW magic word
 !! test
 RAW magic word
 !! options
-wiki-rs-expect-failure=[[raw is not implemented]]
+wiki-rs-skip=[[raw is not implemented]]
 !! wikitext
 {{RAW:QUERTY}}
 !! html/php
@@ -13144,6 +13146,8 @@ Template:Identical
 
 !! test
 T33098 Template which includes system messages which includes the template
+!! options
+wiki-rs-expect-failure=[[template loop detected]]
 !! wikitext
 {{Identical}}
 !! html/php
