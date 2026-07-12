@@ -9701,6 +9701,9 @@ parsoid=wt2html,wt2wt
 </p>
 !! html/parsoid
 <p><span style="margin: -0.125em -0.45em;  rgba(255, 0, 0, 0.3)">2013</span></p>
+!! html/wiki.rs # This output matches the PHP parser, but with prefixed styles
+<p><span style="--mw-output-margin:-0.125em -0.45em;  rgba(255, 0, 0, 0.3)">2013</span>
+</p>
 !! end
 
 !! test
