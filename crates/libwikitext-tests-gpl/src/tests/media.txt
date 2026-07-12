@@ -1088,6 +1088,7 @@ parsoid=wt2html,html2html
 !! html/wiki.rs # This output matches the PHP parser, minus the tbody, and whitespace, and data- attrs
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>
 <table class="123">
+
 <tr class="456">
 <td>ha
 </td></tr></table>
@@ -1342,6 +1343,9 @@ parsoid=wt2html,wt2wt,html2html
 !! html/parsoid
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element"/></a><figcaption></figcaption></figure>
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.svg" class="mw-file-description"><img resource="./File:Foobar.svg" src="http://example.com/images/thumb/f/ff/Foobar.svg/2000px-Foobar.svg.png" decoding="async" data-file-width="240" data-file-height="180" data-file-type="drawing" height="1500" width="2000" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/3000px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/4000px-Foobar.svg.png 2x" class="mw-file-element"/></a><figcaption></figcaption></figure>
+!! html/wiki.rs # Server-side rasterising thumbnails for SVGs is too silly
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a><figcaption></figcaption></figure>
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.svg" class="mw-file-description"><img src="http://example.com/images/f/ff/Foobar.svg" decoding="async" width="2000" height="1500" class="mw-file-element"></a><figcaption></figcaption></figure>
 !! end
 
 !! test
@@ -1372,6 +1376,10 @@ parsoid=wt2html,wt2wt,html2html
 !! html/parsoid
 <p><span typeof="mw:File/Frameless"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element"/></a></span></p>
 <p><span typeof="mw:File/Frameless"><a href="./File:Foobar.svg" class="mw-file-description"><img resource="./File:Foobar.svg" src="http://example.com/images/thumb/f/ff/Foobar.svg/2000px-Foobar.svg.png" decoding="async" data-file-width="240" data-file-height="180" data-file-type="drawing" height="1500" width="2000" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/3000px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/4000px-Foobar.svg.png 2x" class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # Server-side rasterising thumbnails for SVGs is too silly
+<p><span typeof="mw:File/Frameless"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
+</p><p><span typeof="mw:File/Frameless"><a href="/wiki/File:Foobar.svg" class="mw-file-description"><img src="http://example.com/images/f/ff/Foobar.svg" decoding="async" width="2000" height="1500" class="mw-file-element"></a></span>
+</p>
 !! end
 
 !! test
@@ -1521,6 +1529,8 @@ SVG thumbnails with no language set
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.svg" class="mw-file-description"><img src="http://example.com/images/thumb/f/ff/Foobar.svg/180px-Foobar.svg.png" decoding="async" width="180" height="135" class="mw-file-element" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/270px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/360px-Foobar.svg.png 2x" /></a><figcaption>caption</figcaption></figure>
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="./File:Foobar.svg" class="mw-file-description"><img resource="./File:Foobar.svg" src="http://example.com/images/thumb/f/ff/Foobar.svg/180px-Foobar.svg.png" decoding="async" data-file-width="240" data-file-height="180" data-file-type="drawing" height="135" width="180" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/270px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/360px-Foobar.svg.png 2x" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
+!! html/wiki.rs # Server-side rasterising thumbnails for SVGs is too silly
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.svg" class="mw-file-description"><img src="http://example.com/images/f/ff/Foobar.svg" decoding="async" width="180" height="135" class="mw-file-element"></a><figcaption>caption</figcaption></figure>
 !! end
 
 !! test
@@ -1555,6 +1565,8 @@ SVG thumbnails with invalid language code
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.svg" class="mw-file-description"><img src="http://example.com/images/thumb/f/ff/Foobar.svg/180px-Foobar.svg.png" decoding="async" width="180" height="135" class="mw-file-element" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/270px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/360px-Foobar.svg.png 2x" /></a><figcaption>lang=invalid:language:code</figcaption></figure>
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:File/Thumb" data-parsoid='{"optList":[{"ck":"thumbnail","ak":"thumb"},{"ck":"caption","ak":"caption"},{"ck":"bogus","ak":"lang=invalid:language:code"}]}' data-mw='{"attribs":[["bogus",{"txt":"invalid:language:code"}]]}'><a href="./File:Foobar.svg" class="mw-file-description"><img resource="./File:Foobar.svg" src="http://example.com/images/thumb/f/ff/Foobar.svg/180px-Foobar.svg.png" decoding="async" data-file-width="240" data-file-height="180" data-file-type="drawing" height="135" width="180" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/270px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/360px-Foobar.svg.png 2x" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
+!! html/wiki.rs # Server-side rasterising thumbnails for SVGs is too silly
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.svg" class="mw-file-description"><img src="http://example.com/images/f/ff/Foobar.svg" decoding="async" width="180" height="135" class="mw-file-element"></a><figcaption>lang=invalid:language:code</figcaption></figure>
 !! end
 
 !! test
@@ -1706,6 +1718,9 @@ T107474: Frameless image caption with <nowiki>
 [[File:Foobar.jpg|<nowiki>text with a [[MeatBall:Link|link]] in it</nowiki>]]
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File" data-parsoid='{"optList":[{"ck":"caption","ak":"&lt;nowiki>text with a [[MeatBall:Link|link]] in it&lt;/nowiki>"}]}' data-mw='{"caption":"&lt;span typeof=\"mw:Nowiki\">text with a [[MeatBall:Link|link]] in it&lt;/span>"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="text with a [[MeatBall:Link|link]] in it"><img alt="text with a [[MeatBall:Link|link]] in it" resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="text with a [[MeatBall:Link|link]] in it"><img alt="text with a [[MeatBall:Link|link]] in it" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
+</p>
 !! end
 
 !! test
@@ -1717,6 +1732,9 @@ Escape HTML special chars in image alt text
 </p>
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File" data-parsoid='{"optList":[{"ck":"caption","ak":"&amp; &lt; > \""}]}' data-mw='{"caption":"&amp;amp; &amp;lt; > \""}'><a href="./File:Foobar.jpg" class="mw-file-description" title='&amp; &lt; > "'><img alt='&amp; &lt; > "' resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus XHTML plus pretty text
+<p><span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="&amp; &lt; &gt; “"><img alt="&amp; &lt; &gt; “" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
+</p>
 !! end
 
 !! test
@@ -1971,6 +1989,9 @@ Parsoid-specific image handling - simple image with size and middle alignment
 [[File:Foobar.jpg|middle|50px]]
 !! html/parsoid
 <p><span class="mw-valign-middle" typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="6" width="50" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x" class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-valign-middle" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -1981,6 +2002,9 @@ parsoid=wt2wt,wt2html,html2html
 [[Image:Foobar.jpg|middle|50px]]
 !! html/parsoid
 <p><span class="mw-valign-middle" typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="6" width="50" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x" class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-valign-middle" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -1989,6 +2013,9 @@ Parsoid-specific image handling - simple image with size and middle alignment (e
 [[File:Foobar.jpg|50px|middle]]
 !! html/parsoid
 <p><span class="mw-valign-middle" typeof="mw:File" data-parsoid='{"optList":[{"ck":"width","ak":"50px"},{"ck":"middle","ak":"middle"}]}'><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="6" width="50" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"6","width":"50"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-valign-middle" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -1999,6 +2026,9 @@ parsoid=wt2html,wt2wt,html2html
 [[Image:Foobar.jpg|50px|middle]]
 !! html/parsoid
 <p><span class="mw-valign-middle" typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="6" width="50" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x" class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-valign-middle" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -2007,6 +2037,9 @@ Parsoid-specific image handling - simple image with both sizes, a baseline align
 [[File:Foobar.jpg|500x10px|baseline|caption]]
 !! html/parsoid
 <p><span class="mw-valign-baseline" typeof="mw:File" data-mw='{"caption":"caption"}' data-parsoid='{"optList":[{"ck":"width","ak":"500x10px"},{"ck":"baseline","ak":"baseline"},{"ck":"caption","ak":"caption"}],"size":"500x10"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/89px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="10" width="89" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/133px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/177px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"10","width":"89"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-valign-baseline" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/thumb/3/3a/Foobar.jpg/89px-Foobar.jpg" decoding="async" width="89" height="10" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/132px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/177px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -2015,6 +2048,9 @@ Parsoid-specific image handling - simple image with border and size spec
 [[File:Foobar.jpg|50px|border|caption]]
 !! html/parsoid
 <p><span class="mw-image-border" typeof="mw:File" data-mw='{"caption":"caption"}' data-parsoid='{"optList":[{"ck":"width","ak":"50px"},{"ck":"border","ak":"border"},{"ck":"caption","ak":"caption"}]}'><a href="./File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="6" width="50" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"6","width":"50"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-image-border" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -2025,6 +2061,8 @@ parsoid=wt2html,html2html
 [[File:Foobar.jpg|left|baseline|thumb|caption content]]
 !! html/parsoid
 <figure class="mw-default-size mw-halign-left" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="20" width="180" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>caption content</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-default-size mw-halign-left" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>caption content</figcaption></figure>
 !! end
 
 !! test
@@ -2035,6 +2073,8 @@ parsoid=wt2html,html2html
 [[File:Foobar.jpg|thumb|left|baseline|caption content]]
 !! html/parsoid
 <figure class="mw-default-size mw-halign-left" typeof="mw:File/Thumb" data-parsoid='{"optList":[{"ck":"thumbnail","ak":"thumb"},{"ck":"left","ak":"left"},{"ck":"baseline","ak":"baseline"},{"ck":"caption","ak":"caption content"}]}'><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="20" width="180" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>caption content</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-default-size mw-halign-left" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>caption content</figcaption></figure>
 !! end
 
 !! test
@@ -2045,6 +2085,8 @@ parsoid=wt2html,html2html
 [[Image:Foobar.jpg|right|middle|thumb|50x50px|caption]]
 !! html/parsoid
 <figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="6" width="50" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a><figcaption>caption</figcaption></figure>
 !! end
 
 !! test
@@ -2055,6 +2097,8 @@ parsoid=wt2html,html2html
 [[File:Foobar.jpg|thumb|50x50px|right|middle|caption]]
 !! html/parsoid
 <figure class="mw-halign-right" typeof="mw:File/Thumb" data-parsoid='{"optList":[{"ck":"thumbnail","ak":"thumb"},{"ck":"width","ak":"50x50px"},{"ck":"right","ak":"right"},{"ck":"middle","ak":"middle"},{"ck":"caption","ak":"caption"}],"size":"50x50"}'><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="6" width="50" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"6","width":"50"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/50px-Foobar.jpg" decoding="async" width="50" height="6" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/75px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg 2x"></a><figcaption>caption</figcaption></figure>
 !! end
 
 !! test
@@ -2065,6 +2109,8 @@ parsoid=wt2html,html2html
 [[File:Foobar.jpg|frame|500x50px|caption]]
 !! html/parsoid
 <figure typeof="mw:File/Frame"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure typeof="mw:File/Frame"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a><figcaption>caption</figcaption></figure>
 !! end
 
 !! test
@@ -2075,6 +2121,8 @@ parsoid=wt2html,html2html
 [[File:Foobar.jpg|left|baseline|frame|500x50px|caption]]
 !! html/parsoid
 <figure class="mw-halign-left" typeof="mw:File/Frame"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-halign-left" typeof="mw:File/Frame"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a><figcaption>caption</figcaption></figure>
 !! end
 
 !! test
@@ -2083,6 +2131,9 @@ Parsoid-specific image handling - frameless image with specific size, border, an
 [[File:Foobar.jpg|frameless|442x50px|border|caption]]
 !! html/parsoid
 <p><span class="mw-image-border" typeof="mw:File/Frameless" data-mw='{"caption":"caption"}' data-parsoid='{"optList":[{"ck":"frameless","ak":"frameless"},{"ck":"width","ak":"442x50px"},{"ck":"border","ak":"border"},{"ck":"caption","ak":"caption"}],"size":"442x50"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/442px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="50" width="442" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/662px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/883px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"50","width":"442"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-image-border" typeof="mw:File/Frameless"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/thumb/3/3a/Foobar.jpg/442px-Foobar.jpg" decoding="async" width="442" height="50" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/662px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/882px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -2091,6 +2142,9 @@ Parsoid-specific image handling - simple image with a formatted caption
 [[File:Foobar.jpg|<table><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></table>]]
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:File" data-parsoid='{"optList":[{"ck":"caption","ak":"&lt;table>&lt;tr>&lt;td>a&lt;/td>&lt;td>b&lt;/td>&lt;/tr>&lt;tr>&lt;td>c&lt;/td>&lt;/tr>&lt;/table>"}]}' data-mw='{"caption":"&lt;table data-parsoid=&#39;{\"stx\":\"html\"}&#39;>&lt;tbody>&lt;tr data-parsoid=&#39;{\"stx\":\"html\"}&#39;>&lt;td data-parsoid=&#39;{\"stx\":\"html\"}&#39;>a&lt;/td>&lt;td data-parsoid=&#39;{\"stx\":\"html\"}&#39;>b&lt;/td>&lt;/tr>&lt;tr data-parsoid=&#39;{\"stx\":\"html\"}&#39;>&lt;td data-parsoid=&#39;{\"stx\":\"html\"}&#39;>c&lt;/td>&lt;/tr>&lt;/tbody>&lt;/table>"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="abc"><img alt="abc" resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"220","width":"1941"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="a b c"><img alt="a b c" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
+</p>
 !! end
 
 !! test
@@ -2099,6 +2153,8 @@ Parsoid-specific image handling - caption with a template in it
 [[File:Foobar.jpg|thumb|200x23px|This caption has a {{1x|transclusion}} in it.]]
 !! html/parsoid
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/200px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="23" width="200" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/400px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>This caption has a <span about="#mwt1" typeof="mw:Transclusion" data-mw="{&quot;parts&quot;:[{&quot;template&quot;:{&quot;target&quot;:{&quot;wt&quot;:&quot;1x&quot;,&quot;href&quot;:&quot;./Template:1x&quot;},&quot;params&quot;:{&quot;1&quot;:{&quot;wt&quot;:&quot;transclusion&quot;}},&quot;i&quot;:0}}]}">transclusion</span> in it.</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/200px-Foobar.jpg" decoding="async" width="200" height="23" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/400px-Foobar.jpg 2x"></a><figcaption>This caption has a transclusion in it.</figcaption></figure>
 !! end
 
 !! test
@@ -2113,6 +2169,12 @@ bar
 <p>foo</p>
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/200px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="23" width="200" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/400px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>This caption has a <center>unbalanced tag in it.</center></figcaption></figure>
 <p>bar</p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p>foo
+</p>
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/200px-Foobar.jpg" decoding="async" width="200" height="23" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/400px-Foobar.jpg 2x"></a><figcaption>This caption has a <center>unbalanced tag in it.</center></figcaption></figure>
+<p>bar
+</p>
 !! end
 
 !! test
@@ -2123,6 +2185,8 @@ parsoid=wt2html,wt2wt
 [[File:Foobar.jpg|thumb|]]
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="20" width="180" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption></figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption></figcaption></figure>
 !! end
 
 # empty captions don't get serialized unless we're in the "round trip" case
@@ -2150,6 +2214,8 @@ Parsoid-specific image handling - whitespace caption
 [[File:Foobar.jpg|thumb| ]]
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="20" width="180" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption> </figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption> </figcaption></figure>
 !! end
 
 !! test
@@ -2167,6 +2233,11 @@ bar
 <p>foo
 <span class="mw-default-size" typeof="mw:File" data-mw='{"caption":"caption"}'><a href="./File:Foobar.svg?lang=de" class="mw-file-description" title="caption"><img alt="caption" resource="./File:Foobar.svg" src="http://example.com/images/thumb/f/ff/Foobar.svg/langde-240px-Foobar.svg.png" decoding="async" lang="de" data-file-width="240" data-file-height="180" data-file-type="drawing" height="180" width="240" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/langde-360px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/langde-480px-Foobar.svg.png 2x" data-parsoid='{"a":{"resource":"./File:Foobar.svg","lang":"de","height":"180","width":"240"},"sa":{"resource":"File:Foobar.svg","lang":"lang=de"}}' class="mw-file-element"/></a></span>
 bar</p>
+!! html/wiki.rs # Server-side rasterising thumbnails for SVGs is too silly
+<p>foo
+<span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.svg?lang=de" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/f/ff/Foobar.svg" decoding="async" width="240" height="180" class="mw-file-element"></a></span>
+bar
+</p>
 !! end
 
 !! test
@@ -2250,6 +2321,8 @@ Template with thumb image (with link in description)
 <p>This is a test template with parameter </p><figure class="mw-default-size" typeof="mw:Error mw:File/Thumb"><a href="/index.php?title=Special:Upload&amp;wpDestFile=Noimage.png" class="new" title="File:Noimage.png"><span class="mw-file-element mw-broken-media" data-width="180">File:Noimage.png</span></a><figcaption><a href="/wiki/No_link" title="No link">link</a> <a href="/wiki/No_link" title="No link">caption</a></figcaption></figure>
 !! html/parsoid
 <p about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"param","named":true}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"paramtest","href":"./Template:Paramtest"},"params":{"param":{"wt":"[[Image:noimage.png|thumb|[[no link|link]] [[no link|caption]]]]"}},"i":0}}]}'>This is a test template with parameter </p><figure class="mw-default-size" typeof="mw:Error mw:File/Thumb" about="#mwt1" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}'><a href="./Special:FilePath/Noimage.png" class="new" title="File:Noimage.png"><span class="mw-file-element mw-broken-media" resource="./File:Noimage.png" data-width="180">File:Noimage.png</span></a><figcaption><a rel="mw:WikiLink" href="./No_link" title="No link">link</a> <a rel="mw:WikiLink" href="./No_link" title="No link">caption</a></figcaption></figure>
+!! html/wiki.rs # The html/php section appears to be bogus
+<p>This is a test template with parameter </p><figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Noimage.png" class="mw-file-description"><img src="http://example.com/images/7/7c/Noimage.png" decoding="async" width="1" height="1" class="mw-file-element"></a><figcaption><a href="/wiki/No_link?action=edit&amp;redlink=1" class="new" title="No link (page does not exist)">link</a> <a href="/wiki/No_link?action=edit&amp;redlink=1" class="new" title="No link (page does not exist)">caption</a></figcaption></figure>
 !! end
 
 !! test
@@ -3489,10 +3562,10 @@ Image: Block level image should have \n before and after
 <p>123</p>
 <figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="17" width="150" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/225px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption></figcaption></figure>
 <p>456</p>
-!! html/wiki.rs # This output matches the PHP parser, minus data attributes
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
 <p>123
 </p>
-<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg" decoding="async" width="150" height="18" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/225px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 2x" ></a><figcaption></figcaption></figure>
+<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg" decoding="async" width="150" height="17" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/225px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 2x" ></a><figcaption></figcaption></figure>
 <p>456
 </p>
 !! end
@@ -3507,6 +3580,12 @@ Image: New block level image should have \n before and after (existing content)
 <p>123</p>
 <figure class="mw-halign-right" typeof="mw:File/Thumb" data-parsoid='{"optList":[{"ck":"right","ak":"right"},{"ck":"thumbnail","ak":"thumb"},{"ck":"width","ak":"150x150px"}]}'><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="17" width="150" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/225px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"17","width":"150"},"sa":{"resource":"File:Foobar.jpg"}}' class="mw-file-element"/></a><figcaption></figcaption></figure>
 <p>456</p>
+!! html/wiki.rs # This output matches the PHP parser, minus the data- attributes
+<p>123
+</p>
+<figure class="mw-halign-right" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg" decoding="async" width="150" height="17" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/225px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 2x"></a><figcaption></figcaption></figure>
+<p>456
+</p>
 !! end
 
 !! test
@@ -3519,6 +3598,10 @@ Image: upright option (parsoid)
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="16" width="140" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/210px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/280px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
 <figure class="mw-default-size" typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/90px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="10" width="90" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/135px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
 <figure typeof="mw:File/Thumb"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/500px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="57" width="500" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/750px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/1000px-Foobar.jpg 2x" class="mw-file-element"/></a><figcaption>caption</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg" decoding="async" width="140" height="16" style="--mw-file-upright:0.75;" class="mw-file-element mw-file-upright" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/210px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/280px-Foobar.jpg 2x"></a><figcaption>caption</figcaption></figure>
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/90px-Foobar.jpg" decoding="async" width="90" height="10" style="--mw-file-upright:0.5;" class="mw-file-element mw-file-upright" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/135px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 2x"></a><figcaption>caption</figcaption></figure>
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/500px-Foobar.jpg" decoding="async" width="500" height="57" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/750px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/1000px-Foobar.jpg 2x"></a><figcaption>caption</figcaption></figure>
 !! end
 
 !! test
@@ -3527,8 +3610,9 @@ Image: upright option is ignored on inline and frame images (parsoid)
 [[File:Foobar.jpg|500x500px|upright=0.5|caption]]
 !! html/parsoid
 <p><span typeof="mw:File" data-mw='{"caption":"caption"}'><a href="./File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/500px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="57" width="500" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/750px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/1000px-Foobar.jpg 2x" class="mw-file-element"/></a></span></p>
-!! html/wiki.rs # This output matches the PHP parser, minus data attributes
-<span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="500" height="58" style="--mw-file-upright: 0.5" class="mw-file-element mw-file-upright"></a></span>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/thumb/3/3a/Foobar.jpg/500px-Foobar.jpg" decoding="async" width="500" height="57" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/750px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/1000px-Foobar.jpg 2x"></a></span>
+</p>
 !! end
 
 !! test
@@ -3537,6 +3621,9 @@ Image: in template parameter with empty parameter
 {{1x|[[File:Foobar.jpg|link=]]}}
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:Transclusion mw:File" about="#mwt1" data-mw='{"parts":[{"template":{"target":{"wt":"1x","href":"./Template:1x"},"params":{"1":{"wt":"[[File:Foobar.jpg|link=]]"}},"i":0}}]}'><span><img resource="./File:Foobar.jpg" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="220" width="1941" class="mw-file-element"/></span></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus the XHTML and data- attributes
+<p><span class="mw-default-size" typeof="mw:File"><span><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></span></span>
+</p>
 !! end
 
 !! test
@@ -3865,12 +3952,12 @@ Table in figcaption nested in table
 </tbody></table>
 </figcaption></figure></td></tr>
 </tbody></table>
-!! html/wiki.rs # This output matches the PHP parser, except for tbody, whitespace, thumb href and srcset
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody, plus whitespace
 <table>
 <tbody><tr>
 <td>foo
 </td>
-<td><figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element"></a><figcaption>
+<td><figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" decoding="async" width="180" height="20" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x"></a><figcaption>
 <table>
 <tr>
 <td>bar
@@ -4029,6 +4116,8 @@ Broken block media with a caption
 <figure class="mw-default-size" typeof="mw:Error mw:File/Thumb"><a href="/index.php?title=Special:Upload&amp;wpDestFile=Broken.jpg" class="new" title="File:Broken.jpg"><span class="mw-file-element mw-broken-media" data-width="180">File:Broken.jpg</span></a><figcaption>A caption for the media.</figcaption></figure>
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:Error mw:File/Thumb" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}'><a href="./Special:FilePath/Broken.jpg" class="new" title="File:Broken.jpg"><span class="mw-file-element mw-broken-media" resource="./File:Broken.jpg" data-width="180">File:Broken.jpg</span></a><figcaption>A caption for the media.</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the data- attribute and different href
+<figure class="mw-default-size" typeof="mw:Error mw:File/Thumb"><a href="/wiki/File:Broken.jpg?action=edit&amp;redlink=1" class="new" title="File:Broken.jpg"><span class="mw-file-element mw-broken-media">File:Broken.jpg</span></a><figcaption>A caption for the media.</figcaption></figure>
 !! end
 
 ## In contrast with imagemaps

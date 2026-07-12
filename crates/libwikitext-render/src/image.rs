@@ -1,24 +1,24 @@
 //! Code for handling MediaWiki images.
 
 use super::{
-    Result, StackFrame, State, StripMarkers, Surrogate as _,
+    Result, StackFrame, State, StripMarker, Surrogate as _,
     document::{Document, DocumentSink},
     tags::{self, LinkKind, LinkKindOptions},
     transform::Sink,
 };
+use crate::transform::tokenise;
 use core::fmt::Write as _;
 use libmisc::CowExt as _;
-use libphp_rs::strtr;
 use libwikitext_common::{
-    config::Configuration,
-    db::{DatabaseProvider as _, FileMetadata},
-    decode_html, make_url, normalize_whitespace,
+    db::FileMetadata,
+    make_url,
     title::{Namespace, Title},
     url::Url,
     url_decode,
 };
-use libwikitext_parse::{Argument, Spanned, Token};
+use libwikitext_parse::{Argument, Spanned, Token, borrow_fastest};
 use std::borrow::Cow;
+use uncased::UncasedStr;
 
 /// Image dimensions.
 type Dims = (u32, u32);
@@ -157,40 +157,51 @@ impl Options<'_> {
     }
 
     /// Returns true if this image should have a `figcaption`.
+    #[inline]
     fn is_captioned(&self) -> bool {
         self.align.is_some() || matches!(self.frame, Some(FrameKind::Thumb(_) | FrameKind::Frame))
     }
 
     /// Returns true if this image was not given any explicit dimensions.
+    #[inline]
     fn is_default_size(&self) -> bool {
-        self.width.is_none()
-            && !matches!(
-                self.frame,
-                Some(FrameKind::Thumb(Some(..)) | FrameKind::Frame)
-            )
+        self.width.is_none() && !self.is_unscaled()
     }
 
     /// Returns true if this image should link to an external URL.
+    #[inline]
     fn is_external_link(&self) -> bool {
         matches!(self.link, Link::Custom(LinkKind::External(..)))
     }
 
     /// Returns true if this image is a “file description”. Whatever that is.
+    #[inline]
     fn is_file_description(&self) -> bool {
         !matches!(self.link, Link::None | Link::Custom(_))
             && !matches!(self.frame, Some(FrameKind::Thumb(Some(_))))
     }
 
     /// Returns true if this image should link to the target.
+    #[inline]
     fn is_link(&self) -> bool {
         !matches!(self.link, Link::None)
     }
 
     /// Returns true if this image should use thumbnail sizes and source sets.
+    #[inline]
     fn is_thumb(&self) -> bool {
         matches!(
             self.frame,
             Some(FrameKind::Thumb(None) | FrameKind::Frameless)
+        )
+    }
+
+    /// Returns true if this image should be displayed without scaling.
+    #[inline]
+    fn is_unscaled(&self) -> bool {
+        matches!(
+            self.frame,
+            Some(FrameKind::Thumb(Some(..)) | FrameKind::Frame)
         )
     }
 
@@ -232,43 +243,174 @@ impl Options<'_> {
     }
 }
 
-/// Calculates the desired width and height for the image from the `options`
-/// with the given native width and height.
-// TODO: This is a garbage function with a garbage signature.
-fn calc_image_dims(
-    state: &mut State<'_, '_, '_>,
-    options: &Options<'_>,
-    (native_width, native_height): Dims,
-) -> Dims {
-    let (width, height) = if options.is_thumb() {
-        let thumb_width = state
-            .statics
-            .db
-            .config()
-            .thumb_limits
-            .first()
-            .copied()
-            .unwrap_or(180)
-            .min(native_width);
-        let thumb_height = round_div(thumb_width * native_height, native_width);
-        (thumb_width, thumb_height)
-    } else {
-        (native_width, native_height)
-    };
-    let (width, height) = if matches!(
-        options.frame,
-        Some(FrameKind::Thumb(Some(_)) | FrameKind::Frame)
-    ) {
-        (width, height)
-    } else {
-        match (options.width, options.height) {
-            (Some(width), Some(height)) => (width, height),
-            (Some(w), None) => (w, round_div(w * native_height, native_width)),
-            (None, Some(h)) => (round_div(h * native_width, native_height), h),
-            (None, None) => (width, height),
+/// A [`DocumentSink`] which strips all tags from the input and normalises all
+/// whitespace to a single space character.
+#[derive(Debug)]
+struct ParseAttr {
+    /// The output.
+    acc: String,
+    /// If true, filtering out input.
+    filtering: bool,
+    /// If true, the next output should be preceded by a space character.
+    needs_ws: bool,
+}
+
+impl DocumentSink for ParseAttr {
+    const UNSTRIP_MARKERS: bool = true;
+
+    type Args = ();
+
+    fn new((): Self::Args) -> Self
+    where
+        Self: Sized,
+    {
+        Self {
+            acc: <_>::default(),
+            filtering: <_>::default(),
+            needs_ws: <_>::default(),
         }
-    };
-    (width, height)
+    }
+
+    fn set_in_caption(&mut self, _: bool) {}
+    fn set_in_list(&mut self, _: bool) {}
+}
+
+impl Sink for ParseAttr {
+    #[inline]
+    fn comment_end(&mut self) {}
+
+    #[inline]
+    fn comment_start(&mut self) {}
+
+    #[inline]
+    fn entity(&mut self, value: char, _: &str) {
+        if self.filtering {
+            return;
+        }
+        if self.needs_ws {
+            self.acc.push(' ');
+            self.needs_ws = false;
+        }
+        self.acc.push(value);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.acc
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        if !self.filtering {
+            self.needs_ws = !self.acc.is_empty();
+        }
+    }
+
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        if self.filtering {
+            return;
+        }
+
+        match marker {
+            StripMarker::General(s) => tokenise(self, s),
+            StripMarker::NoWiki(s) => self.text(s),
+            _ => {}
+        }
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, _: &str) {}
+
+    #[inline]
+    fn tag_attribute_start(&mut self, _: &str) {}
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        if self.filtering {
+            self.filtering = false;
+        } else if BLOCK.contains(name.into()) {
+            self.needs_ws = !self.acc.is_empty();
+        }
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        if BLOCK.contains(name.into()) {
+            self.needs_ws = !self.acc.is_empty();
+        }
+        self.filtering = true;
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        if name != UncasedStr::new("script") && name != UncasedStr::new("style") {
+            self.filtering = false;
+        }
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        if self.filtering {
+            return;
+        }
+
+        self.needs_ws |=
+            !self.acc.is_empty() && text.starts_with(|c: char| c.is_ascii_whitespace());
+        for part in text.split_ascii_whitespace() {
+            if self.needs_ws {
+                self.acc.push(' ');
+            }
+            self.acc += part;
+            self.needs_ws = true;
+        }
+        self.needs_ws = !self.acc.is_empty() && text.ends_with(|c: char| c.is_ascii_whitespace());
+    }
+}
+
+/// Calculates the desired width and height for the image with the native
+/// dimensions `native_width` and `native_height` for the preferred `width`
+/// and optionally preferred `height`.
+fn calc_image_dims(width: u32, height: Option<u32>, (native_width, native_height): Dims) -> Dims {
+    if native_width == 0 || native_height == 0 {
+        return (0, 0);
+    }
+
+    let width = height.map_or(width, |height| {
+        let prefer_height = width * native_height > height * native_width;
+        if prefer_height {
+            let best_width = (native_width * height).div_ceil(native_height);
+            if div_round(best_width * native_height, native_width) > height {
+                native_width * height / native_height
+            } else {
+                best_width
+            }
+        } else {
+            width
+        }
+    });
+
+    (width, div_round(native_height * width, native_width))
+}
+
+/// Returns the default thumbnail size.
+#[inline]
+fn default_thumb_limit(state: &State<'_, '_, '_>) -> u32 {
+    state
+        .statics
+        .db
+        .config()
+        .thumb_limits
+        .first()
+        .copied()
+        .unwrap_or(180)
+}
+
+/// Divides `n` by `d`, rounding half toward positive infinity.
+#[inline]
+fn div_round(n: u32, d: u32) -> u32 {
+    let q = n / d;
+    let r = n % d;
+    q + u32::from(r << 1 >= d)
 }
 
 /// Returns `true` if the string appears to be an absolute URL.
@@ -302,8 +444,10 @@ pub(super) fn make_media_url(base_uri: &Url, media_path: &str, text: &str) -> St
 /// URL `src`.
 fn make_srcset(
     state: &mut State<'_, '_, '_>,
-    max_width: u32,
-    width: u32,
+    base_width: u32,
+    preferred_width: u32,
+    height: Option<u32>,
+    native_dims @ (max_width, _): Dims,
     base_name: &str,
     src: &str,
 ) -> (String, Option<String>) {
@@ -314,7 +458,16 @@ fn make_srcset(
     );
     let mut srcset = String::new();
     for (mult, mult_name) in [(15, "1.5"), (20, "2")] {
-        let size = round_div(width * mult, 10);
+        // To match the rounding of the original parser it is necessary to
+        // recalculate the image width for each multiple rather than doing the
+        // fast and easy thing of multiplying the first calculated base image
+        // width
+        let (size, _) = calc_image_dims(
+            preferred_width * mult,
+            height.map(|h| h * mult),
+            native_dims,
+        );
+        let size = div_round(size, 10);
         if !srcset.is_empty() {
             srcset += ", ";
         }
@@ -327,7 +480,7 @@ fn make_srcset(
         let _ = write!(srcset, "{thumb_src}/{size}px-{base_name} {mult_name}x");
     }
 
-    let src = format!("{thumb_src}/{width}px-{base_name}");
+    let src = format!("{thumb_src}/{base_width}px-{base_name}");
     (src, (!srcset.is_empty()).then_some(srcset))
 }
 
@@ -344,20 +497,16 @@ pub(super) fn media_options<'s>(
         let raw = sp
             .eval(state, argument.combined())?
             .map_ref(str::trim_ascii);
-        let config = state.statics.db.config();
-        let strip_markers = &state.strip_markers;
-        match config.magic_word_matches(raw) {
-            Ok((value, arg)) => {
-                if let Some(arg) = arg.map(|arg| arg.map_ref(str::trim_ascii)) {
-                    option_arg(&mut options, config, strip_markers, value, arg)?;
-                } else {
-                    option_flag(&mut options, argument, value);
-                }
+        let result = state.statics.db.config().magic_word_matches(raw);
+        if let Ok((value, arg)) = result {
+            if let Some(arg) = arg.map(|arg| arg.map_ref(str::trim_ascii)) {
+                option_arg(state, sp, &mut options, value, arg, argument.value())?;
+            } else {
+                option_flag(&mut options, argument, value);
             }
-            Err(raw) => {
-                options.caption = Some(argument.combined());
-                options.caption_attr = Some(to_attr(strip_markers, raw));
-            }
+        } else {
+            options.caption = Some(argument.combined());
+            options.caption_attr = Some(to_attr(state, sp, argument.combined())?);
         }
     }
 
@@ -377,20 +526,22 @@ fn media_tag_name(meta: FileMetadata) -> &'static str {
 /// Set an option on `options` from the given parameterised `arg` which matched
 /// one of the magic words given in `value`.
 fn option_arg<'s>(
+    state: &mut State<'_, '_, '_>,
+    sp: &'s StackFrame<'s>,
     options: &mut Options<'s>,
-    config: &Configuration,
-    strip_markers: &StripMarkers,
-    value: &[&str],
+    key: &[&str],
     arg: Cow<'s, str>,
+    raw_value: &'s [Spanned<Token>],
 ) -> Result {
-    if value.contains(&"img_alt") {
-        options.alt = Some(to_attr(strip_markers, arg));
-    } else if value.contains(&"img_class") {
-        options.class = Some(to_attr(strip_markers, arg));
-    } else if value.contains(&"img_lang") {
+    if key.contains(&"img_alt") {
+        options.alt = Some(to_attr(state, sp, raw_value)?);
+    } else if key.contains(&"img_class") {
+        options.class = Some(to_attr(state, sp, raw_value)?);
+    } else if key.contains(&"img_lang") {
         options.lang = Some(arg);
-    } else if value.contains(&"img_link") {
-        let arg = to_attr(strip_markers, arg);
+    } else if key.contains(&"img_link") {
+        let arg = to_attr(state, sp, raw_value)?;
+        let config = &state.statics.db.config();
         options.link = if arg.is_empty() {
             Link::None
         } else if config.protocols_pattern.is_match(&arg) {
@@ -401,39 +552,43 @@ fn option_arg<'s>(
             Title::new(config, &url_decode(&arg), None)
                 .map_or(Link::None, |title| Link::Custom(LinkKind::Internal(title)))
         };
-    } else if value.contains(&"img_lossy") {
+    } else if key.contains(&"img_lossy") {
         options.lossy = Some(arg != "false");
-    } else if value.contains(&"img_manualthumb") {
+    } else if key.contains(&"img_manualthumb") {
         if options.frame.is_none() {
-            let title = Title::new(
-                config,
-                &url_decode(&to_attr(strip_markers, arg)),
-                Some(Namespace::FILE),
-            )?;
+            let title = to_attr(state, sp, raw_value)?;
+            let title = Title::new(state.statics.db.config(), &title, Some(Namespace::FILE))?;
             options.frame = Some(FrameKind::Thumb(Some(title)));
         }
-    } else if value.contains(&"img_page") {
+    } else if key.contains(&"img_page") {
         options.page = Some(arg.parse::<i32>().unwrap_or(1));
-    } else if value.contains(&"img_upright") {
+    } else if key.contains(&"img_upright") {
         options.upright = Some(arg.parse::<f64>().unwrap_or(1.0));
-    } else if value.contains(&"img_width") {
-        let (w, h) = arg.split_once('x').unwrap_or((&arg, ""));
-        if let Ok(w) = w.parse::<u32>() {
-            options.width = Some(w);
+    } else if key.contains(&"img_width") {
+        if arg.ends_with("px") {
+            state
+                .globals
+                .categories
+                .tracking(&state.statics.messages, "double-px-category")?;
         }
-        if let Ok(h) = h.parse::<u32>() {
-            options.height = Some(h);
+
+        let (width, height) = parse_dims(&arg);
+        if width.is_some() {
+            options.width = width;
         }
-    } else if value.contains(&"timedmedia_disablecontrols") {
+        if height.is_some() {
+            options.height = height;
+        }
+    } else if key.contains(&"timedmedia_disablecontrols") {
         options.controls = false;
-    } else if value.contains(&"timedmedia_endtime") {
+    } else if key.contains(&"timedmedia_endtime") {
         options.end = Some(arg);
-    } else if value.contains(&"timedmedia_starttime") {
+    } else if key.contains(&"timedmedia_starttime") {
         options.start = Some(arg);
-    } else if value.contains(&"timedmedia_thumbtime") {
+    } else if key.contains(&"timedmedia_thumbtime") {
         options.thumbtime = Some(arg);
     } else {
-        log::warn!("unexpected magic word {value:?}");
+        log::warn!("unexpected magic word {key:?}");
     }
     Ok(())
 }
@@ -485,6 +640,13 @@ fn option_flag<'s>(options: &mut Options<'s>, argument: &'s Spanned<Argument>, v
     }
 }
 
+/// Parses an `img_width` option into width and height.
+pub(super) fn parse_dims(arg: &str) -> (Option<u32>, Option<u32>) {
+    let arg = arg.strip_suffix("px").unwrap_or(arg);
+    let (w, h) = arg.split_once('x').unwrap_or((arg, ""));
+    (w.parse::<u32>().ok(), h.parse::<u32>().ok())
+}
+
 /// Renders an image tag to `out` using `state` with the given `options` and
 /// native dimensions `native_height` and `native_width`.
 fn render_image<S: Sink + ?Sized>(
@@ -492,20 +654,35 @@ fn render_image<S: Sink + ?Sized>(
     state: &mut State<'_, '_, '_>,
     options: &Options<'_>,
     native_dims: Dims,
+    scalable: bool,
 ) {
     let wrapper = if options.is_link() { "a" } else { "span" };
-    let (width, height) = calc_image_dims(state, options, native_dims);
+    let native_width = native_dims.0;
+    let preferred_width = options.width.map_or_else(
+        || {
+            if options.is_thumb() {
+                default_thumb_limit(state).min(native_width)
+            } else {
+                native_width
+            }
+        },
+        |width| {
+            if scalable || options.frame.is_none() {
+                width
+            } else {
+                width.min(native_width)
+            }
+        },
+    );
+    let (width, height) = if options.is_unscaled() {
+        native_dims
+    } else {
+        calc_image_dims(preferred_width, options.height, native_dims)
+    };
 
     out.tag_start(wrapper);
     if let Some(link) = options.link() {
-        let href = link.to_string(
-            &LinkKindOptions {
-                base_uri: &state.statics.base_uri,
-                interwiki_map: &state.statics.db.config().interwiki_map,
-                paths: &state.statics.paths,
-            },
-            None,
-        );
+        let href = resource_url(state, &link);
         let href = if matches!(options.link, Link::Inherit) {
             href.split_once('#').map_or(href.as_str(), |(href, _)| href)
         } else {
@@ -532,14 +709,26 @@ fn render_image<S: Sink + ?Sized>(
         state.statics.paths.media,
         &base_name,
     );
-    let (src, srcset) = if width < native_dims.0 {
-        make_srcset(state, native_dims.0, width, &base_name, &src)
+    let (src, srcset) = if !scalable && width < native_width {
+        make_srcset(
+            state,
+            width,
+            preferred_width,
+            options.height,
+            native_dims,
+            &base_name,
+            &src,
+        )
     } else {
         (src, None)
     };
 
     if let Some(alt) = &options.alt() {
         out.tag_attribute_full("alt", alt);
+    }
+    if matches!(options.frame, Some(FrameKind::Thumb(Some(_)))) {
+        let href = resource_url(state, &LinkKind::Internal(options.title.clone()));
+        out.tag_attribute_full("resource", &href);
     }
     out.tag_attribute_full("src", &src);
     out.tag_attribute_full("decoding", "async");
@@ -550,10 +739,6 @@ fn render_image<S: Sink + ?Sized>(
     out.text("mw-file-element");
     if options.upright.is_some() {
         out.text(" mw-file-upright");
-    }
-    if let Some(class) = &options.class {
-        out.text(" ");
-        out.text(class);
     }
     out.tag_attribute_end("class");
 
@@ -657,13 +842,16 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
             }
             FileMetadata::Image { .. } => {
                 // TODO: Image with video thumb must use thumb of video
-                let Some(
-                    FileMetadata::Image { height, width } | FileMetadata::Video { height, width },
-                ) = thumb
-                else {
-                    panic!("should have an image or video thumb");
+                let (width, height, scalable) = match thumb {
+                    Some(FileMetadata::Image {
+                        height,
+                        scalable,
+                        width,
+                    }) => (width, height, scalable),
+                    Some(FileMetadata::Video { height, width }) => (width, height, false),
+                    _ => panic!("should have an image or video thumb"),
                 };
-                render_image(&mut out.next, state, options, (width, height));
+                render_image(&mut out.next, state, options, (width, height), scalable);
             }
         }
     } else {
@@ -750,97 +938,50 @@ fn render_timed_media<S: Sink + ?Sized>(
     out.tag_end(media_tag_name(media));
 }
 
-/// Divides `n` by `d`, rounding half toward positive infinity.
-#[inline]
-fn round_div(n: u32, d: u32) -> u32 {
-    let q = n / d;
-    let r = n % d;
-    q + u32::from(r << 1 >= d)
+/// Creates a resource URL for the image target.
+fn resource_url(state: &mut State<'_, '_, '_>, link: &LinkKind<'_>) -> String {
+    link.to_string(
+        &LinkKindOptions {
+            base_uri: &state.statics.base_uri,
+            interwiki_map: &state.statics.db.config().interwiki_map,
+            paths: &state.statics.paths,
+        },
+        None,
+    )
 }
 
 /// Converts an image argument into a form suitable for use in an HTML
 /// attribute.
-fn to_attr<'a>(strip_markers: &StripMarkers, arg: Cow<'a, str>) -> Cow<'a, str> {
-    use html5gum::{DefaultEmitter, Spanned, Token, Tokenizer};
-
-    #[inline]
-    fn spacelike(c: char) -> bool {
-        c.is_ascii_whitespace()
-    }
-
-    const BLOCK: phf::Set<&[u8]> = phf::phf_set! {
-        b"address", b"article", b"aside", b"blockquote", b"br", b"canvas",
-        b"dd", b"div", b"dl", b"dt", b"fieldset", b"figcaption", b"figure",
-        b"footer", b"form", b"h1", b"h2", b"h3", b"h4", b"h5", b"h6", b"header",
-        b"hgroup", b"hr", b"li", b"main", b"nav", b"noscript", b"ol", b"output",
-        b"p", b"pre", b"section", b"table", b"td", b"tfoot", b"th", b"tr",
-        b"ul", b"video"
-    };
-
-    // In MediaWiki, text styles processing had already run on this content.
-    // In wiki.rs, it is still Wikitext, so needs to be stripped. But this has
-    // to happen before strip markers are unstripped since this thoughtlessness
-    // is not supposed to affect `<nowiki>`.
-    const STYLES: &[(&str, &str)] = &[("'''''", ""), ("'''", ""), ("''", "")];
-    let arg = arg
-        .map(|arg| strtr(arg, STYLES))
-        .map(|arg| strip_markers.unstrip_all(arg));
-
-    let mut out = String::new();
-    let mut flushed = 0;
-    let mut in_skip = 0_u32;
-    for token in Tokenizer::new_with_emitter(arg.as_ref(), DefaultEmitter::<usize>::new_with_span())
-    {
-        match token {
-            Ok(Token::StartTag(tag)) => {
-                out += &decode_html(&arg[flushed..tag.span.start]);
-                flushed = tag.span.end;
-
-                if matches!(tag.name.as_ref(), b"script" | b"style") {
-                    in_skip += u32::from(!tag.self_closing);
-                    continue;
-                }
-
-                if BLOCK.contains(tag.name.as_ref()) {
-                    out.push(' ');
-                }
-            }
-            Ok(Token::EndTag(tag)) => {
-                flushed = tag.span.end;
-
-                if matches!(tag.name.as_ref(), b"script" | b"style") {
-                    in_skip = in_skip.saturating_sub(1);
-                    continue;
-                }
-
-                if BLOCK.contains(tag.name.as_ref()) {
-                    out.push(' ');
-                }
-            }
-            Ok(
-                Token::Comment(Spanned { span, .. })
-                | Token::Doctype(Spanned { span, .. })
-                | Token::Error(Spanned { span, .. }),
-            ) => {
-                out += &decode_html(&arg[flushed..span.start]);
-                flushed = span.end;
-            }
-            Ok(Token::String(html)) => {
-                if in_skip == 0 {
-                    let text = decode_html(&arg[html.span.start..html.span.end]);
-                    if flushed != 0 || matches!(text, Cow::Owned(_)) {
-                        out += &text;
-                        flushed = html.span.end;
-                    }
-                } else {
-                    flushed = html.span.end;
-                }
-            }
-            Err(_) => {}
-        }
-    }
-
-    let attr = if flushed == 0 { arg } else { Cow::Owned(out) };
-
-    attr.map(|attr| normalize_whitespace::<true>(attr, spacelike, spacelike))
+fn to_attr<'a>(
+    state: &mut State<'_, '_, '_>,
+    sp: &'a StackFrame<'_>,
+    arg: &'a [Spanned<Token>],
+) -> Result<Cow<'a, str>> {
+    Ok(if let Some(text) = borrow_fastest(&sp.source, arg) {
+        Cow::Borrowed(text)
+    } else {
+        let mut document = Document::<ParseAttr>::new(());
+        document.adopt_tokens(state, sp, arg)?;
+        Cow::Owned(document.finish())
+    })
 }
+
+/// Elements which should be replaced by whitespace in an image attribute.
+const BLOCK: phf::Set<&UncasedStr> = phf::phf_set! {
+    UncasedStr::new("address"), UncasedStr::new("article"), UncasedStr::new("aside"),
+    UncasedStr::new("blockquote"), UncasedStr::new("br"),
+    UncasedStr::new("canvas"),
+    UncasedStr::new("dd"), UncasedStr::new("div"), UncasedStr::new("dl"), UncasedStr::new("dt"),
+    UncasedStr::new("fieldset"), UncasedStr::new("figcaption"), UncasedStr::new("figure"), UncasedStr::new("footer"), UncasedStr::new("form"),
+    UncasedStr::new("h1"), UncasedStr::new("h2"), UncasedStr::new("h3"), UncasedStr::new("h4"), UncasedStr::new("h5"), UncasedStr::new("h6"), UncasedStr::new("header"),
+    UncasedStr::new("hgroup"), UncasedStr::new("hr"),
+    UncasedStr::new("li"),
+    UncasedStr::new("main"),
+    UncasedStr::new("nav"), UncasedStr::new("noscript"),
+    UncasedStr::new("ol"), UncasedStr::new("output"),
+    UncasedStr::new("p"), UncasedStr::new("pre"),
+    UncasedStr::new("section"),
+    UncasedStr::new("table"), UncasedStr::new("td"), UncasedStr::new("tfoot"), UncasedStr::new("th"), UncasedStr::new("tr"),
+    UncasedStr::new("ul"),
+    UncasedStr::new("video")
+};

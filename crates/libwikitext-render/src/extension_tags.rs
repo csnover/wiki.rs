@@ -106,9 +106,7 @@
 use super::{
     Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
     document::{Document, ParseFully, ParseHalf},
-    eval_plugin,
-    image::{self, FrameKind},
-    preprocess_frame,
+    eval_plugin, image, preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     tags::ExternalLinkKind,
@@ -307,11 +305,17 @@ fn gallery(
 
     let class = arguments.get(state, "class")?.unwrap_or_default();
     let heights = arguments.get(state, "heights")?;
-
     let per_row = arguments.get(state, "perrow")?;
     let widths = arguments.get(state, "widths")?;
+
     let attrs = if per_row.is_some() || widths.is_some() {
-        let width = widths.map_or("1fr".into(), |widths| Cow::Owned(format!("{widths}px")));
+        let width = if let Some(widths) = widths
+            && let (Some(width), _) = image::parse_dims(&widths)
+        {
+            format!("{width}px").into()
+        } else {
+            Cow::Borrowed("1fr")
+        };
         let per_row = per_row.unwrap_or("auto-fill".into());
         format!(r#" style="grid-template-columns: repeat({per_row}, {width})""#)
     } else {
@@ -328,14 +332,12 @@ fn gallery(
     }
 
     let space = if class.is_empty() { "" } else { " " };
-    write!(
+    writeln!(
         out,
         r#"<ul class="gallery mw-gallery-{mode}{space}{class}"{attrs}>"#
     )?;
     for image in arguments.body().lines() {
-        let Some((target, rest)) = image.split_once('|') else {
-            continue;
-        };
+        let (target, rest) = image.split_once('|').unwrap_or((image, ""));
 
         let target = percent_encoding::percent_decode_str(target).decode_utf8_lossy();
         let Ok(title) = Title::new(state.statics.db.config(), &target, Some(Namespace::FILE))
@@ -348,8 +350,6 @@ fn gallery(
         let args = state.statics.parser.parse_gallery_media(&sp.source)?;
 
         let mut options = image::media_options(state, &sp, title, &args)?;
-        options.align.get_or_insert("none");
-        options.frame.get_or_insert(FrameKind::Thumb(None));
         if options.height.is_none()
             && let Some(Ok(height)) = heights.as_ref().map(|h| h.parse())
         {
@@ -359,7 +359,11 @@ fn gallery(
         let mut outline = <_>::default();
         let mut inner = Document::<ParseHalf<'_>>::new(&mut outline);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
-        write!(out, r#"<li class="gallerybox">{}</li>"#, inner.finish())?;
+        writeln!(
+            out,
+            "\t\t<li class=\"gallerybox\">\n\t\t\t{}\n\t\t</li>",
+            inner.finish()
+        )?;
     }
     write!(out, "</ul>")?;
 

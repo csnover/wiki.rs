@@ -230,7 +230,7 @@ impl Configuration {
     pub fn magic_word_matches<'a>(
         &self,
         alias: Cow<'a, str>,
-    ) -> Result<ExtraWordsMatch<'a, '_>, Cow<'a, str>> {
+    ) -> Result<ExtraWordsMatch<'a, 'static>, Cow<'a, str>> {
         if let Some(canonical) = self.extra_words.get(&alias).copied() {
             Ok((canonical, None))
         } else {

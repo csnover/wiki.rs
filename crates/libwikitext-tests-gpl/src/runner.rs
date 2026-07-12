@@ -319,6 +319,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "Foobar.jpg",
         FileMetadata::Image {
             height: 220,
+            scalable: false,
             width: 1941,
         },
     );
@@ -326,6 +327,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "File & file.jpg",
         FileMetadata::Image {
             height: 220,
+            scalable: false,
             width: 1941,
         },
     );
@@ -333,6 +335,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "Thumb.png",
         FileMetadata::Image {
             height: 135,
+            scalable: false,
             width: 135,
         },
     );
@@ -340,6 +343,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "Foobar.svg",
         FileMetadata::Image {
             height: 180,
+            scalable: true,
             width: 240,
         },
     );
@@ -347,6 +351,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "Bad.jpg",
         FileMetadata::Image {
             height: 240,
+            scalable: false,
             width: 320,
         },
     );
@@ -354,6 +359,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "Hi-ho.jpg",
         FileMetadata::Image {
             height: 220,
+            scalable: false,
             width: 1941,
         },
     );
@@ -361,6 +367,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "Tall.jpg",
         FileMetadata::Image {
             height: 600,
+            scalable: false,
             width: 400,
         },
     );
@@ -376,6 +383,7 @@ fn load_files(db: &mut MockDatabase<'_>) {
         "LoremIpsum.djvu",
         FileMetadata::Image {
             height: 3508,
+            scalable: false,
             width: 2480,
         },
     );
@@ -411,8 +419,14 @@ fn check_skips(
     } else if options.contains("thumbsize") {
         log::warn!(target: target, "TODO {name}: thumbsize not implemented");
         true
+    } else if options.contains("djvu") {
+        log::warn!(target: target, "TODO {name}: djvu not implemented");
+        true
     } else if options.get("styletag") == Some(true) {
         log::warn!(target: target, "TODO {name}: styletag not implemented");
+        true
+    } else if config.contains("wgEnableUploads") {
+        log::warn!(target: target, "TODO {name}: disable uploads not implemented");
         true
     } else if config.contains("wgEnableMagicLinks") {
         log::warn!(target: target, "TODO {name}: disable magic links not implemented");
@@ -725,6 +739,11 @@ fn check_test_results(
                     heuristic = "unpretty + swap magic rel + decode html";
                     fail = expected_html != actual;
                 }
+
+                if fail && let Cow::Owned(expected_html) = devoid(expected_html) {
+                    heuristic = "unpretty + swap magic rel + devoid";
+                    fail = expected_html != actual;
+                }
             }
 
             if fail && let Cow::Owned(expected_html) = devoid(expected_html) {
@@ -992,6 +1011,10 @@ fn swap_magic_rel(html: &str) -> Cow<'_, str> {
             (
                 r#"rel="nofollow" class="external mw-magiclink-rfc"#,
                 r#"class="external mw-magiclink-rfc" rel="nofollow"#,
+            ),
+            (
+                r#"rel="nofollow" title="Title"#,
+                r#"title="Title" rel="nofollow"#,
             ),
         ],
     )

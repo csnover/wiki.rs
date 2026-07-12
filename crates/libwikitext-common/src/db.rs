@@ -447,6 +447,8 @@ pub enum FileMetadata {
     Image {
         /// Image height.
         height: u32,
+        /// If true, a scalable vector image format.
+        scalable: bool,
         /// Image width.
         width: u32,
     },

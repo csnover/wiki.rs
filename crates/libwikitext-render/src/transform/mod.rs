@@ -235,7 +235,7 @@ fn flush_ws<S: Sink + ?Sized>(next: &mut S, mut ws: &str) {
 }
 
 /// Tokenises the given `html` and sends it to `next`.
-fn tokenise<S: Sink + ?Sized>(next: &mut S, html: &str) {
+pub(super) fn tokenise<S: Sink + ?Sized>(next: &mut S, html: &str) {
     use html5gum::{
         Span, Tokenizer,
         emitters::callback::{CallbackEmitter, CallbackEvent},

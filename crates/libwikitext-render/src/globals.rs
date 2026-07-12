@@ -1,10 +1,11 @@
 //! Collections for semi-structured article data.
 
+use super::{Error, Result};
 use core::fmt;
 use libmisc::to_ascii_lower;
 use libwikitext_common::{
     Messages,
-    db::DynDatabaseProvider,
+    db::DatabaseProvider,
     make_url,
     title::{Namespace, Title},
     url::Url,
@@ -13,7 +14,6 @@ use libwikitext_parse::HeadingLevel;
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap, HashSet},
-    sync::Arc,
 };
 
 /// A sorted set of categories which the article belongs to.
@@ -68,11 +68,11 @@ impl Categories {
     }
 
     /// Adds a tracking category using `messages` with the given `key`.
-    pub(super) fn tracking(
-        &mut self,
-        messages: &Messages<'_, Arc<dyn DynDatabaseProvider>>,
-        key: &str,
-    ) -> Result<(), super::Error> {
+    pub(super) fn tracking<Db>(&mut self, messages: &Messages<'_, Db>, key: &str) -> Result
+    where
+        Db: DatabaseProvider,
+        Error: From<Db::Error>,
+    {
         if let Some(tracking) = messages.get(key, None, true)?
             && tracking != "-"
         {
