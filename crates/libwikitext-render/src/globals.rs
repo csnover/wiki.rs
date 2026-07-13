@@ -202,7 +202,7 @@ impl core::fmt::Display for Outline {
             return Ok(());
         }
 
-        write!(f, r##"<ul><li><a href="#">(Top)</a></li>"##)?;
+        write!(f, r##"<ul><li><a href="#">(Top)</a>"##)?;
         let mut current = 2;
         for OutlineIterItem { html, id, level } in self.iter() {
             while current > u8::from(level) {
@@ -210,10 +210,10 @@ impl core::fmt::Display for Outline {
                 current -= 1;
             }
             while current < u8::from(level) {
-                write!(f, "<ul>")?;
+                write!(f, "<ul><li>")?;
                 current += 1;
             }
-            write!(f, r##"<li><a href="#{id}">{html}</a></li>"##)?;
+            write!(f, r##"<li><a href="#{id}">{html}</a>"##)?;
         }
         while current > 1 {
             write!(f, "</ul>")?;
