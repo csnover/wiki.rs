@@ -273,9 +273,12 @@ impl<S: Sink> DomTree<S> {
             // *should*, and there is no way to differentiate `<b><i><div>` from
             // `<b><i></i><div>` once folding has happened. The original parser
             // handles this by collecting everything, including block-level
-            // elements, into a `<mw:p-wrap>`, and then because it is building
-            // a whole-ass tree, will walk from the `<div>` up the tree until it
-            // finds either a split candidate or hits the `<mw:p-wrap>`.
+            // elements, into an ancestor `<mw:p-wrap>`; when a block-level
+            // element is inserted, it checks if there are any non-“empty”
+            // nodes in the wrapper, splits the tree, and only wraps the
+            // left-hand branch if the check was true, which only happens if
+            // some full elements or non-whitespace character data had been
+            // inserted in the past.
             let end = self.stack.next_non_pwrap(index);
             let reopen_end = self
                 .format
@@ -485,6 +488,13 @@ impl<S: Sink> DomTree<S> {
                     }
                     self.implied_end(None);
                     self.pop_inclusive(|node| *node == tag);
+                } else if tag != Tag::Blockquote {
+                    // This evicts whitespace in the area between mismatched
+                    // tags in the root to try to match the output of
+                    // `RemexCompatMunger`. Since this behaviour is expressed
+                    // through edge cases in the test suite it is unclear
+                    // whether this is actually the correct condition
+                    self.close_implicit_p(|tag| tag != Tag::P);
                 }
             }
             Tag::Br => {
