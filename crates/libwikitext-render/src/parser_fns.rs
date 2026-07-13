@@ -1124,17 +1124,22 @@ mod string {
     ) -> Result {
         let code = arguments
             .eval(state, 0)?
-            .map_or(state.statics.db.config().language.into(), trim);
-        let to_code = arguments.eval(state, 1)?.map(trim);
+            .map_or(state.statics.db.config().language.into(), |s| {
+                s.map_ref(str::trim).map(bcp47_to_lang)
+            });
+        let to_code = arguments
+            .eval(state, 1)?
+            .map(|s| s.map_ref(str::trim).map(bcp47_to_lang));
+
         let name = state
             .statics
             .db
             .config()
             .languages
-            .get(&to_ascii_lower(&code))
+            .get(&code)
             .map_or("", |lang| {
                 if let Some(to_code) = to_code {
-                    if to_code != "en" {
+                    if !to_code.starts_with("en") {
                         log::warn!("What? There are languages beyond English?");
                     }
                     lang.name

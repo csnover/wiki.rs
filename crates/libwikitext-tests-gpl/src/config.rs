@@ -192,7 +192,8 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
     language: "en",
     language_bcp47: phf::phf_map! {
         "ar" => 0,
-        "fa" => 1,
+        "de-x-formal" => 1,
+        "fa" => 2,
     },
     language_conversion_enabled: true,
     language_conversions: phf::phf_map! {},
@@ -202,6 +203,12 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             is_enabled: true,
             is_rtl: true,
             name: "Arabic",
+        },
+        "de-formal" => Language {
+            autonym: "Deutsch (Sie-Form)",
+            is_enabled: true,
+            is_rtl: false,
+            name : "German (formal address)",
         },
         "fa" => Language {
             autonym: "فارسی",
