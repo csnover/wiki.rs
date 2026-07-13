@@ -40,9 +40,10 @@ use prelude::*;
 pub fn init<Db, Sp>(vm: &mut Lua, db: &Messages<'_, Db>) -> Result<(), RuntimeError>
 where
     Db: DatabaseProvider + 'static,
+    Db::Error: core::error::Error + Send + Sync,
     RuntimeError: From<Db::Error>,
     Sp: HostFrame + 'static,
-    for<'a> VmError<'a>: From<Db::Error>,
+    for<'gc> VmError<'gc>: From<Db::Error>,
 {
     init_first(vm)?;
 
@@ -55,7 +56,7 @@ where
         mw_site::SiteLibrary<'_>,
         mw_uri::UriLibrary<'_, Db>,
         mw_ustring::UstringLibrary,
-        mw_language::LanguageLibrary<'_>,
+        mw_language::LanguageLibrary<'_, Db>,
         mw_message::MessageLibrary<'_, Db>,
         mw_title::TitleLibrary<Db>,
         mw_text::TextLibrary,

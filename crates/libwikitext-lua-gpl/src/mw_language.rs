@@ -13,42 +13,61 @@ use gc_arena::Rootable;
 use libmisc::{to_lower, to_upper};
 use libphp_rs::strval;
 use libwikitext_common::{
-    Messages, bcp47_to_lang, config::Configuration, db::DatabaseProvider, format_date_mediawiki,
-    format_number, parse_formatted_number, to_lower_first, to_upper_first,
+    FormatNumberError, Messages, bcp47_to_lang, db::DatabaseProvider, format_date_mediawiki,
+    parse_formatted_number, to_lower_first, to_upper_first,
 };
 use libwikitext_lua::WallTime;
 use piccolo::StashedString;
 
 /// The localisation support library.
 // TODO: Actually support all the languages.
-#[derive(gc_arena::Collect, Default)]
+#[derive(gc_arena::Collect)]
 #[collect(require_static)]
-pub struct LanguageLibrary<'db> {
-    /// The database configuration.
-    config: Cell<Option<&'db Configuration>>,
+pub struct LanguageLibrary<'dict, Db> {
     /// The content language code.
     ///
     /// This is held separately because this information is requested indirectly
-    /// by the module setup function so must be available before the `config`
+    /// by the module setup function so must be available before `messages`
     /// is set.
     // TODO: Try to get rid of this without making the config permanently
     // 'static.
     content_language_code: RefCell<Option<StashedString>>,
+    /// A reference to the message dictionary for the current locale.
+    messages: Cell<Option<&'dict Messages<'dict, Db>>>,
 }
 
-impl<'db> LanguageLibrary<'db> {
-    /// Gets the article database configuration.
-    fn config(&self) -> &'db Configuration {
-        self.config.get().unwrap()
-    }
-
-    /// Sets the article database configuration.
-    pub fn set_config(&self, config: &'db Configuration) {
-        self.config.set(Some(config));
+impl<Db> Default for LanguageLibrary<'_, Db> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            content_language_code: <_>::default(),
+            messages: <_>::default(),
+        }
     }
 }
 
-impl LanguageLibrary<'_> {
+impl<'dict, Db> LanguageLibrary<'dict, Db> {
+    /// Returns the message dictionary.
+    ///
+    /// # Panics
+    ///
+    /// * The dictionary is not set
+    #[inline]
+    fn messages(&self) -> &'dict Messages<'dict, Db> {
+        self.messages.get().unwrap()
+    }
+
+    /// Sets the message dictionary.
+    #[inline]
+    pub fn set_messages(&self, messages: &'dict Messages<'dict, Db>) {
+        self.messages.set(Some(messages));
+    }
+}
+
+impl<Db> LanguageLibrary<'_, Db>
+where
+    Db: DatabaseProvider,
+{
     mw_unimplemented! {
         caseFold = case_fold,
         convertGrammar = convert_grammar,
@@ -89,7 +108,7 @@ impl LanguageLibrary<'_> {
 
         Ok(VmString::from_static(
             &ctx,
-            if let Some(lang) = self.config().languages.get(code) {
+            if let Some(lang) = self.messages().db().config().languages.get(code) {
                 if let Some(to_code) = in_language {
                     if to_code != "en" {
                         log::warn!("What? There are languages beyond English?");
@@ -122,7 +141,7 @@ impl LanguageLibrary<'_> {
         let include = include.map(VmString::to_str).transpose()?;
 
         let names = Table::new(&ctx);
-        for (code, lang) in &self.config().languages {
+        for (code, lang) in &self.messages().db().config().languages {
             let add = match include {
                 Some("all") => true,
                 // TODO: Add more languages, I guess
@@ -180,17 +199,21 @@ impl LanguageLibrary<'_> {
         &self,
         ctx: Context<'gc>,
         (code, n, options): (VmString<'gc>, f64, Option<Table<'gc>>),
-    ) -> Result<VmString<'gc>, VmError<'gc>> {
-        if code != "en" {
-            log::warn!("formatNum({code:?}, {n:?}, {options:?})");
-        }
+    ) -> Result<VmString<'gc>, VmError<'gc>>
+    where
+        VmError<'gc>: From<FormatNumberError<Db::Error>>,
+    {
         let no_separators = if let Some(options) = options {
             options.get_value(ctx, "noCommafy").to_bool()
         } else {
             false
         };
 
-        Ok(ctx.intern(format_number(n, no_separators).as_bytes()))
+        Ok(ctx.intern(
+            self.messages()
+                .format_number(Some(code.to_str()?), n, no_separators)?
+                .as_bytes(),
+        ))
     }
 
     /// Returns the default language code for the wiki.
@@ -311,13 +334,15 @@ impl LanguageLibrary<'_> {
     ) -> Result<bool, VmError<'gc>> {
         // log::trace!("mw.language.isKnownLanguageTag({code:?})");
         let code = bcp47_to_lang(code.to_str()?);
-        Ok(self.config().languages.contains_key(&code))
+        Ok(self.messages().db().config().languages.contains_key(&code))
     }
 
     /// Returns true if the language with the given language code is written
     /// right-to-left.
     fn is_rtl<'gc>(&self, _: Context<'gc>, code: VmString<'gc>) -> Result<bool, VmError<'gc>> {
         Ok(self
+            .messages()
+            .db()
             .config()
             .languages
             .get(code.to_str()?)
@@ -399,7 +424,12 @@ impl LanguageLibrary<'_> {
     }
 }
 
-impl<'db: 'static> MwInterface for LanguageLibrary<'db> {
+impl<'db: 'static, Db> MwInterface for LanguageLibrary<'db, Db>
+where
+    Db: DatabaseProvider,
+    Db::Error: core::error::Error + Send + Sync,
+    for<'gc> VmError<'gc>: From<Db::Error>,
+{
     const CODE: &'static [u8] = include_bytes!("./modules/mw.language.lua");
     const NAME: &'static str = "mw.language";
 
@@ -433,9 +463,9 @@ impl<'db: 'static> MwInterface for LanguageLibrary<'db> {
         }
     }
 
-    fn setup<'gc, Db: DatabaseProvider>(
+    fn setup<'gc, SetupDb: DatabaseProvider>(
         &self,
-        messages: &Messages<'_, Db>,
+        messages: &Messages<'_, SetupDb>,
         ctx: Context<'gc>,
     ) -> Result<Table<'gc>, RuntimeError> {
         let lang = VmString::from_static(&ctx, messages.db().config().language);

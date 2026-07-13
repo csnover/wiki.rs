@@ -545,17 +545,21 @@ pub(crate) fn call_template(
         && callee.namespace().id == Namespace::MEDIAWIKI
         && let key = to_lower_first(callee.text())
     {
-        template = state.statics.messages.get(&key, None, false)?.map(|body| {
-            Arc::new(
-                Article::builder()
-                    .body(&body)
-                    .id(Article::UNSAVED_ID)
-                    .model("wikitext")
-                    .title(callee.key())
-                    .revision_id(Article::UNSAVED_ID)
-                    .build(),
-            )
-        });
+        template = state
+            .statics
+            .messages
+            .get_raw(&key, None, false)?
+            .map(|body| {
+                Arc::new(
+                    Article::builder()
+                        .body(&body)
+                        .id(Article::UNSAVED_ID)
+                        .model("wikitext")
+                        .title(callee.key())
+                        .revision_id(Article::UNSAVED_ID)
+                        .build(),
+                )
+            });
     }
 
     let Some(template) = template else {

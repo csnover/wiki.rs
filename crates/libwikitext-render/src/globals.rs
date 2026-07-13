@@ -73,7 +73,7 @@ impl Categories {
         Db: DatabaseProvider,
         Error: From<Db::Error>,
     {
-        if let Some(tracking) = messages.get(key, None, true)?
+        if let Some(tracking) = messages.get_raw(key, None, true)?
             && tracking != "-"
         {
             let title = Title::new(messages.db().config(), &tracking, Some(Namespace::CATEGORY))?;

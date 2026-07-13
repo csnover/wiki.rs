@@ -17,7 +17,6 @@ use either::Either;
 use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
 use libwikitext_common::{
-    format_message,
     title::{Namespace, Title},
     title_decode,
 };
@@ -623,11 +622,14 @@ where
             }
             MagicLink::Pmid(id) => {
                 let url =
-                    format_message(&state.statics.messages, None, true, ["pubmedurl"], |key| {
-                        Ok::<_, Error>(
-                            (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
-                        )
-                    })?;
+                    state
+                        .statics
+                        .messages
+                        .format_message(None, true, ["pubmedurl"], |key| {
+                            Ok::<_, Error>(
+                                (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
+                            )
+                        })?;
                 let link = LinkKind::External(url, ExternalLinkKind::MagicPmid);
                 (
                     link,
@@ -636,11 +638,14 @@ where
                 )
             }
             MagicLink::Rfc(id) => {
-                let url = format_message(&state.statics.messages, None, true, ["rfcurl"], |key| {
-                    Ok::<_, Error>(
-                        (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
-                    )
-                })?;
+                let url = state
+                    .statics
+                    .messages
+                    .format_message(None, true, ["rfcurl"], |key| {
+                        Ok::<_, Error>(
+                            (key == "1").then_some(Cow::Borrowed(&sp.source[id.into_range()])),
+                        )
+                    })?;
                 let link = LinkKind::External(url, ExternalLinkKind::MagicRfc);
                 (
                     link,

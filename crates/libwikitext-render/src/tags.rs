@@ -198,7 +198,7 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
                 if let Some(message) = state
                     .statics
                     .messages
-                    .get("red-link-title", None, true)
+                    .get_raw("red-link-title", None, true)
                     .ok()
                     .flatten()
                 {

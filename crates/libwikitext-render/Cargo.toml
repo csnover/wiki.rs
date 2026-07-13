@@ -14,6 +14,7 @@ barely-css.workspace = true
 bitflags.workspace = true
 easytimeline.workspace = true
 either.workspace = true
+fixed_decimal.workspace = true
 gc-arena.workspace = true
 html-escape.workspace = true
 html5gum.workspace = true

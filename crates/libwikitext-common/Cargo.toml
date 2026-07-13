@@ -10,7 +10,11 @@ workspace = true
 
 [dependencies]
 fancy-regex.workspace = true
+fixed_decimal.workspace = true
 html-escape.workspace = true
+icu_decimal.workspace = true
+icu_locale.workspace = true
+icu_provider.workspace = true
 indexmap.workspace = true
 libmisc.workspace = true
 libphp-rs.workspace = true

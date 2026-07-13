@@ -31,7 +31,7 @@ pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
 use libmisc::CowExt as _;
 use libphp_rs::DateTime;
 use libwikitext_common::{
-    Messages,
+    FormatMessageError, FormatNumberError, Messages,
     config::Configuration,
     db::{Article, BoxedDbError, DynDatabaseProvider, resolve_redirects},
     lru_limiter::ByMemoryUsage,
@@ -435,6 +435,10 @@ pub enum Error {
         err: Box<Self>,
     },
 
+    /// An error occurred parsing a decimal string.
+    #[error(transparent)]
+    ParseDecimal(#[from] fixed_decimal::ParseError),
+
     /// An error occurred parsing a floating point number.
     #[error(transparent)]
     ParseFloat(#[from] core::num::ParseFloatError),
@@ -481,6 +485,33 @@ pub enum Error {
     /// An error occurred parsing a [`Title`].
     #[error(transparent)]
     Title(#[from] libwikitext_common::title::Error),
+}
+
+impl<DbError> From<FormatNumberError<DbError>> for Error
+where
+    BoxedDbError: From<DbError>,
+{
+    fn from(value: FormatNumberError<DbError>) -> Self {
+        match value {
+            FormatNumberError::Database(err) => Self::Database(err.into()),
+            FormatNumberError::Decimal(err) => Self::ParseDecimal(err),
+            FormatNumberError::IcuData(err) => Self::IcuData(err),
+            FormatNumberError::IcuLocale(err) => Self::IcuLocale(err),
+        }
+    }
+}
+
+impl<DbError, UserError> From<FormatMessageError<DbError, UserError>> for Error
+where
+    BoxedDbError: From<DbError>,
+    Self: From<UserError>,
+{
+    fn from(value: FormatMessageError<DbError, UserError>) -> Self {
+        match value {
+            FormatMessageError::Database(err) => Self::Database(err.into()),
+            FormatMessageError::User(err) => err.into(),
+        }
+    }
 }
 
 /// Page rendering strategy.

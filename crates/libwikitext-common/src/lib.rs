@@ -9,11 +9,40 @@ pub mod url;
 use core::{fmt::Write as _, iter};
 use db::DatabaseProvider;
 use html_escape::NAMED_ENTITIES;
+use icu_decimal::{input::Decimal, options::GroupingStrategy};
 use libmisc::{CowExt as _, to_ascii_lower, to_ascii_upper};
-use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, strval, ucfirst};
+use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, ucfirst};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 use uncased::UncasedStr;
+
+/// A message formatting error.
+#[derive(Debug, thiserror::Error)]
+pub enum FormatMessageError<Db, Cb> {
+    /// The database goofed.
+    #[error(transparent)]
+    Database(Db),
+    /// The user callback goofed.
+    #[error(transparent)]
+    User(Cb),
+}
+
+/// A number formatting error.
+#[derive(Debug, thiserror::Error)]
+pub enum FormatNumberError<Db> {
+    /// The database goofed.
+    #[error(transparent)]
+    Database(Db),
+    /// A decimal string was not decimal enough.
+    #[error(transparent)]
+    Decimal(#[from] fixed_decimal::ParseError),
+    /// ICU4X was sad about retrieving data.
+    #[error(transparent)]
+    IcuData(#[from] icu_provider::DataError),
+    /// ICU4X was sad about parsing a locale name.
+    #[error(transparent)]
+    IcuLocale(#[from] icu_locale::ParseError),
+}
 
 /// An i18n message library.
 pub struct Messages<'a, Db> {
@@ -51,32 +80,6 @@ where
     /// # Errors
     ///
     /// * the database broke
-    pub fn find<I, R>(
-        &self,
-        keys: I,
-        lang: Option<&str>,
-        use_db: bool,
-    ) -> Result<Option<Cow<'a, str>>, Db::Error>
-    where
-        I: IntoIterator<Item = R>,
-        R: AsRef<str> + Default,
-    {
-        for key in keys {
-            if let message @ Some(_) = self.get(key.as_ref(), lang, use_db)? {
-                return Ok(message);
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Returns a reference to the first message that exists with a
-    /// corresponding key from `keys` for the given MediaWiki language code
-    /// `lang`, or for the default language if `lang` is `None`.
-    ///
-    /// # Errors
-    ///
-    /// * the database broke
     pub fn find_or_default<I, R>(
         &self,
         keys: I,
@@ -89,7 +92,7 @@ where
     {
         let mut last = R::default();
         for key in keys {
-            if let Some(message) = self.get(key.as_ref(), lang, use_db)? {
+            if let Some(message) = self.get_raw(key.as_ref(), lang, use_db)? {
                 return Ok(message);
             }
             last = key;
@@ -100,6 +103,68 @@ where
         Ok(format!("⧼{last}⧽").into())
     }
 
+    /// Finds the first valid message from the list of keys given in `keys` and
+    /// returns that message, formatted using `cb` to replace any `$N`
+    /// placeholders. If `cb` returns `None`, no replacement occurs.
+    ///
+    /// If the message is not found, returns a not-found string.
+    ///
+    /// # Errors
+    ///
+    /// * `callback` returns an error
+    pub fn format_message<'c, F, I, R, E>(
+        &self,
+        lang: Option<&str>,
+        use_db: bool,
+        keys: I,
+        callback: F,
+    ) -> Result<Cow<'a, str>, FormatMessageError<Db::Error, E>>
+    where
+        F: FnMut(&str) -> Result<Option<Cow<'c, str>>, E>,
+        I: IntoIterator<Item = R>,
+        R: AsRef<str> + Default,
+    {
+        let message = self
+            .find_or_default(keys, lang, use_db)
+            .map_err(FormatMessageError::Database)?;
+        message
+            .try_map(|message| format_raw_message(message, callback))
+            .map_err(FormatMessageError::User)
+    }
+
+    /// Formats a number similar to [`number_format`](https://php.net/number_format).
+    ///
+    /// # Errors
+    ///
+    /// * `messages` returns an error
+    pub fn format_number(
+        &self,
+        lang: Option<&str>,
+        n: f64,
+        no_separators: bool,
+    ) -> Result<Cow<'_, str>, FormatNumberError<Db::Error>> {
+        Ok(match n {
+            f64::INFINITY => Cow::Borrowed("∞"),
+            f64::NEG_INFINITY => Cow::Borrowed("\u{2212}∞"),
+            n if n.is_nan() => self
+                .find_or_default(["formatnum-nan"], lang, true)
+                .map_err(FormatNumberError::Database)?,
+            n => {
+                let lang = lang.unwrap_or_else(|| self.db().config().language);
+                let locale = lang_to_bcp47(lang).parse::<icu_locale::Locale>()?;
+                let grouping = if no_separators {
+                    GroupingStrategy::Never
+                } else {
+                    <_>::default()
+                };
+                let fmt = icu_decimal::DecimalFormatter::try_new(locale.into(), grouping.into())?;
+                let v = Decimal::try_from_f64(n, fixed_decimal::FloatPrecision::RoundTrip)
+                    .map_err(|_| fixed_decimal::ParseError::Limit)?;
+                Cow::Owned(fmt.format(&v).to_string())
+            }
+        })
+    }
+
     /// Returns a reference to the message with the corresponding `key` for the
     /// given MediaWiki language code `lang`, or for the default language if
     /// `lang` is `None`.
@@ -107,7 +172,7 @@ where
     /// # Errors
     ///
     /// * the database broke
-    pub fn get(
+    pub fn get_raw(
         &self,
         key: &str,
         lang: Option<&str>,
@@ -419,67 +484,6 @@ pub fn format_date_mediawiki(
     };
 
     date.into_offset(tz)?.format(format).map_err(Into::into)
-}
-
-/// Finds the first valid message from the list of keys given in `keys` and
-/// returns that message, formatted using `cb` to replace any `$N` placeholders.
-/// If `cb` returns `None`, no replacement occurs.
-///
-/// If the message is not found, returns a not-found string.
-///
-/// # Errors
-///
-/// * `callback` returns an error
-pub fn format_message<'m, 'c, F, I, R, E, D>(
-    messages: &Messages<'m, D>,
-    lang: Option<&str>,
-    use_db: bool,
-    keys: I,
-    callback: F,
-) -> Result<Cow<'m, str>, E>
-where
-    F: FnMut(&str) -> Result<Option<Cow<'c, str>>, E>,
-    I: IntoIterator<Item = R>,
-    R: AsRef<str> + Default,
-    E: From<D::Error>,
-    D: DatabaseProvider,
-{
-    let message = messages.find_or_default(keys, lang, use_db)?;
-    message.try_map(|message| format_raw_message(message, callback))
-}
-
-/// Formats a number similar to [`number_format`](https://php.net/number_format).
-#[must_use]
-pub fn format_number(n: f64, no_separators: bool) -> Cow<'static, str> {
-    match n {
-        f64::INFINITY => Cow::Borrowed("∞"),
-        f64::NEG_INFINITY => Cow::Borrowed("\u{2212}∞"),
-        n if n.is_nan() => Cow::Borrowed("Not a number"),
-        n => {
-            let f = strval(n);
-            if no_separators {
-                Cow::Owned(f)
-            } else {
-                let (n, d) = f.split_once('.').unwrap_or((&f, ""));
-                let mut out = String::new();
-                for chunk in n.as_bytes().rchunks(3).rev() {
-                    if !out.is_empty() {
-                        out.push(',');
-                    }
-                    // SAFETY: The chunk string is a Rust-formatted f64 which
-                    // contains only ASCII characters.
-                    out += unsafe { str::from_utf8_unchecked(chunk) };
-                }
-                if !d.is_empty() {
-                    out.push('.');
-                    // SAFETY: The chunk string is a Rust-formatted f64 which
-                    // contains only ASCII characters.
-                    out += unsafe { str::from_utf8_unchecked(d.as_bytes()) };
-                }
-                Cow::Owned(out)
-            }
-        }
-    }
 }
 
 /// Formats a message, using `callback` to replace any `$N` placeholders in the

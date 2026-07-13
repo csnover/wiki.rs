@@ -1,6 +1,7 @@
 //! Functions for handling strip markers.
 
 use super::{MARKER_PREFIX, MARKER_SUFFIX};
+use core::convert::Infallible;
 use memchr::memmem;
 use std::{borrow::Cow, sync::LazyLock};
 
@@ -8,36 +9,14 @@ use std::{borrow::Cow, sync::LazyLock};
 ///
 /// The callback should return `Some(string)` if it wants to replace the
 /// text run, or `None` if it wants the text to be kept as-is.
+#[expect(clippy::missing_panics_doc, reason = "cannot panic")]
+#[inline]
 #[must_use]
 pub fn for_each_non_marker<'a, F>(body: &'a str, mut f: F) -> Cow<'a, str>
 where
     F: FnMut(&'a str) -> Option<Cow<'a, str>>,
 {
-    let mut out = String::new();
-    let mut flushed = 0;
-    let mut cursor = 0;
-
-    while cursor != body.len() {
-        let end = FIND_PREFIX
-            .find(&body.as_bytes()[cursor..])
-            .map_or(body.len(), |pos| cursor + pos);
-        if let Some(replacement) = f(&body[cursor..end]) {
-            out += &body[flushed..cursor];
-            out += &replacement;
-            flushed = end;
-        }
-
-        cursor = FIND_SUFFIX
-            .find(&body.as_bytes()[end..])
-            .map_or(body.len(), |pos| end + pos + MARKER_SUFFIX.len());
-    }
-
-    if flushed == 0 {
-        Cow::Borrowed(body)
-    } else {
-        out += &body[flushed..];
-        Cow::Owned(out)
-    }
+    try_for_each_non_marker(body, |marker| Ok::<_, Infallible>(f(marker))).unwrap()
 }
 
 /// Invokes callback `f` for each strip marker index in the given text.
@@ -99,6 +78,45 @@ pub fn key_index(key: &str) -> usize {
 #[must_use]
 pub fn kill(body: &str) -> Cow<'_, str> {
     for_each_marker_key(body, |_| Some("".into()))
+}
+
+/// Invokes callback `f` for each run of text delimited by strip markers.
+///
+/// The callback should return `Some(string)` if it wants to replace the
+/// text run, or `None` if it wants the text to be kept as-is.
+///
+/// # Errors
+///
+/// * `f` returns an error
+pub fn try_for_each_non_marker<'a, E, F>(body: &'a str, mut f: F) -> Result<Cow<'a, str>, E>
+where
+    F: FnMut(&'a str) -> Result<Option<Cow<'a, str>>, E>,
+{
+    let mut out = String::new();
+    let mut flushed = 0;
+    let mut cursor = 0;
+
+    while cursor != body.len() {
+        let end = FIND_PREFIX
+            .find(&body.as_bytes()[cursor..])
+            .map_or(body.len(), |pos| cursor + pos);
+        if let Some(replacement) = f(&body[cursor..end])? {
+            out += &body[flushed..cursor];
+            out += &replacement;
+            flushed = end;
+        }
+
+        cursor = FIND_SUFFIX
+            .find(&body.as_bytes()[end..])
+            .map_or(body.len(), |pos| end + pos + MARKER_SUFFIX.len());
+    }
+
+    Ok(if flushed == 0 {
+        Cow::Borrowed(body)
+    } else {
+        out += &body[flushed..];
+        Cow::Owned(out)
+    })
 }
 
 /// A precomputed finder for [`MARKER_PREFIX`].

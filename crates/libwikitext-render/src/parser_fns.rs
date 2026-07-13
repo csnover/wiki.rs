@@ -27,13 +27,13 @@ use icu_datetime::provider::{
     semantic_skeletons::marker_attrs::{ABBR_STANDALONE, WIDE_STANDALONE},
 };
 use icu_provider::DataIdentifierBorrowed;
-use libmisc::{CowExt as _, to_ascii_lower, to_lower, to_upper};
+use libmisc::{CowExt as _, to_lower, to_upper};
 use libphp_rs::{floatval, fuzzy_cmp, intval, strtr};
 use libwikitext_common::{
-    AnchorEncodeMode,
+    AnchorEncodeMode, Messages, bcp47_to_lang,
     config::Configuration,
-    db::{Article, DatabaseProvider as _, fetch},
-    decode_html, format_date_mediawiki, format_number, format_raw_message, lang_to_bcp47, make_url,
+    db::{Article, BoxedDbError, DatabaseProvider, fetch},
+    decode_html, format_date_mediawiki, format_raw_message, lang_to_bcp47, make_url,
     parse_formatted_number,
     title::{Namespace, Title},
     url::Url,
@@ -540,7 +540,14 @@ mod page {
             let no_separators = arguments
                 .eval(state, 1)?
                 .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
-            write!(out, "{}", format_number(page_size as f64, no_separators))?;
+            write!(
+                out,
+                "{}",
+                state
+                    .statics
+                    .messages
+                    .format_number(None, page_size as f64, no_separators)?
+            )?;
         }
         Ok(())
     }
@@ -823,7 +830,11 @@ mod site {
         write!(
             out,
             "{}",
-            format_number(state.statics.db.len() as f64, no_separators)
+            state.statics.messages.format_number(
+                None,
+                state.statics.db.len() as f64,
+                no_separators
+            )?
         )?;
         Ok(())
     }
@@ -838,7 +849,14 @@ mod site {
             let no_separators = arguments
                 .eval(state, 1)?
                 .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
-            write!(out, "{}", format_number(0.0, no_separators))?;
+            write!(
+                out,
+                "{}",
+                state
+                    .statics
+                    .messages
+                    .format_number(None, 0.0, no_separators)?
+            )?;
         }
 
         Ok(())
@@ -1001,7 +1019,14 @@ mod string {
         }
 
         /// Formats a numeric string.
-        fn format_part(flags: Flags) -> impl Fn(&str) -> Option<Cow<'_, str>> {
+        fn format_part<Db>(
+            messages: &Messages<'_, Db>,
+            flags: Flags,
+        ) -> impl Fn(&str) -> Result<Option<Cow<'_, str>>, Error>
+        where
+            Db: DatabaseProvider,
+            BoxedDbError: From<Db::Error>,
+        {
             move |mut s| {
                 let no_separators = flags.contains(Flags::NO_SEPARATORS);
                 let lossless = flags.contains(Flags::LOSSLESS);
@@ -1014,7 +1039,7 @@ mod string {
                 let mut out = String::new();
                 while !s.is_empty() {
                     if let Ok((n, rest)) = floatval(s) {
-                        let formatted = super::format_number(n, no_separators);
+                        let formatted = messages.format_number(None, n, no_separators)?;
                         if lossless
                             && let original = &s[..s.len() - rest.len()]
                             && parse_formatted_number(&formatted) != original
@@ -1030,7 +1055,7 @@ mod string {
                         s = &s[c.len_utf8()..];
                     }
                 }
-                Some(out.into())
+                Ok(Some(out.into()))
             }
         }
 
@@ -1055,7 +1080,7 @@ mod string {
                     parse_formatted_number(s).owned().map(Into::into)
                 })
             } else {
-                strip::for_each_non_marker(&n, format_part(flags))
+                strip::try_for_each_non_marker(&n, format_part(&state.statics.messages, flags))?
             };
 
             write!(out, "{value}")?;

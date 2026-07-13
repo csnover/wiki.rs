@@ -8,8 +8,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use super::prelude::*;
-use core::cell::Cell;
-use libwikitext_common::{Messages, db::DatabaseProvider, format_message, format_raw_message};
+use core::{cell::Cell, convert::Infallible};
+use libwikitext_common::{FormatMessageError, Messages, db::DatabaseProvider, format_raw_message};
 use std::borrow::Cow;
 
 /// The internationalisation support library.
@@ -49,7 +49,6 @@ impl<'dict, Db> MessageLibrary<'dict, Db> {
 impl<'dict, Db> MessageLibrary<'dict, Db>
 where
     Db: DatabaseProvider,
-    for<'gc> VmError<'gc>: From<Db::Error>,
 {
     /// Checks whether a messages or sequence of messages exist, are blank, or
     /// are disabled.
@@ -65,14 +64,17 @@ where
         &self,
         ctx: Context<'gc>,
         (what, data): (VmString<'gc>, Table<'gc>),
-    ) -> Result<bool, VmError<'gc>> {
+    ) -> Result<bool, VmError<'gc>>
+    where
+        VmError<'gc>: From<Db::Error>,
+    {
         let message = if let Ok(s) = data.get::<_, VmString<'_>>(ctx, "rawMessage") {
             Some(Cow::Borrowed(s.to_str()?))
         } else {
             let (keys, lang, use_db) = message_options(ctx, data)?;
             let mut message = None;
             for key in keys {
-                message = self.messages().get(key, lang, use_db)?;
+                message = self.messages().get_raw(key, lang, use_db)?;
                 if message.is_some() {
                     break;
                 }
@@ -102,6 +104,7 @@ where
     fn plain<'gc>(&self, ctx: Context<'gc>, data: Table<'gc>) -> Result<VmString<'gc>, VmError<'gc>>
     where
         'dict: 'gc,
+        VmError<'gc>: From<FormatMessageError<Db::Error, Infallible>>,
     {
         let params = data
             .get::<_, Table<'_>>(ctx, "params")
@@ -109,18 +112,21 @@ where
 
         let replacer = |key: &str| {
             let key = key.parse::<i64>().unwrap();
-            Ok(params
-                .get::<_, VmString<'_>>(ctx, key)
-                .ok()
-                .and_then(|s| s.to_str().ok())
-                .map(Cow::Borrowed))
+            Ok::<_, Infallible>(
+                params
+                    .get::<_, VmString<'_>>(ctx, key)
+                    .ok()
+                    .and_then(|s| s.to_str().ok())
+                    .map(Cow::Borrowed),
+            )
         };
 
         let message = if let Ok(message) = data.get::<_, VmString<'_>>(ctx, "rawMessage") {
             format_raw_message(message.to_str()?, replacer)?
         } else {
             let (keys, lang, use_db) = message_options(ctx, data)?;
-            format_message(self.messages(), lang, use_db, keys, replacer)?
+            self.messages()
+                .format_message(lang, use_db, keys, replacer)?
         };
 
         Ok(ctx.intern(message.as_bytes()))
@@ -151,6 +157,7 @@ fn message_options<'gc>(
 impl<'dict: 'static, Db> MwInterface for MessageLibrary<'dict, Db>
 where
     Db: DatabaseProvider,
+    Db::Error: core::error::Error + Send + Sync,
     for<'gc> VmError<'gc>: From<Db::Error>,
 {
     const CODE: &'static [u8] = include_bytes!("./modules/mw.message.lua");
