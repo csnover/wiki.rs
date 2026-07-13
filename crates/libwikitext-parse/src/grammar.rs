@@ -495,7 +495,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///   ^^^^^^
     /// ```
     rule list_part() -> Spanned<Token>
-    = !rtrim_term() t:(inline_dd() / inline()) { t }
+      // Whitespace preceding a category at the end of a list item needs to
+      // migrate into the category since it is trailing whitespace for the list
+      // item once the category is removed
+    = spanned(<space_s()* t:wikilink_category() &rtrim_term() { t.node }>)
+    / !rtrim_term() t:(inline_dd() / inline()) { t }
     / wikilink_category()
 
     /// The end of a list item. If `Some`, the next line is also a list item.
