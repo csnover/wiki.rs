@@ -6,6 +6,7 @@ use super::{
     image::make_media_url,
     transform::Sink,
 };
+use core::convert::Infallible;
 use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode,
@@ -50,7 +51,7 @@ pub(super) fn render_external_link<S: DocumentSink>(
             ExternalLinkKind::Text
         },
     );
-    render_start_link(&mut out.next, state, &link);
+    render_start_link(&mut out.next, state, &link, false);
     if auto_link {
         out.next.text(decode_raw_url(&target).as_str());
     } else if content.is_empty() {
@@ -134,7 +135,7 @@ pub(super) fn render_internal_link<S: DocumentSink>(
         }
         out.next.tag_start_end("a");
     } else {
-        render_start_link(&mut out.next, state, &LinkKind::Internal(title));
+        render_start_link(&mut out.next, state, &LinkKind::Internal(title), false);
     }
 
     out.adopt_tokens(state, sp, prefix)?;
@@ -153,6 +154,7 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
     out: &mut W,
     state: &mut State<'_, '_, '_>,
     link: &LinkKind<'_>,
+    for_image: bool,
 ) {
     let (missing, query) = if let LinkKind::Internal(title) = link
         && title.interwiki().is_none()
@@ -195,14 +197,17 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
             out.tag_attribute_full("href", href);
             if missing {
                 out.tag_attribute_full("class", "new");
-                if let Some(message) = state
-                    .statics
-                    .messages
-                    .get_raw("red-link-title", None, true)
-                    .ok()
-                    .flatten()
+                if for_image {
+                    out.tag_attribute_full("title", title.key());
+                } else if let Ok(title) =
+                    state
+                        .statics
+                        .messages
+                        .format_message(None, true, ["red-link-title"], |key| {
+                            Ok::<_, Infallible>((key == "1").then(|| title.key().into()))
+                        })
                 {
-                    out.tag_attribute_full("title", &message.replace("$1", title.key()));
+                    out.tag_attribute_full("title", &title);
                 }
             } else if title.namespace().id == Namespace::MEDIA {
                 out.tag_attribute_full("class", "internal");

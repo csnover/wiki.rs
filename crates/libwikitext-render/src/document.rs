@@ -660,7 +660,7 @@ where
             .categories
             .tracking(&state.statics.messages, tracking)?;
 
-        tags::render_start_link(&mut self.next, state, &link);
+        tags::render_start_link(&mut self.next, state, &link, false);
         self.next.text(&content);
         self.next.tag_end("a");
         Ok(())

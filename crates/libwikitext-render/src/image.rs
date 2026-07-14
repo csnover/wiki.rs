@@ -877,18 +877,17 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
             }
         }
     } else {
-        // TODO: This link is supposed to go to special page "Upload" and have
-        // title.text() as title attr
         super::tags::render_start_link(
             &mut out.next,
             state,
             &LinkKind::Internal(options.title.clone()),
+            true,
         );
         out.next.tag_start("span");
         out.next
             .tag_attribute_full("class", "mw-file-element mw-broken-media");
         out.next.tag_start_end("span");
-        if let Some(alt) = &options.alt {
+        if let Some(alt) = &options.alt() {
             out.next.text(alt);
         } else {
             out.next.text(options.title.prefixed_text());
