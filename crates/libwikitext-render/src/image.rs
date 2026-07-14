@@ -529,22 +529,22 @@ fn option_arg<'s>(
     state: &mut State<'_, '_, '_>,
     sp: &'s StackFrame<'s>,
     options: &mut Options<'s>,
-    raw_value: &'s Spanned<Argument>,
+    raw_arg: &'s Spanned<Argument>,
     key: &[&str],
     arg: Cow<'s, str>,
 ) -> Result {
     if key.contains(&"img_alt") {
-        options.alt = Some(to_attr(state, sp, raw_value.value())?);
+        options.alt = Some(to_attr(state, sp, raw_arg.value())?);
     } else if key.contains(&"img_class") {
-        options.class = Some(to_attr(state, sp, raw_value.value())?);
+        options.class = Some(to_attr(state, sp, raw_arg.value())?);
     } else if key.contains(&"img_lang") {
         if icu_locale::LanguageIdentifier::try_from_str(&arg).is_ok() {
             options.lang = Some(arg);
         } else {
-            option_caption(state, sp, options, raw_value)?;
+            option_caption(state, sp, options, raw_arg)?;
         }
     } else if key.contains(&"img_link") {
-        let arg = to_attr(state, sp, raw_value.value())?;
+        let arg = to_attr(state, sp, raw_arg.value())?;
         let config = &state.statics.db.config();
         options.link = if arg.is_empty() {
             Link::None
@@ -552,15 +552,16 @@ fn option_arg<'s>(
             // TODO: This is supposed to match like the `url_term` grammar
             // rule
             Link::Custom(LinkKind::External(arg, tags::ExternalLinkKind::Text))
+        } else if let Ok(title) = Title::new(config, &url_decode(&arg), None) {
+            Link::Custom(LinkKind::Internal(title))
         } else {
-            Title::new(config, &url_decode(&arg), None)
-                .map_or(Link::None, |title| Link::Custom(LinkKind::Internal(title)))
+            return option_caption(state, sp, options, raw_arg);
         };
     } else if key.contains(&"img_lossy") {
         options.lossy = Some(arg != "false");
     } else if key.contains(&"img_manualthumb") {
         if options.frame.is_none() {
-            let title = to_attr(state, sp, raw_value.value())?;
+            let title = to_attr(state, sp, raw_arg.value())?;
             let title = Title::new(state.statics.db.config(), &title, Some(Namespace::FILE))?;
             options.frame = Some(FrameKind::Thumb(Some(title)));
         }
