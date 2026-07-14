@@ -1144,7 +1144,8 @@ Image with nested tables in caption
 <tr>
 <td>
 <table>
-<tr><td>z
+<tr>
+<td>z
 </td></tr></table>
 </td></tr></table>
 </figcaption></figure>
@@ -1846,6 +1847,18 @@ and some more text.]]
 <tr>
 <td>Foo1</td>
 <td>Bar1</td></tr></tbody></table>and some more text.</figcaption></figure>
+!! html/wiki.rs # This output matches the PHP parser, minus the tbody and XHTML and whitespace
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/200px-Foobar.jpg" decoding="async" width="200" height="23" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/300px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/400px-Foobar.jpg 2x"></a><figcaption>This is an example image thumbnail caption with a table
+<table>
+<tr>
+<th>Foo</th>
+<th>Bar
+</th></tr>
+<tr>
+<td>Foo1</td>
+<td>Bar1
+</td></tr></table>
+and some more text.</figcaption></figure>
 !! end
 
 !! test

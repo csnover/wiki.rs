@@ -31,58 +31,67 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
 
     /// Parses all lines of a preprocessed Wikitext document.
     pub rule start() -> Vec<Spanned<Token>>
-    = first:(
-        // In WikitextContentHandler, redirect is just sliced off the front
-        // without any care for line position, which means that if there had
-        // been more stuff on the redirect line, that more stuff becomes the
-        // first line even if it does not match `at_sol`
-        r:redirect()
-        l:(line() / eof() { vec![] })
-        { iter::once(r).chain(reduce_tree(balance_quotes(l))) }
-      )?
-      rest:(&at_sol() t:line() { reduce_tree(balance_quotes(t)) })*
+      // In WikitextContentHandler, redirect is just sliced off the front
+      // without any care for line position, which means that if there had
+      // been more stuff on the redirect line, that more stuff becomes the
+      // first line even if it does not match `at_sol`
+    = first:redirect_line()?
+      rest:(&at_sol() l:balanced_line() { l })*
     {
         let rest = rest.into_iter().flatten();
         first.into_iter().flatten().chain(rest).collect()
     }
 
+    /// A whole-line expression starting with a redirect directive.
+    ///
+    /// ```wikitext
+    /// #REDIRECT [[Foo]] extra stuff
+    /// ```
+    rule redirect_line() -> Vec<Spanned<Token>>
+    = r:redirect()
+      l:(balanced_line() / eof() { vec![] })
+    { iter::once(r).chain(l).collect() }
+
+    /// A whole-line expression whose text style tokens are balanced.
+    rule balanced_line() -> Vec<Spanned<Token>>
+    = l:line() { reduce_tree(balance_quotes(l)) }
+
     /// Whole-line expressions.
     rule line() -> Vec<Spanned<Token>>
     = comment_block()
-    / t:table() ie:line_after_table()?
-      { t.into_iter().chain(ie.into_iter().flatten()).collect() }
-    / list()
-    / hr_line()
-      // The parser needs to act as if comments are stripped, even if they are
-      // not, for these expressions to match
-    / c:(behavior_switch() / comment_tag())* t:space_sensitive_line() n:line_eol()
+    / table_line(<line_eol()>)
+    / list_line()
+    / hr_line(<line_eol()>)
+    / heading_line()
+    / inline_line()
+
+    /// A whole-line heading expression.
+    rule heading_line() -> Vec<Spanned<Token>>
+    = c:(behavior_switch() / comment_tag())* t:heading() n:line_eol()
     { c.into_iter().chain(iter::once(t)).chain(n).collect() }
-    / i:inline()+ n:line_eol()
+
+    /// A whole line of inline expressions.
+    rule inline_line() -> Vec<Spanned<Token>>
+    = i:inline()+ n:line_eol()
     { reduce_tree(i.into_iter().chain(n)) }
     / n:newline()
     { vec![n] }
 
-    /// Remaining inline content after a table end token.
-    ///
-    /// ```wikitext
-    /// |} more content
-    ///   ^^^^^^^^^^^^^
-    /// ```
-    rule line_after_table() -> Vec<Spanned<Token>>
-    = !at_sol()
-      i:inline()*
-      e:line_eol()
-    { reduce_tree(i.into_iter().chain(e)) }
-
-    /// Whole-line expressions that either require or reject whitespace at the
-    /// start of a line.
-    rule space_sensitive_line() -> Spanned<Token>
-    = heading()
+    /// An end of line token, optionally preceded by lines containing only
+    /// Wikilink categories.
+    rule line_eol() -> Vec<Spanned<Token>>
+      // Lines containing only Wikilink categories need to chomp the newline
+      // from the previous line, so must be parsed before consuming a newline
+      // for the end of the current line. (The original parser used "\n" instead
+      // of a full newline token, which seems wrong)
+    = c:(&nl() c:wikilink_category() { c })+ e:eol()
+    { c.into_iter().chain(e).collect() }
+    / eol()
 
     /// An end of line token.
-    rule line_eol() -> Option<Spanned<Token>>
-    = t:newline() { Some(t) }
-    / eof() { None }
+    rule eol() -> Vec<Spanned<Token>>
+    = t:newline() { vec![t] }
+    / eof() { vec![] }
 
     /// Intra-line expressions.
     rule inline() -> Spanned<Token>
@@ -102,7 +111,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = wikilink()
     / external_link(&term)
     / magic_link(&term)
-    / inline_in_tag()
+    / !term() t:inline_in_tag() { t }
 
     /// A terminator that matches on a pipe.
     rule pipe_term() -> ()
@@ -440,8 +449,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ```
     ///
     /// etc.
-    rule hr_line() -> Vec<Spanned<Token>>
-    = c:comment_tag()* h:hr() i:inline()* n:line_eol()
+    rule hr_line(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = c:comment_tag()* h:hr() i:inline_with_term(<inline_term() {}>)* n:inline_term()
     { reduce_tree(c.into_iter().chain(iter::once(h)).chain(i).chain(n)) }
 
     /// A horizontal rule.
@@ -465,7 +474,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ; Term
     /// : Detail
     /// ```
-    rule list() -> Vec<Spanned<Token>>
+    rule list_line() -> Vec<Spanned<Token>>
       // TODO: list should also parse successfully if there was a `general`
       // strip marker at the start of the line that evaluates to empty string.
     = c:comment_tag()*
@@ -534,8 +543,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ```wikitext
     /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
     /// ```
-    rule table() -> Vec<Spanned<Token>>
-    = prefix:table_prefix()* part:table_part()
+    rule table_line(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = prefix:table_prefix()* part:table_part(inline_term)
     { prefix.into_iter().chain(part).collect() }
 
     /// Content that may prefix a table line which should be absorbed into the
@@ -548,27 +557,17 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     { let mut t = t; t.span.start = p as u32; t }
 
     /// The list of possible table expressions.
-    rule table_part() -> Vec<Spanned<Token>>
-    = t:table_end() { vec![t] }
+    rule table_part(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = table_end(&inline_term)
     / table_single()
-    / table_caption()
-    / table_head()
-    / table_data()
+    / table_caption(&inline_term)
+    / table_head(&inline_term)
+    / table_data(&inline_term)
 
     /// Table expressions that contain only attributes.
     rule table_single() -> Vec<Spanned<Token>>
-    = t:(table_start() / table_row()) c:wikilink_category()? e:line_eol()
-    { iter::once(t).chain(c).chain(e).collect() }
-
-    /// The end of the indented table hack.
-    ///
-    /// ```wikitext
-    /// ::{| k="v" ␤|}
-    ///             ^^
-    /// ```
-    rule table_hack_end() -> Vec<Spanned<Token>>
-    = p:table_prefix()* e:(t:table_end() { Some(t) } / eof() { None })
-    { let mut p = p; p.extend(e); p }
+    = t:(table_start() / table_row()) e:line_eol()
+    { iter::once(t).chain(e).collect() }
 
     /// A table start tag.
     ///
@@ -608,20 +607,17 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         { Token::TableRow { attributes: reduce_tree(attributes) } }
     >)
 
-    /// A table end tag.
+    /// A table end tag, optionally followed by non-table inline content.
     ///
     /// ```wikitext
-    /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
-    ///                                                                                   ^^
+    /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|} extra␤
+    ///                                                                                   ^^^^^^^^^
     /// ```
-    ///
-    /// Tables may be put inside Wikilinks using the image caption hack, or
-    /// list items using the indent hack. This means that, unlike other table
-    /// rules, `table_end` cannot consume a whole line by itself because there
-    /// are two possible terminators (`nl()` or `"]]"`) and two possible rules
-    /// about end-of-line whitespace (trim or preserve).
-    rule table_end() -> Spanned<Token>
-    = spanned(<space_s()* "|}" { Token::TableEnd }>)
+    rule table_end(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = t:spanned(<space_s()* "|}" { Token::TableEnd }>)
+      i:inline_with_term(<inline_term() {}>)*
+      e:inline_term()
+    { reduce_tree(iter::once(t).chain(i).chain(e)) }
 
     /// A table caption tag.
     ///
@@ -629,8 +625,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
     ///           ^^^^^^^^^^^^^^^^^
     /// ```
-    rule table_caption() -> Vec<Spanned<Token>>
-    = table_cells(<"|+">, <"||">, |attributes| Token::TableCaption { attributes })
+    rule table_caption(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = table_cells(<"|+">, <"||">, inline_term, |attributes| Token::TableCaption { attributes })
 
     /// A table head tag.
     ///
@@ -638,8 +634,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
     ///                                        ^^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule table_head() -> Vec<Spanned<Token>>
-    = table_cells(<"!">, <"||" / "!!">, |attributes| Token::TableHeader { attributes })
+    rule table_head(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = table_cells(<"!">, <"||" / "!!">, inline_term, |attributes| Token::TableHeader { attributes })
 
     /// A table data tag.
     ///
@@ -647,8 +643,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// {| k="v" ␤|+ c-k="v" | c ␤|- r-k="v" ␤! h-k="v" | h !! h2 ␤| d-k="v" | d || d2 ␤|}
     ///                                                             ^^^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule table_data() -> Vec<Spanned<Token>>
-    = table_cells(<"|">, <"||">, |attributes| Token::TableData { attributes })
+    rule table_data(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = table_cells(<"|">, <"||">, inline_term, |attributes| Token::TableData { attributes })
 
     /// A generic rule for table cells with optional attributes and zero or more
     /// content cells.
@@ -660,12 +656,13 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     rule table_cells<F>(
         first_start: rule<()>,
         rest_start: rule<()>,
+        inline_term: rule<Vec<Spanned<Token>>>,
         token_map: F,
     ) -> Vec<Spanned<Token>>
         where F: Fn(Vec<Spanned<Token>>) -> Token
-    = first:table_cell(first_start, &rest_start)
-      rest:table_cell(&rest_start, &rest_start)*
-      end:table_cells_eol()
+    = first:table_cell(first_start, <rest_start() / inline_term() {}>)
+      rest:table_cell(&rest_start, <rest_start() / inline_term() {}>)*
+      end:table_cells_eol(&inline_term)
     { reduce_tree(iter::once(first)
         .chain(rest)
         .flat_map(|(start, attributes, rest)| {
@@ -676,9 +673,17 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     }
 
     /// The end of a line of table cells.
-    rule table_cells_eol() -> Option<Spanned<Token>>
-    = t:spanned(<space_s()* newline() { Token::NewLine }>) { Some(t) }
-    / space_s()* eof() { None }
+    rule table_cells_eol(inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = start:position!()
+      space_s()*
+      t:inline_term()
+    {
+        let mut t = t;
+        if let Some(first) = t.first_mut() {
+            first.span.start = start as u32;
+        }
+        t
+    }
 
     /// A single table cell with optional attributes and content.
     ///
@@ -737,7 +742,22 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///        ^^^^^^^^^^^^^^^
     /// ```
     pub rule gallery_image_options() -> Vec<Spanned<Argument>>
-    = spanned(<wikilink_argument_kv(<inline_with_term(<pipe_term()>)>, <eolf() {}>)>) ** "|"
+    = gallery_image_kv() ** "|"
+
+    /// A `<gallery>` extension tag line argument.
+    ///
+    // TODO: This is basically the same as `wikilink_argument_kv` but does not
+    // allow multiple lines.
+    rule gallery_image_kv() -> Spanned<Argument>
+    = spanned(<
+        key:(!"=" t:inline_with_term(<"=" / pipe_term()>) { t })*
+        value:(
+          d:spanned(<"=" { Token::Text }>)
+          v:(!pipe_term() t:inline_with_term(<pipe_term()>) { t })*
+          { (d, v) }
+        )?
+        { make_argument(key, value) }
+      >)
 
     /// A wikilink, category, or image, or some text that looked like a Wikilink
     /// but wasn’t.
@@ -770,7 +790,9 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// a left-handed whitespace erasure rule.
     rule wikilink_category() -> Spanned<Token>
     = spanned(<
-        ("\n" space_nl()*)?
+        // The original parser used "\n" instead of a full newline token, which
+        // seems wrong
+        (nl() space_nl()*)?
         "[["
         target:wikilink_category_target()
         content:wikilink_content(<!"[[" t:inline_in_tag() { t }>)
@@ -801,16 +823,16 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// An image wikilink.
     ///
     /// ```wikitext
-
+    /// [[Image:Foo.jpg|flag|arg=value|caption]]
     /// ```
     ///
-    /// This has to be parsed separately from other Wikilinks because the
-    /// content part is parsed differently.
+    /// This has to be parsed separately from normal wikilinks because the
+    /// grammar for the content part is incompatible.
     rule wikilink_image() -> Spanned<Token>
     = spanned(<
         "[["
         target:wikilink_image_target()
-        content:wikilink_content(<inline_with_term(<pipe_term()>)>)
+        content:wikilink_content(<external_link(<no_term()>) / inline_with_term(<pipe_term()>)>)
         "]]"
         {
             // TODO: Use a different token type
@@ -890,9 +912,17 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // Technically this is supposed to decode any percent-encoding before
       // checking for a URL scheme, but in practice it makes no sense that part
       // would be URL encoded, so hopefully nobody did that (lol).
-      !url_scheme() t:wikilink_target_part()*
+      !url_scheme()
+      t:wikilink_target_part()*
+      !wikilink_pipe_trick()
     { reduce_tree(s.into_iter().chain(t)) }
 
+    /// A valid text part of a Wikilink target.
+    ///
+    /// ```wikitext
+    /// [[Link &amp; target <]]
+    ///   ^^^^ ^^^^^ ^^^^^^ X
+    /// ```
     rule wikilink_target_part() -> Spanned<Token>
     = entity()
     / !("[[" / strip_marker()) t:spanned(<#{|input, pos| wikilink_target_char(
@@ -900,43 +930,47 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     )} { Token::Text }>)
     { t }
 
+    /// A lookahead for a Wikilink “pipe trick”.
+    /// https://www.mediawiki.org/wiki/Help:Links#Pipe_trick
+    ///
+    /// ```wikitext
+    /// [[Link target|]]
+    ///              ^^^
+    /// ```
+    ///
+    /// This is only valid in the “pre-save transform” context, which wiki.rs
+    /// does not have, so should cause the link to fail to parse as a link.
+    rule wikilink_pipe_trick()
+    = "|]]"
+
     /// Text content part of a Wikilink.
     ///
     /// ```wikitext
     /// [[Link target|extra|arguments]]
     ///               ^^^^^^^^^^^^^^^
+    /// [[Link target|[text with brackets]]]
+    ///               ^^^^^^^^^^^^^^^^^^^^
     /// ```
-    rule wikilink_content(item: rule<Spanned<Token>>) -> Vec<Spanned<Argument>>
+    rule wikilink_content(inline_item: rule<Spanned<Token>>) -> Vec<Spanned<Argument>>
     = start:position!()
-      t:wikilink_argument(&item)*
+      t:wikilink_argument(&inline_item)*
       bracket:wikilink_content_end_bracket(start)?
-    {?
-        fn is_pipe_trick(args: &[Spanned<Argument>]) -> bool {
-            matches!(args, [
-                Spanned { node: Argument { content, .. }, .. }
-            ] if content.is_empty())
-        }
-
+    {
         let mut t = t;
         if let (Some(last), Some(bracket)) = (t.last_mut(), bracket) {
             last.span.end = bracket.span.end;
             last.node.content.push(bracket);
         }
-
-        if is_pipe_trick(&t) {
-            Err("wikilink content")
-        } else {
-            Ok(t)
-        }
+        t
     }
 
     /// A Wikilink argument with pipe delimiter.
     ///
     /// ```wikitext
-    /// [[target|numbered argument |key=value]]
-    ///         ^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^
+    /// [[target|text |key=value]]
+    ///         ^^^^^ ^^^^^^^^^^
     /// ```
-    rule wikilink_argument(item: rule<Spanned<Token>>) -> Spanned<Argument>
+    rule wikilink_argument(inline_item: rule<Spanned<Token>>) -> Spanned<Argument>
       // Keeping the delimiter outside of the argument span allows the arguments
       // list to be glued back together into text in a generic way that applies
       // to all lists of spans, instead of requiring special work to extract the
@@ -944,38 +978,43 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // content token
     = "|"
       t:spanned(<
-        n:newline()
-        v:(&at_sol() t:wikilink_argument_line(&item) { t })+
-        { make_argument(reduce_tree(iter::once(n).chain(v.into_iter().flatten())), None) }
-        / kv:wikilink_argument_kv(&item, <"|" / "]]">)?
+        kv:wikilink_argument_kv(&inline_item)?
         { kv.unwrap_or_default() }
       >)
     { t }
 
-    /// A Wikilink argument.
+    /// A Wikilink argument key-value pair.
     ///
     /// ```wikitext
-    /// [[target|numbered argument|key=value]]
-    ///          ^^^^^^^^^^^^^^^^^ ^^^^^^^^^
+    /// [[target|text|key=value]]
+    ///          ^^^^ ^^^^^^^^^
     /// ```
-    rule wikilink_argument_kv(item: rule<Spanned<Token>>, term: rule<()>) -> Argument
-    = key:wikilink_inline(&item, <"=" / term()>)*
-      value:(d:spanned(<"=" { Token::Text }>) v:wikilink_inline(&item, &term)* { (d, v) })?
+    rule wikilink_argument_kv(inline_item: rule<Spanned<Token>>) -> Argument
+    = key:wikilink_argument_part(&inline_item, <&"=" { vec![] } / wikilink_line_term()>)
+      value:(
+        d:spanned(<"=" { Token::Text }>)
+        v:wikilink_argument_part(&inline_item, <wikilink_line_term()>)
+        { (d, v) }
+      )?
     { make_argument(key, value) }
 
-    /// Inline expressions allowed in a Wikilink argument.
+    /// A Wikilink argument part.
     ///
-    /// More expressions are allowed when an argument breaks onto a new line;
-    /// see `wikilink_argument_line`.
-    rule wikilink_inline(item: rule<Spanned<Token>>, term: rule<()>) -> Spanned<Token>
-    = !term() t:item()
-    { t }
-    / newline()
+    /// ```wikitext
+    /// [[target|text|key=value]]
+    ///          ^^^^ ^^^ ^^^^^
+    /// ```
+    rule wikilink_argument_part(inline_item: rule<Spanned<Token>>, inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = first:wikilink_inline_line(&inline_item, &inline_term)
+      rest:(&at_sol() t:wikilink_line(&inline_item, &inline_term) { t })*
+    { first.into_iter().chain(rest.into_iter().flatten()).collect() }
+    / &("|" / "]]") { vec![] }
 
-    /// A whole-line expression in a Wikilink argument.
+    /// Whole-line expressions allowed in a Wikilink body.
     ///
-    /// Only expressions that are converted to HTML before Wikilinks are
-    /// converted to HTML are applicable in this position.
+    /// Only expressions that are converted to HTML *before* Wikilinks are
+    /// converted to HTML are applicable in this position, and some lines are
+    /// allowed to terminate at `]]` instead of requiring eolf.
     ///
     /// ```wikitext
     /// [[Link target|
@@ -983,30 +1022,22 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ----|arguments]]
     /// ^^^^
     /// ```
-    rule wikilink_argument_line(item: rule<Spanned<Token>>) -> Vec<Spanned<Token>>
+    rule wikilink_line(inline_item: rule<Spanned<Token>>, inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
     = comment_block()
-    / t:table() ie:wikilink_after_table()?
-    { reduce_tree(t.into_iter().chain(ie.into_iter().flatten())) }
-    / hr_line()
-    / c:(behavior_switch() / comment_tag())* h:heading() n:line_eol()
-    { reduce_tree(c.into_iter().chain(iter::once(h)).chain(n)) }
-    / !"|" i:(!"]]" t:item() { t })+ n:line_eol()
+    / table_line(&inline_term)
+    / hr_line(&inline_term)
+    / heading_line()
+    / wikilink_inline_line(&inline_item, &inline_term)
+
+    rule wikilink_inline_line(inline_item: rule<Spanned<Token>>, inline_term: rule<Vec<Spanned<Token>>>) -> Vec<Spanned<Token>>
+    = i:(!inline_term() t:inline_item() { t })+ n:inline_term()
     { reduce_tree(i.into_iter().chain(n)) }
     / n:newline()
     { vec![n] }
 
-    /// Remaining inline content after a table end token inside of a Wikilink.
-    ///
-    /// ```wikitext
-    /// [[Image:TableCaption.png|
-    /// {|
-    ///  |
-    ///  |} more content]]
-    ///    ^^^^^^^^^^^^^
-    /// ```
-    rule wikilink_after_table() -> Vec<Spanned<Token>>
-    = (!at_sol() t:(!"]]" t:inline_in_tag() { t })* n:line_eol()
-    { reduce_tree(t.into_iter().chain(n)) })
+    rule wikilink_line_term() -> Vec<Spanned<Token>>
+    = &("|" / "]]") { vec![] }
+    / line_eol()
 
     /// An ambiguous bracket at the end of a wikilink.
     ///
