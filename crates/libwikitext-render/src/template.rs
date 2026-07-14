@@ -538,29 +538,7 @@ pub(crate) fn call_template(
     arguments: &[Kv<'_>],
     raw: bool,
 ) -> Result<Option<String>> {
-    let mut template = state.statics.db.get(callee)?;
-
-    // This is (zombo) ShadowPage
-    if template.is_none()
-        && callee.namespace().id == Namespace::MEDIAWIKI
-        && let key = to_lower_first(callee.text())
-    {
-        template = state
-            .statics
-            .messages
-            .get_raw(&key, None, false)?
-            .map(|body| {
-                Arc::new(
-                    Article::builder()
-                        .body(&body)
-                        .id(Article::UNSAVED_ID)
-                        .model("wikitext")
-                        .title(callee.key())
-                        .revision_id(Article::UNSAVED_ID)
-                        .build(),
-                )
-            });
-    }
+    let template = fetch_template(state, callee)?;
 
     let Some(template) = template else {
         log::warn!("No template found for '{callee}'");
@@ -610,13 +588,9 @@ pub(crate) fn call_template(
     let start = Instant::now();
     let mut expansion = ExpandTemplates::new(out, ExpandMode::Include);
 
-    // The 'Module:Arguments' wrapper argument requires that redirects are
-    // using the final name, not a redirect alias
-    let sp = sp.chain(
-        Title::new(state.statics.db.config(), template.title(), None)?,
-        FileMap::new(template.body()),
-        arguments,
-    )?;
+    // The 'Module:Arguments' wrapper argument expects that redirected templates
+    // use the final target name, not the source alias name
+    let sp = sp.chain(resolved_title, FileMap::new(template.body()), arguments)?;
 
     let cached_root = if let Some(cache) = &state.statics.template_cache
         && template.revision_id() != Article::UNSAVED_ID
@@ -661,6 +635,37 @@ pub(crate) fn call_template(
         .or_insert_with(|| (1, start.elapsed()));
 
     Ok(wrapper_key)
+}
+
+/// Fetches a template for the given `callee`.
+fn fetch_template(
+    state: &mut State<'_, '_, '_>,
+    callee: &Title,
+) -> Result<Option<Arc<Article>>, Error> {
+    let mut template = state.statics.db.get(callee)?;
+
+    // This is (zombo) ShadowPage
+    if template.is_none()
+        && callee.namespace().id == Namespace::MEDIAWIKI
+        && let key = to_lower_first(callee.text())
+    {
+        template = state
+            .statics
+            .messages
+            .get_raw(&key, None, false)?
+            .map(|body| {
+                Arc::new(
+                    Article::builder()
+                        .body(&body)
+                        .id(Article::UNSAVED_ID)
+                        .model("wikitext")
+                        .title(callee.key())
+                        .revision_id(Article::UNSAVED_ID)
+                        .build(),
+                )
+            });
+    }
+    Ok(template)
 }
 
 /// Returns the canonical variable or parser function name if the given
