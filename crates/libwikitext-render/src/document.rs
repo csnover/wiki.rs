@@ -527,7 +527,7 @@ where
         // TODO: The `in_pre` condition needs to be emitting all the tokens
         // instead of just taking the line as text since tags and entities are
         // actually supposed to be treated like tags and entities 🥴️
-        if self.in_pre {
+        if !S::LIST_ITEMS || self.in_pre {
             self.next.text(&sp.source[span.into_range()]);
             return Ok(());
         }
@@ -956,6 +956,8 @@ where
 
 /// A [`Sink`] supertrait used by [`Document`].
 pub(super) trait DocumentSink: Sink {
+    /// If true, the sink will process list items.
+    const LIST_ITEMS: bool;
     /// If true, the sink will process strip markers.
     const UNSTRIP_MARKERS: bool;
 
@@ -977,6 +979,7 @@ pub(super) trait DocumentSink: Sink {
 /// This is equivalent to `Parser::recursiveTagParse`.
 pub(super) struct ParseHalf<'a>(AttributeFilter<OutlineGenerator<'a, Accumulator>>);
 impl<'a> DocumentSink for ParseHalf<'a> {
+    const LIST_ITEMS: bool = false;
     const UNSTRIP_MARKERS: bool = false;
 
     type Args = &'a mut Outline;
@@ -1074,6 +1077,7 @@ type ParseFullyChain<'a> = AttributeFilter<
 pub(super) struct ParseFully<'a>(ParseFullyChain<'a>);
 
 impl<'a> DocumentSink for ParseFully<'a> {
+    const LIST_ITEMS: bool = true;
     const UNSTRIP_MARKERS: bool = true;
 
     type Args = &'a mut Outline;

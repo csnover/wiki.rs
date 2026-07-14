@@ -256,6 +256,7 @@ struct ParseAttr {
 }
 
 impl DocumentSink for ParseAttr {
+    const LIST_ITEMS: bool = true;
     const UNSTRIP_MARKERS: bool = true;
 
     type Args = ();

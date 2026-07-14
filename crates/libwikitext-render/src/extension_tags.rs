@@ -110,7 +110,6 @@ use super::{
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     tags::ExternalLinkKind,
-    text_run,
     transform::{Accumulator, AttributeFilter, Sink as _},
 };
 use core::{fmt::Write as _, num::NonZeroU16, ops::Range};
@@ -122,6 +121,7 @@ use libwikitext_common::{
     AnchorEncodeMode,
     db::DatabaseProvider,
     decode_html, escape, escape_all, escape_id, escape_id_url, escape_no_wiki,
+    normalize_whitespace,
     title::{Namespace, Title},
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, strip};
@@ -324,11 +324,15 @@ fn gallery(
 
     // MW put this *inside* the list, which is obviously stupid and wrong
     if let Some(caption) = arguments.get(state, "caption")? {
-        write!(
-            out,
-            r#"<div class="gallerycaption">{}</div>"#,
-            text_run(&caption)
-        )?;
+        let caption = eval_string(state, arguments.sp, &caption, false)?;
+        // TODO: It is clear that MW is normalising whitespace, it is not clear
+        // where.
+        let caption = normalize_whitespace::<true>(
+            &caption,
+            |c| c.is_ascii_whitespace(),
+            |c| c.is_ascii_whitespace(),
+        );
+        writeln!(out, r#"<div class="gallerycaption">{caption}</div>"#)?;
     }
 
     let space = if class.is_empty() { "" } else { " " };
@@ -1419,7 +1423,7 @@ pub(super) fn eval_string(
     // extensions and modules, which does not erase `\x7f` from the source,
     // since that is only supposed to be illegal coming from article sources?
     let source = preprocess_frame(state, sp, text, ExpandMode::Normal)?;
-    eval_plugin(state, sp, fully_parse, &source)
+    eval_plugin(state, sp, &source, fully_parse)
 }
 
 /// Re-emits an extension tag.

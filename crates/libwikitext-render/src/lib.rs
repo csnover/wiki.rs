@@ -814,8 +814,8 @@ impl ArticleState {
 fn eval_plugin(
     state: &mut State<'_, '_, '_>,
     sp: &StackFrame<'_>,
-    fully_parse: bool,
     source: &str,
+    fully_parse: bool,
 ) -> Result<String> {
     let sp = sp.clone_with_source(FileMap::new(source));
     let root = state.statics.parser.parse(&sp.source)?;
@@ -829,16 +829,4 @@ fn eval_plugin(
         out.adopt_tokens(state, &sp, &root)?;
         out.finish()
     })
-}
-
-/// Writes a run of text to the given output as entity-encoded HTML, converting
-/// wretched typewriter quote marks to beautiful works of fine typographical
-/// art. We are not savages here today.
-// TODO: This sucks, do something better.
-#[inline]
-fn text_run(text: &str) -> String {
-    use transform::Sink as _;
-    let mut emitter = transform::PrettyText::new(transform::Accumulator::new());
-    emitter.text(text);
-    emitter.finish()
 }

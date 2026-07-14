@@ -129,7 +129,7 @@ impl PluginFnArgs<'_, '_, '_> {
             return Ok(None);
         };
         Ok(Some(super::eval_plugin(
-            state.0, self.0.sp, !fragment, &source,
+            state.0, self.0.sp, &source, !fragment,
         )?))
     }
 
