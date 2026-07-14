@@ -831,8 +831,7 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
         emit_class(&mut out.next, &mut emitted);
         out.next.text("mw-halign-");
         out.next.text(align);
-    }
-    if let Some(valign) = options.valign {
+    } else if let Some(valign) = options.valign {
         emit_class(&mut out.next, &mut emitted);
         out.next.text("mw-valign-");
         out.next.text(valign);
