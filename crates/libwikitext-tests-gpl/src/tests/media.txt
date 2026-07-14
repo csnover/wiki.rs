@@ -1556,6 +1556,14 @@ File:Foobar.svg|lang=de|caption
 <ul class="gallery mw-gallery-traditional" typeof="mw:Extension/gallery" about="#mwt2" data-mw='{"name":"gallery","attrs":{},"body":{}}'>
 <li class="gallerybox" style="width: 155px;"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File"><a href="./File:Foobar.svg?lang=de" class="mw-file-description" title="caption"><img alt="caption" resource="./File:Foobar.svg" src="http://example.com/images/thumb/f/ff/Foobar.svg/langde-120px-Foobar.svg.png" decoding="async" lang="de" data-file-width="240" data-file-height="180" data-file-type="drawing" height="90" width="120" srcset="http://example.com/images/thumb/f/ff/Foobar.svg/langde-180px-Foobar.svg.png 1.5x, http://example.com/images/thumb/f/ff/Foobar.svg/langde-240px-Foobar.svg.png 2x" class="mw-file-element"/></a></span></div><div class="gallerytext">caption</div></li>
 </ul>
+!! html/wiki.rs # This output matches the PHP parser, minus silly SVG rasterising, CSS, PHP URLs, XHTML
+<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Foobar.svg?lang=de" class="mw-file-description"><img src="http://example.com/images/f/ff/Foobar.svg" decoding="async" width="180" height="135" class="mw-file-element"></a><figcaption>caption</figcaption></figure>
+<ul class="gallery mw-gallery-traditional">
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.svg?lang=de" class="mw-file-description" title="caption"><img alt="caption" src="http://example.com/images/f/ff/Foobar.svg" decoding="async" width="120" height="90" class="mw-file-element"></a></span></div>
+			<div class="gallerytext">caption</div>
+		</li>
+</ul>
 !! end
 
 !! test
@@ -2262,6 +2270,9 @@ File containing double quotes and spaces
 </p>
 !! html/parsoid
 <p><span class="mw-default-size" typeof="mw:Error mw:File" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}'><a href="./Special:FilePath/Cool_%22Gator%22.png" class="new" title='File:Cool "Gator".png'><span class="mw-file-element mw-broken-media" resource='./File:Cool_"Gator".png' data-parsoid='{"a":{"resource":"./File:Cool_\"Gator\".png"},"sa":{"resource":"File:Cool \"Gator\".png"}}'>File:Cool "Gator".png</span></a></span></p>
+!! html/wiki.rs # This output matches the PHP parser, with pretty text, URL
+<p><span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/Special:Upload?wpDestFile=Cool_%22Gator%22.png" class="new" title="File:Cool “Gator”.png"><span class="mw-file-element mw-broken-media">File:Cool “Gator”.png</span></a></span>
+</p>
 !! end
 
 !! test
@@ -2272,6 +2283,10 @@ File containing single quotes
 !! html/php
 <p><span class="mw-default-size" typeof="mw:Error mw:File"><a href="/index.php?title=Special:Upload&amp;wpDestFile=Foo%27s_%27%27italic%27%27_bar.jpg" class="new" title="File:Foo&#39;s &#39;&#39;italic&#39;&#39; bar.jpg"><span class="mw-file-element mw-broken-media">File:Foo's <i>italic</i> bar.jpg</span></a></span>
 <span class="mw-default-size" typeof="mw:Error mw:File"><a href="/index.php?title=Special:Upload&amp;wpDestFile=Foo%27s_%27%27italic%27%27_bar.jpg" class="new" title="File:Foo&#39;s &#39;&#39;italic&#39;&#39; bar.jpg"><span class="mw-file-element mw-broken-media">Foo's italic bar</span></a></span>
+</p>
+!! html/wiki.rs # This output matches the PHP parser, minus bogus Wikitext conversion of the filename, with pretty text, URL
+<p><span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/Special:Upload?wpDestFile=Foo%27s_%27%27italic%27%27_bar.jpg" class="new" title="File:Foo’s ‘‘italic’’ bar.jpg"><span class="mw-file-element mw-broken-media">File:Foo’s ‘‘italic’’ bar.jpg</span></a></span>
+<span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/Special:Upload?wpDestFile=Foo%27s_%27%27italic%27%27_bar.jpg" class="new" title="File:Foo’s ‘‘italic’’ bar.jpg"><span class="mw-file-element mw-broken-media">Foo’s italic bar</span></a></span>
 </p>
 !! end
 
@@ -2334,8 +2349,6 @@ Template with thumb image (with link in description)
 <p>This is a test template with parameter </p><figure class="mw-default-size" typeof="mw:Error mw:File/Thumb"><a href="/index.php?title=Special:Upload&amp;wpDestFile=Noimage.png" class="new" title="File:Noimage.png"><span class="mw-file-element mw-broken-media" data-width="180">File:Noimage.png</span></a><figcaption><a href="/wiki/No_link" title="No link">link</a> <a href="/wiki/No_link" title="No link">caption</a></figcaption></figure>
 !! html/parsoid
 <p about="#mwt1" typeof="mw:Transclusion" data-parsoid='{"pi":[[{"k":"param","named":true}]]}' data-mw='{"parts":[{"template":{"target":{"wt":"paramtest","href":"./Template:Paramtest"},"params":{"param":{"wt":"[[Image:noimage.png|thumb|[[no link|link]] [[no link|caption]]]]"}},"i":0}}]}'>This is a test template with parameter </p><figure class="mw-default-size" typeof="mw:Error mw:File/Thumb" about="#mwt1" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}'><a href="./Special:FilePath/Noimage.png" class="new" title="File:Noimage.png"><span class="mw-file-element mw-broken-media" resource="./File:Noimage.png" data-width="180">File:Noimage.png</span></a><figcaption><a rel="mw:WikiLink" href="./No_link" title="No link">link</a> <a rel="mw:WikiLink" href="./No_link" title="No link">caption</a></figcaption></figure>
-!! html/wiki.rs # This output matches the PHP parser, minus the data- attributes and special page
-<p>This is a test template with parameter </p><figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Noimage.png" class="mw-file-description"><img src="http://example.com/images/7/7c/Noimage.png" decoding="async" width="1" height="1" class="mw-file-element"></a><figcaption><a href="/wiki/No_link?action=edit&amp;redlink=1" class="new" title="No link">link</a> <a href="/wiki/No_link?action=edit&amp;redlink=1" class="new" title="No link">caption</a></figcaption></figure>
 !! end
 
 !! test

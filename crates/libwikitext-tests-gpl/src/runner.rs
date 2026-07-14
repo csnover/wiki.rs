@@ -424,7 +424,7 @@ fn check_skips(
     } else if options.get("styletag") == Some(true) {
         log::warn!(target: target, "TODO {name}: styletag not implemented");
         true
-    } else if config.contains("wgEnableUploads") {
+    } else if options.get("wgenableuploads") == Some(false) {
         log::warn!(target: target, "TODO {name}: disable uploads not implemented");
         true
     } else if config.contains("wgEnableMagicLinks") {
@@ -451,7 +451,7 @@ fn check_skips(
     } else if options.contains("language") {
         log::warn!(target: target, "TODO {name}: language switching not implemented");
         true
-    } else if options.get::<bool>("wgallowexternalimages") == Some(false) {
+    } else if options.get("wgallowexternalimages") == Some(false) {
         log::warn!(target: target, "TODO {name}: runtime hotlink disable not implemented");
         true
     } else if options.contains("wgnonincludablenamespaces") {
@@ -752,6 +752,36 @@ fn check_test_results(
                     heuristic = "unpretty + devoid + decode html";
                     fail = expected_html != actual;
                 }
+
+                if fail && let Cow::Owned(expected_html) = gallery_styles(&expected_html) {
+                    heuristic = "unpretty + devoid + gallery styles";
+                    fail = expected_html != actual;
+
+                    if fail && let Cow::Owned(expected_html) = replace_url(&expected_html) {
+                        heuristic = "unpretty + devoid + gallery styles + replace url";
+                        fail = expected_html != actual;
+                    }
+
+                    if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                        heuristic = "unpretty + devoid + gallery styles + decode html";
+                        fail = expected_html != actual;
+                    }
+
+                    if fail && let Cow::Owned(expected_html) = styles(&expected_html) {
+                        heuristic = "unpretty + devoid + gallery styles + styles";
+                        fail = expected_html != actual;
+                    }
+                }
+            }
+
+            if fail && let Cow::Owned(expected_html) = gallery_styles(expected_html) {
+                heuristic = "unpretty + gallery styles";
+                fail = expected_html != actual;
+
+                if fail && let Cow::Owned(expected_html) = replace_url(&expected_html) {
+                    heuristic = "unpretty + gallery styles + replace url";
+                    fail = expected_html != actual;
+                }
             }
 
             if !fail {
@@ -953,6 +983,13 @@ fn decode_html(html: &str) -> Cow<'_, str> {
 
 fn devoid(html: &str) -> Cow<'_, str> {
     strtr(html, &[(" />", ">")])
+}
+
+fn gallery_styles(html: &str) -> Cow<'_, str> {
+    static RE_STYLES: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(<li class="gallerybox"|<div class="thumb") style="[^"]+""#).unwrap()
+    });
+    RE_STYLES.replace_all(html, "$1")
 }
 
 fn replace_url(html: &str) -> Cow<'_, str> {

@@ -505,6 +505,25 @@ impl<'config> MockDatabase<'config> {
         let title = Title::new(self.config, title, None);
         self.articles.remove(title.expect("valid title").key());
     }
+
+    /// Resolves redirects for `title`.
+    fn resolve<'a>(&self, title: &'a Title) -> Cow<'a, Title> {
+        let mut key = title.key();
+        for _ in 0..2 {
+            if let Some(article) = self.articles.get(key)
+                && let Some(redirect) = article.redirect()
+            {
+                key = redirect;
+            } else {
+                break;
+            }
+        }
+        if key == title.key() {
+            Cow::Borrowed(title)
+        } else {
+            Cow::Owned(Title::new(self.config, key, None).expect("valid redirect"))
+        }
+    }
 }
 
 impl DatabaseProvider for MockDatabase<'_> {
@@ -543,11 +562,12 @@ impl DatabaseProvider for MockDatabase<'_> {
 
     fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, Self::Error> {
         Ok(
-            if matches!(title.namespace().id, Namespace::FILE | Namespace::MEDIA) {
-                self.files.get(title.text()).copied()
-            } else {
-                None
-            },
+            matches!(title.namespace().id, Namespace::FILE | Namespace::MEDIA)
+                .then(|| {
+                    let title = self.resolve(title);
+                    self.files.get(title.text()).copied()
+                })
+                .flatten(),
         )
     }
 

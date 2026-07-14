@@ -10,7 +10,7 @@ use core::convert::Infallible;
 use libmisc::CowExt as _;
 use libwikitext_common::{
     AnchorEncodeMode,
-    config::{Configuration, ImageHotlinking},
+    config::{Configuration, ImageHotlinking, SpecialPages},
     db::DatabaseProvider as _,
     decode_html, make_url,
     title::{Namespace, Title},
@@ -156,17 +156,13 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
     link: &LinkKind<'_>,
     for_image: bool,
 ) {
-    let (missing, query) = if let LinkKind::Internal(title) = link
-        && title.interwiki().is_none()
-        && !title.key().is_empty()
-        && !state.statics.db.contains(title)
+    let (missing, query) = if let Some(title) = link.title()
+        && !title.exists(&state.statics.db)
     {
-        (
-            true,
-            (title.namespace().id != Namespace::SPECIAL).then_some("action=edit&redlink=1"),
-        )
+        let query = (!title.is_in_namespace(Namespace::SPECIAL)).then_some("action=edit&redlink=1");
+        (true, query)
     } else {
-        (false, None)
+        <_>::default()
     };
 
     let options = LinkKindOptions {
@@ -174,13 +170,40 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
         interwiki_map: &state.statics.db.config().interwiki_map,
         paths: &state.statics.paths,
     };
-    let href = link.to_string(&options, query);
 
-    // TODO: Missing media is supposed to go to a special upload page
-    let href = if missing {
-        href.split_once('#').map_or(href.as_str(), |(lhs, _)| lhs)
+    // Links to the Media namespace in image `link` attributes are not supposed
+    // to link directly to the resource, only direct links are supposed to do
+    // this, so this check must happen here instead of in `LinkKind::to_string`
+    let href = if let Some(title) = link.title()
+        && title.is_in_namespace(Namespace::MEDIA)
+    {
+        make_media_url(options.base_uri, options.paths.media, &title.text_url())
     } else {
-        &href
+        link.to_string(&options, query)
+    };
+
+    let href = if missing {
+        if let Some(title) = link.title()
+            && title.is_in_namespace(Namespace::FILE)
+            && for_image
+        {
+            let special = state
+                .statics
+                .db
+                .config()
+                .special_pages
+                .canonical(SpecialPages::UPLOAD);
+            let special = Title::new(state.statics.db.config(), special, Some(Namespace::SPECIAL))
+                .expect("configured special pages are valid");
+            Cow::Owned(
+                LinkKind::Internal(special)
+                    .to_string(&options, Some(&format!("wpDestFile={}", title.text_url()))),
+            )
+        } else {
+            Cow::Borrowed(href.split_once('#').map_or(href.as_str(), |(lhs, _)| lhs))
+        }
+    } else {
+        Cow::Borrowed(href.as_str())
     };
 
     out.tag_start("a");
@@ -191,10 +214,10 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
         LinkKind::External(_, kind) => {
             out.tag_attribute_full("rel", "nofollow");
             out.tag_attribute_full("class", kind.css());
-            out.tag_attribute_full("href", href);
+            out.tag_attribute_full("href", &href);
         }
         LinkKind::Internal(title) => {
-            out.tag_attribute_full("href", href);
+            out.tag_attribute_full("href", &href);
             if missing {
                 out.tag_attribute_full("class", "new");
                 if for_image {
@@ -209,7 +232,7 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
                 {
                     out.tag_attribute_full("title", &title);
                 }
-            } else if title.namespace().id == Namespace::MEDIA {
+            } else if title.is_in_namespace(Namespace::MEDIA) {
                 out.tag_attribute_full("class", "internal");
                 out.tag_attribute_full("title", title.text());
             } else if !title.prefixed_text().is_empty() {
@@ -272,6 +295,14 @@ pub(super) enum LinkKind<'a> {
 }
 
 impl LinkKind<'_> {
+    /// Returns the internal [`Title`] of this link, if one exists.
+    pub fn title(&self) -> Option<&Title> {
+        match self {
+            Self::External(..) => None,
+            Self::Internal(title) => Some(title),
+        }
+    }
+
     /// Converts the link to a URI-encoded string suitable for use in an HTML
     /// `href` attribute.
     pub fn to_string(&self, options: &LinkKindOptions<'_>, query: Option<&str>) -> String {
@@ -323,8 +354,6 @@ impl LinkKind<'_> {
                             .fragment_url(AnchorEncodeMode::Html5)
                             .unwrap_or_default(),
                     )
-                } else if title.namespace().id == Namespace::MEDIA {
-                    make_media_url(options.base_uri, options.paths.media, &title.text_url())
                 } else {
                     make_url(
                         options.base_uri,

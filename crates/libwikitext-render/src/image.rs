@@ -57,19 +57,40 @@ pub(super) enum Link<'a> {
     Custom(LinkKind<'a>),
 }
 
+/// An image upright multiplier.
+#[derive(Clone, Copy, Debug, Default)]
+enum Upright {
+    /// Use the default multiplier.
+    #[default]
+    Default,
+    /// Use a specific value for the multiplier.
+    Value(f64),
+}
+impl Upright {
+    /// Returns the multiplier.
+    #[inline]
+    #[must_use]
+    fn value(self) -> f64 {
+        match self {
+            Self::Default => 0.75,
+            Self::Value(value) => value,
+        }
+    }
+}
+
 /// Options for rendering a media node.
 #[expect(clippy::struct_excessive_bools, reason = "that is how many there are!")]
 #[derive(Clone, Debug)]
 pub(super) struct Options<'a> {
     /// Horizontal image alignment. One of 'left', 'right', 'center', or 'none'.
-    pub(super) align: Option<&'static str>,
+    pub align: Option<&'static str>,
     /// The alternate text for an image.
     alt: Option<Cow<'a, str>>,
     /// Render the image with a… border??? (lol).
     border: bool,
     /// The caption for the media. This will be rendered below the image in
     /// 'thumb' or 'frame' format, and otherwise as a tooltip.
-    caption: Option<&'a [Spanned<Token>]>,
+    pub caption: Option<&'a [Spanned<Token>]>,
     /// The caption, in attribute form.
     caption_attr: Option<Cow<'a, str>>,
     /// A list of CSS class names to apply to the image container.
@@ -79,9 +100,9 @@ pub(super) struct Options<'a> {
     /// The playback end time for a video… er… image.
     end: Option<Cow<'a, str>>,
     /// The intended format of the image.
-    pub(super) frame: Option<FrameKind>,
+    pub frame: Option<FrameKind>,
     /// The height override for the image.
-    pub(super) height: Option<u32>,
+    pub height: Option<u32>,
     /// The language to use when rendering an SVG with `<switch>` options
     /// varying on a `systemLanguage` attribute.
     lang: Option<Cow<'a, str>>,
@@ -103,17 +124,16 @@ pub(super) struct Options<'a> {
     /// The playback start time for a video… er… image.
     start: Option<Cow<'a, str>>,
     /// The target title for the image.
-    title: Title,
+    pub title: Title,
     /// The timestamp to extract and render as a still from a video file.
     thumbtime: Option<Cow<'a, str>>,
     /// “Resizes an image to a multiple of the user’s thumbnail size
-    /// preferences”. This will probably never be implemented, but it will be
-    /// recorded.
-    upright: Option<f64>,
+    /// preferences”.
+    upright: Option<Upright>,
     /// The vertical alignment of an image.
     valign: Option<&'static str>,
     /// The width override for the image.
-    width: Option<u32>,
+    pub width: Option<u32>,
 }
 
 impl Options<'_> {
@@ -165,7 +185,7 @@ impl Options<'_> {
     /// Returns true if this image was not given any explicit dimensions.
     #[inline]
     fn is_default_size(&self) -> bool {
-        self.width.is_none() && !self.is_unscaled()
+        self.width.is_none() && self.height.is_none() && !self.is_unscaled()
     }
 
     /// Returns true if this image should link to an external URL.
@@ -239,6 +259,15 @@ impl Options<'_> {
             thumb
         } else {
             &self.title
+        }
+    }
+
+    /// Returns the upright scaling for this image, if any.
+    fn upright(&self) -> Option<Upright> {
+        if matches!(self.frame, None | Some(FrameKind::Frame)) || self.width.is_some() {
+            None
+        } else {
+            self.upright
         }
     }
 }
@@ -393,6 +422,39 @@ fn calc_image_dims(width: u32, height: Option<u32>, (native_width, native_height
     (width, div_round(native_height * width, native_width))
 }
 
+/// Calculates the “preferred” width for an image with the given `options`,
+/// `native_width`, and `scalable` property.
+#[inline]
+fn calc_preferred_width(
+    state: &State<'_, '_, '_>,
+    options: &Options<'_>,
+    native_width: u32,
+    scalable: bool,
+) -> u32 {
+    if let Some(width) = options.width {
+        if scalable || options.frame.is_none() {
+            width
+        } else {
+            width.min(native_width)
+        }
+    } else if options.is_thumb() {
+        let width = default_thumb_limit(state);
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "expected and impossible, respectively"
+        )]
+        if let Some(upright) = options.upright().map(Upright::value) {
+            div_round((f64::from(width) * upright).round() as u32, 10) * 10
+        } else {
+            width
+        }
+        .min(native_width)
+    } else {
+        native_width
+    }
+}
+
 /// Returns the default thumbnail size.
 #[inline]
 fn default_thumb_limit(state: &State<'_, '_, '_>) -> u32 {
@@ -428,7 +490,7 @@ fn is_absolute_url(str: &str) -> bool {
 pub(super) fn make_media_url(base_uri: &Url, media_path: &str, text: &str) -> String {
     use std::io::Write as _;
     let mut prefix = [b'0'; 2];
-    let b = md5::compute(text.as_bytes())[0];
+    let b = md5::compute(Cow::from(percent_encoding::percent_decode_str(text)))[0];
     let _ = write!(&mut prefix[..], "{b:02x}");
     // SAFETY: Guaranteed to be ASCII.
     let prefix = unsafe { str::from_utf8_unchecked(&prefix[..]) };
@@ -568,7 +630,14 @@ fn option_arg<'s>(
     } else if key.contains(&"img_page") {
         options.page = Some(arg.parse::<i32>().unwrap_or(1));
     } else if key.contains(&"img_upright") {
-        options.upright = Some(arg.parse::<f64>().unwrap_or(1.0));
+        let value = if let Ok(value) = arg.parse()
+            && value > 0.0
+        {
+            value
+        } else {
+            1.0
+        };
+        options.upright = Some(Upright::Value(value));
     } else if key.contains(&"img_width") {
         if arg.ends_with("px") {
             state
@@ -652,7 +721,7 @@ fn option_flag<'s>(
     } else if value.contains(&"img_thumbnail") {
         options.frame.get_or_insert(FrameKind::Thumb(None));
     } else if value.contains(&"img_upright") {
-        options.upright = Some(0.75);
+        options.upright = Some(Upright::Default);
     } else if value.contains(&"timedmedia_muted") {
         options.muted = true;
     } else if value.contains(&"timedmedia_loop") {
@@ -671,33 +740,56 @@ pub(super) fn parse_dims(arg: &str) -> (Option<u32>, Option<u32>) {
     (w.parse::<u32>().ok(), h.parse::<u32>().ok())
 }
 
+/// Renders a broken media to `out` using `state` with the given `options`.
+fn render_broken<S: DocumentSink>(
+    out: &mut Document<S>,
+    state: &mut State<'_, '_, '_>,
+    options: &Options<'_>,
+) {
+    super::tags::render_start_link(
+        &mut out.next,
+        state,
+        &LinkKind::Internal(options.title.clone()),
+        true,
+    );
+    out.next.tag_start("span");
+    out.next
+        .tag_attribute_full("class", "mw-file-element mw-broken-media");
+    if let width = calc_preferred_width(state, options, u32::MAX, false)
+        && width != u32::MAX
+    {
+        out.next
+            .tag_attribute_full("data-width", &width.to_string());
+    }
+    if let Some(height) = options.height {
+        out.next
+            .tag_attribute_full("data-height", &height.to_string());
+    }
+    out.next.tag_start_end("span");
+
+    if let Some(alt) = options.alt()
+        && !alt.is_empty()
+    {
+        out.next.text(alt);
+    } else {
+        out.next.text(options.title.prefixed_text());
+    }
+
+    out.next.tag_end("span");
+    out.next.tag_end("a");
+}
+
 /// Renders an image tag to `out` using `state` with the given `options` and
-/// native dimensions `native_height` and `native_width`.
+/// native dimensions `native_dims`.
 fn render_image<S: Sink + ?Sized>(
     out: &mut S,
     state: &mut State<'_, '_, '_>,
     options: &Options<'_>,
-    native_dims: Dims,
+    native_dims @ (native_width, _): Dims,
     scalable: bool,
 ) {
     let wrapper = if options.is_link() { "a" } else { "span" };
-    let native_width = native_dims.0;
-    let preferred_width = options.width.map_or_else(
-        || {
-            if options.is_thumb() {
-                default_thumb_limit(state).min(native_width)
-            } else {
-                native_width
-            }
-        },
-        |width| {
-            if scalable || options.frame.is_none() {
-                width
-            } else {
-                width.min(native_width)
-            }
-        },
-    );
+    let preferred_width = calc_preferred_width(state, options, native_width, scalable);
     let (width, height) = if options.is_unscaled() {
         native_dims
     } else {
@@ -706,7 +798,8 @@ fn render_image<S: Sink + ?Sized>(
 
     out.tag_start(wrapper);
     if let Some(link) = options.link() {
-        let href = resource_url(state, &link);
+        let query = options.lang.as_deref().map(|lang| format!("lang={lang}"));
+        let href = resource_url(state, &link, query.as_deref());
         let href = if matches!(options.link, Link::Inherit) {
             href.split_once('#').map_or(href.as_str(), |(href, _)| href)
         } else {
@@ -747,11 +840,11 @@ fn render_image<S: Sink + ?Sized>(
         (src, None)
     };
 
-    if let Some(alt) = &options.alt() {
+    if let Some(alt) = options.alt() {
         out.tag_attribute_full("alt", alt);
     }
     if matches!(options.frame, Some(FrameKind::Thumb(Some(_)))) {
-        let href = resource_url(state, &LinkKind::Internal(options.title.clone()));
+        let href = resource_url(state, &LinkKind::Internal(options.title.clone()), None);
         out.tag_attribute_full("resource", &href);
     }
     out.tag_attribute_full("src", &src);
@@ -759,9 +852,17 @@ fn render_image<S: Sink + ?Sized>(
     out.tag_attribute_full("width", &width.to_string());
     out.tag_attribute_full("height", &height.to_string());
 
+    if let Some(upright) = options.upright() {
+        out.tag_attribute_start("style");
+        out.text("--mw-file-upright:");
+        out.text(&upright.value().to_string());
+        out.text(";");
+        out.tag_attribute_end("style");
+    }
+
     out.tag_attribute_start("class");
     out.text("mw-file-element");
-    if options.upright.is_some() {
+    if options.upright().is_some() {
         out.text(" mw-file-upright");
     }
     out.tag_attribute_end("class");
@@ -770,12 +871,13 @@ fn render_image<S: Sink + ?Sized>(
         out.tag_attribute_full("srcset", &srcset);
     }
 
-    if let Some(upright) = &options.upright {
-        out.tag_attribute_start("style");
-        out.text("--mw-file-upright:");
-        out.text(&upright.to_string());
-        out.text(";");
-        out.tag_attribute_end("style");
+    if !options.title.exists(&state.statics.db) {
+        if let Some(width) = options.width {
+            out.tag_attribute_full("data-width", &width.to_string());
+        }
+        if let Some(height) = options.height {
+            out.tag_attribute_full("data-height", &height.to_string());
+        }
     }
 
     // This is a void tag so there is no `tag_end`
@@ -878,23 +980,7 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
             }
         }
     } else {
-        super::tags::render_start_link(
-            &mut out.next,
-            state,
-            &LinkKind::Internal(options.title.clone()),
-            true,
-        );
-        out.next.tag_start("span");
-        out.next
-            .tag_attribute_full("class", "mw-file-element mw-broken-media");
-        out.next.tag_start_end("span");
-        if let Some(alt) = &options.alt() {
-            out.next.text(alt);
-        } else {
-            out.next.text(options.title.prefixed_text());
-        }
-        out.next.tag_end("span");
-        out.next.tag_end("a");
+        render_broken(out, state, options);
     }
 
     if options.is_captioned() {
@@ -961,14 +1047,18 @@ fn render_timed_media<S: Sink + ?Sized>(
 }
 
 /// Creates a resource URL for the image target.
-fn resource_url(state: &mut State<'_, '_, '_>, link: &LinkKind<'_>) -> String {
+pub(super) fn resource_url(
+    state: &mut State<'_, '_, '_>,
+    link: &LinkKind<'_>,
+    query: Option<&str>,
+) -> String {
     link.to_string(
         &LinkKindOptions {
             base_uri: &state.statics.base_uri,
             interwiki_map: &state.statics.db.config().interwiki_map,
             paths: &state.statics.paths,
         },
-        None,
+        query,
     )
 }
 
@@ -980,7 +1070,7 @@ fn to_attr<'a>(
     arg: &'a [Spanned<Token>],
 ) -> Result<Cow<'a, str>> {
     Ok(if let Some(text) = borrow_fastest(&sp.source, arg) {
-        Cow::Borrowed(text)
+        Cow::Borrowed(text.trim_ascii())
     } else {
         let mut document = Document::<ParseAttr>::new(());
         document.adopt_tokens(state, sp, arg)?;

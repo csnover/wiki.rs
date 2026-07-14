@@ -646,7 +646,7 @@ fn fetch_template(
 
     // This is (zombo) ShadowPage
     if template.is_none()
-        && callee.namespace().id == Namespace::MEDIAWIKI
+        && callee.is_in_namespace(Namespace::MEDIAWIKI)
         && let key = to_lower_first(callee.text())
     {
         template = state

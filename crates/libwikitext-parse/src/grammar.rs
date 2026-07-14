@@ -742,22 +742,14 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     ///        ^^^^^^^^^^^^^^^
     /// ```
     pub rule gallery_image_options() -> Vec<Spanned<Argument>>
-    = gallery_image_kv() ** "|"
+    = eof() { vec![] }
+    / wikilink_argument(<gallery_image_inline()>, <(&"|" / eof()) { vec![] }>)*
 
-    /// A `<gallery>` extension tag line argument.
-    ///
-    // TODO: This is basically the same as `wikilink_argument_kv` but does not
-    // allow multiple lines.
-    rule gallery_image_kv() -> Spanned<Argument>
-    = spanned(<
-        key:(!"=" t:inline_with_term(<"=" / pipe_term()>) { t })*
-        value:(
-          d:spanned(<"=" { Token::Text }>)
-          v:(!pipe_term() t:inline_with_term(<pipe_term()>) { t })*
-          { (d, v) }
-        )?
-        { make_argument(key, value) }
-      >)
+    /// Inline expressions allowed in a `<gallery>` extension tag line.
+    rule gallery_image_inline() -> Spanned<Token>
+    = external_link(<no_term()>)
+    / inline_with_term(<pipe_term()>)
+    / spanned(<"]" "]"? { Token::Text }>)
 
     /// A wikilink, category, or image, or some text that looked like a Wikilink
     /// but wasn’t.
@@ -953,7 +945,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// ```
     rule wikilink_content(inline_item: rule<Spanned<Token>>) -> Vec<Spanned<Argument>>
     = start:position!()
-      t:wikilink_argument(&inline_item)*
+      t:wikilink_argument(&inline_item, <wikilink_line_term()>)*
       bracket:wikilink_content_end_bracket(start)?
     {
         let mut t = t;
@@ -970,7 +962,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[target|text |key=value]]
     ///         ^^^^^ ^^^^^^^^^^
     /// ```
-    rule wikilink_argument(inline_item: rule<Spanned<Token>>) -> Spanned<Argument>
+    rule wikilink_argument(inline_item: rule<Spanned<Token>>, line_term: rule<Vec<Spanned<Token>>>) -> Spanned<Argument>
       // Keeping the delimiter outside of the argument span allows the arguments
       // list to be glued back together into text in a generic way that applies
       // to all lists of spans, instead of requiring special work to extract the
@@ -978,7 +970,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // content token
     = "|"
       t:spanned(<
-        kv:wikilink_argument_kv(&inline_item)?
+        kv:wikilink_argument_kv(&inline_item, &line_term)?
         { kv.unwrap_or_default() }
       >)
     { t }
@@ -989,11 +981,11 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     /// [[target|text|key=value]]
     ///          ^^^^ ^^^^^^^^^
     /// ```
-    rule wikilink_argument_kv(inline_item: rule<Spanned<Token>>) -> Argument
-    = key:wikilink_argument_part(&inline_item, <&"=" { vec![] } / wikilink_line_term()>)
+    rule wikilink_argument_kv(inline_item: rule<Spanned<Token>>, line_term: rule<Vec<Spanned<Token>>>) -> Argument
+    = key:wikilink_argument_part(&inline_item, <&"=" { vec![] } / line_term()>)
       value:(
         d:spanned(<"=" { Token::Text }>)
-        v:wikilink_argument_part(&inline_item, <wikilink_line_term()>)
+        v:wikilink_argument_part(&inline_item, &line_term)
         { (d, v) }
       )?
     { make_argument(key, value) }

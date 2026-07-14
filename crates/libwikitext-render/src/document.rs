@@ -222,7 +222,7 @@ where
     ) -> Result {
         self.flush_after_table();
         match name {
-            "hiddencat" if state.globals.title.namespace().id == Namespace::CATEGORY => {
+            "hiddencat" if state.globals.title.is_in_namespace(Namespace::CATEGORY) => {
                 state
                     .globals
                     .categories

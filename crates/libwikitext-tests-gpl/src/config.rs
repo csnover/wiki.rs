@@ -1,6 +1,7 @@
 use libwikitext_common::{
     config::{
-        Configuration, ConfigurationSource, ImageHotlinking, Language, MagicLinks, SpecialPages,
+        Configuration, ConfigurationSource, GalleryCaptionLength, GalleryMode, GalleryOptions,
+        ImageHotlinking, Language, MagicLinks, SpecialPages,
     },
     title::{Namespace, NamespaceCase::FirstLetter},
 };
@@ -161,6 +162,15 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "uc" => "uc",
         "ucfirst" => "ucfirst",
         "urlencode" => "urlencode",
+    },
+    gallery_options: GalleryOptions {
+        caption_length: GalleryCaptionLength::UseCss(true),
+        height: 120,
+        mode: GalleryMode::Traditional,
+        per_row: None,
+        show_bytes: true,
+        show_dimensions: true,
+        width: 120,
     },
     image_hotlinking: ImageHotlinking::Enabled,
     interlanguage_map: phf::phf_map! {

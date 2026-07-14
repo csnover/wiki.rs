@@ -1,6 +1,9 @@
 //! Types and functions for parsing and formatting MediaWiki title strings.
 
-use super::{AnchorEncodeMode, config::Configuration, decode_html, escape_id_url, url_encode};
+use super::{
+    AnchorEncodeMode, config::Configuration, db::DatabaseProvider, decode_html, escape_id_url,
+    url_encode,
+};
 use core::fmt::Write as _;
 use libmisc::{CowExt as _, to_lower};
 use libphp_rs::strtr;
@@ -492,6 +495,16 @@ impl Title {
         Self::url_encode(self.base_text())
     }
 
+    /// Returns true if this title is considered to “exist” in `db`.
+    #[inline]
+    #[must_use]
+    pub fn exists<Db>(&self, db: &Db) -> bool
+    where
+        Db: DatabaseProvider,
+    {
+        self.interwiki().is_some() || self.key().is_empty() || db.contains(self)
+    }
+
     /// The page fragment.
     ///
     /// ```text
@@ -571,6 +584,13 @@ impl Title {
     #[must_use]
     pub fn is_local_file(&self) -> bool {
         self.interwiki().is_none() && self.namespace.id == Namespace::FILE
+    }
+
+    /// Returns true if the title is in a namespace with the given `id`.
+    #[inline]
+    #[must_use]
+    pub fn is_in_namespace(&self, id: i32) -> bool {
+        self.namespace().id == id
     }
 
     /// Converts a page-relative title name to an absolute title name using

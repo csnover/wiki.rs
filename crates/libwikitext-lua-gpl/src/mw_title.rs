@@ -532,11 +532,11 @@ fn update_title<'gc>(table: Table<'gc>, ctx: Context<'gc>, title: &Title, is_cur
         ctx.intern(title.partial_url().as_bytes()),
     );
 
-    if title.namespace().id == Namespace::SPECIAL {
+    if title.is_in_namespace(Namespace::SPECIAL) {
         table.set_field(ctx, "exists", false);
     }
 
-    if ![Namespace::FILE, Namespace::MEDIA].contains(&title.namespace().id) {
+    if !matches!(title.namespace().id, Namespace::FILE | Namespace::MEDIA) {
         table.set_field(ctx, "file", false);
     }
 }

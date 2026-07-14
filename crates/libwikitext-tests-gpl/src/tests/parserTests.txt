@@ -2473,7 +2473,7 @@ Link with double quotes in title part (literal) and alternate part (interpreted)
 
 <p><a rel="mw:WikiLink" href="./''Pentecoste''" title="''Pentecoste''" data-parsoid='{"stx":"piped","a":{"href":"./&apos;&apos;Pentecoste&apos;&apos;"},"sa":{"href":"&apos;&apos;Pentecoste&apos;&apos;"}}'><i>Pentecoste</i></a></p>
 !! html/wiki.rs # This output matches the PHP parser, with pretty text, and a different href, and not treating the title-part as Wikitext
-<p><span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/File:Denys_Savchenko_%27%27Pentecoste%27%27.jpg?action=edit&amp;redlink=1" class="new" title="File:Denys Savchenko ‘‘Pentecoste’’.jpg"><span class="mw-file-element mw-broken-media">File:Denys Savchenko ‘‘Pentecoste’’.jpg</span></a></span>
+<p><span class="mw-default-size" typeof="mw:Error mw:File"><a href="/wiki/Special:Upload?wpDestFile=Denys_Savchenko_%27%27Pentecoste%27%27.jpg" class="new" title="File:Denys Savchenko ‘‘Pentecoste’’.jpg"><span class="mw-file-element mw-broken-media">File:Denys Savchenko ‘‘Pentecoste’’.jpg</span></a></span>
 </p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’">‘‘Pentecoste’’</a>
 </p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’">Pentecoste</a>
 </p><p><a href="/wiki/%27%27Pentecoste%27%27" title="‘‘Pentecoste’’"><i>Pentecoste</i></a>

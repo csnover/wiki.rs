@@ -15,6 +15,19 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
+#[derive(Debug, thiserror::Error)]
+#[error("{err}\n... {}", {
+    let line_col = err.line().checked_sub(1).zip(err.column().checked_sub(1));
+    let text = line_col.and_then(|(line, col)| {
+        body.lines().nth(line).map(|line| &line[col..line.ceil_char_boundary(col + 64)])
+    });
+    text.unwrap_or("?")
+})]
+struct SerdeError {
+    body: String,
+    err: serde_json::Error,
+}
+
 type MagicWords<'a> = HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>;
 
 /// Beware! Running this function may cause sadness and bleeding from orifices.
@@ -26,7 +39,10 @@ fn main() -> Result<(), DisplayError> {
         |_| "missing required url argument\n\nUsage: fetch-config https://wiki.example.com",
     )?;
     let body = fetch(&prefix)?;
-    let response = serde_json::from_str::<api::Response<'_>>(&body)?;
+    let response = match serde_json::from_str::<api::Response<'_>>(&body) {
+        Ok(value) => value,
+        Err(err) => return Err(SerdeError { body, err })?,
+    };
 
     if !response.batch_complete {
         Err("batchcomplete was false")?;
@@ -74,14 +90,8 @@ fn main() -> Result<(), DisplayError> {
 
     let function_hooks = aliases_iter(&magic_words, query.function_hooks, &trim_parser_fn);
 
-    // To use the wfMessage whitelist, image_whitelist_enabled is true and
-    // image_whitelist is `[""]`.
-    // To use any external image, image_whitelist is `[""]` and
-    // image_whitelist_enabled is false.
-    // To use a whitelist, image_whitelist_enabled is true and image_whitelist
-    // is not `[""]`.
-    // Good API!
     let api::General {
+        gallery_options,
         image_whitelist,
         image_whitelist_enabled,
         lang,
@@ -93,6 +103,67 @@ fn main() -> Result<(), DisplayError> {
         thumb_limits,
     } = query.general;
 
+    let gallery_options = {
+        let api::GalleryOptions {
+            caption_length,
+            height,
+            mode,
+            per_row,
+            show_bytes,
+            show_dimensions,
+            width,
+        } = gallery_options;
+
+        let caption_length = match caption_length {
+            api::GalleryCaptionLength::Fixed(value) => {
+                let value = Literal::u32_unsuffixed(value);
+                quote!(GalleryCaptionLength::Fixed(#value))
+            }
+            api::GalleryCaptionLength::UseCss(value) => {
+                quote!(GalleryCaptionLength::UseCss(#value))
+            }
+        };
+
+        let height = Literal::u32_unsuffixed(height);
+
+        let mode = match mode.as_ref() {
+            "nolines" => quote!(NoLines),
+            "packed" => quote!(Packed),
+            "packed-hover" => quote!(PackedHover),
+            "packed-overlay" => quote!(PackedOverlay),
+            "slideshow" => quote!(Slideshow),
+            _ => quote!(Traditional),
+        };
+
+        let per_row = if per_row <= 0 {
+            quote!(None)
+        } else {
+            let per_row = Literal::i32_unsuffixed(per_row);
+            quote!(Some(#per_row))
+        };
+
+        let width = Literal::u32_unsuffixed(width);
+
+        quote! {
+            GalleryOptions {
+                caption_length: #caption_length,
+                height: #height,
+                mode: GalleryMode::#mode,
+                per_row: #per_row,
+                show_bytes: #show_bytes,
+                show_dimensions: #show_dimensions,
+                width: #width,
+            }
+        }
+    };
+
+    // To use the wfMessage whitelist, image_whitelist_enabled is true and
+    // image_whitelist is `[""]`.
+    // To use any external image, image_whitelist is `[""]` and
+    // image_whitelist_enabled is false.
+    // To use a whitelist, image_whitelist_enabled is true and image_whitelist
+    // is not `[""]`.
+    // Good API!
     let image_hotlinking = if image_whitelist_enabled.is_none() && image_whitelist.is_some() {
         quote!(Enabled)
     } else if image_whitelist_enabled == Some(false) && image_whitelist.is_none() {
@@ -199,7 +270,7 @@ fn main() -> Result<(), DisplayError> {
         .into_iter()
         .map(|(k, v)| quote!(#k => #v));
 
-    let thumb_limits = thumb_limits.into_iter().map(Literal::u32_unsuffixed);
+    let thumb_limits = thumb_limits.into_values().map(Literal::u32_unsuffixed);
 
     let variables = aliases_iter(&magic_words, query.variables, &trim_variable);
 
@@ -219,6 +290,7 @@ fn main() -> Result<(), DisplayError> {
             function_hooks: phf::phf_map! {
                 #(#function_hooks),*
             },
+            gallery_options: #gallery_options,
             image_hotlinking: ImageHotlinking::#image_hotlinking,
             interlanguage_map: phf::phf_map! {
                 #(#interlanguage_map),*
@@ -331,7 +403,11 @@ fn fetch(prefix: &str) -> Result<String, ureq::Error> {
         .query("siprop", SITE_PROPS)
         .header(
             "User-Agent",
-            format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
+            format!(
+                "wiki.rs {}/{}",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION")
+            ),
         )
         .call()?;
     result.into_body().read_to_string()
@@ -448,7 +524,34 @@ mod api {
     }
 
     #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    pub(super) enum GalleryCaptionLength {
+        Fixed(u32),
+        UseCss(bool),
+    }
+
+    #[derive(serde::Deserialize)]
+    pub(super) struct GalleryOptions<'a> {
+        #[serde(rename = "captionLength")]
+        pub caption_length: GalleryCaptionLength,
+        #[serde(rename = "imageHeight")]
+        pub height: u32,
+        #[serde(borrow)]
+        pub mode: Cow<'a, str>,
+        #[serde(rename = "imagesPerRow")]
+        pub per_row: i32,
+        #[serde(rename = "showBytes")]
+        pub show_bytes: bool,
+        #[serde(rename = "showDimensions")]
+        pub show_dimensions: bool,
+        #[serde(rename = "imageWidth")]
+        pub width: u32,
+    }
+
+    #[derive(serde::Deserialize)]
     pub(super) struct General<'a> {
+        #[serde(borrow, rename = "galleryoptions")]
+        pub gallery_options: GalleryOptions<'a>,
         #[serde(borrow, rename = "externalimages")]
         pub image_whitelist: Option<Vec<Cow<'a, str>>>,
         #[serde(rename = "imagewhitelistenabled")]
@@ -466,7 +569,7 @@ mod api {
         #[serde(rename = "magiclinks")]
         pub magic_links: MagicLinks,
         #[serde(rename = "thumblimits")]
-        pub thumb_limits: Vec<u32>,
+        pub thumb_limits: BTreeMap<u32, u32>,
     }
 
     #[derive(serde::Deserialize)]
