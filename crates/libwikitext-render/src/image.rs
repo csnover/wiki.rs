@@ -501,13 +501,12 @@ pub(super) fn media_options<'s>(
         let result = state.statics.db.config().magic_word_matches(raw);
         if let Ok((value, arg)) = result {
             if let Some(arg) = arg.map(|arg| arg.map_ref(str::trim_ascii)) {
-                option_arg(state, sp, &mut options, value, arg, argument.value())?;
+                option_arg(state, sp, &mut options, argument, value, arg)?;
             } else {
-                option_flag(&mut options, argument, value);
+                option_flag(state, sp, &mut options, argument, value)?;
             }
         } else {
-            options.caption = Some(argument.combined());
-            options.caption_attr = Some(to_attr(state, sp, argument.combined())?);
+            option_caption(state, sp, &mut options, argument)?;
         }
     }
 
@@ -530,23 +529,27 @@ fn option_arg<'s>(
     state: &mut State<'_, '_, '_>,
     sp: &'s StackFrame<'s>,
     options: &mut Options<'s>,
+    raw_value: &'s Spanned<Argument>,
     key: &[&str],
     arg: Cow<'s, str>,
-    raw_value: &'s [Spanned<Token>],
 ) -> Result {
     if key.contains(&"img_alt") {
-        options.alt = Some(to_attr(state, sp, raw_value)?);
+        options.alt = Some(to_attr(state, sp, raw_value.value())?);
     } else if key.contains(&"img_class") {
-        options.class = Some(to_attr(state, sp, raw_value)?);
+        options.class = Some(to_attr(state, sp, raw_value.value())?);
     } else if key.contains(&"img_lang") {
-        options.lang = Some(arg);
+        if icu_locale::LanguageIdentifier::try_from_str(&arg).is_ok() {
+            options.lang = Some(arg);
+        } else {
+            option_caption(state, sp, options, raw_value)?;
+        }
     } else if key.contains(&"img_link") {
-        let arg = to_attr(state, sp, raw_value)?;
+        let arg = to_attr(state, sp, raw_value.value())?;
         let config = &state.statics.db.config();
         options.link = if arg.is_empty() {
             Link::None
         } else if config.protocols_pattern.is_match(&arg) {
-            // TODO: This is supposed to match the `url_term` grammar
+            // TODO: This is supposed to match like the `url_term` grammar
             // rule
             Link::Custom(LinkKind::External(arg, tags::ExternalLinkKind::Text))
         } else {
@@ -557,7 +560,7 @@ fn option_arg<'s>(
         options.lossy = Some(arg != "false");
     } else if key.contains(&"img_manualthumb") {
         if options.frame.is_none() {
-            let title = to_attr(state, sp, raw_value)?;
+            let title = to_attr(state, sp, raw_value.value())?;
             let title = Title::new(state.statics.db.config(), &title, Some(Namespace::FILE))?;
             options.frame = Some(FrameKind::Thumb(Some(title)));
         }
@@ -594,9 +597,27 @@ fn option_arg<'s>(
     Ok(())
 }
 
+/// Sets the caption on `options` from the given `argument`.
+fn option_caption<'s>(
+    state: &mut State<'_, '_, '_>,
+    sp: &'s StackFrame<'s>,
+    options: &mut Options<'s>,
+    argument: &'s Spanned<Argument>,
+) -> Result {
+    options.caption = Some(argument.combined());
+    options.caption_attr = Some(to_attr(state, sp, argument.combined())?);
+    Ok(())
+}
+
 /// Sets an option on `options` from the given flaglike `argument` which matched
 /// one of the magic words given in `value`.
-fn option_flag<'s>(options: &mut Options<'s>, argument: &'s Spanned<Argument>, value: &[&str]) {
+fn option_flag<'s>(
+    state: &mut State<'_, '_, '_>,
+    sp: &'s StackFrame<'s>,
+    options: &mut Options<'s>,
+    argument: &'s Spanned<Argument>,
+    value: &[&str],
+) -> Result {
     if value.contains(&"img_border") {
         options.border = true;
     } else if value.contains(&"img_center") {
@@ -637,8 +658,9 @@ fn option_flag<'s>(options: &mut Options<'s>, argument: &'s Spanned<Argument>, v
         options.r#loop = true;
     } else {
         // Maybe some other non-image magic word alias got in there
-        options.caption = Some(argument.combined());
+        option_caption(state, sp, options, argument)?;
     }
+    Ok(())
 }
 
 /// Parses an `img_width` option into width and height.
