@@ -229,7 +229,7 @@ impl ExtraWordsPattern {
 
         let res = param_words
             .clone()
-            .map(|(key, _)| format!("^{}", regex::escape(key).replace("\\$1", ".*")));
+            .map(|(key, _)| format!("^{}$", regex::escape(key).replace("\\$1", ".*")));
 
         let patterns = regex::RegexSetBuilder::new(res)
             .case_insensitive(true)
