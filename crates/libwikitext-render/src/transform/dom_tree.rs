@@ -199,7 +199,7 @@ impl<S: Sink> DomTree<S> {
         let next_format_index = format_index + 1;
         let reopen_end = self
             .format
-            .rfind_scoped(|node| self.stack.contains_after(furthest, node))
+            .rfind_scoped(|node| self.stack.contains_in_range(furthest.., node))
             .unwrap_or(self.format.len());
         let reopen_start = reopen_end.saturating_sub(3).max(next_format_index);
 
@@ -266,27 +266,43 @@ impl<S: Sink> DomTree<S> {
             .stack
             .index_in_scope(|node| node.is_implicit_p(), scope)
         {
-            // The decision about whether or not p-wrapping should occur needs
-            // to be made before unclosed formatting elements are folded into
-            // the implicit p-wrapper buffer because `<b><i><div>` should *not*
-            // cause p-wrapping, but `<b><i></i><div>` (and `<b><i>a<div>`)
-            // *should*, and there is no way to differentiate `<b><i><div>` from
-            // `<b><i></i><div>` once folding has happened. The original parser
-            // handles this by collecting everything, including block-level
-            // elements, into an ancestor `<mw:p-wrap>`; when a block-level
-            // element is inserted, it checks if there are any non-“empty”
-            // nodes in the wrapper, splits the tree, and only wraps the
-            // left-hand branch if the check was true, which only happens if
-            // some full elements or non-whitespace character data had been
-            // inserted in the past.
+            // The original parser handles p-wrapping by building a full tree
+            // where everything, including block-level elements, are collected
+            // into an ancestor `<mw:p-wrap>` wrapper; each insertion of a
+            // descendant node tries splitting the tree from the current
+            // insertion point up to the wrapper, or sets a flag to disable the
+            // wrapper if (1) there is some non-formatting element in the middle
+            // or (2) the count of prior “non-blank” nodes in the wrapper is
+            // zero. Then, after the tree is fully constructed, a second pass
+            // converts any enabled wrappers into `<p>` tags.
+            //
+            // This implementation instead just finds the range of currently
+            // open and p-wrappable nodes (i.e. any “non-blank” formatting
+            // elements) in the stack of open elements, closes them, and then
+            // reopens any formatting elements that were closed. This causes the
+            // ‘tree splitting’ effect of the original parser. When the
+            // `TagNode::ImplicitP` node is closed, it emits `<p>` and `</p>` if
+            // its buffer contains any “non-blank” nodes. This causes the
+            // p-wrapping effect.
+            //
+            // The trickiest bit for this algorithm is that it must decide
+            // whether or not p-wrapping should occur *before* unclosed
+            // formatting elements are folded into the implicit p-wrapper buffer
+            // because `<b><i><div>` should *not* cause p-wrapping, but
+            // `<b><i></i><div>` (and `<b><i>a<div>`) *should*, and there is no
+            // way to differentiate `<b><i><div>` from `<b><i></i><div>` any
+            // later than this. (This also means that MW’s p-wrapping algorithm
+            // can only ever be implemented by running concurrently with the
+            // HTML5 tree construction algorithm, since the adoption agency
+            // algorithm can also transform `<b><i><div>` to `<b><i></i><div>`.)
             let end = self.stack.next_non_pwrap(index);
             let reopen_end = self
                 .format
-                .rfind_scoped(|node| self.stack.contains_after(end, node))
-                .unwrap_or(self.format.len());
+                .rfind_scoped(|node| self.stack.contains_in_range(index..end, node))
+                .map_or(self.format.len(), |index| index + 1);
             let reopen_start = self
                 .format
-                .lfind_scoped(|node| self.stack.contains_after(index, node))
+                .lfind_scoped(|node| self.stack.contains_in_range(index..end, node))
                 .unwrap_or(self.format.len());
             self.stack.pop_range(&self.custom_tags, index..end);
             self.reformat_range(index, reopen_start..reopen_end);
@@ -1864,11 +1880,15 @@ impl<S: Sink> Stack<S> {
         self.inner.contains(node)
     }
 
-    /// Returns true if the stack contains `node` at or after `index`.
+    /// Returns true if the stack contains `node` in the range `index`.
     #[expect(clippy::trivially_copy_pass_by_ref, reason = "API consistency")]
     #[inline]
-    fn contains_after(&self, index: usize, node: &TagNode) -> bool {
-        self.inner[index..].contains(node)
+    fn contains_in_range<I: core::slice::SliceIndex<[TagNode], Output = [TagNode]>>(
+        &self,
+        index: I,
+        node: &TagNode,
+    ) -> bool {
+        self.inner[index].contains(node)
     }
 
     /// Decrements the foster parenting counter. At zero, foster parenting is

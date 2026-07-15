@@ -125,10 +125,10 @@ steps is run in order:
 17. [Run the language converter](#language-conversion);
 18. [Unstrip strip markers](#unstrip) with mode `nowiki`;
 19. [Unstrip strip markers](#unstrip) with mode `general`[^gen2];
-20. [Parse into an HTML5 DOM];
+20. [Parse into an HTML5 DOM] concurrently with the
+    [p-wrapping algorithm](#p-wrapping);
 21. [Guard French quotation marks from word wrapping](#guard-quotes);
-22. [Run the p-wrapping algorithm](#p-wrapping);
-23. [Format elements](#format-elements).
+22. [Format elements](#format-elements).
 
 [Parse into an HTML5 DOM]: https://html.spec.whatwg.org/multipage/parsing.html
 
@@ -2730,7 +2730,11 @@ For the text content of each text node:
 
 ## P-wrapping
 
-For each node `N` with parent node `P`:
+※ This algorithm *must* run concurrently with the HTML5 tree construction
+  algorithm. It *cannot* be run on an already-constructed DOM because the HTML5
+  adoption agency algorithm confuses the p-wrapping algorithm.
+
+For each newly inserted node `N` with parent node `P`:
 
 1. If `N` is a text node:
 
@@ -2763,6 +2767,12 @@ For each node `N` with parent node `P`:
    2. Let `DR` be the tree depth of `R`;
    3. Let `A` be the ancestor of `P` at tree depth `DR + 1`;
    4. Move `N` into `R` after `A`.
+
+For each formatting element `N` inserted by the HTML5 adoption agency algorithm
+into a new parent `P`:
+
+1. If `P` is a `blockquote` element, let `W` be the last child `mw:pwrap` of
+   `P`, insert all children of `W` into `N`, and insert `N` into `W`.
 
 [^formatting]: The list of formatting elements defined by MediaWiki are `["a"`
   `|"b"|"big"|"code"|"em"|"font"|"i"|"nobr"|"s"|"small"|"strike"|"strong"|"tt"`
