@@ -262,6 +262,12 @@ impl Options<'_> {
         }
     }
 
+    /// Returns true if `data-width` should be supplied on a broken image.
+    #[inline]
+    fn show_broken_width(&self) -> bool {
+        !matches!(self.frame, None | Some(FrameKind::Frameless)) || self.width.is_some()
+    }
+
     /// The title of the file to use for the thumbnail, or `None` if an invalid
     /// explicit title was given.
     fn thumb(&self) -> Option<&Title> {
@@ -578,6 +584,7 @@ pub(super) fn media_options<'s>(
     sp: &'s StackFrame<'s>,
     title: Title,
     arguments: &'s [Spanned<Argument>],
+    for_gallery: bool,
 ) -> Result<Options<'s>> {
     let mut options = Options::new(title);
 
@@ -588,12 +595,12 @@ pub(super) fn media_options<'s>(
         let result = state.statics.db.config().magic_word_matches(raw);
         if let Ok((value, arg)) = result {
             if let Some(arg) = arg.map(|arg| arg.map_ref(str::trim_ascii)) {
-                option_arg(state, sp, &mut options, argument, value, arg)?;
+                option_arg(state, sp, &mut options, argument, value, arg, for_gallery)?;
             } else {
-                option_flag(state, sp, &mut options, argument, value)?;
+                option_flag(state, sp, &mut options, argument, value, for_gallery)?;
             }
         } else {
-            option_caption(state, sp, &mut options, argument)?;
+            option_caption(state, sp, &mut options, argument, for_gallery)?;
         }
     }
 
@@ -619,6 +626,7 @@ fn option_arg<'s>(
     raw_arg: &'s Spanned<Argument>,
     key: &[&str],
     arg: Cow<'s, str>,
+    for_gallery: bool,
 ) -> Result {
     if key.contains(&"img_alt") {
         options.alt = Some(to_attr(state, sp, raw_arg.value())?);
@@ -628,7 +636,7 @@ fn option_arg<'s>(
         if icu_locale::LanguageIdentifier::try_from_str(&arg).is_ok() {
             options.lang = Some(arg);
         } else {
-            option_caption(state, sp, options, raw_arg)?;
+            option_caption(state, sp, options, raw_arg, for_gallery)?;
         }
     } else if key.contains(&"img_link") {
         let arg = to_attr(state, sp, raw_arg.value())?;
@@ -641,8 +649,10 @@ fn option_arg<'s>(
             Link::Custom(LinkKind::External(arg, tags::ExternalLinkKind::Text))
         } else if let Ok(title) = Title::new(config, &url_decode(&arg), None) {
             Link::Custom(LinkKind::Internal(title))
+        } else if for_gallery {
+            return Ok(());
         } else {
-            return option_caption(state, sp, options, raw_arg);
+            return option_caption(state, sp, options, raw_arg, for_gallery);
         };
     } else if key.contains(&"img_lossy") {
         options.lossy = Some(arg != "false");
@@ -689,6 +699,8 @@ fn option_arg<'s>(
         options.start = Some(arg);
     } else if key.contains(&"timedmedia_thumbtime") {
         options.thumbtime = Some(arg);
+    } else if for_gallery {
+        option_caption(state, sp, options, raw_arg, for_gallery)?;
     } else {
         log::warn!("unexpected magic word {key:?}");
     }
@@ -701,9 +713,15 @@ fn option_caption<'s>(
     sp: &'s StackFrame<'s>,
     options: &mut Options<'s>,
     argument: &'s Spanned<Argument>,
+    for_gallery: bool,
 ) -> Result {
     options.caption = Some(argument.combined());
-    options.caption_attr = Some(to_attr(state, sp, argument.combined())?);
+    let caption_attr = to_attr(state, sp, argument.combined())?;
+    if for_gallery && caption_attr.is_empty() {
+        options.caption_attr = None;
+    } else {
+        options.caption_attr = Some(caption_attr);
+    }
     Ok(())
 }
 
@@ -715,16 +733,17 @@ fn option_flag<'s>(
     options: &mut Options<'s>,
     argument: &'s Spanned<Argument>,
     value: &[&str],
+    for_gallery: bool,
 ) -> Result {
     if value.contains(&"img_border") {
         options.border = true;
-    } else if value.contains(&"img_center") {
+    } else if !for_gallery && value.contains(&"img_center") {
         options.align.get_or_insert("center");
-    } else if value.contains(&"img_left") {
+    } else if !for_gallery && value.contains(&"img_left") {
         options.align.get_or_insert("left");
-    } else if value.contains(&"img_none") {
+    } else if !for_gallery && value.contains(&"img_none") {
         options.align.get_or_insert("none");
-    } else if value.contains(&"img_right") {
+    } else if !for_gallery && value.contains(&"img_right") {
         options.align.get_or_insert("right");
     } else if value.contains(&"img_baseline") {
         options.valign.get_or_insert("baseline");
@@ -743,11 +762,17 @@ fn option_flag<'s>(
     } else if value.contains(&"img_top") {
         options.valign.get_or_insert("top");
     } else if value.contains(&"img_framed") {
-        options.frame.get_or_insert(FrameKind::Frame);
+        if !for_gallery {
+            options.frame.get_or_insert(FrameKind::Frame);
+        }
     } else if value.contains(&"img_frameless") {
-        options.frame.get_or_insert(FrameKind::Frameless);
+        if !for_gallery {
+            options.frame.get_or_insert(FrameKind::Frameless);
+        }
     } else if value.contains(&"img_thumbnail") {
-        options.frame.get_or_insert(FrameKind::Thumb(None));
+        if !for_gallery {
+            options.frame.get_or_insert(FrameKind::Thumb(None));
+        }
     } else if value.contains(&"img_upright") {
         options.upright = Some(Upright::Default);
     } else if value.contains(&"timedmedia_muted") {
@@ -756,7 +781,7 @@ fn option_flag<'s>(
         options.r#loop = true;
     } else {
         // Maybe some other non-image magic word alias got in there
-        option_caption(state, sp, options, argument)?;
+        option_caption(state, sp, options, argument, for_gallery)?;
     }
     Ok(())
 }
@@ -777,9 +802,8 @@ fn render_broken<S: Sink + ?Sized>(
     super::tags::render_start_link(out, state, &LinkKind::Internal(options.title.clone()), true);
     out.tag_start("span");
     out.tag_attribute_full("class", "mw-file-element mw-broken-media");
-    if let width = calc_preferred_width(state, options, u32::MAX, false)
-        && width != u32::MAX
-    {
+    if options.show_broken_width() {
+        let width = calc_preferred_width(state, options, default_thumb_limit(state), false);
         out.tag_attribute_full("data-width", &width.to_string());
     }
     if let Some(height) = options.height {
@@ -927,7 +951,7 @@ pub(super) fn render_media<S: DocumentSink>(
     title: Title,
     arguments: &[Spanned<Argument>],
 ) -> Result {
-    let options = media_options(state, sp, title, arguments)?;
+    let options = media_options(state, sp, title, arguments, false)?;
     render_media_with_options(out, state, sp, &options)
 }
 

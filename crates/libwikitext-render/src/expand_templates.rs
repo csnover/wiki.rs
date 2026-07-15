@@ -56,6 +56,7 @@ impl<'s> ExpandTemplates<'s> {
     }
 }
 
+// TODO: ExpandTemplates should never see non-preprocessor tokens.
 impl Surrogate<Error> for ExpandTemplates<'_> {
     #[inline]
     fn adopt_behavior_switch(
@@ -139,6 +140,24 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         Ok(())
     }
 
+    fn adopt_external_link(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        target: &[Spanned<Token>],
+        content: &[Spanned<Token>],
+    ) -> Result {
+        self.out.write_char('[')?;
+        self.adopt_tokens(state, sp, target)?;
+        if !content.is_empty() {
+            self.out.write_char(' ')?;
+        }
+        self.adopt_tokens(state, sp, content)?;
+        self.out.write_char(']')?;
+        Ok(())
+    }
+
     #[inline]
     fn adopt_generated(
         &mut self,
@@ -164,6 +183,27 @@ impl Surrogate<Error> for ExpandTemplates<'_> {
         self.adopt_tokens(state, sp, content)?;
         self.out.write_str(&sp.source[heading.into_range()])?;
         Ok(())
+    }
+
+    fn adopt_link(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        _span: Span,
+        prefix: &[Spanned<Token>],
+        target: &[Spanned<Token>],
+        content: &[Spanned<Argument>],
+        trail: &[Spanned<Token>],
+    ) -> Result {
+        self.adopt_tokens(state, sp, prefix)?;
+        self.out.write_str("[[")?;
+        self.adopt_tokens(state, sp, target)?;
+        for content in content {
+            self.out.write_char('|')?;
+            self.adopt_tokens(state, sp, content.combined())?;
+        }
+        self.out.write_str("]]")?;
+        self.adopt_tokens(state, sp, trail)
     }
 
     #[inline]

@@ -119,7 +119,7 @@ use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode,
-    config::GalleryCaptionLength,
+    config::{GalleryCaptionLength, GalleryOptions},
     db::DatabaseProvider,
     decode_html, escape, escape_all, escape_id, escape_id_url, escape_no_wiki,
     normalize_whitespace,
@@ -291,112 +291,38 @@ impl ExtensionTag<'_, '_, '_> {
     }
 }
 
+/// The parts required to render a `<gallery>` body.
+#[derive(Debug)]
+struct GalleryBody<'a> {
+    /// An optional caption for the gallery.
+    caption: Option<Cow<'a, str>>,
+    /// Rendering options.
+    options: GalleryOptions,
+    /// If true, shows the filename of the associated image in an image caption.
+    show_filename: bool,
+}
+
+impl GalleryBody<'_> {
+    /// Creates a new `GalleryBody` with the given default `options`.
+    fn new(options: GalleryOptions) -> Self {
+        Self {
+            caption: <_>::default(),
+            options,
+            show_filename: <_>::default(),
+        }
+    }
+}
+
 /// The `<gallery>` extension tag.
 fn gallery(
     out: &mut String,
     state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    let mut caption = None;
-    let mut class = <_>::default();
-    let mut gallery = state.statics.db.config().gallery_options;
-    let mut has_widths = false;
-    let mut show_filename = false;
-    let mut show_thumbnails = false;
-    let mut style = <_>::default();
+    let (start_tag, body) = parse_gallery_tag(state, arguments)?;
+    writeln!(out, "{start_tag}")?;
 
-    let mut attrs = AttributeFilter::new(Accumulator::new());
-    attrs.tag_start("ul");
-    for attribute in arguments.iter() {
-        let (name, value) = if let Some(name) = attribute.name(state, arguments.sp)? {
-            (name, Some(attribute.value(state, arguments.sp)?))
-        } else {
-            (attribute.value(state, arguments.sp)?, None)
-        };
-
-        match name.as_ref() {
-            "caption" => caption = value,
-            "class" => class = value.unwrap_or_default(),
-            "heights" => {
-                if let Some(value) = value
-                    && let (Some(value), _) = image::parse_dims(&value)
-                    && value > 0
-                {
-                    gallery.height = value;
-                }
-            }
-            "mode" => {
-                if let Some(value) = value
-                    && let Ok(value) = value.parse()
-                {
-                    gallery.mode = value;
-                }
-            }
-            "perrow" => {
-                if let Some(value) = value
-                    && let Ok(value) = value.parse()
-                {
-                    gallery.per_row = (value > 0).then_some(value);
-                }
-            }
-            "showfilename" => show_filename = true,
-            "showthumbnails" => show_thumbnails = true,
-            "style" => style = value.unwrap_or_default(),
-            "widths" => {
-                if let Some(value) = value
-                    && let (Some(value), _) = image::parse_dims(&value)
-                    && value > 0
-                {
-                    gallery.width = value;
-                    has_widths = true;
-                }
-            }
-            name => {
-                let value = value.map_or(<_>::default(), |s| s.map(decode_html));
-                attrs.tag_attribute_full(name, &value);
-            }
-        }
-    }
-
-    if show_thumbnails && gallery.mode.is_slideshow() {
-        attrs.tag_attribute_full("data-showthumbnails", "1");
-    }
-
-    attrs.tag_attribute_start("class");
-    if !class.is_empty() {
-        attrs.text(&class);
-        attrs.text(" ");
-    }
-    attrs.text("gallery ");
-    attrs.text("mw-gallery-");
-    attrs.text(gallery.mode.as_str());
-    attrs.tag_attribute_end("class");
-
-    if gallery.per_row.is_some() || has_widths || !style.is_empty() {
-        attrs.tag_attribute_start("style");
-        if gallery.per_row.is_some() || has_widths {
-            attrs.text("grid-template-columns:repeat(");
-            if let Some(per_row) = gallery.per_row {
-                attrs.text(&per_row.to_string());
-            } else {
-                attrs.text("auto-fill");
-            }
-            attrs.text(",");
-            if has_widths {
-                attrs.text(&gallery.width.to_string());
-                attrs.text("px");
-            } else {
-                attrs.text("1fr");
-            }
-            attrs.text(");");
-        }
-        attrs.text(&style);
-        attrs.tag_attribute_end("style");
-    }
-    attrs.tag_start_end("ul");
-    writeln!(out, "{}", attrs.finish())?;
-
-    if let Some(value) = caption {
+    if let Some(value) = body.caption {
         let caption = eval_string(state, arguments.sp, &value, false)?;
         // TODO: It is clear that MW is normalising whitespace. It is
         // not clear where.
@@ -422,32 +348,39 @@ fn gallery(
         let sp = arguments.sp.clone_with_source(FileMap::new(&args));
         let args = state.statics.parser.parse_gallery_media(&sp.source)?;
 
-        let mut options = image::media_options(state, &sp, title, &args)?;
+        let mut options = image::media_options(state, &sp, title, &args, true)?;
 
-        if options.width.is_none() && !gallery.mode.is_packed() {
-            options.width = Some(gallery.width);
+        if (options.width.is_none() || !options.title.exists(&state.statics.db))
+            && !body.options.mode.is_packed()
+        {
+            options.width = Some(body.options.width);
         }
 
         if options.height.is_none() {
-            options.height = Some(gallery.height);
+            options.height = Some(body.options.height);
         }
 
-        options.frame = None;
+        writeln!(out, "\t\t<li class=\"gallerybox\">")?;
 
         let mut outline = <_>::default();
         let mut inner = Document::<ParseHalf<'_>>::new(&mut outline);
         image::render_media_with_options(&mut inner, state, &sp, &options)?;
-        writeln!(out, "\t\t<li class=\"gallerybox\">")?;
+
         writeln!(out, "\t\t\t<div class=\"thumb\">{}</div>", inner.finish())?;
+
         write!(out, "\t\t\t<div class=\"gallerytext\">")?;
-        if show_filename {
+        if body.show_filename {
+            let href = image::resource_url(state, &LinkKind::Internal(options.title.clone()), None);
+
             let mut acc = Accumulator::new();
             acc.tag_start("a");
-            let href = image::resource_url(state, &LinkKind::Internal(options.title.clone()), None);
             acc.tag_attribute_full("href", &href);
             acc.tag_attribute_start("class");
             acc.text("galleryfilename");
-            if matches!(gallery.caption_length, GalleryCaptionLength::UseCss(true)) {
+            if matches!(
+                body.options.caption_length,
+                GalleryCaptionLength::UseCss(true)
+            ) {
                 acc.text(" galleryfilename-truncate");
             }
             acc.tag_attribute_end("class");
@@ -455,20 +388,127 @@ fn gallery(
             acc.tag_start_end("a");
             acc.text(options.title.text());
             acc.tag_end("a");
-            write!(out, "{}", acc.finish())?;
+            writeln!(out, "{}", acc.finish())?;
         }
+
         if let Some(caption) = options.caption {
             let mut outline = <_>::default();
             let mut inner = Document::<ParseHalf<'_>>::new(&mut outline);
             inner.adopt_tokens(state, &sp, caption)?;
             *out += &inner.finish();
         }
-        writeln!(out, "</div>")?;
-        writeln!(out, "\t\t</li>")?;
+
+        writeln!(out, "</div>\n\t\t</li>")?;
     }
     write!(out, "</ul>")?;
 
     Ok(OutputMode::Html)
+}
+
+/// Parses `<gallery>` options from `arguments` using `state`. Returns the
+/// HTML start tag of the gallery, plus options required to render the body.
+fn parse_gallery_tag<'a>(
+    state: &mut State<'_, '_, '_>,
+    arguments: &'a ExtensionTag<'_, '_, '_>,
+) -> Result<(String, GalleryBody<'a>), Error> {
+    let mut attrs = AttributeFilter::new(Accumulator::new());
+    let mut class = <_>::default();
+    let mut has_widths = <_>::default();
+    let mut show_thumbnails = <_>::default();
+    let mut style = <_>::default();
+
+    let mut gallery = GalleryBody::new(state.statics.db.config().gallery_options);
+    attrs.tag_start("ul");
+    for attribute in arguments.iter() {
+        let (name, value) = if let Some(name) = attribute.name(state, arguments.sp)? {
+            (name, Some(attribute.value(state, arguments.sp)?))
+        } else {
+            (attribute.value(state, arguments.sp)?, None)
+        };
+
+        match name.as_ref() {
+            "caption" => gallery.caption = value,
+            "class" => class = value.unwrap_or_default(),
+            "heights" => {
+                if let Some(value) = value
+                    && let (Some(value), _) = image::parse_dims(&value)
+                    && value > 0
+                {
+                    gallery.options.height = value;
+                }
+            }
+            "mode" => {
+                if let Some(value) = value
+                    && let Ok(value) = value.parse()
+                {
+                    gallery.options.mode = value;
+                }
+            }
+            "perrow" => {
+                if let Some(value) = value
+                    && let Ok(value) = value.parse()
+                {
+                    gallery.options.per_row = (value > 0).then_some(value);
+                }
+            }
+            "showfilename" => gallery.show_filename = true,
+            "showthumbnails" => show_thumbnails = true,
+            "style" => style = value.unwrap_or_default(),
+            "widths" => {
+                if let Some(value) = value
+                    && let (Some(value), _) = image::parse_dims(&value)
+                    && value > 0
+                {
+                    gallery.options.width = value;
+                    has_widths = true;
+                }
+            }
+            name => {
+                let value = value.map_or(<_>::default(), |s| s.map(decode_html));
+                attrs.tag_attribute_full(name, &value);
+            }
+        }
+    }
+
+    if show_thumbnails && gallery.options.mode.is_slideshow() {
+        attrs.tag_attribute_full("data-showthumbnails", "1");
+    }
+
+    attrs.tag_attribute_start("class");
+    if !class.is_empty() {
+        attrs.text(&class);
+        attrs.text(" ");
+    }
+    attrs.text("gallery ");
+    attrs.text("mw-gallery-");
+    attrs.text(gallery.options.mode.as_str());
+    attrs.tag_attribute_end("class");
+
+    if gallery.options.per_row.is_some() || has_widths || !style.is_empty() {
+        attrs.tag_attribute_start("style");
+        if gallery.options.per_row.is_some() || has_widths {
+            attrs.text("grid-template-columns:repeat(");
+            if let Some(per_row) = gallery.options.per_row {
+                attrs.text(&per_row.to_string());
+            } else {
+                attrs.text("auto-fill");
+            }
+            attrs.text(",");
+            if has_widths {
+                attrs.text(&gallery.options.width.to_string());
+                attrs.text("px");
+            } else {
+                attrs.text("1fr");
+            }
+            attrs.text(");");
+        }
+        attrs.text(&style);
+        attrs.tag_attribute_end("style");
+    }
+
+    attrs.tag_start_end("ul");
+
+    Ok((attrs.finish(), gallery))
 }
 
 /// The `<graph>` extension tag.
