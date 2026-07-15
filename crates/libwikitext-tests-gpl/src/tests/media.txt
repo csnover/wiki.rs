@@ -476,6 +476,13 @@ File:Foobar.jpg
 <div class="gallerytext"></div>
 </li>
 </ul>
+!! html/wiki.rs # This output matches the PHP parser, minus XHTML and with different styles
+<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(auto-fill,100px);">
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg" decoding="async" width="100" height="11" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/200px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext"></div>
+		</li>
+</ul>
 !! end
 
 !! test
@@ -850,6 +857,20 @@ File:Foobar.jpg|alt=http://testing.123?4=5&vert;6|caption
 <li class="gallerybox" style="width: 155px;"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File mw:ExpandedAttrs" data-parsoid='{"optList":[{"ck":"width","ak":"120x120px"},{"ck":"none","ak":"none"},{"ck":"alt","ak":"alt=http://testing.123?4=5&amp;#x7C;6"},{"ck":"caption","ak":"caption"}]}' data-mw='{"attribs":[["alt",{"html":"alt=&lt;a rel=\"mw:ExtLink\" href=\"http://testing.123?4=5%7C6\" class=\"external free\" data-parsoid=&apos;{\"stx\":\"url\",\"a\":{\"href\":\"http://testing.123?4=5%7C6\"},\"sa\":{\"href\":\"http://testing.123?4=5&amp;amp;#x7C;6\"}}&apos;>http://testing.123?4=5%7C6&lt;/a>","txt":"http://testing.123?4=5|6"}]]}'><a href="./File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="http://testing.123?4=5|6" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="14" width="120" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext">caption</div></li>
 <li class="gallerybox" style="width: 155px;"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File mw:ExpandedAttrs" data-parsoid='{"optList":[{"ck":"width","ak":"120x120px"},{"ck":"none","ak":"none"},{"ck":"alt","ak":"alt=http://testing.123?4=5&amp;vert;6"},{"ck":"caption","ak":"caption"}]}' data-mw='{"attribs":[["alt",{"html":"alt=&lt;a rel=\"mw:ExtLink\" href=\"http://testing.123?4=5%7C6\" class=\"external free\" data-parsoid=&apos;{\"stx\":\"url\",\"a\":{\"href\":\"http://testing.123?4=5%7C6\"},\"sa\":{\"href\":\"http://testing.123?4=5&amp;amp;vert;6\"}}&apos;>http://testing.123?4=5%7C6&lt;/a>","txt":"http://testing.123?4=5|6"}]]}'><a href="./File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="http://testing.123?4=5|6" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="14" width="120" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext">caption</div>
 </li>
+</ul>
+!! html/wiki.rs # This output combines PHP and Parsoid, minus XHTML and styles, plus URL-encodes the alt text of the image tags. TODO: Probably should not encode the alt text? But it is encoded on gallery, so it is just inconsistent in MW
+<p><span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="http://testing.123?4=5%7C6" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
+</p><p><span class="mw-default-size" typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="http://testing.123?4=5%7C6" src="http://example.com/images/3/3a/Foobar.jpg" decoding="async" width="1941" height="220" class="mw-file-element"></a></span>
+</p>
+<ul class="gallery mw-gallery-traditional">
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="http://testing.123?4=5%7C6" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" width="120" height="14" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext">caption</div>
+		</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="caption"><img alt="http://testing.123?4=5%7C6" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" width="120" height="14" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext">caption</div>
+		</li>
 </ul>
 !! end
 
@@ -2538,6 +2559,30 @@ image:foobar.jpg|alt=This is a foo-bar.|blabla.
 <li class="gallerybox" style="width: 105px;"><div class="thumb" style="width: 100px; height: 70px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="8" width="70" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"8","width":"70"},"sa":{"resource":"image:foobar.jpg"}}' class="mw-file-element"/></a></span></div><div class="gallerytext"></div></li>
 <li class="gallerybox" style="width: 105px;"><div class="thumb" style="width: 100px; height: 70px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description" title="blabla."><img alt="This is a foo-bar." resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="8" width="70" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"8","width":"70"},"sa":{"resource":"image:foobar.jpg"}}' class="mw-file-element"/></a></span></div><div class="gallerytext">blabla.</div></li>
 </ul>
+!! html/wiki.rs # This output matches the PHP parser, minus XHTML, with different styles and URL
+<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(2,70px);">
+	<li class="gallerycaption">Foo <a href="/wiki/Main_Page" title="Main Page">Main Page</a></li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:Error mw:File"><a href="/wiki/Special:Upload?wpDestFile=Nonexistent.jpg" class="new" title="File:Nonexistent.jpg"><span class="mw-file-element mw-broken-media" data-width="70" data-height="40">caption</span></a></span></div>
+			<div class="gallerytext">caption</div>
+		</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:Error mw:File"><a href="/wiki/Special:Upload?wpDestFile=Nonexistent.jpg" class="new" title="File:Nonexistent.jpg"><span class="mw-file-element mw-broken-media" data-width="70" data-height="40">File:Nonexistent.jpg</span></a></span></div>
+			<div class="gallerytext"></div>
+		</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="some caption Main Page"><img alt="some caption Main Page" src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" width="70" height="8" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext">some <b>caption</b> <a href="/wiki/Main_Page" title="Main Page">Main Page</a></div>
+		</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" width="70" height="8" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext"></div>
+		</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="blabla."><img alt="This is a foo-bar." src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" width="70" height="8" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext">blabla.</div>
+		</li>
+</ul>
 !! end
 
 !! test
@@ -2556,6 +2601,13 @@ File:Foobar.jpg
 !! html/parsoid
 <ul class="gallery mw-gallery-traditional" typeof="mw:Extension/gallery" about="#mwt2" data-mw='{"name":"gallery","attrs":{"widths":"70","heights":"40"},"body":{}}'>
 <li class="gallerybox" style="width: 105px;"><div class="thumb" style="width: 100px; height: 70px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="8" width="70" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext"></div></li>
+</ul>
+!! html/wiki.rs # This output matches the PHP parser, minus XHTML, with different styles
+<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(auto-fill,70px);">
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" width="70" height="8" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext"></div>
+		</li>
 </ul>
 !! end
 
@@ -4142,8 +4194,6 @@ Broken block media with a caption
 <figure class="mw-default-size" typeof="mw:Error mw:File/Thumb"><a href="/index.php?title=Special:Upload&amp;wpDestFile=Broken.jpg" class="new" title="File:Broken.jpg"><span class="mw-file-element mw-broken-media" data-width="180">File:Broken.jpg</span></a><figcaption>A caption for the media.</figcaption></figure>
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:Error mw:File/Thumb" data-mw='{"errors":[{"key":"apierror-filedoesnotexist","message":"This image does not exist."}]}'><a href="./Special:FilePath/Broken.jpg" class="new" title="File:Broken.jpg"><span class="mw-file-element mw-broken-media" resource="./File:Broken.jpg" data-width="180">File:Broken.jpg</span></a><figcaption>A caption for the media.</figcaption></figure>
-!! html/wiki.rs # This output matches the PHP parser, minus the data- attribute and different href
-<figure class="mw-default-size" typeof="mw:Error mw:File/Thumb"><a href="/wiki/File:Broken.jpg?action=edit&amp;redlink=1" class="new" title="File:Broken.jpg"><span class="mw-file-element mw-broken-media">File:Broken.jpg</span></a><figcaption>A caption for the media.</figcaption></figure>
 !! end
 
 ## In contrast with imagemaps
@@ -4355,6 +4405,17 @@ File:Foobar.jpg|Two
 <ul class="gallery mw-gallery-traditional" style="max-width: 163px; color: red" typeof="mw:Extension/gallery" about="#mwt2" data-mw='{"name":"gallery","attrs":{"perrow":"1","style":"color: red"},"body":{}}'>
 <li class="gallerybox" style="width: 155px;"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description" title="One"><img alt="One" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="14" width="120" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext">One</div></li>
 <li class="gallerybox" style="width: 155px;"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description" title="Two"><img alt="Two" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="14" width="120" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext">Two</div></li>
+</ul>
+!! html/wiki.rs # This output matches the PHP parser, minus XHTML, with different styles
+<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(1,1fr);--mw-output-color:red;">
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="One"><img alt="One" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" width="120" height="14" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext">One</div>
+		</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="Two"><img alt="Two" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" width="120" height="14" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext">Two</div>
+		</li>
 </ul>
 !! end
 

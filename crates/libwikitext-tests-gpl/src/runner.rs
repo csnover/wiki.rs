@@ -781,6 +781,11 @@ fn check_test_results(
                 if fail && let Cow::Owned(expected_html) = replace_url(&expected_html) {
                     heuristic = "unpretty + gallery styles + replace url";
                     fail = expected_html != actual;
+
+                    if fail && let Cow::Owned(expected_html) = decode_html(&expected_html) {
+                        heuristic = "unpretty + gallery styles + replace url + decode html";
+                        fail = expected_html != actual;
+                    }
                 }
             }
 

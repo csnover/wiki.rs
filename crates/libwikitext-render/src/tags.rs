@@ -184,7 +184,6 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
 
     let href = if missing {
         if let Some(title) = link.title()
-            && title.is_in_namespace(Namespace::FILE)
             && for_image
         {
             let special = state

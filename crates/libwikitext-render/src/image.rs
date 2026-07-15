@@ -7,7 +7,7 @@ use super::{
     transform::Sink,
 };
 use crate::transform::tokenise;
-use core::fmt::Write as _;
+use core::{convert::Infallible, fmt::Write as _};
 use libmisc::CowExt as _;
 use libwikitext_common::{
     db::FileMetadata,
@@ -25,17 +25,17 @@ type Dims = (u32, u32);
 
 /// An image rendering strategy.
 #[derive(Clone, Debug)]
-pub(super) enum FrameKind {
+pub(super) enum FrameKind<'a> {
     /// Show the image with a frame. Is a frame a border? Who could say.
     Frame,
     /// Show the image with no frame.
     Frameless,
     /// Show the image as a thumbnail with a border and a caption underneath the
     /// image, using the given optional `Title` for the actual thumbnail image.
-    Thumb(Option<Title>),
+    Thumb(Option<FrameTitle<'a>>),
 }
 
-impl FrameKind {
+impl FrameKind<'_> {
     /// Returns the Resource Description Framework type for an image.
     fn rdfa_kind(&self) -> &str {
         match self {
@@ -44,6 +44,15 @@ impl FrameKind {
             Self::Thumb(_) => "mw:File/Thumb",
         }
     }
+}
+
+/// A thumbnail image reference.
+#[derive(Clone, Debug)]
+pub(super) enum FrameTitle<'a> {
+    /// An invalid title.
+    Invalid(Cow<'a, str>),
+    /// A valid title.
+    Valid(Title),
 }
 
 /// An image link strategy.
@@ -100,7 +109,7 @@ pub(super) struct Options<'a> {
     /// The playback end time for a video… er… image.
     end: Option<Cow<'a, str>>,
     /// The intended format of the image.
-    pub frame: Option<FrameKind>,
+    pub frame: Option<FrameKind<'a>>,
     /// The height override for the image.
     pub height: Option<u32>,
     /// The language to use when rendering an SVG with `<switch>` options
@@ -212,7 +221,7 @@ impl Options<'_> {
     fn is_thumb(&self) -> bool {
         matches!(
             self.frame,
-            Some(FrameKind::Thumb(None) | FrameKind::Frameless)
+            Some(FrameKind::Thumb(None | Some(FrameTitle::Invalid(_))) | FrameKind::Frameless)
         )
     }
 
@@ -253,12 +262,13 @@ impl Options<'_> {
         }
     }
 
-    /// The title of the file to use for the thumbnail.
-    fn thumb(&self) -> &Title {
-        if let Some(FrameKind::Thumb(Some(thumb))) = &self.frame {
-            thumb
-        } else {
-            &self.title
+    /// The title of the file to use for the thumbnail, or `None` if an invalid
+    /// explicit title was given.
+    fn thumb(&self) -> Option<&Title> {
+        match &self.frame {
+            Some(FrameKind::Thumb(Some(FrameTitle::Valid(thumb)))) => Some(thumb),
+            Some(FrameKind::Thumb(Some(FrameTitle::Invalid(_)))) => None,
+            _ => Some(&self.title),
         }
     }
 
@@ -476,6 +486,21 @@ fn div_round(n: u32, d: u32) -> u32 {
     q + u32::from(r << 1 >= d)
 }
 
+/// Gets the appropriate metadata from `file` and `thumb` for rendering an
+/// image, or `None` if an image cannot be rendered.
+#[rustfmt::skip]
+fn image_metadata(file: Option<FileMetadata>, thumb: Option<FileMetadata>) -> Option<(Dims, bool)> {
+    if matches!(file, Some(FileMetadata::Image { .. })) {
+        match thumb {
+            None | Some(FileMetadata::Audio) => None,
+            Some(FileMetadata::Image { height, scalable, width }) => Some(((width, height), scalable)),
+            Some(FileMetadata::Video { height, width }) => Some(((width, height), false)),
+        }
+    } else {
+        None
+    }
+}
+
 /// Returns `true` if the string appears to be an absolute URL.
 // TODO: This is a hack for the test suite. At the least it should be using
 // `config.protocols`.
@@ -624,7 +649,10 @@ fn option_arg<'s>(
     } else if key.contains(&"img_manualthumb") {
         if options.frame.is_none() {
             let title = to_attr(state, sp, raw_arg.value())?;
-            let title = Title::new(state.statics.db.config(), &title, Some(Namespace::FILE))?;
+            let title = match Title::new(state.statics.db.config(), &title, Some(Namespace::FILE)) {
+                Ok(title) => FrameTitle::Valid(title),
+                Err(_) => FrameTitle::Invalid(title),
+            };
             options.frame = Some(FrameKind::Thumb(Some(title)));
         }
     } else if key.contains(&"img_page") {
@@ -741,42 +769,43 @@ pub(super) fn parse_dims(arg: &str) -> (Option<u32>, Option<u32>) {
 }
 
 /// Renders a broken media to `out` using `state` with the given `options`.
-fn render_broken<S: DocumentSink>(
-    out: &mut Document<S>,
+fn render_broken<S: Sink + ?Sized>(
+    out: &mut S,
     state: &mut State<'_, '_, '_>,
     options: &Options<'_>,
 ) {
-    super::tags::render_start_link(
-        &mut out.next,
-        state,
-        &LinkKind::Internal(options.title.clone()),
-        true,
-    );
-    out.next.tag_start("span");
-    out.next
-        .tag_attribute_full("class", "mw-file-element mw-broken-media");
+    super::tags::render_start_link(out, state, &LinkKind::Internal(options.title.clone()), true);
+    out.tag_start("span");
+    out.tag_attribute_full("class", "mw-file-element mw-broken-media");
     if let width = calc_preferred_width(state, options, u32::MAX, false)
         && width != u32::MAX
     {
-        out.next
-            .tag_attribute_full("data-width", &width.to_string());
+        out.tag_attribute_full("data-width", &width.to_string());
     }
     if let Some(height) = options.height {
-        out.next
-            .tag_attribute_full("data-height", &height.to_string());
+        out.tag_attribute_full("data-height", &height.to_string());
     }
-    out.next.tag_start_end("span");
+    out.tag_start_end("span");
 
-    if let Some(alt) = options.alt()
+    if let Some(FrameKind::Thumb(Some(FrameTitle::Invalid(bad_title)))) = &options.frame {
+        let text = state
+            .statics
+            .messages
+            .format_message(None, true, ["thumbnail_error"], |key| {
+                Ok::<_, Infallible>((key == "1").then_some(Cow::Borrowed(bad_title)))
+            })
+            .unwrap();
+        out.text(&text);
+    } else if let Some(alt) = options.alt()
         && !alt.is_empty()
     {
-        out.next.text(alt);
+        out.text(alt);
     } else {
-        out.next.text(options.title.prefixed_text());
+        out.text(options.title.prefixed_text());
     }
 
-    out.next.tag_end("span");
-    out.next.tag_end("a");
+    out.tag_end("span");
+    out.tag_end("a");
 }
 
 /// Renders an image tag to `out` using `state` with the given `options` and
@@ -788,6 +817,11 @@ fn render_image<S: Sink + ?Sized>(
     native_dims @ (native_width, _): Dims,
     scalable: bool,
 ) {
+    let Some(thumb) = options.thumb() else {
+        render_broken(out, state, options);
+        return;
+    };
+
     let wrapper = if options.is_link() { "a" } else { "span" };
     let preferred_width = calc_preferred_width(state, options, native_width, scalable);
     let (width, height) = if options.is_unscaled() {
@@ -819,7 +853,6 @@ fn render_image<S: Sink + ?Sized>(
 
     out.tag_start("img");
 
-    let thumb = options.thumb();
     let base_name = thumb.text_url();
     let src = make_media_url(
         &state.statics.base_uri,
@@ -915,7 +948,11 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
     }
 
     let file = state.statics.db.metadata(&options.title)?;
-    let thumb = state.statics.db.metadata(options.thumb())?.or(file);
+    let thumb = if let Some(thumb) = options.thumb() {
+        state.statics.db.metadata(thumb)?.or(file)
+    } else {
+        None
+    };
 
     let tag_name = if options.is_captioned() {
         "figure"
@@ -960,27 +997,12 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
     out.next.tag_attribute_end("typeof");
     out.next.tag_start_end(tag_name);
 
-    if let Some(file) = file {
-        match file {
-            FileMetadata::Audio | FileMetadata::Video { .. } => {
-                render_timed_media(&mut out.next, state, options, file);
-            }
-            FileMetadata::Image { .. } => {
-                // TODO: Image with video thumb must use thumb of video
-                let (width, height, scalable) = match thumb {
-                    Some(FileMetadata::Image {
-                        height,
-                        scalable,
-                        width,
-                    }) => (width, height, scalable),
-                    Some(FileMetadata::Video { height, width }) => (width, height, false),
-                    _ => panic!("should have an image or video thumb"),
-                };
-                render_image(&mut out.next, state, options, (width, height), scalable);
-            }
-        }
+    if let Some((dims, scalable)) = image_metadata(file, thumb) {
+        render_image(&mut out.next, state, options, dims, scalable);
+    } else if let Some(file @ (FileMetadata::Audio | FileMetadata::Video { .. })) = file {
+        render_timed_media(&mut out.next, state, options, file);
     } else {
-        render_broken(out, state, options);
+        render_broken(&mut out.next, state, options);
     }
 
     if options.is_captioned() {
@@ -1027,7 +1049,7 @@ fn render_timed_media<S: Sink + ?Sized>(
         out.tag_attribute_full("muted", "");
     }
     if matches!(media, FileMetadata::Video { .. })
-        && let Some(FrameKind::Thumb(Some(title))) = &options.frame
+        && let Some(FrameKind::Thumb(Some(FrameTitle::Valid(title)))) = &options.frame
     {
         let src = make_media_url(
             &state.statics.base_uri,
