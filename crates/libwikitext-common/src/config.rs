@@ -423,6 +423,8 @@ pub struct SpecialPages {
 }
 
 impl SpecialPages {
+    /// The special page for ISBNs.
+    pub const BOOKSOURCES: &str = "Booksources";
     /// The special page for file uploads.
     pub const UPLOAD: &str = "Upload";
 

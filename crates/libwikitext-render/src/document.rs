@@ -17,6 +17,7 @@ use either::Either;
 use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
 use libwikitext_common::{
+    config::SpecialPages,
     title::{Namespace, Title},
     title_decode,
 };
@@ -602,17 +603,13 @@ where
 
         let (link, content, tracking) = match magic {
             MagicLink::Isbn(id) => {
-                const BOOKSOURCES: &str = "Booksources";
                 let url_id = strtr(id, &[("-", ""), (" ", ""), ("x", "X")]);
                 let canonical = state
                     .statics
                     .db
                     .config()
                     .special_pages
-                    .canonical
-                    .get(BOOKSOURCES)
-                    .copied()
-                    .unwrap_or(BOOKSOURCES);
+                    .canonical(SpecialPages::BOOKSOURCES);
                 let link = LinkKind::Internal(Title::new(
                     state.statics.db.config(),
                     &format!("{canonical}/{url_id}"),
