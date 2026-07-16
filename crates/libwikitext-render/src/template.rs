@@ -22,7 +22,7 @@ use libwikitext_common::{
     title_decode, to_lower_first,
 };
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, borrow_fastest, escape_all};
-use std::{borrow::Cow, pin::pin, sync::Arc, time::Instant};
+use std::{borrow::Cow, sync::Arc, time::Instant};
 
 /// Templates that need to be spruced up a bit, but don’t have any hooks of
 /// their own for styling.
@@ -129,7 +129,7 @@ pub(super) fn call_module(
 
     // log::trace!("Invoking {}|{}", &code.title, fn_name);
     let start = Instant::now();
-    let result = run_vm(state, pin!(&sp), &code, &fn_name).map_err(|err| Error::Module {
+    let result = run_vm(state, &sp, &code, &fn_name).map_err(|err| Error::Module {
         name: code.title().to_owned(),
         fn_name: fn_name.to_string(),
         err: Box::new(err.into()),

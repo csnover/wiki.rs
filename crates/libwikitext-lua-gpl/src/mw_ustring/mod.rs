@@ -85,7 +85,7 @@ impl UstringLibrary {
         mut stack: Stack<'gc, '_>,
     ) -> Result<CallbackReturn<'gc>, VmError<'gc>> {
         if stack.len() > STRING_LENGTH_LIMIT {
-            return Err("too many arguments to 'char'".into_value(ctx))?;
+            Err("too many arguments to 'char'".into_value(ctx))?;
         }
 
         let value = stack
@@ -103,7 +103,7 @@ impl UstringLibrary {
             .collect::<Result<String, _>>()?;
 
         if value.len() > STRING_LENGTH_LIMIT {
-            return Err("result too long for 'char'".into_value(ctx))?;
+            Err("result too long for 'char'".into_value(ctx))?;
         }
 
         stack.replace(ctx, ctx.intern(value.as_bytes()));

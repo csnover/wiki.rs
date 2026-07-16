@@ -525,7 +525,7 @@ pub(super) fn make_media_url(base_uri: &Url, media_path: &str, text: &str) -> St
     let _ = write!(&mut prefix[..], "{b:02x}");
     // SAFETY: Guaranteed to be ASCII.
     let prefix = unsafe { str::from_utf8_unchecked(&prefix[..]) };
-    let path = format_args!("{media_path}/{}/{}/{text}", &prefix[..1], &prefix);
+    let path = format_args!("{media_path}/{}/{}/{text}", &prefix[..1], prefix);
     if is_absolute_url(media_path) {
         path.to_string()
     } else {

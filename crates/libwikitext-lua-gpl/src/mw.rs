@@ -268,7 +268,7 @@ where
         };
 
         if article.model() != "json" {
-            return Err(anyhow::anyhow!(
+            Err(anyhow::anyhow!(
                 "bad argument #1 to 'mw.loadJsonData' ('{title}' is not a valid JSON page)"
             ))?;
         }

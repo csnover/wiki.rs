@@ -1367,7 +1367,7 @@ impl Styles {
             && let Some(css) = db.get(&title)?
         {
             if let Some(wrapper) = wrapper {
-                writeln!(self.text, "{wrapper} {{ {} }}", &css.body())?;
+                writeln!(self.text, "{wrapper} {{ {} }}", css.body())?;
             } else {
                 self.text += css.body();
                 self.text.push('\n');

@@ -76,7 +76,7 @@ fn render_hotlink<S: Sink + ?Sized>(out: &mut S, state: &mut State<'_, '_, '_>, 
         Cow::Owned(make_url(
             &state.statics.base_uri,
             None,
-            format_args!("{external}/{}", &url_encode_sanitized(target)),
+            format_args!("{external}/{}", url_encode_sanitized(target)),
             None,
             None,
         ))

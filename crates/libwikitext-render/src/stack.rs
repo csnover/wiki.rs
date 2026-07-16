@@ -8,9 +8,7 @@ use super::{
 };
 use core::{
     cell::{Ref, RefCell},
-    fmt,
-    pin::{Pin, pin},
-    slice,
+    fmt, slice,
 };
 use libmisc::CowExt as _;
 use libwikitext_common::title::Title;
@@ -32,7 +30,7 @@ pub(crate) struct StackFrame<'a> {
     /// The title of the article (template or module) rendered by this frame.
     pub name: Title,
     /// The parent stack frame.
-    pub parent: Option<Pin<&'a StackFrame<'a>>>,
+    pub parent: Option<&'a StackFrame<'a>>,
     /// The source code of the frame.
     // TODO: This should not be a FileMap, FileMap is only needed when there is
     // an error.
@@ -54,7 +52,7 @@ impl<'a> StackFrame<'a> {
     /// Convenience function for emitting a backtrace immediately for debugging
     /// purposes.
     pub fn backtrace(&self) {
-        debug_backtrace(&self.name, self.parent.as_deref().unwrap_or(self));
+        debug_backtrace(&self.name, self.parent.unwrap_or(self));
     }
 
     /// Creates a child stack frame of `self` with the given `title`, `source`,
@@ -71,7 +69,7 @@ impl<'a> StackFrame<'a> {
             arguments: KeyCacheKvs::new(arguments),
             children: <_>::default(),
             name,
-            parent: Some(pin!(self)),
+            parent: Some(self),
             source,
         })
     }
@@ -178,19 +176,19 @@ impl<'a> StackFrame<'a> {
         KeyIter {
             arguments: &self.arguments,
             index: 0,
-            sp: self.parent.as_deref(),
+            sp: self.parent,
         }
     }
 }
 
-impl HostFrame for Pin<&StackFrame<'_>> {
+impl HostFrame for &StackFrame<'_> {
     fn child_frame_exists(&self, name: &str) -> bool {
-        let mut frame = Some(&**self);
+        let mut frame = Some(*self);
         while let Some(sp) = frame {
             if sp.children.borrow().contains_key(name) {
                 return true;
             }
-            frame = sp.parent.as_deref();
+            frame = sp.parent;
         }
         false
     }

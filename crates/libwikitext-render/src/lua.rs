@@ -6,7 +6,7 @@ use super::{
     preprocess_frame,
     template::{call_template, resolve_callee},
 };
-use core::{ops::ControlFlow, pin::Pin};
+use core::{ops::ControlFlow, pin::pin};
 use gc_arena::Rootable;
 use libmisc::CowExt as _;
 use libphp_rs::DateTime;
@@ -30,7 +30,7 @@ pub type LanguageLibrary =
     libwikitext_lua_gpl::LanguageLibrary<'static, Arc<dyn DynDatabaseProvider>>;
 /// The concrete type used by the renderer for [`LuaEngine`](libwikitext_lua_gpl::LuaEngine).
 pub type LuaEngine =
-    libwikitext_lua_gpl::LuaEngine<Arc<dyn DynDatabaseProvider>, Pin<&'static StackFrame<'static>>>;
+    libwikitext_lua_gpl::LuaEngine<Arc<dyn DynDatabaseProvider>, &'static StackFrame<'static>>;
 /// The concrete type used by the renderer for [`MessageLibrary`](libwikitext_lua_gpl::MessageLibrary).
 pub type MessageLibrary =
     libwikitext_lua_gpl::MessageLibrary<'static, Arc<dyn DynDatabaseProvider>>;
@@ -148,7 +148,7 @@ fn expand_template(
 /// Fetches a possibly cached Lua module for execution.
 fn fetch_module(
     state: &mut State<'_, '_, '_>,
-    sp: Pin<&StackFrame<'_>>,
+    sp: &StackFrame<'_>,
     code: &Arc<Article>,
 ) -> Result<(StashedClosure, StashedTable), ExternError> {
     let VmCacheEntry { module, env } = if let Some(cached) = state.statics.vm_cache.get(&code.id())
@@ -294,7 +294,7 @@ pub(super) fn new_vm<'config>(
     parser: &Parser<'config>,
 ) -> Result<Lua, ExternError> {
     let mut vm = libwikitext_lua::new_vm_core()?;
-    libwikitext_lua_gpl::init::<_, Pin<&StackFrame<'_>>>(&mut vm, messages)?;
+    libwikitext_lua_gpl::init::<_, &StackFrame<'_>>(&mut vm, messages)?;
 
     // TODO: Express this unsafe relationship in a way where it is harder to
     // violate.
@@ -418,11 +418,12 @@ fn run_host_call(
 /// Loads and calls a Scribunto module, returning the result.
 pub(super) fn run_vm(
     state: &mut State<'_, '_, '_>,
-    sp: Pin<&StackFrame<'_>>,
+    sp: &StackFrame<'_>,
     code: &Arc<Article>,
     fn_name: &str,
 ) -> Result<String, ExternError> {
-    let (module, env) = fetch_module(state, sp, code)?;
+    let sp = pin!(sp);
+    let (module, env) = fetch_module(state, &sp, code)?;
 
     let mut state = {
         let old_sp = state.statics.vm.enter(|ctx| {
@@ -430,7 +431,7 @@ pub(super) fn run_vm(
             // SAFETY: So long as `old_sp` makes it into the scope guard, it
             // will be removed when this call returns.
             engine.set_sp(Some(unsafe {
-                core::mem::transmute::<Pin<&StackFrame<'_>>, Pin<&'static StackFrame<'static>>>(sp)
+                core::mem::transmute::<&StackFrame<'_>, &'static StackFrame<'static>>(&sp)
             }))
         });
         scopeguard::guard(state, move |state| {
@@ -588,7 +589,7 @@ where
     } else if frame_id == "parent"
         && let Some(parent) = sp.parent
     {
-        return f(&parent);
+        return f(parent);
     }
 
     let mut frame = Some(sp);
@@ -596,7 +597,7 @@ where
         if let Some(child) = sp.children.borrow().get(frame_id) {
             return f(&sp.chain(child.title.clone(), FileMap::new(""), &child.arguments)?);
         }
-        frame = sp.parent.as_deref();
+        frame = sp.parent;
     }
 
     Err(RuntimeError::new(anyhow::anyhow!("missing sp")))?
