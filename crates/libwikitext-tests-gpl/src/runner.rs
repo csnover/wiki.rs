@@ -8,6 +8,7 @@ use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
     Messages,
     db::{Article, DynDatabaseProvider, FileMetadata, MockDatabase},
+    title::Title,
     url::Url,
 };
 use libwikitext_data::MESSAGES;
@@ -902,6 +903,10 @@ fn render_test(
     wikitext: &str,
 ) -> libwikitext_render::Result<RenderOutput> {
     let page_name = options.get("title").unwrap_or("Parser test");
+    let page_title = Title::new(db.config(), page_name, None);
+    let model = page_title
+        .as_ref()
+        .map_or("wikitext", |title| title.default_content_model());
 
     // The use of static IDs and revision IDs is NOT SAFE in the presence of a
     // template cache!
@@ -909,7 +914,7 @@ fn render_test(
         .id(0)
         .title(page_name)
         .body(wikitext)
-        .model("wikitext")
+        .model(model)
         .revision_author("127.0.0.1")
         .revision_timestamp(base_time.to_offset_time().to_utc())
         .revision_id(1337)
@@ -919,7 +924,7 @@ fn render_test(
     // quirk of the MediaWiki test environment to selectively decide
     // that some pages exist, and I am not wasting my time digging in
     // there to figure out what that quirk is, exactly
-    let insert_page = options.contains("lastsavedrevision") || page_name == "Parser test";
+    let insert_page = options.contains("lastsavedrevision");
 
     if insert_page {
         Arc::get_mut(db).unwrap().insert(article.clone());

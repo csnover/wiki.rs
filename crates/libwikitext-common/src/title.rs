@@ -495,6 +495,29 @@ impl Title {
         Self::url_encode(self.base_text())
     }
 
+    /// The default content model of the title.
+    #[inline]
+    #[must_use]
+    pub fn default_content_model(&self) -> &'static str {
+        const EXT_MODELS: phf::Map<&str, &str> = phf::phf_map! {
+            "css" => "css",
+            "js" => "javascript",
+            "json" => "json",
+            "vue" => "vue"
+        };
+        if matches!(self.namespace().id, Namespace::MEDIAWIKI | Namespace::USER)
+            && let Some((lhs, ext)) = self.text().rsplit_once('.')
+            && let Some(model) = EXT_MODELS.get(ext)
+            && (self.namespace().id == Namespace::MEDIAWIKI || lhs.contains('/'))
+        {
+            model
+        } else if let Some(model) = self.namespace().default_content_model {
+            model
+        } else {
+            "wikitext"
+        }
+    }
+
     /// Returns true if this title is considered to “exist” in `db`.
     #[inline]
     #[must_use]

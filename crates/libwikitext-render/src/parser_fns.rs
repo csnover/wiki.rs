@@ -32,7 +32,7 @@ use libphp_rs::{floatval, fuzzy_cmp, intval, strtr};
 use libwikitext_common::{
     AnchorEncodeMode, Messages, bcp47_to_lang,
     config::Configuration,
-    db::{Article, BoxedDbError, DatabaseProvider, fetch},
+    db::{Article, BoxedDbError, DatabaseProvider},
     decode_html, format_date_mediawiki, format_raw_message, lang_to_bcp47, make_url,
     parse_formatted_number,
     title::{Namespace, Title},
@@ -444,17 +444,29 @@ mod page {
                 magic_flag(state, &[CANONICAL, LOCAL], &format)
             });
 
-        let article = get_article(state, arguments, 1)?;
+        let article = get_article(state, arguments, 1, true)?;
+        let model = if let Some(article) = &article {
+            Some(article.model())
+        } else if let Some(title) = arguments.eval(state, 1)?.map(trim)
+            && let Ok(title) = Title::new(state.statics.db.config(), &title, None)
+        {
+            Some(title.default_content_model())
+        } else {
+            None
+        };
 
-        if let (Some(format), Some(article)) = (format, article) {
-            if format == LOCAL {
-                log::warn!("#contentmodel: local");
-            }
-            write!(
-                out,
-                "{}",
-                libwikitext_parse::escape_all(state.statics.db.config(), article.model())
-            )?;
+        if let (Some(format), Some(model)) = (format, model) {
+            let model = if format == LOCAL {
+                state
+                    .statics
+                    .messages
+                    .get_raw(&format!("content-model-{model}"), None, true)?
+                    .unwrap_or(model.into())
+            } else {
+                model.into()
+            };
+            let model = libwikitext_parse::escape_all(state.statics.db.config(), &model);
+            write!(out, "{model}")?;
         }
 
         Ok(())
@@ -481,9 +493,8 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(id) = get_article(state, arguments, 0)?.map(|article| article.id()) {
-            write!(out, "{id}")?;
-        }
+        let id = get_article(state, arguments, 0, true)?.map_or(0, |article| article.id());
+        write!(out, "{id}")?;
         Ok(())
     }
 
@@ -534,21 +545,19 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        if let Some(page_size) =
-            get_article(state, arguments, 0)?.map(|article| article.body().len())
-        {
-            let no_separators = arguments
-                .eval(state, 1)?
-                .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
-            write!(
-                out,
-                "{}",
-                state
-                    .statics
-                    .messages
-                    .format_number(None, page_size as f64, no_separators)?
-            )?;
-        }
+        let page_size =
+            get_article(state, arguments, 0, false)?.map_or(0, |article| article.body().len());
+        let no_separators = arguments
+            .eval(state, 1)?
+            .is_some_and(|arg| magic_matches(state, RAW_SUFFIX, &arg));
+        write!(
+            out,
+            "{}",
+            state
+                .statics
+                .messages
+                .format_number(None, page_size as f64, no_separators)?
+        )?;
         Ok(())
     }
 
@@ -622,8 +631,8 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let revision_id = get_article(state, arguments, 0)?.map(|article| article.revision_id());
-        if let Some(revision_id) = revision_id {
+        let article = get_article(state, arguments, 0, arguments.is_empty())?;
+        if let Some(revision_id) = article.map(|article| article.revision_id()) {
             write!(out, "{revision_id}")?;
         }
         Ok(())
@@ -639,9 +648,8 @@ mod page {
     where
         F: FnOnce(UtcDateTime) -> fmt::Result,
     {
-        if let Some(time) =
-            get_article(state, arguments, 0)?.map(|article| article.revision_timestamp())
-        {
+        let article = get_article(state, arguments, 0, true)?;
+        if let Some(time) = article.map(|article| article.revision_timestamp()) {
             write_time(time)?;
         }
         Ok(())
@@ -713,7 +721,7 @@ mod page {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let revision = get_article(state, arguments, 0)?;
+        let revision = get_article(state, arguments, 0, false)?;
         if let Some(author) = revision.as_ref().map(|article| article.revision_author()) {
             write!(out, "{author}")?;
         }
@@ -2185,18 +2193,19 @@ fn get_article(
     state: &mut State<'_, '_, '_>,
     arguments: &IndexedArgs<'_, '_, '_>,
     index: usize,
+    use_draft: bool,
 ) -> Result<Option<Arc<Article>>> {
-    Ok(
-        if let Some(title) = arguments.eval(state, index)?.map(trim) {
-            fetch(&state.statics.db, &title, None)?
-        } else {
-            state
-                .statics
-                .db
-                .contains(&state.globals.title)
-                .then(|| Arc::clone(&state.globals.article))
-        },
-    )
+    let title = if let Some(title) = arguments.eval(state, index)?.map(trim) {
+        Cow::Owned(Title::new(state.statics.db.config(), &title, None)?)
+    } else {
+        Cow::Borrowed(&state.globals.title)
+    };
+
+    Ok(if *title == state.globals.title {
+        (use_draft || state.statics.db.contains(&title)).then(|| Arc::clone(&state.globals.article))
+    } else {
+        state.statics.db.get(&title)?
+    })
 }
 
 /// Retrieves a list of month names for the given `locale` with the given
