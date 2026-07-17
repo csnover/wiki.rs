@@ -62,7 +62,7 @@ impl<S: Sink> PrettyText<S> {
                 DashPunctuation | OpenPunctuation | InitialPunctuation
             ) && !next.is_some_and(char::is_whitespace))
             || (matches!(get_general_category(prev), MathSymbol | OtherPunctuation)
-                && next.is_some_and(char::is_alphabetic))
+                && next.is_some_and(char::is_alphanumeric))
     }
 
     /// Returns `true` if the given tag name is a code tag.
