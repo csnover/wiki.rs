@@ -370,7 +370,8 @@ fn gallery(
 
         write!(out, "\t\t\t<div class=\"gallerytext\">")?;
         if body.show_filename {
-            let href = image::resource_url(state, &LinkKind::Internal(options.title.clone()), None);
+            let href =
+                image::resource_url(state, &LinkKind::from_title(options.title.clone()), None);
 
             let mut acc = Accumulator::new();
             acc.tag_start("a");
@@ -1317,7 +1318,7 @@ fn timeline(
                     text,
                     Title::new(state.statics.db.config(), target, None)
                         .ok()
-                        .map(LinkKind::Internal),
+                        .map(LinkKind::from_title),
                 ),
                 TextSpan::Text(text) => (
                     text,

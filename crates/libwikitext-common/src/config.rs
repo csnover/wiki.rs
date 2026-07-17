@@ -1,14 +1,13 @@
 //! Parser configuration data.
 
-// This code is loosely based on `parse_wiki_text`. The upstream copyright is:
-//
-// SPDX-License-Identifier: MIT
-// SPDX-FileCopyright: Copyright 2019 Fredrik Portström and other contributors
-
-use super::{regex_switch, title::Namespace};
+use super::{
+    regex_switch,
+    title::{Namespace, Title},
+};
 use core::fmt::Write as _;
 use fancy_regex::{Regex as FancyRegex, RegexBuilder as FancyRegexBuilder};
-use libmisc::CowExt as _;
+use libmisc::{CowExt as _, to_lower};
+use libphp_rs::strtr;
 use phf::{Map, OrderedMap, Set};
 use regex::{Regex, bytes::Regex as BytesRegex};
 use std::borrow::Cow;
@@ -432,18 +431,76 @@ pub struct SpecialPages {
 }
 
 impl SpecialPages {
+    /// The special page for “bad” titles.
+    pub const BAD_TITLE: &str = "Badtitle";
     /// The special page for ISBNs.
     pub const BOOKSOURCES: &str = "Booksources";
     /// The special page for file uploads.
     pub const UPLOAD: &str = "Upload";
 
-    /// Returns the canonical name for `known_page`.
+    /// Returns the “real” name and subpage of the special page with the given
+    /// alias `text`, or `None` if `text` does not match a registered alias.
+    ///
+    /// The configured list of special pages from the MediaWiki API excludes
+    /// pages without any registered language aliases, even if they are valid
+    /// special pages, and the APIs for listing pages do not accept enumerating
+    /// the special namespace, so there seems to be no way to figure out which
+    /// special pages exist for a given MediaWiki installation.
     #[must_use]
-    pub fn canonical<'a>(&'a self, known_page: &'a str) -> &'a str {
-        self.canonical
-            .get(known_page)
+    pub fn alias<'a: 'b, 'b>(&'a self, text: &'b str) -> Option<(&'a str, Option<&'b str>)> {
+        let (alias, sub_page) = text
+            .split_once('/')
+            .map_or((text, None), |(a, b)| (a, Some(b)));
+        let alias = strtr(alias, &[(" ", "_")]).map(to_lower);
+        self.aliases
+            .get(&alias)
             .copied()
-            .unwrap_or(known_page)
+            // MediaWiki reads `$specialPageAliases` from the PHP-format message
+            // dictionary and uses any entries, even if they do not correspond
+            // to an actually registered special page, to resolve names in the
+            // Special namespace. Meanwhile, the API only communicates special
+            // page aliases for actually registered special pages. “Badtitle” is
+            // not a registered special page. Anything else also will fail, but
+            // at least the parser test suite requires this one to work.
+            .or_else(|| (alias == "badtitle").then_some(Self::BAD_TITLE))
+            .map(|real_name| (real_name, sub_page))
+    }
+
+    /// Returns the canonical name for `real_name`.
+    ///
+    /// Canonical pages whose aliases are the same as the “real” name are
+    /// excluded from the configuration because they are redundant, so any
+    /// input that has no corresponding registered canonical name is returned
+    /// as-is.
+    #[must_use]
+    pub fn canonical<'a>(&'a self, real_name: &'a str) -> &'a str {
+        self.canonical.get(real_name).copied().unwrap_or(real_name)
+    }
+
+    /// Returns the canonical title for `real_name` with optional `sub_page`.
+    ///
+    /// Canonical pages whose aliases are the same as the “real” name are
+    /// excluded from the configuration because they are redundant, so any
+    /// input that has no corresponding registered canonical name is returned
+    /// as-is.
+    ///
+    /// # Errors
+    ///
+    /// * `real_name` or `sub_page` are not valid title strings
+    pub fn canonical_title(
+        &self,
+        config: &Configuration,
+        real_name: &str,
+        sub_page: Option<&str>,
+    ) -> Result<Title, super::title::Error> {
+        let canonical = self.canonical(real_name);
+        let sub_page = sub_page.unwrap_or_default();
+        let sep = if sub_page.is_empty() { "" } else { "/" };
+        Title::new(
+            config,
+            &format!("{canonical}{sep}{sub_page}"),
+            Some(Namespace::SPECIAL),
+        )
     }
 }
 

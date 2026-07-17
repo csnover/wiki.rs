@@ -8,6 +8,7 @@ use super::{
 };
 use core::convert::Infallible;
 use libmisc::CowExt as _;
+use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode,
     config::{Configuration, ImageHotlinking, SpecialPages},
@@ -135,7 +136,12 @@ pub(super) fn render_internal_link<S: DocumentSink>(
         }
         out.next.tag_start_end("a");
     } else {
-        render_start_link(&mut out.next, state, &LinkKind::Internal(title), false);
+        render_start_link(
+            &mut out.next,
+            state,
+            &LinkKind::Internal(title, <_>::default()),
+            false,
+        );
     }
 
     out.adopt_tokens(state, sp, prefix)?;
@@ -158,6 +164,13 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
 ) {
     let (missing, query) = if let Some(title) = link.title()
         && !title.exists(&state.statics.db)
+        && state
+            .statics
+            .db
+            .config()
+            .special_pages
+            .alias(title.text())
+            .is_none()
     {
         let query = (!title.is_in_namespace(Namespace::SPECIAL)).then_some("action=edit&redlink=1");
         (true, query)
@@ -186,16 +199,13 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
         if let Some(title) = link.title()
             && for_image
         {
-            let special = state
-                .statics
-                .db
-                .config()
+            let config = state.statics.db.config();
+            let special = config
                 .special_pages
-                .canonical(SpecialPages::UPLOAD);
-            let special = Title::new(state.statics.db.config(), special, Some(Namespace::SPECIAL))
+                .canonical_title(config, SpecialPages::UPLOAD, None)
                 .expect("configured special pages are valid");
             Cow::Owned(
-                LinkKind::Internal(special)
+                LinkKind::Internal(special, <_>::default())
                     .to_string(&options, Some(&format!("wpDestFile={}", title.text_url()))),
             )
         } else {
@@ -215,7 +225,7 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
             out.tag_attribute_full("class", kind.css());
             out.tag_attribute_full("href", &href);
         }
-        LinkKind::Internal(title) => {
+        LinkKind::Internal(title, kind) => {
             out.tag_attribute_full("href", &href);
             if missing {
                 out.tag_attribute_full("class", "new");
@@ -231,6 +241,8 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
                 {
                     out.tag_attribute_full("title", &title);
                 }
+            } else if matches!(kind, InternalLinkKind::MagicIsbn) {
+                out.tag_attribute_full("class", "internal mw-magiclink-isbn");
             } else if title.is_in_namespace(Namespace::MEDIA) {
                 out.tag_attribute_full("class", "internal");
                 out.tag_attribute_full("title", title.text());
@@ -284,21 +296,37 @@ impl ExternalLinkKind {
     }
 }
 
+/// The kind of an internal link.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum InternalLinkKind {
+    /// A regular title link.
+    #[default]
+    Normal,
+    /// An ISBN magic link.
+    MagicIsbn,
+}
+
 /// A kind of link to render.
 #[derive(Clone, Debug)]
 pub(super) enum LinkKind<'a> {
     /// An external link.
     External(Cow<'a, str>, ExternalLinkKind),
     /// An internal link.
-    Internal(Title),
+    Internal(Title, InternalLinkKind),
 }
 
 impl LinkKind<'_> {
+    /// Creates a new `LinkKind` for the given `title`.
+    #[inline]
+    pub fn from_title(title: Title) -> Self {
+        Self::Internal(title, <_>::default())
+    }
+
     /// Returns the internal [`Title`] of this link, if one exists.
     pub fn title(&self) -> Option<&Title> {
         match self {
             Self::External(..) => None,
-            Self::Internal(title) => Some(title),
+            Self::Internal(title, _) => Some(title),
         }
     }
 
@@ -325,12 +353,12 @@ impl LinkKind<'_> {
                     url.to_string()
                 }
             }
-            Self::Internal(title) => {
+            Self::Internal(title, _) => {
                 if let Some(iw) = title
                     .interwiki()
                     .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
                 {
-                    let url = iw.replace("$1", &title.partial_url());
+                    let url = strtr(iw, &[("$1", &title.partial_url())]);
                     if let Some(external) = options.paths.external {
                         make_url(
                             options.base_uri,
@@ -344,7 +372,7 @@ impl LinkKind<'_> {
                     {
                         format!("{url}#{fragment}")
                     } else {
-                        url
+                        url.into_owned()
                     }
                 } else if title.prefixed_text().is_empty() {
                     format!(

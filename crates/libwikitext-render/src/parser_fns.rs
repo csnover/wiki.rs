@@ -31,7 +31,7 @@ use libmisc::{CowExt as _, to_lower, to_upper};
 use libphp_rs::{floatval, fuzzy_cmp, intval, strtr};
 use libwikitext_common::{
     AnchorEncodeMode, Messages, bcp47_to_lang,
-    config::Configuration,
+    config::{Configuration, SpecialPages},
     db::{Article, BoxedDbError, DatabaseProvider},
     decode_html, format_date_mediawiki, format_raw_message, lang_to_bcp47, make_url,
     parse_formatted_number,
@@ -1864,37 +1864,14 @@ mod title {
     ) -> Result {
         if let Some(title) = arguments.eval(state, 0)?.map(trim) {
             let config = state.statics.db.config();
-            let (page, sub) = title
-                .find('/')
-                .map_or((title.as_ref(), ""), |sub_at| title.split_at(sub_at));
-            let real_page = config
-                .special_pages
-                .aliases
-                .get(&to_lower(page))
-                .copied()
-                .unwrap_or(page);
-            let canonical = config
-                .special_pages
-                .canonical
-                .get(real_page)
-                .copied()
-                .unwrap_or_else(|| {
-                    // TODO: Not sure what to do about this, other than to preregister
-                    // all the ‘known’ special pages, since there seems to be no API
-                    // to learn which special pages are actually existing.
-                    if to_lower(real_page) == "badtitle" {
-                        "Badtitle"
-                    } else {
-                        real_page
-                    }
-                });
-
-            let title = Title::new(
-                config,
-                &format!("{canonical}{sub}"),
-                Some(Namespace::SPECIAL),
-            )
-            .unwrap_or_else(|_| Title::new(config, "Badtitle", Some(Namespace::SPECIAL)).unwrap());
+            let special_pages = &config.special_pages;
+            let title = if let Some((page, sub)) = special_pages.alias(&title) {
+                special_pages.canonical_title(config, page, sub)?
+            } else if let Ok(title) = Title::new(config, &title, Some(Namespace::SPECIAL)) {
+                title
+            } else {
+                special_pages.canonical_title(config, SpecialPages::BAD_TITLE, None)?
+            };
             let as_uri = arguments.callee.ends_with('e');
             if as_uri {
                 write!(out, "{}", title.prefixed_url())?;

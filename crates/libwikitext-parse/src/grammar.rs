@@ -1235,7 +1235,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         {
             Token::MagicLink(MagicLink::Isbn({
                 let id = html_escape::decode_html_entities(id);
-                strtr(&id, &[("\u{00a0}", " "), ("x", "X")]).into_owned()
+                strtr(&id, &[("\u{00a0}", " ")]).into_owned()
             }))
         }
     >)

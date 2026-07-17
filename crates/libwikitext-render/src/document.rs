@@ -604,17 +604,13 @@ where
         let (link, content, tracking) = match magic {
             MagicLink::Isbn(id) => {
                 let url_id = strtr(id, &[("-", ""), (" ", ""), ("x", "X")]);
-                let canonical = state
-                    .statics
-                    .db
-                    .config()
-                    .special_pages
-                    .canonical(SpecialPages::BOOKSOURCES);
-                let link = LinkKind::Internal(Title::new(
-                    state.statics.db.config(),
-                    &format!("{canonical}/{url_id}"),
-                    Some(Namespace::SPECIAL),
-                )?);
+                let config = state.statics.db.config();
+                let canonical = config.special_pages.canonical_title(
+                    config,
+                    SpecialPages::BOOKSOURCES,
+                    Some(&url_id),
+                )?;
+                let link = LinkKind::Internal(canonical, tags::InternalLinkKind::MagicIsbn);
                 (link, format!("ISBN {id}"), "magiclink-tracking-isbn")
             }
             MagicLink::Pmid(id) => {

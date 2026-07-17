@@ -238,7 +238,7 @@ impl Options<'_> {
     /// target.
     fn link(&self) -> Option<Cow<'_, LinkKind<'_>>> {
         match &self.link {
-            Link::Inherit => Some(Cow::Owned(LinkKind::Internal(self.title.clone()))),
+            Link::Inherit => Some(Cow::Owned(LinkKind::from_title(self.title.clone()))),
             Link::None => None,
             Link::Custom(link) => Some(Cow::Borrowed(link)),
         }
@@ -251,11 +251,11 @@ impl Options<'_> {
             None
         } else if let Some(FrameKind::Thumb(Some(_))) = &self.frame {
             match &self.link {
-                Link::Custom(LinkKind::Internal(title)) => Some(title.prefixed_text()),
+                Link::Custom(LinkKind::Internal(title, _)) => Some(title.prefixed_text()),
                 Link::Inherit => Some(self.title.prefixed_text()),
                 _ => None,
             }
-        } else if let Link::Custom(LinkKind::Internal(title)) = &self.link {
+        } else if let Link::Custom(LinkKind::Internal(title, _)) = &self.link {
             self.caption_attr.as_deref().or(Some(title.prefixed_text()))
         } else {
             self.caption_attr.as_deref()
@@ -648,7 +648,7 @@ fn option_arg<'s>(
             // rule
             Link::Custom(LinkKind::External(arg, tags::ExternalLinkKind::Text))
         } else if let Ok(title) = Title::new(config, &url_decode(&arg), None) {
-            Link::Custom(LinkKind::Internal(title))
+            Link::Custom(LinkKind::from_title(title))
         } else if for_gallery {
             return Ok(());
         } else {
@@ -799,7 +799,12 @@ fn render_broken<S: Sink + ?Sized>(
     state: &mut State<'_, '_, '_>,
     options: &Options<'_>,
 ) {
-    super::tags::render_start_link(out, state, &LinkKind::Internal(options.title.clone()), true);
+    super::tags::render_start_link(
+        out,
+        state,
+        &LinkKind::from_title(options.title.clone()),
+        true,
+    );
     out.tag_start("span");
     out.tag_attribute_full("class", "mw-file-element mw-broken-media");
     if options.show_broken_width() {
@@ -901,7 +906,7 @@ fn render_image<S: Sink + ?Sized>(
         out.tag_attribute_full("alt", alt);
     }
     if matches!(options.frame, Some(FrameKind::Thumb(Some(_)))) {
-        let href = resource_url(state, &LinkKind::Internal(options.title.clone()), None);
+        let href = resource_url(state, &LinkKind::from_title(options.title.clone()), None);
         out.tag_attribute_full("resource", &href);
     }
     out.tag_attribute_full("src", &src);
