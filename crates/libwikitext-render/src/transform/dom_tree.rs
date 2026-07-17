@@ -304,6 +304,11 @@ impl<S: Sink> DomTree<S> {
                 .format
                 .lfind_scoped(|node| self.stack.contains_in_range(index..end, node))
                 .unwrap_or(self.format.len());
+
+            if let Some(buffer) = self.stack.next.get_mut(end) {
+                buffer.rtrim();
+            }
+
             self.stack.pop_range(&self.custom_tags, index..end);
             self.reformat_range(index, reopen_start..reopen_end);
             true
@@ -1284,6 +1289,33 @@ impl BufferedNode {
     #[inline]
     fn is_p_wrappable(&self) -> bool {
         self.contains_non_whitespace || self.tag_count != 0
+    }
+
+    /// Removes the whitespace from a buffer that ends with ASCII whitespace.
+    ///
+    /// This deletes whitespace in the area where the tag stack is “split” to
+    /// try to match the output of `RemexCompatMunger`.
+    fn rtrim(&mut self) {
+        let mut len = None;
+        for (pos, call) in self.buffer.iter() {
+            if self
+                .body_pos
+                .is_some_and(|body_pos| usize::from(body_pos.get()) > pos)
+            {
+                continue;
+            }
+            if matches!(call, Call::NewLine)
+                || matches!(call, Call::Text(text) if !text.contains(|c: char| !c.is_ascii_whitespace()))
+            {
+                len = Some(pos);
+            } else {
+                len = None;
+                break;
+            }
+        }
+        if let Some(len) = len {
+            self.buffer.truncate(len);
+        }
     }
 }
 

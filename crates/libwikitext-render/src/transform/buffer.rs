@@ -108,12 +108,18 @@ impl Buffer {
         self.inner.len()
     }
 
-    /// Splits the buffer in two `at` the given index.
+    /// Splits the buffer in two `at` the given index, in bytes.
     #[inline]
     pub fn split_off(&mut self, at: usize) -> Buffer {
         Self {
             inner: self.inner.split_off(at),
         }
+    }
+
+    /// Truncates the buffer to the given `len`, in bytes.
+    #[inline]
+    pub fn truncate(&mut self, len: usize) {
+        self.inner.truncate(len);
     }
 
     /// Writes the buffer to `next` without clearing it.

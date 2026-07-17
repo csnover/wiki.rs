@@ -2732,7 +2732,9 @@ For the text content of each text node:
 
 ※ This algorithm *must* run concurrently with the HTML5 tree construction
   algorithm. It *cannot* be run on an already-constructed DOM because the HTML5
-  adoption agency algorithm confuses the p-wrapping algorithm.
+  adoption agency algorithm defeats it.
+
+1. Start with a new document where the root element is `html`.
 
 For each newly inserted node `N` with parent node `P`:
 
@@ -2786,7 +2788,7 @@ into a new parent `P`:
   `|"strong"|"sub"|"sup"|"textarea"|"time"|"track"|"tt"|"u"|"var"|"video"`
   `|"wbr"]`
 
-[^proot]: The list of p-wrapping roots is `["body"|"blockquote"]`.
+[^proot]: The list of p-wrapping roots is `["blockquote"|"html"]`.
 
 ### Split the stack
 
@@ -2797,15 +2799,17 @@ Using node `N`:
 3. Let `DR` be the tree depth of `R`;
 4. Let `A` be the ancestor of `N` at tree depth `DR + 1`;
 5. Let `S` be a clone of the stack of elements in the depth range `DR + 1..DN`;
-6. If `N` is a text node or inline element[^inline]:
+6. For each element `E` in `S`, from right to left, if `E` is empty or contains
+   only ASCII whitespace nodes, remove `E`;
+7. If `N` is a text node or inline element[^inline]:
 
    1. Let `W` be a new `mw:pwrap` element;
    2. Insert `W` after `A` in `R`;
    3. Append `S` to `W`.
 
-   Otherwise, append `S` to `R`.
+   Otherwise, append `S` to `R`;
 
-7. Move `N` into the deepest child of `S`.
+8. Move `N` into the deepest child of `S`.
 
 ## Format elements
 
