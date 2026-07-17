@@ -9688,6 +9688,16 @@ Sanitizer: Validating that <meta> and <link> work, but only for Microdata
 	<link itemprop="hello" href="http&#58;//example.org" />
 </p>
 </div>
+!! html/wiki.rs # This output matches the PHP parser with a protocol-relative server, minus XHTML, plus pretty text
+<div itemscope="">
+<p>	<meta itemprop="hello" content="world">
+	&lt;meta http-equiv=“refresh” content=“5”&gt;
+	<meta itemprop="hello" content="5">
+	<link itemprop="hello" href="//example.org">
+	&lt;link rel=“stylesheet” href=”//example.org”&gt;
+	<link itemprop="hello" href="//example.org">
+</p>
+</div>
 !! end
 
 !! test

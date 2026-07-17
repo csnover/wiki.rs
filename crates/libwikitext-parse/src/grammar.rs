@@ -483,10 +483,13 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
         space_s()*
         content:list_part()*
         e:list_eol()
-        { Token::ListItem {
-            bullets: bullets.span,
-            content: reduce_tree(reduce_dd(content).into_iter().chain(e)),
-        } }
+        t:#{|input, pos| {
+            RuleResult::Matched(pos, Token::ListItem {
+                bullets: bullets.span,
+                content: reduce_tree(reduce_dd(input, content).into_iter().chain(e)),
+            })
+        }}
+        { t }
       >)
       e:line_eol()?
     { c.into_iter().chain(iter::once(t)).chain(e.into_iter().flatten()).collect() }
@@ -1643,11 +1646,8 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // not legal to have a literal `<` anywhere in a tag
       attributes:html_attributes(<"<" / space_nl()* "/"? ">">)
       space_nl()*
-      self_closing:html_self_close()?
-    {
-        let self_closing = self_closing.is_some() | VOID_TAGS.contains(&to_ascii_lower(*name));
-        Token::StartTag { attributes, name: name.span, self_closing }
-    }
+      self_closing:(t:html_self_close()? { t.is_some() })
+    { Token::StartTag { attributes, name: name.span, self_closing } }
 
     /// Self-closing tag marker. Wikitext allows space here, but this is illegal
     /// in HTML.
@@ -1669,7 +1669,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
             Token::StartTag {
                 attributes: <_>::default(),
                 name: name.span,
-                self_closing: true
+                self_closing: <_>::default(),
             }
         } else {
             Token::EndTag { name: name.span }
@@ -2666,7 +2666,7 @@ fn wikilink_target_char(input: &str, start: usize, valid: &BitMap) -> RuleResult
 
 /// Decays inline Wikitext `<dd>` bullets in illegal positions back to plain
 /// text.
-fn reduce_dd(content: Vec<Spanned<Token>>) -> Vec<Spanned<Token>> {
+fn reduce_dd(input: &str, content: Vec<Spanned<Token>>) -> Vec<Spanned<Token>> {
     // Because text styles were converted to HTML tags before this algorithm ran
     // in the original parser, it is necessary to balance the text styles first
     // to track the inner/outer count correctly. Also, the original parser used
@@ -2679,8 +2679,8 @@ fn reduce_dd(content: Vec<Spanned<Token>>) -> Vec<Spanned<Token>> {
     let mut italic = false;
 
     for token in &mut content {
-        if let Token::StartTag { self_closing, .. } = &token.node {
-            tag_count += u32::from(!self_closing);
+        if let Token::StartTag { name, .. } = &token.node {
+            tag_count += u32::from(!VOID_TAGS.contains(&to_ascii_lower(&input[name.into_range()])));
         } else if let Token::EndTag { .. } = &token.node {
             tag_count = tag_count.saturating_sub(1);
         } else if let Token::TextStyle(style) = &token.node {
@@ -2930,7 +2930,11 @@ static HTML5_TAGS: phf::Set<&str> = phf::phf_set! {
     "i", "ins",
     "kbd",
     "li",
+    // `<link>` is only allowed if it has `itemprop` and `href` attributes
+    "link",
     "mark",
+    // `<meta>` is only allowed if it has `itemprop` and `content` attributes
+    "meta",
     "ol",
     "p", "pre",
     "q",

@@ -765,7 +765,7 @@ where
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         name: &str,
         attributes: &[Spanned<Token>],
         _self_closing: bool,
@@ -773,10 +773,56 @@ where
         self.flush_after_table();
         let name = to_ascii_lower(name);
         self.in_pre |= name == "pre";
-        let attributes = sp
+
+        let unstripped_attrs = sp
             .eval(state, attributes)?
             .map(|out| state.strip_markers.unstrip_all(out));
-        self.write_start_tag(state, sp, &name, &attributes)
+
+        let allowed = if matches!(name.as_ref(), "link" | "meta") {
+            if attributes.is_empty() {
+                false
+            } else {
+                // This situation is so rare it might as well not exist, so to
+                // duplicate work here to avoid going insane seems, like, fine.
+                let sp = sp.clone_with_source(FileMap::new(&unstripped_attrs));
+                let attributes = state.statics.parser.parse_attributes(&sp.source)?;
+                let mut required_count = 0;
+                for attribute in attributes {
+                    let attr = attribute
+                        .name()
+                        .map(|name| sp.eval(state, name))
+                        .expect("k-v")?;
+                    let attr = to_ascii_lower(attr.trim_ascii());
+                    if attr == "itemprop"
+                        || (name == "link" && attr == "href")
+                        || (name == "meta" && attr == "content")
+                    {
+                        required_count += 1;
+                    }
+                    if required_count == 2 {
+                        break;
+                    }
+                }
+                required_count == 2
+            }
+        } else {
+            true
+        };
+
+        if allowed {
+            self.write_start_tag(state, sp, &name, &unstripped_attrs)?;
+        } else {
+            let first = attributes
+                .first()
+                .map_or(span.end, |token| token.span.start);
+            let last = attributes.last().map_or(span.end, |token| token.span.end);
+            self.next
+                .text(&sp.source[Span::new(span.start, first).into_range()]);
+            self.adopt_tokens(state, sp, attributes)?;
+            self.next
+                .text(&sp.source[Span::new(last, span.end).into_range()]);
+        }
+        Ok(())
     }
 
     fn adopt_strip_marker(

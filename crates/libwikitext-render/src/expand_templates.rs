@@ -56,7 +56,9 @@ impl<'s> ExpandTemplates<'s> {
     }
 }
 
-// TODO: ExpandTemplates should never see non-preprocessor tokens.
+// TODO: ExpandTemplates should never see non-preprocessor tokens, but it is
+// used to late-eval content in HTML attributes and Wikilink images which may
+// contain any of the inline tokens too.
 impl Surrogate<Error> for ExpandTemplates<'_> {
     #[inline]
     fn adopt_behavior_switch(
