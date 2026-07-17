@@ -402,7 +402,7 @@ fn split_target<'tt>(
         // (evaluates to "y").
         let text = sp.eval(state, core::slice::from_ref(part))?;
 
-        if let Some((lhs, mut rhs)) = text.split_once(':') {
+        if let Some((lhs, mut rhs)) = text.split_once([':', '：']) {
             callee += lhs;
 
             // Normally, template expressions are saved in the Wikitext and
@@ -443,7 +443,7 @@ fn split_target<'tt>(
                     raw |= magic.contains(&MSGNW);
                     callee.clear();
 
-                    if let Some((lhs, rest)) = rhs.split_once(':') {
+                    if let Some((lhs, rest)) = rhs.split_once([':', '：']) {
                         // `safesubst:foo:...`
                         callee += lhs;
                         rhs = rest;
@@ -476,16 +476,14 @@ fn split_target<'tt>(
     }
     let rest = rest.as_slice();
 
-    let callee_lower = to_lower(callee.trim_ascii());
-
-    // eprintln!("{callee_lower} / {first:?} / {rest:?}");
+    // eprintln!("{callee} / {first:?} / {rest:?}");
 
     Ok(
         if let Some(callee) = resolve_callee(
             state.statics.db.config(),
             arguments.is_empty(),
             has_colon,
-            &callee_lower,
+            callee.trim_ascii(),
         ) {
             // It is important to actually not pass a zeroth argument if there
             // is not one because this changes behaviour (e.g. `{{VAR}}` gets
@@ -670,16 +668,14 @@ fn fetch_template(
 
 /// Returns the canonical variable or parser function name if the given
 /// template target is a registered variable or parser function alias.
-///
-/// Technically, aliases may be either case-sensitive *or* case-insensitive,
-/// but in practice this does not seem to really matter so this implementation
-/// just always uses case-insensitive matching.
 pub(crate) fn resolve_callee<'a>(
     config: &Configuration,
     empty_arguments: bool,
     has_colon: bool,
-    callee_lower: &'a str,
+    alias: &'a str,
 ) -> Option<&'a str> {
+    let alias_lower = to_lower(alias);
+
     // Variable names can technically be arbitrary strings matching the entire
     // name-part, but in practice they are basic sequences optionally ending
     // with ':' (though registering a variable with a colon is deprecated,
@@ -689,7 +685,13 @@ pub(crate) fn resolve_callee<'a>(
     // causing template shadowing and a requirement to change it later to
     // support very cursed wikis. MW only checks variables if there are no
     // `{{...|args}}`, so this risk is low.
-    if empty_arguments && let callee @ Some(_) = config.variables.get(callee_lower).copied() {
+    if empty_arguments
+        && let callee @ Some(_) = config.variables.get(&alias_lower).copied()
+        && config
+            .case_sensitive_words
+            .get(&alias_lower)
+            .is_none_or(|unfolded| alias == *unfolded)
+    {
         callee
     } else if has_colon {
         // The list of function hooks and aliases from the MediaWiki API does
@@ -699,8 +701,16 @@ pub(crate) fn resolve_callee<'a>(
         // there is a ':' in the name-part, this is probably fine, since in
         // order to cause a mismatch it would mean that someone made a namespace
         // alias that matches a parser function name, which is unlikely.
-        let callee_lower = callee_lower.strip_prefix('#').unwrap_or(callee_lower);
-        config.function_hooks.get(callee_lower).copied()
+        let alias_lower = alias_lower.strip_prefix('#').unwrap_or(&alias_lower);
+        config.function_hooks.get(alias_lower).copied().filter(|_| {
+            config
+                .case_sensitive_words
+                .get(alias_lower)
+                .is_none_or(|unfolded| {
+                    let alias = alias.strip_prefix('#').unwrap_or(alias);
+                    alias == *unfolded
+                })
+        })
     } else {
         None
     }

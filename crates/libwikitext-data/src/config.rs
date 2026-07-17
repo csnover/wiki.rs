@@ -30,6 +30,76 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "notitleconvert", "__notc__" => "notitleconvert", "__notoc__" => "notoc",
         "__staticredirect__" => "staticredirect", "__toc__" => "toc"
     },
+    case_sensitive_words: phf::phf_map! {
+        "!" => "!", "$1px" => "$1px", "=" => "=", "__disambig__" => "__DISAMBIG__",
+        "__expected_unconnected_page__" => "__EXPECTED_UNCONNECTED_PAGE__",
+        "__expectunusedcategory__" => "__EXPECTUNUSEDCATEGORY__",
+        "__expectunusedtemplate__" => "__EXPECTUNUSEDTEMPLATE__", "__hiddencat__" =>
+        "__HIDDENCAT__", "__index__" => "__INDEX__", "__keeptitle__" => "__KEEPTITLE__",
+        "__newsectionlink__" => "__NEWSECTIONLINK__", "__noglobal__" => "__NOGLOBAL__",
+        "__noindex__" => "__NOINDEX__", "__nonewsectionlink__" => "__NONEWSECTIONLINK__",
+        "__staticredirect__" => "__STATICREDIRECT__", "alt=$1" => "alt=$1",
+        "articlepagename" => "ARTICLEPAGENAME", "articlepagenamee" => "ARTICLEPAGENAMEE",
+        "articlespace" => "ARTICLESPACE", "articlespacee" => "ARTICLESPACEE", "baseline"
+        => "baseline", "basepagename" => "BASEPAGENAME", "basepagenamee" =>
+        "BASEPAGENAMEE", "bcp47" => "bcp47", "border" => "border", "both" => "both",
+        "bottom" => "bottom", "canonical" => "canonical", "cascadingsources" =>
+        "CASCADINGSOURCES", "center" => "center", "centre" => "centre", "class=$1" =>
+        "class=$1", "communityrequests" => "CommunityRequests", "contentlang" =>
+        "CONTENTLANG", "contentlanguage" => "CONTENTLANGUAGE", "contentmodel" =>
+        "contentmodel", "currentday" => "CURRENTDAY", "currentday2" => "CURRENTDAY2",
+        "currentdayname" => "CURRENTDAYNAME", "currentdow" => "CURRENTDOW", "currenthour"
+        => "CURRENTHOUR", "currentmonth" => "CURRENTMONTH", "currentmonth1" =>
+        "CURRENTMONTH1", "currentmonth2" => "CURRENTMONTH2", "currentmonthabbrev" =>
+        "CURRENTMONTHABBREV", "currentmonthname" => "CURRENTMONTHNAME",
+        "currentmonthnamegen" => "CURRENTMONTHNAMEGEN", "currenttime" => "CURRENTTIME",
+        "currenttimestamp" => "CURRENTTIMESTAMP", "currentversion" => "CURRENTVERSION",
+        "currentweek" => "CURRENTWEEK", "currentyear" => "CURRENTYEAR", "date" => "date",
+        "defaultcategorysort" => "DEFAULTCATEGORYSORT", "defaultsort" => "DEFAULTSORT",
+        "defaultsortkey" => "DEFAULTSORTKEY", "dir" => "dir", "directionmark" =>
+        "DIRECTIONMARK", "dirmark" => "DIRMARK", "displaytitle" => "DISPLAYTITLE",
+        "enframed" => "enframed", "formal" => "FORMAL", "frame" => "frame", "framed" =>
+        "framed", "frameless" => "frameless", "fullpagename" => "FULLPAGENAME",
+        "fullpagenamee" => "FULLPAGENAMEE", "interlanguagelink" => "interlanguagelink",
+        "interwikilink" => "interwikilink", "isbn" => "isbn", "lang=$1" => "lang=$1",
+        "left" => "left", "link=$1" => "link=$1", "local" => "local", "localday" =>
+        "LOCALDAY", "localday2" => "LOCALDAY2", "localdayname" => "LOCALDAYNAME",
+        "localdow" => "LOCALDOW", "localhour" => "LOCALHOUR", "localmonth" =>
+        "LOCALMONTH", "localmonth1" => "LOCALMONTH1", "localmonth2" => "LOCALMONTH2",
+        "localmonthabbrev" => "LOCALMONTHABBREV", "localmonthname" => "LOCALMONTHNAME",
+        "localmonthnamegen" => "LOCALMONTHNAMEGEN", "localtime" => "LOCALTIME",
+        "localtimestamp" => "LOCALTIMESTAMP", "localweek" => "LOCALWEEK", "localyear" =>
+        "LOCALYEAR", "lossy=$1" => "lossy=$1", "middle" => "middle", "namespace" =>
+        "NAMESPACE", "namespacee" => "NAMESPACEE", "namespacenumber" =>
+        "NAMESPACENUMBER", "none" => "none", "numberingroup" => "NUMBERINGROUP",
+        "numberofactiveusers" => "NUMBEROFACTIVEUSERS", "numberofadmins" =>
+        "NUMBEROFADMINS", "numberofarticles" => "NUMBEROFARTICLES", "numberofedits" =>
+        "NUMBEROFEDITS", "numberoffiles" => "NUMBEROFFILES", "numberofpages" =>
+        "NUMBEROFPAGES", "numberofusers" => "NUMBEROFUSERS", "numingroup" =>
+        "NUMINGROUP", "page $1" => "page $1", "page=$1" => "page=$1", "pagelanguage" =>
+        "PAGELANGUAGE", "pagename" => "PAGENAME", "pagenamee" => "PAGENAMEE",
+        "pagesincat" => "PAGESINCAT", "pagesincategory" => "PAGESINCATEGORY",
+        "pagesinnamespace:" => "PAGESINNAMESPACE:", "pagesinns:" => "PAGESINNS:",
+        "pagesize" => "PAGESIZE", "pretty" => "pretty", "protectionexpiry" =>
+        "PROTECTIONEXPIRY", "protectionlevel" => "PROTECTIONLEVEL", "r" => "R",
+        "revisionday" => "REVISIONDAY", "revisionday2" => "REVISIONDAY2", "revisionid" =>
+        "REVISIONID", "revisionmonth" => "REVISIONMONTH", "revisionmonth1" =>
+        "REVISIONMONTH1", "revisionsize" => "REVISIONSIZE", "revisiontimestamp" =>
+        "REVISIONTIMESTAMP", "revisionuser" => "REVISIONUSER", "revisionyear" =>
+        "REVISIONYEAR", "right" => "right", "rootpagename" => "ROOTPAGENAME",
+        "rootpagenamee" => "ROOTPAGENAMEE", "shortdesc" => "SHORTDESC", "sitename" =>
+        "SITENAME", "sub" => "sub", "subjectpagename" => "SUBJECTPAGENAME",
+        "subjectpagenamee" => "SUBJECTPAGENAMEE", "subjectspace" => "SUBJECTSPACE",
+        "subjectspacee" => "SUBJECTSPACEE", "subpagename" => "SUBPAGENAME",
+        "subpagenamee" => "SUBPAGENAMEE", "sup" => "sup", "super" => "super",
+        "talkpagename" => "TALKPAGENAME", "talkpagenamee" => "TALKPAGENAMEE", "talkspace"
+        => "TALKSPACE", "talkspacee" => "TALKSPACEE", "text-bottom" => "text-bottom",
+        "text-top" => "text-top", "thumb" => "thumb", "thumb=$1" => "thumb=$1",
+        "thumbnail" => "thumbnail", "thumbnail=$1" => "thumbnail=$1", "time" => "time",
+        "timef" => "timef", "timefl" => "timefl", "top" => "top", "translatablepage" =>
+        "TRANSLATABLEPAGE", "upright" => "upright", "upright $1" => "upright $1",
+        "upright=$1" => "upright=$1", "userlanguage" => "USERLANGUAGE"
+    },
     extension_tags: phf::phf_set! {
         "categorytree", "ce", "charinsert", "chem", "gallery", "graph", "hiero",
         "imagemap", "indicator", "inputbox", "langconvert", "mapframe", "maplink",

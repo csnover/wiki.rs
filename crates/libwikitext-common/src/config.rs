@@ -67,7 +67,10 @@ impl Configuration {
 
         Self {
             escape_pattern: build_escape_pattern(&source.protocols, source.magic_links),
-            extra_words_pattern: ExtraWordsPattern::new(source.extra_words.entries()),
+            extra_words_pattern: ExtraWordsPattern::new(
+                &source.case_sensitive_words,
+                source.extra_words.entries(),
+            ),
             link_prefix_pattern,
             link_trail_pattern: link_trail_regex(source.link_trail),
             #[cfg(test)]
@@ -116,8 +119,12 @@ pub struct ConfigurationSource {
     /// Whether annotations are enabled.
     pub annotations_enabled: bool,
 
-    /// Words that can appear between `__` and `__`, lowercased, by alias.
+    /// Registered magic words used to change the behaviour of the parser,
+    /// (conventionally wrapped by double underscores), lowercased, by alias.
     pub behavior_switch_words: Map<&'static str, &'static str>,
+
+    /// Case-sensitive magic word aliases.
+    pub case_sensitive_words: Map<&'static str, &'static str>,
 
     /// Tag names of registered extension tags, lowercased, by alias.
     pub extension_tags: Set<&'static str>,
@@ -221,20 +228,22 @@ pub type ExtraWordsMatch<'a, 'b> = (&'b [&'b str], Option<Cow<'a, str>>);
 
 impl ExtraWordsPattern {
     /// Creates a new `ExtraWordsPattern`.
-    fn new<'a, I>(extra_words: I) -> Self
+    fn new<'a, I>(case_sensitive_words: &phf::Map<&str, &str>, extra_words: I) -> Self
     where
         I: Iterator<Item = (&'a &'static str, &'a &'static [&'static str])> + Clone,
     {
         let param_words = extra_words.filter(|(key, _)| key.contains("$1"));
 
-        let res = param_words
-            .clone()
-            .map(|(key, _)| format!("^{}$", regex::escape(key).replace("\\$1", ".*")));
+        let res = param_words.clone().map(|(key, _)| {
+            let flag = if case_sensitive_words.contains_key(key) {
+                "i"
+            } else {
+                <_>::default()
+            };
+            format!("^(?{flag}:{})$", regex::escape(key).replace("\\$1", ".*"))
+        });
 
-        let patterns = regex::RegexSetBuilder::new(res)
-            .case_insensitive(true)
-            .build()
-            .unwrap();
+        let patterns = regex::RegexSet::new(res).unwrap();
 
         let which = param_words
             .map(|(key, canonical)| {
@@ -451,7 +460,7 @@ pub fn build_escape_pattern(protocols: &phf::Set<&str>, magic_links: MagicLinks)
     let switch = regex_switch(protocols.iter().filter_map(|proto| proto.strip_suffix(':')));
 
     if !switch.is_empty() {
-        write!(escape_pattern, "(?:(?i){switch})(:)").unwrap();
+        write!(escape_pattern, "(?i:{switch})(:)").unwrap();
     }
 
     let switch = regex_switch(

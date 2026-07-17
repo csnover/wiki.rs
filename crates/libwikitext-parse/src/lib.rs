@@ -9,7 +9,7 @@ pub mod strip;
 pub mod visit;
 
 pub use codemap::{FileMap, Span, Spanned};
-use core::cell::Cell;
+use core::{cell::Cell, fmt::Write as _};
 pub use inspectors::{inspect, inspect_one};
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
@@ -56,11 +56,10 @@ impl<'config> Parser<'config> {
     ///
     /// * if prefix search regular expressions fail to build
     pub fn new(config: &'config Configuration) -> Self {
-        let bs = Regex::new(&format!(
-            "^(?i:{})",
-            regex_switch(config.behavior_switch_words.keys())
-        ))
-        .unwrap();
+        let bs = case_sensitive_switch(
+            &config.case_sensitive_words,
+            config.behavior_switch_words.keys(),
+        );
 
         // Collecting into a hash set for value deduplication, which ends up
         // being convenient for having only a single set to check for adding
@@ -83,13 +82,12 @@ impl<'config> Parser<'config> {
                 lang.insert(Cow::Borrowed(k.as_str()));
             }
         }
-
         let lang = Regex::new(&format!("^(?:{})", regex_switch(lang.iter()))).unwrap();
-        let redirect = Regex::new(&format!(
-            "^(?i:{})",
-            regex_switch(config.redirect_magic_words.iter())
-        ))
-        .unwrap();
+
+        let redirect = case_sensitive_switch(
+            &config.case_sensitive_words,
+            config.redirect_magic_words.iter(),
+        );
 
         Self {
             bs,
@@ -736,6 +734,35 @@ pub fn borrow_fastest<'a>(source: &'a str, expr: &'a [Spanned<Token>]) -> Option
     } else {
         borrow_fast(source, expr)
     }
+}
+
+/// Builds a regular expression for a list of aliases with mixed case
+/// sensitivity.
+fn case_sensitive_switch<I>(case_sensitive_words: &phf::Map<&str, &str>, aliases: I) -> Regex
+where
+    I: Iterator,
+    I::Item: AsRef<str>,
+{
+    let mut pattern = String::new();
+    for alias in aliases {
+        let alias = alias.as_ref();
+        if !pattern.is_empty() {
+            pattern.push('|');
+        }
+
+        if let Some(alias) = case_sensitive_words.get(alias) {
+            pattern += &regex::escape(alias);
+        } else {
+            let _ = write!(pattern, "(?i:{})", regex::escape(alias));
+        }
+    }
+
+    Regex::new(&if pattern.is_empty() {
+        pattern
+    } else {
+        format!("^(?:{pattern})")
+    })
+    .unwrap()
 }
 
 /// Escapes the world, marauding, questioning what the hell kind of text format

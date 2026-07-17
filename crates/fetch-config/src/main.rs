@@ -28,7 +28,7 @@ struct SerdeError {
     err: serde_json::Error,
 }
 
-type MagicWords<'a> = HashMap<Cow<'a, str>, Vec<Cow<'a, str>>>;
+type MagicWords<'a> = HashMap<&'a str, &'a [Cow<'a, str>]>;
 
 /// Beware! Running this function may cause sadness and bleeding from orifices.
 fn main() -> Result<(), DisplayError> {
@@ -50,22 +50,51 @@ fn main() -> Result<(), DisplayError> {
 
     let query = response.query;
 
+    let case_sensitive_words = {
+        // These aliases may be duplicated after trimming, so it is necessary to
+        // collect in order to deduplicate. As a free bonus this also makes the
+        // output sorted in a way which is satisfying for anyone with OCD
+        let mut map = BTreeMap::new();
+        let case_sensitive_words = query
+            .magic_words
+            .iter()
+            .filter_map(|word| (word.case_sensitive).then_some((&word.name, &word.aliases)));
+        for (name, aliases) in case_sensitive_words {
+            let trim = if query.function_hooks.contains(name) {
+                trim_parser_fn
+            } else if query.variables.contains(name) {
+                trim_variable
+            } else {
+                fn identity(s: &str) -> &str {
+                    s
+                }
+                identity
+            };
+            for alias in aliases {
+                let alias = trim(alias);
+                map.insert(alias.to_lowercase(), alias);
+            }
+        }
+        map.into_iter()
+            .map(|(folded, alias)| quote!(#folded => #alias))
+    };
+
     let magic_words = query
         .magic_words
-        .into_iter()
-        .map(|word| (word.name, word.aliases))
+        .iter()
+        .map(|word| (word.name.as_ref(), word.aliases.as_slice()))
         .collect::<HashMap<_, _>>();
 
     let extra_words = {
         let mut map = BTreeMap::<_, Vec<&str>>::new();
-        let extra_words = magic_words.iter().filter(|(word, _)| {
+        let extra_words = magic_words.iter().filter(|&(word, _)| {
             !query.double_underscores.contains(*word)
                 && !query.function_hooks.contains(*word)
                 && !query.variables.contains(*word)
                 && *word != "redirect"
         });
         for (word, aliases) in extra_words {
-            for alias in aliases {
+            for alias in *aliases {
                 let words = map.entry(alias.to_lowercase()).or_default();
                 words.push(word);
             }
@@ -84,11 +113,11 @@ fn main() -> Result<(), DisplayError> {
     let double_underscores = aliases_iter(&magic_words, query.double_underscores, &|alias| alias);
 
     let extension_tags = query.extension_tags.into_iter().map(|tag| {
-        let tag = tag[1..tag.len() - 1].to_ascii_lowercase();
+        let tag = tag[1..tag.len() - 1].to_lowercase();
         quote!(#tag)
     });
 
-    let function_hooks = aliases_iter(&magic_words, query.function_hooks, &trim_parser_fn);
+    let function_hooks = aliases_iter(&magic_words, &query.function_hooks, &trim_parser_fn);
 
     let api::General {
         gallery_options,
@@ -246,9 +275,8 @@ fn main() -> Result<(), DisplayError> {
     let redirects = redirects_iter(&magic_words);
 
     // These aliases are case-insensitive, but that does not stop them from
-    // being duplicated in the source configuration, so it is necessary to
-    // collect in order to deduplicate. As a free bonus this also makes the
-    // output sorted in a way which is satisfying for anyone with OCD
+    // being duplicated in the source configuration, so like the case-sensitive
+    // words, deduplication is needed
     let (mut special_pages_aliases, mut special_pages_canonical) =
         (BTreeMap::new(), BTreeMap::new());
     for page in &query.special_page_aliases {
@@ -272,7 +300,7 @@ fn main() -> Result<(), DisplayError> {
 
     let thumb_limits = thumb_limits.into_values().map(Literal::u32_unsuffixed);
 
-    let variables = aliases_iter(&magic_words, query.variables, &trim_variable);
+    let variables = aliases_iter(&magic_words, &query.variables, &trim_variable);
 
     let file: syn::File = syn::parse_quote! {
         static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
@@ -280,6 +308,9 @@ fn main() -> Result<(), DisplayError> {
             annotations_enabled: false,
             behavior_switch_words: phf::phf_map! {
                 #(#double_underscores),*
+            },
+            case_sensitive_words: phf::phf_map! {
+                #(#case_sensitive_words),*
             },
             extension_tags: phf::phf_set! {
                 #(#extension_tags),*
@@ -352,19 +383,15 @@ fn aliases_iter<'a, F, I, T>(
     transform: &F,
 ) -> impl Iterator<Item = TokenStream>
 where
-    F: for<'b> Fn(&'b Cow<'b, str>) -> &'b str,
+    F: for<'b> Fn(&'b str) -> &'b str,
     I: IntoIterator<Item = T>,
     T: AsRef<str>,
 {
     items.into_iter().flat_map(move |key| {
         let key = key.as_ref();
-        let aliases = magic_words.get(key).map(Vec::as_slice).unwrap_or_default();
+        let aliases = magic_words.get(key).copied().unwrap_or_default();
         let key = key.to_lowercase();
         aliases.iter().map(move |alias| {
-            // TODO: Technically, some magic words are case-sensitive and other
-            // ones are not. So far, simplifying the implementation by case
-            // folding and treating them all as case-insensitive has not broken
-            // anything catastrophically.
             let alias = transform(alias).to_lowercase();
             quote!(#alias => #key)
         })
@@ -460,7 +487,8 @@ fn namespaces_iter(
 fn redirects_iter(magic_words: &MagicWords<'_>) -> impl Iterator<Item = TokenStream> {
     magic_words
         .get("redirect")
-        .map_or(<_>::default(), Vec::as_slice)
+        .copied()
+        .unwrap_or_default()
         .iter()
         .map(|alias| {
             let v = alias.to_lowercase();
@@ -469,10 +497,10 @@ fn redirects_iter(magic_words: &MagicWords<'_>) -> impl Iterator<Item = TokenStr
 }
 
 /// Trims bad characters from a variable or parser function alias.
-fn trim_parser_fn<'a>(alias: &'a Cow<'a, str>) -> &'a str {
-    // In MW, `Parser::setFunctionHook` does this conditional stripping of the
+fn trim_parser_fn(alias: &str) -> &str {
+    // In MW, `Parser::setFunctionHook` does this unconditional stripping of the
     // trailing colon.
-    let alias = alias.strip_suffix(':').unwrap_or(alias);
+    let alias = alias.strip_suffix([':', '：']).unwrap_or(alias);
 
     // In MW, a hash is *added* in `Parser::setFunctionHook` for functions which
     // were registered without the `SFH_NO_HASH` flag. This registration detail
@@ -487,7 +515,7 @@ fn trim_parser_fn<'a>(alias: &'a Cow<'a, str>) -> &'a str {
 }
 
 /// Trims bad characters from a variable alias.
-fn trim_variable<'a>(alias: &'a Cow<'a, str>) -> &'a str {
+fn trim_variable(alias: &str) -> &str {
     // Variables do not normally do this stripping but having a colon in a
     // variable name is “deprecated” as of MW 1.39 (whatever that means, since
     // removing support would break content). Treating them consistently makes
@@ -496,7 +524,7 @@ fn trim_variable<'a>(alias: &'a Cow<'a, str>) -> &'a str {
     // one was stupid enough to do this (lol, why do I keep pretending that
     // someone would not do stupid things in MW when there is SO MUCH EVIDENCE
     // to the contrary).
-    alias.strip_suffix(':').unwrap_or(alias)
+    alias.strip_suffix([':', '：']).unwrap_or(alias)
 }
 
 /// Data types for the MediaWiki siteinfo API.
@@ -613,6 +641,7 @@ mod api {
     pub(super) struct MagicWord<'a> {
         #[serde(borrow)]
         pub aliases: Vec<Cow<'a, str>>,
+        pub case_sensitive: bool,
         #[serde(borrow)]
         pub name: Cow<'a, str>,
     }
