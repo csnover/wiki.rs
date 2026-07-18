@@ -1777,6 +1777,63 @@ mod title {
         Ok(())
     }
 
+    /// `{{#interwikilink: prefix | title [| text] }}`
+    pub fn interwiki_link(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        let prefix = arguments.eval(state, 0)?.map(trim);
+        let title = arguments.eval(state, 1)?.map(trim);
+
+        if let (Some(prefix), Some(title)) = (prefix, title)
+            && let prefix = to_lower(&prefix)
+            && let config = state.statics.db.config()
+            && config.interwiki_map.contains_key(&prefix)
+        {
+            let prefix = libwikitext_common::to_upper_first(&prefix);
+            let (title, fragment) = title
+                .split_once('#')
+                .map_or((title.as_ref(), None), |(a, b)| (a, Some(b)));
+            let title = Title::from_parts(
+                config,
+                Namespace::main(config),
+                title,
+                fragment,
+                Some(&prefix),
+            )?;
+            let link = crate::tags::LinkKind::Internal(title, <_>::default());
+
+            // Out of all the cursed things in MediaWiki, this may be the cursedest
+            let mut tag = crate::transform::Accumulator::new();
+            crate::tags::render_start_link(&mut tag, state, &link, false);
+            let mut tag = crate::transform::Sink::finish(tag);
+            if let Some(text) = arguments.eval(state, 2)?.map(trim) {
+                tag += crate::strip_graf(&crate::extension_tags::eval_string(
+                    state,
+                    arguments.sp,
+                    &text,
+                    true,
+                )?);
+            } else {
+                tag += &html_escape::encode_text(link.title().unwrap().prefixed_text());
+            }
+            tag += "</a>";
+            state.strip_markers.push(
+                out,
+                "interwikilink",
+                crate::StripMarker::General(tag.into()),
+            );
+        } else {
+            // TODO: This is supposed to cause the whole function to be emitted
+            // as plain text, as if there was no matching parser function for
+            // `#interwikilink`.
+            log::warn!("TODO: Emit bad {{#interwikilink}}");
+        }
+
+        Ok(())
+    }
+
     /// `{{localurl: title [| query string] }}`
     pub fn local_url(
         out: &mut String,
@@ -2085,6 +2142,7 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "fullurl" => title::full_url,
     "fullurle" => title::full_url,
     "ifexist" => title::if_exist,
+    "interwikilink" => title::interwiki_link,
     "localurl" => title::local_url,
     "localurle" => title::local_url,
     "lst" => title::transclude_section,

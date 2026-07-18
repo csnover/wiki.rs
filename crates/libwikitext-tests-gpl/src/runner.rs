@@ -16,6 +16,7 @@ use libwikitext_parse::{FileMap, Parser, inspect};
 use libwikitext_render::{
     LoadMode, OutputMode, Paths, PluginExtensionTag, PluginFnArgs, PluginParserFn, PluginResult,
     PluginState, PluginTagArgs, RenderOutput, Statics, preprocess_article, render_article,
+    strip_graf,
 };
 use regex::{Regex, RegexBuilder};
 use serde_json_borrow::Value;
@@ -70,14 +71,7 @@ impl PluginExtensionTag for DivTagPf {
             <_>::default()
         };
 
-        // This is `Parser::stripOuterParagraph` which is used nowhere except
-        // here, interwikilink parser function, and indicator extension tag
-        let content = content
-            .strip_prefix("<p>")
-            .map(|c| c.strip_suffix('\n').unwrap_or(c))
-            .and_then(|c| c.strip_suffix("</p>"))
-            .map_or(content.as_ref(), |c| c.strip_suffix('\n').unwrap_or(c));
-
+        let content = strip_graf(&content);
         write!(out, "<{tag}>{content}</{tag}>")?;
         Ok(OutputMode::Html)
     }

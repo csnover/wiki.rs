@@ -358,7 +358,8 @@ impl LinkKind<'_> {
                     .interwiki()
                     .and_then(|iw| options.interwiki_map.get(&iw.to_ascii_lowercase()))
                 {
-                    let url = strtr(iw, &[("$1", &title.partial_url())]);
+                    let url = strtr(iw, &[("$1", &title.partial_url())])
+                        .map_ref(|url| url.strip_suffix('?').unwrap_or(url));
                     if let Some(external) = options.paths.external {
                         make_url(
                             options.base_uri,

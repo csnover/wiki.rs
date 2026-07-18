@@ -149,6 +149,22 @@ pub struct ConfigurationSource {
     /// Registered title interwikis.
     pub interwiki_map: Map<&'static str, &'static str>,
 
+    /// Registered interwiki aliases for the current wiki.
+    ///
+    /// Note that these are named “local interwiki” prefixes in MediaWiki code
+    /// but this is *not the same* as interwiki prefixes with the `local`
+    /// property in the API or `iw_local` in the database. The `local` flag
+    /// indicates that, if a visitor tries loading a title with one of these
+    /// interwiki prefixes, the software should automatically redirect the
+    /// visitor to the correct foreign wiki. It is the *`localinterwiki`*
+    /// property which defines an interwiki prefix as an alias for the current
+    /// wiki.
+    ///
+    /// wiki.rs will call this latter thing a “self-interwiki” instead so that
+    /// it is not so mind-bogglingly needlessly unnecessarily purposelessly
+    /// confusing.
+    pub interwiki_self: Set<&'static str>,
+
     /// The default page language code.
     pub language: &'static str,
 
@@ -176,6 +192,9 @@ pub struct ConfigurationSource {
 
     /// The kinds of extra magic links which are enabled.
     pub magic_links: MagicLinks,
+
+    /// The name of the main page.
+    pub main_page: &'static str,
 
     /// Registered title namespaces.
     pub namespaces: &'static [Namespace],

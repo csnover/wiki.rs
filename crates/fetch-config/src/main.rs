@@ -129,6 +129,7 @@ fn main() -> Result<(), DisplayError> {
         link_prefix,
         link_trail,
         magic_links,
+        main_page,
         thumb_limits,
     } = query.general;
 
@@ -214,10 +215,19 @@ fn main() -> Result<(), DisplayError> {
     });
 
     let interwiki_map = query.interwiki_map.iter().map(|v| {
-        let k = v.prefix.to_ascii_lowercase();
+        let k = v.prefix.to_lowercase();
         let v = &v.url;
         quote!(#k => #v)
     });
+
+    let interwiki_self = query
+        .interwiki_map
+        .iter()
+        .filter(|&v| v.self_alias)
+        .map(|v| {
+            let k = v.prefix.to_lowercase();
+            quote!(#k)
+        });
 
     // Old language codes might map to the same BCP-47s. In an effort to avoid
     // making everything else bad for this one edge case, just avoid emitting
@@ -329,6 +339,9 @@ fn main() -> Result<(), DisplayError> {
             interwiki_map: phf::phf_map! {
                 #(#interwiki_map),*
             },
+            interwiki_self: phf::phf_set! {
+                #(#interwiki_self),*
+            },
             language: #lang,
             language_bcp47: phf::phf_map! {
                 #(#language_bcp47),*
@@ -347,6 +360,7 @@ fn main() -> Result<(), DisplayError> {
                 pmid: #pmid,
                 rfc: #rfc,
             },
+            main_page: #main_page,
             namespaces: &[ #(#namespaces),* ],
             protocols: phf::phf_set! {
                 #(#protocols),*
@@ -596,6 +610,8 @@ mod api {
         pub link_trail: Cow<'a, str>,
         #[serde(rename = "magiclinks")]
         pub magic_links: MagicLinks,
+        #[serde(borrow, rename = "mainpage")]
+        pub main_page: Cow<'a, str>,
         #[serde(rename = "thumblimits")]
         pub thumb_limits: BTreeMap<u32, u32>,
     }
@@ -606,6 +622,8 @@ mod api {
         pub bcp47: Option<Cow<'a, str>>,
         #[serde(borrow)]
         pub prefix: Cow<'a, str>,
+        #[serde(default, rename = "localinterwiki")]
+        pub self_alias: bool,
         #[serde(borrow)]
         pub url: Cow<'a, str>,
     }

@@ -327,6 +327,11 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "wikipedia" => "http://en.wikipedia.org/wiki/$1",
         "zh" => "http://zh.wikipedia.org/wiki/$1",
     },
+    interwiki_self: phf::phf_set! {
+        "local",
+        "mi",
+        "project",
+    },
     language: "en",
     language_bcp47: phf::phf_map! {
         "ar" => 0,
@@ -362,6 +367,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         pmid: true,
         rfc: true,
     },
+    main_page: "Main Page",
     namespaces: &[
         Namespace {
             id: -2,

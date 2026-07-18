@@ -361,56 +361,51 @@ impl Title {
         let (default_ns, mut text) = text
             .strip_prefix(':')
             .map_or((default_ns, text.as_ref()), |text| {
-                (None, text.trim_start_matches(' '))
+                (Some(Namespace::MAIN), text.trim_start_matches(' '))
             });
 
-        // Namespaces and interwiki prefixes may have the same name, and
-        // namespaces are given priority. (It does not make much sense that
-        // namespaces from one wiki are treated as if they might exist on a
-        // foreign wiki, but the Lua mw.title interface acts like this is the
-        // case, so wiki.rs does too.)
-        let (iw, ns) = text.split_once(':').map_or(<_>::default(), |(lhs, rhs)| {
+        let (mut iw, mut ns) = <_>::default();
+        while let Some((lhs, rhs)) = text.split_once(':') {
+            // Namespaces and interwiki prefixes may have the same name, and
+            // namespaces are given priority. (It does not make much sense that
+            // namespaces from one wiki are treated as if they might exist on a
+            // foreign wiki, but the Lua mw.title interface acts like this is
+            // the case, so wiki.rs does too.)
             let lhs = lhs.trim_end_matches(' ');
             let rhs = rhs.trim_start_matches(' ');
             if lhs.is_empty() {
-                // This mustn’t match anything since an empty segment for the
-                // main namespace was already extracted by the first split. If
-                // this matched again, then `::` would be treated as a
-                // double namespace, which is not correct. (It is necessary to
-                // do the early split separately because otherwise *this* split
-                // would not match an interwiki after an empty segment.)
-                <_>::default()
-            } else if let Some(ns) = Namespace::find_by_name(config, lhs) {
+                // This mustn’t match anything since an empty segment for
+                // the main namespace was already extracted by the first
+                // split. If this matched again, then `::` would be treated
+                // as a double namespace, which is not correct. (It is
+                // necessary to do the early split separately because
+                // otherwise *this* split would not match an interwiki after
+                // an empty segment.)
+            } else if let lhs @ Some(_) = Namespace::find_by_name(config, lhs) {
+                ns = lhs;
                 text = rhs;
-                (None, Some(ns))
-            } else if let Some(iw) = config.interwiki_map.get_key(&to_lower(lhs)) {
-                text = rhs;
-                (Some(*iw), None)
-            } else {
-                <_>::default()
-            }
-        });
-
-        // After an interwiki, there is a bonus chance to find a namespace.
-        // (Technically, there are infinite bonus chances to find an interwiki
-        // again here, but let’s just pretend that the original code was not so
-        // brain damaged.)
-        let ns = if iw.is_some()
-            && let Some((lhs, rhs)) = text.split_once(':')
-        {
-            if lhs.is_empty() {
-                text = rhs.trim_start_matches(' ');
-                Some(Namespace::main(config))
-            } else if let ns @ Some(_) = Namespace::find_by_name(config, lhs.trim_end_matches(' '))
+            } else if let lhs = to_lower(lhs)
+                && let prefix @ Some(_) = config.interwiki_map.get_key(&lhs).copied()
             {
-                text = rhs.trim_start_matches(' ');
-                ns
-            } else {
-                None
+                iw = prefix;
+                text = rhs;
+                if config.interwiki_self.contains(&lhs) {
+                    iw = None;
+                    if rhs.is_empty() {
+                        text = config.main_page;
+                    } else {
+                        // After a local interwiki, there are potentially
+                        // infinite bonus chances to find another namespace or
+                        // interwiki prefix.
+                        continue;
+                    }
+                } else if let Some(rhs) = text.strip_prefix(':') {
+                    ns = Some(Namespace::main(config));
+                    text = rhs;
+                }
             }
-        } else {
-            ns
-        };
+            break;
+        }
 
         // MediaWiki checked twice for an empty key part with different
         // conditions at different points in the algorithm, but it turns out

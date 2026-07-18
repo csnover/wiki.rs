@@ -924,6 +924,9 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "https://en.wikimedia.org/wiki/$1", "v" => "https://en.wikiversity.org/wiki/$1",
         "voy" => "https://en.wikivoyage.org/wiki/$1"
     },
+    interwiki_self: phf::phf_set! {
+        "en", "w"
+    },
     language: "en",
     language_bcp47: phf::phf_map! {
         "aa" => 0, "aae" => 1, "ab" => 2, "abe" => 3, "abq" => 4, "abq-Latn" => 5, "abr"
@@ -3115,6 +3118,7 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         pmid: false,
         rfc: false,
     },
+    main_page: "Main Page",
     namespaces: &[
         Namespace {
             id: -1,
