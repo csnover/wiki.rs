@@ -350,7 +350,11 @@ fn gallery(
 
         let mut options = image::media_options(state, &sp, title, &args, true)?;
 
-        if (options.width.is_none() || !options.title.exists(&state.statics.db))
+        if (options.width.is_none()
+            || !options
+                .target
+                .title()
+                .is_some_and(|title| title.exists(&state.statics.db)))
             && !body.options.mode.is_packed()
         {
             options.width = Some(body.options.width);
@@ -370,8 +374,7 @@ fn gallery(
 
         write!(out, "\t\t\t<div class=\"gallerytext\">")?;
         if body.show_filename {
-            let href =
-                image::resource_url(state, &LinkKind::from_title(options.title.clone()), None);
+            let href = image::resource_url(state, &options.target, None);
 
             let mut acc = Accumulator::new();
             acc.tag_start("a");
@@ -385,9 +388,10 @@ fn gallery(
                 acc.text(" galleryfilename-truncate");
             }
             acc.tag_attribute_end("class");
-            acc.tag_attribute_full("title", options.title.key());
+            let title = options.target.title().unwrap();
+            acc.tag_attribute_full("title", title.key());
             acc.tag_start_end("a");
-            acc.text(options.title.text());
+            acc.text(title.text());
             acc.tag_end("a");
             writeln!(out, "{}", acc.finish())?;
         }

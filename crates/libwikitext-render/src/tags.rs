@@ -3,7 +3,7 @@
 use super::{
     Error, Paths, Result, StackFrame, State, Surrogate,
     document::{Document, DocumentSink},
-    image::make_media_url,
+    image::{make_media_url, resolve_media},
     transform::Sink,
 };
 use core::convert::Infallible;
@@ -12,7 +12,6 @@ use libphp_rs::strtr;
 use libwikitext_common::{
     AnchorEncodeMode,
     config::{Configuration, ImageHotlinking, SpecialPages},
-    db::DatabaseProvider as _,
     decode_html, make_url,
     title::{Namespace, Title},
     url::Url,
@@ -136,10 +135,12 @@ pub(super) fn render_internal_link<S: DocumentSink>(
         }
         out.next.tag_start_end("a");
     } else {
+        let title =
+            Cow::Owned::<Title>(title).try_map(|title| resolve_media(&state.statics.db, title))?;
         render_start_link(
             &mut out.next,
             state,
-            &LinkKind::Internal(title, <_>::default()),
+            &LinkKind::Internal(title.into_owned(), <_>::default()),
             false,
         );
     }
@@ -249,6 +250,8 @@ pub(super) fn render_start_link<W: Sink + ?Sized>(
             } else if !title.prefixed_text().is_empty() {
                 if title.interwiki().is_some() {
                     out.tag_attribute_full("class", "extiw");
+                } else if matches!(kind, InternalLinkKind::Redirect) {
+                    out.tag_attribute_full("class", "mw-redirect");
                 }
                 out.tag_attribute_full("title", title.prefixed_text());
             }
@@ -304,6 +307,8 @@ pub(super) enum InternalLinkKind {
     Normal,
     /// An ISBN magic link.
     MagicIsbn,
+    /// A media redirect.
+    Redirect,
 }
 
 /// A kind of link to render.

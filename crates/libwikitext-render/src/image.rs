@@ -10,7 +10,7 @@ use crate::transform::tokenise;
 use core::{convert::Infallible, fmt::Write as _};
 use libmisc::CowExt as _;
 use libwikitext_common::{
-    db::FileMetadata,
+    db::{DatabaseProvider, FileMetadata},
     make_url,
     title::{Namespace, Title},
     url::Url,
@@ -132,8 +132,8 @@ pub(super) struct Options<'a> {
     page: Option<i32>,
     /// The playback start time for a video… er… image.
     start: Option<Cow<'a, str>>,
-    /// The target title for the image.
-    pub title: Title,
+    /// The target of the image.
+    pub target: LinkKind<'a>,
     /// The timestamp to extract and render as a still from a video file.
     thumbtime: Option<Cow<'a, str>>,
     /// “Resizes an image to a multiple of the user’s thumbnail size
@@ -146,8 +146,8 @@ pub(super) struct Options<'a> {
 }
 
 impl Options<'_> {
-    /// Creates a new `Options` with the given `title`.
-    fn new(title: Title) -> Self {
+    /// Creates a new `Options` with the given `target` title.
+    fn new(target: Title) -> Self {
         Self {
             align: <_>::default(),
             alt: <_>::default(),
@@ -166,7 +166,7 @@ impl Options<'_> {
             muted: <_>::default(),
             page: <_>::default(),
             start: <_>::default(),
-            title,
+            target: LinkKind::from_title(target),
             thumbtime: <_>::default(),
             upright: <_>::default(),
             valign: <_>::default(),
@@ -236,11 +236,11 @@ impl Options<'_> {
 
     /// Returns the link target for this image, or `None` if there is no link
     /// target.
-    fn link(&self) -> Option<Cow<'_, LinkKind<'_>>> {
+    fn link(&self) -> Option<&LinkKind<'_>> {
         match &self.link {
-            Link::Inherit => Some(Cow::Owned(LinkKind::from_title(self.title.clone()))),
+            Link::Inherit => Some(&self.target),
             Link::None => None,
-            Link::Custom(link) => Some(Cow::Borrowed(link)),
+            Link::Custom(link) => Some(link),
         }
     }
 
@@ -250,11 +250,9 @@ impl Options<'_> {
         if let Some(FrameKind::Thumb(None) | FrameKind::Frame) = &self.frame {
             None
         } else if let Some(FrameKind::Thumb(Some(_))) = &self.frame {
-            match &self.link {
-                Link::Custom(LinkKind::Internal(title, _)) => Some(title.prefixed_text()),
-                Link::Inherit => Some(self.title.prefixed_text()),
-                _ => None,
-            }
+            self.link()
+                .and_then(LinkKind::title)
+                .map(Title::prefixed_text)
         } else if let Link::Custom(LinkKind::Internal(title, _)) = &self.link {
             self.caption_attr.as_deref().or(Some(title.prefixed_text()))
         } else {
@@ -274,7 +272,7 @@ impl Options<'_> {
         match &self.frame {
             Some(FrameKind::Thumb(Some(FrameTitle::Valid(thumb)))) => Some(thumb),
             Some(FrameKind::Thumb(Some(FrameTitle::Invalid(_)))) => None,
-            _ => Some(&self.title),
+            _ => self.target.title(),
         }
     }
 
@@ -799,12 +797,7 @@ fn render_broken<S: Sink + ?Sized>(
     state: &mut State<'_, '_, '_>,
     options: &Options<'_>,
 ) {
-    super::tags::render_start_link(
-        out,
-        state,
-        &LinkKind::from_title(options.title.clone()),
-        true,
-    );
+    super::tags::render_start_link(out, state, &options.target, true);
     out.tag_start("span");
     out.tag_attribute_full("class", "mw-file-element mw-broken-media");
     if options.show_broken_width() {
@@ -829,8 +822,8 @@ fn render_broken<S: Sink + ?Sized>(
         && !alt.is_empty()
     {
         out.text(alt);
-    } else {
-        out.text(options.title.prefixed_text());
+    } else if let Some(title) = options.target.title() {
+        out.text(title.prefixed_text());
     }
 
     out.tag_end("span");
@@ -862,7 +855,7 @@ fn render_image<S: Sink + ?Sized>(
     out.tag_start(wrapper);
     if let Some(link) = options.link() {
         let query = options.lang.as_deref().map(|lang| format!("lang={lang}"));
-        let href = resource_url(state, &link, query.as_deref());
+        let href = resource_url(state, link, query.as_deref());
         let href = if matches!(options.link, Link::Inherit) {
             href.split_once('#').map_or(href.as_str(), |(href, _)| href)
         } else {
@@ -906,7 +899,7 @@ fn render_image<S: Sink + ?Sized>(
         out.tag_attribute_full("alt", alt);
     }
     if matches!(options.frame, Some(FrameKind::Thumb(Some(_)))) {
-        let href = resource_url(state, &LinkKind::from_title(options.title.clone()), None);
+        let href = resource_url(state, &options.target, None);
         out.tag_attribute_full("resource", &href);
     }
     out.tag_attribute_full("src", &src);
@@ -933,7 +926,11 @@ fn render_image<S: Sink + ?Sized>(
         out.tag_attribute_full("srcset", &srcset);
     }
 
-    if !options.title.exists(&state.statics.db) {
+    if !options
+        .target
+        .title()
+        .is_some_and(|title| title.exists(&state.statics.db))
+    {
         if let Some(width) = options.width {
             out.tag_attribute_full("data-width", &width.to_string());
         }
@@ -976,7 +973,18 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
         }
     }
 
-    let file = state.statics.db.metadata(&options.title)?;
+    let title = options.target.title().unwrap();
+    let file = state.statics.db.metadata(title)?;
+
+    if file.is_none()
+        && let Cow::Owned(redirect) = resolve_media(&state.statics.db, title)?
+        && !matches!(&options.target, LinkKind::Internal(title, tags::InternalLinkKind::Redirect) if *title == redirect)
+    {
+        let mut options = options.clone();
+        options.target = LinkKind::Internal(redirect, tags::InternalLinkKind::Redirect);
+        return render_media_with_options(out, state, sp, &options);
+    }
+
     let thumb = if let Some(thumb) = options.thumb() {
         state.statics.db.metadata(thumb)?.or(file)
     } else {
@@ -1090,11 +1098,56 @@ fn render_timed_media<S: Sink + ?Sized>(
     let src = make_media_url(
         &state.statics.base_uri,
         state.statics.paths.media,
-        &options.title.text_url(),
+        &options.target.title().unwrap().text_url(),
     );
     out.tag_attribute_full("src", &src);
     out.tag_start_end(media_tag_name(media));
     out.tag_end(media_tag_name(media));
+}
+
+/// Resolves a media redirect for `title`.
+pub(super) fn resolve_media<'a, Db>(db: &Db, title: &'a Title) -> Result<Cow<'a, Title>>
+where
+    Db: DatabaseProvider,
+    super::Error: From<Db::Error>,
+{
+    if !matches!(title.namespace().id, Namespace::MEDIA | Namespace::FILE) {
+        return Ok(Cow::Borrowed(title));
+    }
+
+    let as_file = if title.is_in_namespace(Namespace::MEDIA) {
+        let ns = Namespace::find_by_id(db.config(), Namespace::FILE).expect("file ns");
+        Cow::Owned(Title::from_parts_unchecked(
+            ns,
+            title.text(),
+            title.fragment(),
+            title.interwiki(),
+        )?)
+    } else {
+        Cow::Borrowed(title)
+    };
+
+    Ok(
+        if db.metadata(&as_file)?.is_none()
+            && let Ok(Some(article)) = db.get(&as_file)
+            && let Some(redirect) = article.redirect()
+        {
+            let redirect = Title::new(db.config(), redirect, Some(title.namespace().id))?;
+
+            Cow::Owned(if redirect.namespace() == title.namespace() {
+                redirect
+            } else {
+                Title::from_parts_unchecked(
+                    title.namespace(),
+                    redirect.text(),
+                    redirect.fragment(),
+                    redirect.interwiki(),
+                )?
+            })
+        } else {
+            Cow::Borrowed(title)
+        },
+    )
 }
 
 /// Creates a resource URL for the image target.

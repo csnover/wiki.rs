@@ -25,7 +25,7 @@ pub(super) const OPTION_TO_META: phf::Map<&str, &str> = phf::phf_map! {
     "special" => "special",
     "templates" => "template",
     "showflags" => "flags",
-    "showmedia" => "media",
+    "showmedia" => "images",
 };
 
 /// The error type for the test parser.

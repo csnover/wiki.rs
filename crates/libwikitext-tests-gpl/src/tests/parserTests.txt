@@ -1818,7 +1818,7 @@ parsoid=html2wt
 <a rel="mw:ExtLink" href="http://en.wikipedia.org/wiki/European_Robin">European Robin</a>
 <a rel="mw:WikiLink" href="http://en.wikipedia.org/wiki/European_Robin">European Robin</a>
 </p>
-!! html/wiki.rs # This output matches the PHP parser, minus `class="mw-redirect"`
+!! html/wiki.rs # This output matches the PHP parser
 <p><a href="/wiki/Foo" title="Foo">Bar</a>
 <a href="/wiki/Foo" title="Foo">Bar</a>
 <a href="//en.wikipedia.org/wiki/Foo" class="extiw" title="en:Foo">Bar</a>
