@@ -8,12 +8,15 @@
 )]
 
 use super::{
-    Error, PluginResult, PluginState, Result, State,
+    Error, PluginResult, PluginState, Result, State, StripMarker,
     expand_templates::{ExpandMode, ExpandTemplates},
-    extension_tags,
+    extension_tags::{self, eval_string},
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
+    strip_graf,
     surrogate::Surrogate as _,
+    tags::{LinkKind, render_start_link},
     template::call_module,
+    transform::{Accumulator, Sink as _},
 };
 use ::time::{Month, UtcDateTime};
 use core::{
@@ -1802,28 +1805,21 @@ mod title {
                 fragment,
                 Some(&prefix),
             )?;
-            let link = crate::tags::LinkKind::Internal(title, <_>::default());
+            let link = LinkKind::Internal(title, <_>::default());
 
             // Out of all the cursed things in MediaWiki, this may be the cursedest
-            let mut tag = crate::transform::Accumulator::new();
-            crate::tags::render_start_link(&mut tag, state, &link, false);
-            let mut tag = crate::transform::Sink::finish(tag);
+            let mut tag = Accumulator::new();
+            render_start_link(&mut tag, state, &link, false);
+            let mut tag = tag.finish();
             if let Some(text) = arguments.eval(state, 2)?.map(trim) {
-                tag += crate::strip_graf(&crate::extension_tags::eval_string(
-                    state,
-                    arguments.sp,
-                    &text,
-                    true,
-                )?);
+                tag += strip_graf(&eval_string(state, arguments.sp, &text, true)?);
             } else {
                 tag += &html_escape::encode_text(link.title().unwrap().prefixed_text());
             }
             tag += "</a>";
-            state.strip_markers.push(
-                out,
-                "interwikilink",
-                crate::StripMarker::General(tag.into()),
-            );
+            state
+                .strip_markers
+                .push(out, "interwikilink", StripMarker::General(tag.into()));
         } else {
             // TODO: This is supposed to cause the whole function to be emitted
             // as plain text, as if there was no matching parser function for

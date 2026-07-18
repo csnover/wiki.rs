@@ -22,10 +22,10 @@ pub(super) const OPTION_TO_META: phf::Map<&str, &str> = phf::phf_map! {
     "ill" => "ill",
     "iwl" => "iwl",
     "links" => "link",
-    "special" => "special",
-    "templates" => "template",
     "showflags" => "flags",
     "showmedia" => "images",
+    "special" => "special",
+    "templates" => "template",
 };
 
 /// The error type for the test parser.
