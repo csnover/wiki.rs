@@ -395,7 +395,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: true,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -405,7 +405,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -415,7 +415,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -425,7 +425,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -435,7 +435,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -445,7 +445,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -465,7 +465,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &["Image talk"],
         },
         Namespace {
@@ -485,7 +485,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -495,7 +495,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &["TM"],
         },
         Namespace {
@@ -505,7 +505,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -515,7 +515,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -525,7 +525,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -535,7 +535,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -545,7 +545,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
         Namespace {
@@ -555,7 +555,7 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             case: FirstLetter,
             content: false,
             default_content_model: None,
-            subpages: true,
+            subpages: false,
             aliases: &[],
         },
     ],

@@ -410,6 +410,9 @@ fn check_skips(
     } else if options.contains("preload") {
         log::warn!(target: target, "TODO {name}: preload not implemented");
         true
+    } else if options.contains("subpage") {
+        log::warn!(target: target, "TODO {name}: subpage not implemented");
+        true
     } else if options.contains("thumbsize") {
         log::warn!(target: target, "TODO {name}: thumbsize not implemented");
         true
