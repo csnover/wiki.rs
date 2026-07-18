@@ -319,7 +319,6 @@ pub(super) static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "memoryalpha" => "http://www.memory-alpha.org/en/index.php/$1",
         "mi" => "http://example.org/wiki/$1",
         "mul" => "http://wikisource.org/wiki/$1",
-        // Local interwiki that matches a namespace name (T228616)
         "project" => "http://example.org/wiki/$1",
         "stats" => "https://stats.wikimedia.org/$1",
         "ru" => "http://ru.wikipedia.org/wiki/$1",

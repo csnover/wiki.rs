@@ -18,7 +18,7 @@ use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
 use libwikitext_common::{
     config::SpecialPages,
-    title::{Namespace, Title},
+    title::{Namespace, Title, is_force_link},
     title_decode,
 };
 use libwikitext_parse::{
@@ -465,7 +465,7 @@ where
         self.flush_after_table();
         let title = sp.eval(state, target)?.map(title_decode);
         let title = title.trim_start_matches(' ');
-        let force_link = title.starts_with(':');
+        let force_link = is_force_link(state.statics.db.config(), title);
         let (title, mut text) = state.globals.title.join(title);
         if text.is_empty() {
             text = Cow::Borrowed(title.as_ref());

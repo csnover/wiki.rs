@@ -883,6 +883,17 @@ fn bidi(c: char) -> bool {
     ('\u{200e}'..='\u{200f}').contains(&c) || ('\u{202a}'..='\u{202e}').contains(&c)
 }
 
+/// Returns true if the given `title` string should be forced to render as a
+/// link, even if it is a link to a category.
+#[must_use]
+pub fn is_force_link(config: &Configuration, title: &str) -> bool {
+    title.starts_with(':')
+        || title.split_once(':').is_some_and(|(prefix, _)| {
+            let prefix = normalize(prefix);
+            config.interwiki_self.contains(&to_lower(&prefix))
+        })
+}
+
 /// Returns true if all the bytes in the given `key` are valid for use in a
 /// title.
 #[must_use]
