@@ -218,6 +218,42 @@ where
         }
         Ok(())
     }
+
+    /// Writes a Wikitext link.
+    #[expect(clippy::too_many_arguments, reason = "this is how many there are")]
+    fn write_link(
+        &mut self,
+        state: &mut State<'_, '_, '_>,
+        sp: &StackFrame<'_>,
+        span: Span,
+        prefix: &[Spanned<Token>],
+        content: &[Spanned<Argument>],
+        trail: &[Spanned<Token>],
+        text: &str,
+        title: Title,
+    ) -> Result {
+        if title.is_category(state.statics.db.config(), false)
+            && state.globals.title.namespace().is_talk()
+        {
+            let mut ws =
+                sp.source[span.into_range()].trim_end_matches(|c: char| !c.is_ascii_whitespace());
+            if !ws.is_empty() {
+                while let Some((text, rest)) = ws.split_once('\n') {
+                    self.next.text(text);
+                    self.finish_line();
+                    ws = rest;
+                }
+                self.next.text(ws);
+            }
+        }
+        self.text_style_emitter.push(<_>::default());
+        tags::render_internal_link(self, state, sp, text, prefix, content, trail, title)?;
+        self.text_style_emitter
+            .pop()
+            .unwrap()
+            .finish(&mut self.next);
+        Ok(())
+    }
 }
 
 impl<S> Surrogate<Error> for Document<S>
@@ -464,13 +500,8 @@ where
     ) -> Result {
         self.flush_after_table();
         let title = sp.eval(state, target)?.map(title_decode);
-        let title = title.trim_start_matches(' ');
-        let force_link = is_force_link(state.statics.db.config(), title);
-        let (title, mut text) = state.globals.title.join(title);
-        if text.is_empty() {
-            text = Cow::Borrowed(title.as_ref());
-        }
-        let Ok(title) = Title::new(state.statics.db.config(), &title, None) else {
+        let (title, text, force_link) = split_title(state, &title);
+        let Ok(title) = title else {
             // It is not possible to just emit the original span because it may
             // contain entities that must not be double-encoded
             self.adopt_tokens(state, sp, prefix)?;
@@ -505,29 +536,7 @@ where
             self.next.set_in_caption(false);
             self.adopt_tokens(state, sp, trail)?;
         } else {
-            // Categories that get turned back into regular links need to
-            // restore whitespace
-            if title.is_category(state.statics.db.config(), false)
-                && state.globals.title.namespace().is_talk()
-            {
-                let mut ws = sp.source[span.into_range()]
-                    .trim_end_matches(|c: char| !c.is_ascii_whitespace());
-                if !ws.is_empty() {
-                    while let Some((text, rest)) = ws.split_once('\n') {
-                        self.next.text(text);
-                        self.finish_line();
-                        ws = rest;
-                    }
-                    self.next.text(ws);
-                }
-            }
-
-            self.text_style_emitter.push(<_>::default());
-            tags::render_internal_link(self, state, sp, &text, prefix, content, trail, title)?;
-            self.text_style_emitter
-                .pop()
-                .unwrap()
-                .finish(&mut self.next);
+            self.write_link(state, sp, span, prefix, content, trail, &text, title)?;
         }
         Ok(())
     }
@@ -751,7 +760,10 @@ where
         self.next.text("redirectText");
         self.next.tag_attribute_end("class");
         self.next.tag_start_end("p");
-        self.adopt_link(state, sp, span, prefix, target, content, trail)?;
+        self.flush_after_table();
+        let title = sp.eval(state, target)?.map(title_decode);
+        let (title, text, _) = split_title(state, &title);
+        self.write_link(state, sp, span, prefix, content, trail, &text, title?)?;
         self.next.tag_end("p");
         Ok(())
     }
@@ -1013,6 +1025,27 @@ where
             err: Box::new(err),
         })
     }
+}
+
+/// Splits a possibly invalid title string for a link given in `target` into a
+/// [`Title`], fallback text, and flag to force the link to be rendered as a
+/// link (vs a hidden category or image).
+fn split_title<'a>(
+    state: &mut State<'_, '_, '_>,
+    title: &'a str,
+) -> (
+    Result<Title, libwikitext_common::title::Error>,
+    Cow<'a, str>,
+    bool,
+) {
+    let title = title.trim_start_matches(' ');
+    let force_link = is_force_link(state.statics.db.config(), title);
+    let (title, mut text) = state.globals.title.join(title);
+    let title_obj = Title::new(state.statics.db.config(), &title, None);
+    if text.is_empty() {
+        text = title;
+    }
+    (title_obj, text, force_link)
 }
 
 /// A [`Sink`] supertrait used by [`Document`].

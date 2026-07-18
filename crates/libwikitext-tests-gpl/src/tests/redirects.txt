@@ -73,6 +73,8 @@ parsoid=wt2html,wt2wt
 !! html/parsoid
 <ol>
 <li>REDIRECT [[]]</li></ol>
+!! html/wiki.rs # This output matches the PHP parser
+<ol><li>REDIRECT [[]]</li></ol>
 !! end
 
 !! test

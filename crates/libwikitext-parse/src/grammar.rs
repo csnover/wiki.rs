@@ -908,7 +908,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
       // checking for a URL scheme, but in practice it makes no sense that part
       // would be URL encoded, so hopefully nobody did that (lol).
       !url_scheme()
-      t:wikilink_target_part()*
+      t:wikilink_target_part()+
       !wikilink_pipe_trick()
     { reduce_tree(s.into_iter().chain(t)) }
 
