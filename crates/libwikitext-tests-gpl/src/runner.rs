@@ -803,7 +803,7 @@ fn check_test_results(
             if meta.kvs.contains_key(meta_key) {
                 log::warn!(target: target, "TODO: Compare {option}");
             } else if options.contains(option)
-                && options.get::<&str>("wiki-rs-expect-missing") == Some(option)
+                && options.get::<&str>("wiki-rs-expect-missing") != Some(option)
             {
                 log::error!(target: target, "Expected {option}");
                 fail = true;

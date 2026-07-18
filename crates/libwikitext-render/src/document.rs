@@ -109,6 +109,27 @@ where
         }
     }
 
+    /// Finishes a line of Wikitext.
+    fn finish_line(&mut self) {
+        self.text_style_emitter
+            .last_mut()
+            .unwrap()
+            .finish(&mut self.next);
+        if let Some(mut list) = self.list_emitter.take() {
+            list.finish(&mut self.next);
+            self.next.new_line();
+            self.next.set_in_list(false);
+        } else {
+            if let Some(table) = self
+                .table_emitter
+                .pop_if(|table| table.after_table.is_some())
+            {
+                table.finish(&mut self.next, false);
+            }
+            self.next.new_line();
+        }
+    }
+
     /// Flushes the whitespace from the table end trim buffer to the next
     /// output.
     ///
@@ -435,7 +456,7 @@ where
         &mut self,
         state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
-        _span: Span,
+        span: Span,
         prefix: &[Spanned<Token>],
         target: &[Spanned<Token>],
         content: &[Spanned<Argument>],
@@ -484,6 +505,23 @@ where
             self.next.set_in_caption(false);
             self.adopt_tokens(state, sp, trail)?;
         } else {
+            // Categories that get turned back into regular links need to
+            // restore whitespace
+            if title.is_category(state.statics.db.config(), false)
+                && state.globals.title.namespace().is_talk()
+            {
+                let mut ws = sp.source[span.into_range()]
+                    .trim_end_matches(|c: char| !c.is_ascii_whitespace());
+                if !ws.is_empty() {
+                    while let Some((text, rest)) = ws.split_once('\n') {
+                        self.next.text(text);
+                        self.finish_line();
+                        ws = rest;
+                    }
+                    self.next.text(ws);
+                }
+            }
+
             self.text_style_emitter.push(<_>::default());
             tags::render_internal_link(self, state, sp, &text, prefix, content, trail, title)?;
             self.text_style_emitter
@@ -665,23 +703,7 @@ where
         _sp: &StackFrame<'_>,
         _span: Span,
     ) -> Result {
-        self.text_style_emitter
-            .last_mut()
-            .unwrap()
-            .finish(&mut self.next);
-        if let Some(mut list) = self.list_emitter.take() {
-            list.finish(&mut self.next);
-            self.next.new_line();
-            self.next.set_in_list(false);
-        } else {
-            if let Some(table) = self
-                .table_emitter
-                .pop_if(|table| table.after_table.is_some())
-            {
-                table.finish(&mut self.next, false);
-            }
-            self.next.new_line();
-        }
+        self.finish_line();
         Ok(())
     }
 

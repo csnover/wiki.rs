@@ -115,6 +115,7 @@ ill=zh:Chinese
 Escaping of interlanguage links (T129218, T156308)
 !! options
 ill
+wiki-rs-expect-missing=ill
 !! wikitext
 Blah blah blah
 [[:es:Spanish]]
@@ -136,6 +137,7 @@ Multiple colons escaping interlanguage links
 !! options
 parsoid=wt2html
 ill
+wiki-rs-expect-missing=ill
 !! wikitext
 [[:es:Spanish]]
 [[::es:Spanish]]
@@ -259,6 +261,7 @@ Language links render as inline links in the Talk namespace
 title=Talk:Foo
 parsoid=wt2html,wt2wt,html2html
 ill
+wiki-rs-expect-missing=ill
 !! wikitext
 Blah blah blah
 [[zh:Chinese]]
@@ -333,6 +336,7 @@ Interlanguage link with preceding local interwiki link (T70085)
 !! options
 parsoid=wt2html,wt2wt,html2html
 ill
+wiki-rs-expect-missing=ill
 !! wikitext
 Blah blah blah
 [[local:es:Spanish]]
@@ -351,6 +355,7 @@ Looks like an interlanguage link, but is actually a local interwiki
 !! options
 parsoid=wt2html,wt2wt,html2html
 ill
+wiki-rs-expect-missing=ill
 !! wikitext
 Blah blah blah
 [[mi:Template:Foo]]
