@@ -120,6 +120,7 @@ fn main() -> Result<(), DisplayError> {
     let function_hooks = aliases_iter(&magic_words, &query.function_hooks, &trim_parser_fn);
 
     let api::General {
+        fallback,
         gallery_options,
         image_whitelist,
         image_whitelist_enabled,
@@ -131,7 +132,13 @@ fn main() -> Result<(), DisplayError> {
         magic_links,
         main_page,
         thumb_limits,
+        variants,
     } = query.general;
+
+    let fallback = fallback.into_iter().map(|f| {
+        let code = f.code;
+        quote!(#code)
+    });
 
     let gallery_options = {
         let api::GalleryOptions {
@@ -312,6 +319,12 @@ fn main() -> Result<(), DisplayError> {
 
     let variables = aliases_iter(&magic_words, &query.variables, &trim_variable);
 
+    let variants = variants.into_iter().map(|variant| {
+        let code = variant.code;
+        let name = variant.name;
+        quote!(#code => #name)
+    });
+
     let file: syn::File = syn::parse_quote! {
         static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
             annotation_tags: phf::phf_set! {},
@@ -349,6 +362,12 @@ fn main() -> Result<(), DisplayError> {
             language_conversion_enabled: #lang_conversion,
             language_conversions: phf::phf_map! {
                 #(#language_conversions),*
+            },
+            language_fallbacks: &[
+                #(#fallback),*
+            ],
+            language_variants: phf::phf_ordered_map! {
+                #(#variants),*
             },
             languages: phf::phf_ordered_map! {
                 #(#languages),*
@@ -592,6 +611,8 @@ mod api {
 
     #[derive(serde::Deserialize)]
     pub(super) struct General<'a> {
+        #[serde(borrow)]
+        pub fallback: Vec<EnabledLanguage<'a>>,
         #[serde(borrow, rename = "galleryoptions")]
         pub gallery_options: GalleryOptions<'a>,
         #[serde(borrow, rename = "externalimages")]
@@ -614,6 +635,8 @@ mod api {
         pub main_page: Cow<'a, str>,
         #[serde(rename = "thumblimits")]
         pub thumb_limits: BTreeMap<u32, u32>,
+        #[serde(borrow, default)]
+        pub variants: Vec<Variant<'a>>,
     }
 
     #[derive(serde::Deserialize)]
@@ -693,14 +716,6 @@ mod api {
     }
 
     #[derive(serde::Deserialize)]
-    pub(super) struct SpecialPageAlias<'a> {
-        #[serde(borrow, rename = "realname")]
-        pub real_name: Cow<'a, str>,
-        #[serde(borrow)]
-        pub aliases: Vec<Cow<'a, str>>,
-    }
-
-    #[derive(serde::Deserialize)]
     pub(super) struct Query<'a> {
         #[serde(borrow, rename = "doubleunderscores")]
         pub double_underscores: BTreeSet<Cow<'a, str>>,
@@ -730,6 +745,22 @@ mod api {
         pub special_page_aliases: Vec<SpecialPageAlias<'a>>,
         #[serde(borrow)]
         pub variables: BTreeSet<Cow<'a, str>>,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub(super) struct SpecialPageAlias<'a> {
+        #[serde(borrow, rename = "realname")]
+        pub real_name: Cow<'a, str>,
+        #[serde(borrow)]
+        pub aliases: Vec<Cow<'a, str>>,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub(super) struct Variant<'a> {
+        #[serde(borrow)]
+        pub code: Cow<'a, str>,
+        #[serde(borrow)]
+        pub name: Cow<'a, str>,
     }
 }
 

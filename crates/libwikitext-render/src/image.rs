@@ -356,8 +356,7 @@ impl Sink for ParseAttr {
         }
 
         match marker {
-            StripMarker::General(s) => tokenise(self, s),
-            StripMarker::NoWiki(s) => self.text(s),
+            StripMarker::General(s) | StripMarker::NoWiki(s) => tokenise(self, s),
             _ => {}
         }
     }

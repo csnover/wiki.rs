@@ -575,7 +575,7 @@ parsoid={ "modes": ["wt2html","wt2wt"] }
 <p><i>&#39;foo &#38; bar &#61; baz&#39;</i>
 </p>
 !! html/wiki.rs # Most special entities decoded, but not all, so cannot use heuristic
-<p><i>'foo &#38; bar = baz'</i>
+<p><i>‘foo &amp; bar = baz’</i>
 </p>
 !! html/parsoid+integrated
 <p><i><span about="#mwt1" typeof="mw:Transclusion mw:Entity" data-mw='{"parts":[{"template":{"target":{"wt":"PAGENAME","function":"pagename"},"params":{},"i":0}}]}'>'</span><span>foo </span><span typeof="mw:Entity">&amp;</span><span> bar </span><span typeof="mw:Entity">=</span><span> baz</span><span typeof="mw:Entity">'</span></i></p>

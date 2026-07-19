@@ -1,8 +1,7 @@
 //! Text transformer.
 
-use super::{Sink, chainable};
+use super::{Sink, chainable, tokenise};
 use crate::{StripMarker, tags::PHRASING_TAGS};
-use libwikitext_common::decode_html;
 
 /// Converts runs of text to typographically beautiful HTML.
 #[derive(Debug)]
@@ -158,8 +157,8 @@ impl<S: Sink> Sink for PrettyText<S> {
 
     #[inline]
     fn strip_marker(&mut self, marker: &StripMarker<'_>) {
-        if let StripMarker::NoWiki(text) = marker {
-            self.text(&decode_html(text));
+        if let StripMarker::NoWiki(html) = marker {
+            tokenise(self, html);
         } else {
             self.next.strip_marker(marker);
         }

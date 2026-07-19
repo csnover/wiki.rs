@@ -74,7 +74,7 @@ impl<'config> Parser<'config> {
                     .language_conversions
                     .keys()
                     .copied()
-                    .map(lang_to_bcp47),
+                    .map(lang_to_bcp47::<true>),
             )
             .collect::<HashSet<_>>();
         for (&k, &v) in &DEPRECATED_LANGUAGE_CODES {

@@ -27,6 +27,7 @@ libmisc.workspace = true
 libphp-rs.workspace = true
 libwikitext-common.workspace = true
 libwikitext-common-gpl.workspace = true
+libwikitext-convert.workspace = true
 libwikitext-lua.workspace = true
 libwikitext-lua-gpl.workspace = true
 libwikitext-parse.workspace = true

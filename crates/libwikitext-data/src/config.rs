@@ -1220,6 +1220,8 @@ static CONFIG_SOURCE: ConfigurationSource = ConfigurationSource {
         "zh-hans", "zh-cn"], "zh-sg" => & ["zh-my", "zh-hans", "zh-cn"], "zh-tw" => &
         ["zh-hant", "zh-hk", "zh-mo"]
     },
+    language_fallbacks: &[],
+    language_variants: phf::phf_ordered_map! {},
     languages: phf::phf_ordered_map! {
         "aa" => Language { autonym : "Qafár af", is_enabled : true, is_rtl : false, name
         : "Afar", }, "aae" => Language { autonym : "Arbërisht", is_enabled : true,

@@ -1,11 +1,12 @@
 //! Parser configuration data.
 
 use super::{
-    regex_switch,
+    lang_to_bcp47, regex_switch,
     title::{Namespace, Title},
 };
 use core::fmt::Write as _;
 use fancy_regex::{Regex as FancyRegex, RegexBuilder as FancyRegexBuilder};
+use icu_locale::Locale;
 use libmisc::{CowExt as _, to_lower};
 use libphp_rs::strtr;
 use phf::{Map, OrderedMap, Set};
@@ -80,6 +81,16 @@ impl Configuration {
         }
     }
 
+    /// Returns the default page language as a [`Locale`].
+    ///
+    /// # Panics
+    ///
+    /// * the [`ConfigurationSource::language`] is not a valid language string
+    #[must_use]
+    pub fn locale(&self) -> Locale {
+        lang_to_bcp47::<true>(self.language).parse().unwrap()
+    }
+
     /// Tries matching the given `alias` to one of the configured `extra_words`,
     /// returning the list of canonical names for the alias if it matches, and
     /// optionally a value if the `alias` was a parameterised alias.
@@ -142,8 +153,8 @@ pub struct ConfigurationSource {
     /// Image hotlinking configuration.
     pub image_hotlinking: ImageHotlinking,
 
-    /// A map from a registered title interwiki prefix to bcp47 code for
-    /// interlanguages.
+    /// A map from a registered title interwiki prefix to BCP-47 language code
+    /// for interlanguages.
     pub interlanguage_map: Map<&'static str, &'static str>,
 
     /// Registered title interwikis.
@@ -165,7 +176,7 @@ pub struct ConfigurationSource {
     /// confusing.
     pub interwiki_self: Set<&'static str>,
 
-    /// The default page language code.
+    /// The default page MediaWiki language code.
     pub language: &'static str,
 
     /// A reverse map from a BCP-47 language code to the corresponding index in
@@ -175,9 +186,16 @@ pub struct ConfigurationSource {
     /// Whether language conversions are enabled.
     pub language_conversion_enabled: bool,
 
-    /// A map of registered language conversions, from a language code to a
-    /// list of fallback language codes.
+    /// A map of registered language conversions, from a MediaWiki language code
+    /// variant to a list of fallback MediaWiki language code variants.
     pub language_conversions: Map<&'static str, &'static [&'static str]>,
+
+    /// An ordered list of MediaWiki language code fallback codes.
+    pub language_fallbacks: &'static [&'static str],
+
+    /// An ordered map of supported language conversion variant, from a
+    /// MediaWiki language code to the human-readable variant name.
+    pub language_variants: OrderedMap<&'static str, &'static str>,
 
     /// A map from a MediaWiki language code to language information.
     pub languages: OrderedMap<&'static str, Language>,

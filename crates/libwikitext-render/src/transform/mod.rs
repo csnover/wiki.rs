@@ -9,6 +9,7 @@ mod element_marker;
 mod graf_wrapper;
 mod outline;
 mod pretty_text;
+mod replace_text;
 
 use super::StripMarker;
 pub(super) use accumulator::Accumulator;
@@ -20,6 +21,7 @@ pub(super) use graf_wrapper::GrafWrapper;
 use libwikitext_parse::VOID_TAGS;
 pub(super) use outline::OutlineGenerator;
 pub(super) use pretty_text::PrettyText;
+pub(super) use replace_text::ReplaceText;
 
 /// An intermediate sink.
 pub(super) trait Chain {
@@ -227,11 +229,15 @@ use chainable;
 #[inline]
 fn flush_ws<S: Sink + ?Sized>(next: &mut S, mut ws: &str) {
     while let Some((text, rest)) = ws.split_once('\n') {
-        next.text(text);
+        if !text.is_empty() {
+            next.text(text);
+        }
         next.new_line();
         ws = rest;
     }
-    next.text(ws);
+    if !ws.is_empty() {
+        next.text(ws);
+    }
 }
 
 /// Tokenises the given `html` and sends it to `next`.

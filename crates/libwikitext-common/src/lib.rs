@@ -8,8 +8,10 @@ pub mod url;
 
 use core::{fmt::Write as _, iter};
 use db::DatabaseProvider;
+use fixed_decimal::{FloatPrecision, ParseError};
 use html_escape::NAMED_ENTITIES;
-use icu_decimal::{input::Decimal, options::GroupingStrategy};
+use icu_decimal::{DecimalFormatter, input::Decimal, options::GroupingStrategy};
+use icu_locale::Locale;
 use libmisc::{CowExt as _, to_ascii_lower, to_ascii_upper};
 use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, ucfirst};
 use regex::Regex;
@@ -35,7 +37,7 @@ pub enum FormatNumberError<Db> {
     Database(Db),
     /// A decimal string was not decimal enough.
     #[error(transparent)]
-    Decimal(#[from] fixed_decimal::ParseError),
+    Decimal(#[from] ParseError),
     /// ICU4X was sad about retrieving data.
     #[error(transparent)]
     IcuData(#[from] icu_provider::DataError),
@@ -151,15 +153,15 @@ where
                 .map_err(FormatNumberError::Database)?,
             n => {
                 let lang = lang.unwrap_or_else(|| self.db().config().language);
-                let locale = lang_to_bcp47(lang).parse::<icu_locale::Locale>()?;
+                let locale = lang_to_bcp47::<true>(lang).parse::<Locale>()?;
                 let grouping = if no_separators {
                     GroupingStrategy::Never
                 } else {
                     <_>::default()
                 };
-                let fmt = icu_decimal::DecimalFormatter::try_new(locale.into(), grouping.into())?;
-                let v = Decimal::try_from_f64(n, fixed_decimal::FloatPrecision::RoundTrip)
-                    .map_err(|_| fixed_decimal::ParseError::Limit)?;
+                let fmt = DecimalFormatter::try_new(locale.into(), grouping.into())?;
+                let v = Decimal::try_from_f64(n, FloatPrecision::RoundTrip)
+                    .map_err(|_| ParseError::Limit)?;
                 Cow::Owned(fmt.format(&v).to_string())
             }
         })
@@ -519,16 +521,31 @@ where
 }
 
 /// Converts a MediaWiki language code to its corresponding BCP-47 code.
+///
+/// If `USE_NON_STANDARD` is false and `code` is a non-standard code, an empty
+/// string is returned.
 #[must_use]
-pub fn lang_to_bcp47(code: &str) -> Cow<'_, str> {
+pub fn lang_to_bcp47<const USE_NON_STANDARD: bool>(code: &str) -> Cow<'_, str> {
     let code = DEPRECATED_LANGUAGE_CODES
         .get(code.into())
         .copied()
         .unwrap_or(code);
     let code = NON_STANDARD_LANGUAGE_CODES
         .get(code.into())
-        .copied()
-        .unwrap_or(code);
+        .map_or(code, |code| {
+            // The only place where `USE_NON_STANDARD = false` is used is a place
+            // where the MediaWiki API gives MediaWiki language codes, including
+            // non-standard codes, and the caller does not want to match those non-
+            // standard ones, even if the input is itself a non-standard MediaWiki
+            // code.
+            if USE_NON_STANDARD { code } else { "" }
+        });
+    std_lang_to_bcp47(code)
+}
+
+/// Converts a standard, non-deprecated MediaWiki language code to its
+/// corresponding BCP-47 code.
+fn std_lang_to_bcp47(code: &str) -> Cow<'_, str> {
     let mut out = String::new();
     let mut flushed = 0;
     let mut last = 0;
@@ -998,7 +1015,7 @@ mod tests {
         ];
 
         for (code, expected) in TESTS {
-            assert_eq!(lang_to_bcp47(code), *expected);
+            assert_eq!(lang_to_bcp47::<true>(code), *expected);
         }
     }
 }

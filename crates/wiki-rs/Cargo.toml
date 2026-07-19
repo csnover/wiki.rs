@@ -13,6 +13,7 @@ barely-css.workspace = true
 bzip2-rs = "0.1"
 env_logger.workspace = true
 html-escape.workspace = true
+icu_locale.workspace = true
 indexmap.workspace = true
 libphp-rs.workspace = true
 libwikitext-common.workspace = true

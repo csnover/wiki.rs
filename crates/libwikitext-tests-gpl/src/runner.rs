@@ -3,6 +3,7 @@ use super::{
     parser::{Chunk, OPTION_TO_META, SectionText, Sections, Testfile},
 };
 use core::{cell::RefCell, fmt::Write as _};
+use icu_locale::{Locale, locale};
 use libmisc::CowExt as _;
 use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
@@ -544,6 +545,7 @@ fn print_debug(
     target: &str,
     statics: &mut Statics<'_, '_>,
     article: &Arc<Article>,
+    target_locale: Locale,
     show_pp_ast: bool,
     show_pp: bool,
     show_ast: bool,
@@ -551,7 +553,7 @@ fn print_debug(
     let pp_ast = show_pp_ast.then(|| statics.parser.preprocess(article.body(), false));
 
     let pp = (show_pp || show_ast)
-        .then(|| preprocess_article(statics, article, LoadMode::Module, false));
+        .then(|| preprocess_article(statics, article, LoadMode::Module, false, target_locale));
 
     let ast = if show_ast && let Some(Ok(pp)) = &pp {
         Some((pp, statics.parser.parse(pp)))
@@ -965,16 +967,30 @@ fn render_test(
     let before_pp = wants_pp(target);
     let before_ast = wants_ast(target);
 
+    // TODO: This should come from options.
+    let target_locale = db
+        .config()
+        .language
+        .parse::<Locale>()
+        .unwrap_or(locale!("en"));
+
     print_debug(
         target,
         &mut statics,
         &article,
+        target_locale.clone(),
         before_pp_ast,
         before_pp,
         before_ast,
     );
 
-    let result = render_article(&mut statics, &article, LoadMode::Module, false);
+    let result = render_article(
+        &mut statics,
+        &article,
+        LoadMode::Module,
+        false,
+        target_locale,
+    );
 
     if insert_page {
         drop(statics);

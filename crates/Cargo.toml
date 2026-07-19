@@ -10,6 +10,7 @@ members = [
 	"libphp-rs",
 	"libwikitext-common",
 	"libwikitext-common-gpl",
+	"libwikitext-convert",
 	"libwikitext-data",
 	"libwikitext-lua",
 	"libwikitext-lua-gpl",
@@ -29,6 +30,7 @@ default-members = [
 	"libphp-rs",
 	"libwikitext-common",
 	"libwikitext-common-gpl",
+	"libwikitext-convert",
 	"libwikitext-data",
 	"libwikitext-lua",
 	"libwikitext-lua-gpl",
@@ -113,6 +115,7 @@ libmisc = { path = "libmisc" }
 libphp-rs = { path = "libphp-rs" }
 libwikitext-common = { path = "libwikitext-common" }
 libwikitext-common-gpl = { path = "libwikitext-common-gpl" }
+libwikitext-convert = { path = "libwikitext-convert" }
 libwikitext-data = { path = "libwikitext-data" }
 libwikitext-lua = { path = "libwikitext-lua" }
 libwikitext-lua-gpl = { path = "libwikitext-lua-gpl" }

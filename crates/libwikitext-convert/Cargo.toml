@@ -1,0 +1,20 @@
+[package]
+name = "libwikitext-convert"
+description = "Types and functions for Wikitext language conversion"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+icu_locale.workspace = true
+libmisc.workspace = true
+libphp-rs.workspace = true
+libwikitext-common.workspace = true
+log.workspace = true
+peeknth.workspace = true
+phf.workspace = true
+regex.workspace = true
+uncased.workspace = true

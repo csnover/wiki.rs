@@ -10,10 +10,11 @@ use super::{
     tags::{self, ExternalLinkKind},
     transform::{
         Accumulator, AttributeFilter, Chain as _, DomTree, EmptyMarker, GrafWrapper,
-        OutlineGenerator, PrettyText, Sink, TemplateMarker,
+        OutlineGenerator, PrettyText, ReplaceText, Sink, TemplateMarker,
     },
 };
 use either::Either;
+use icu_locale::Locale;
 use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
 use libwikitext_common::{
@@ -21,6 +22,7 @@ use libwikitext_common::{
     title::{Namespace, Title, is_force_link},
     title_decode,
 };
+use libwikitext_convert::Converter;
 use libwikitext_parse::{
     AnnoAttribute, Argument, FileMap, HeadingLevel, InclusionMode, LangFlags, LangVariant,
     MARKER_PREFIX, MARKER_SUFFIX, MagicLink, Output, Span, Spanned, TextStyle, Token,
@@ -1162,7 +1164,7 @@ impl Sink for ParseHalf<'_> {
 type ParseFullyChain<'a> = AttributeFilter<
     OutlineGenerator<
         'a,
-        GrafWrapper<DomTree<TemplateMarker<PrettyText<EmptyMarker<Accumulator>>>>>,
+        GrafWrapper<ReplaceText<DomTree<TemplateMarker<PrettyText<EmptyMarker<Accumulator>>>>>>,
     >,
 >;
 
@@ -1174,18 +1176,22 @@ impl<'a> DocumentSink for ParseFully<'a> {
     const LIST_ITEMS: bool = true;
     const UNSTRIP_MARKERS: bool = true;
 
-    type Args = &'a mut Outline;
+    type Args = (&'a mut Outline, (Converter, Locale));
 
     #[inline]
-    fn new(args: Self::Args) -> Self
+    fn new((outline, (converter, to)): Self::Args) -> Self
     where
         Self: Sized,
     {
         Self(AttributeFilter::new(OutlineGenerator::new(
-            args,
-            GrafWrapper::new(DomTree::new(TemplateMarker::new(PrettyText::new(
-                EmptyMarker::new(Accumulator::new()),
-            )))),
+            outline,
+            GrafWrapper::new(ReplaceText::new(
+                converter,
+                to,
+                DomTree::new(TemplateMarker::new(PrettyText::new(EmptyMarker::new(
+                    Accumulator::new(),
+                )))),
+            )),
         )))
     }
 

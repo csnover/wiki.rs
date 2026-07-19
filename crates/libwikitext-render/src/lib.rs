@@ -28,6 +28,7 @@ use core::{fmt, time::Duration};
 use document::{Document, ParseFully, ParseHalf};
 use expand_templates::{ExpandMode, ExpandTemplates};
 pub use extension_tags::{OutputMode, PluginExtensionTag, PluginTagArgs};
+use icu_locale::Locale;
 use libmisc::CowExt as _;
 use libphp_rs::DateTime;
 use libwikitext_common::{
@@ -38,6 +39,7 @@ use libwikitext_common::{
     title::Title,
     url::Url,
 };
+use libwikitext_convert::{Converter, converter_or_default};
 use libwikitext_parse::{
     FileMap, LineCol, MARKER_PREFIX, MARKER_SUFFIX, Output, Parser, inspect, strip,
 };
@@ -132,6 +134,7 @@ pub fn preprocess_article(
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
+    target_locale: Locale,
 ) -> Result<String> {
     let article = Arc::clone(article);
     let article = if redirect {
@@ -145,7 +148,7 @@ pub fn preprocess_article(
         FileMap::new(article.body()),
     );
 
-    render_preprocess(statics, &article, &sp, load_mode).map(|(_, source)| source)
+    render_preprocess(statics, &article, &sp, load_mode, target_locale).map(|(_, source)| source)
 }
 
 /// Main renderer entrypoint for articles.
@@ -158,6 +161,7 @@ pub fn render_article(
     article: &Arc<Article>,
     load_mode: LoadMode,
     redirect: bool,
+    target_locale: Locale,
 ) -> Result<RenderOutput> {
     let article = Arc::clone(article);
     let article = if redirect {
@@ -171,7 +175,7 @@ pub fn render_article(
         FileMap::new(article.body()),
     );
 
-    render(statics, &article, &sp, load_mode)
+    render(statics, &article, &sp, load_mode, target_locale)
 }
 
 /// Main renderer entrypoint for eval.
@@ -186,6 +190,7 @@ pub fn render_string(
     args: Option<&str>,
     mode: EvalPp,
     markers: bool,
+    target_locale: Locale,
 ) -> Result<RenderOutput> {
     if page_name.is_empty() {
         page_name = "(eval)";
@@ -222,9 +227,10 @@ pub fn render_string(
 
     let load_mode = LoadMode::Module;
     match mode {
-        EvalPp::Post => render(statics, &article, &sp, load_mode),
+        EvalPp::Post => render(statics, &article, &sp, load_mode, target_locale),
         EvalPp::Pre | EvalPp::PreTree | EvalPp::Tree => {
-            let (state, source) = render_preprocess(statics, &article, &sp, load_mode)?;
+            let (state, source) =
+                render_preprocess(statics, &article, &sp, load_mode, target_locale)?;
             let mut content = if mode == EvalPp::Pre {
                 source
             } else if mode == EvalPp::PreTree {
@@ -262,8 +268,9 @@ fn render(
     article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
+    target_locale: Locale,
 ) -> Result<RenderOutput> {
-    let (mut state, source) = render_preprocess(statics, article, sp, load_mode)?;
+    let (mut state, source) = render_preprocess(statics, article, sp, load_mode, target_locale)?;
 
     let sp = sp.clone_with_source(FileMap::new(&source));
     let root = state.statics.parser.parse(&sp.source)?;
@@ -273,7 +280,8 @@ fn render(
     prefetcher.finish(&mut state);
 
     let mut outline = <_>::default();
-    let mut renderer = Document::<ParseFully<'_>>::new(&mut outline);
+    let mut renderer =
+        Document::<ParseFully<'_>>::new((&mut outline, state.target_converter.clone()));
     renderer.adopt_tokens(&mut state, &sp, &root)?;
     let content = renderer.finish();
 
@@ -320,6 +328,7 @@ fn render_preprocess<'a, 'b, 'c>(
     article: &Arc<Article>,
     sp: &StackFrame<'_>,
     load_mode: LoadMode,
+    target_locale: Locale,
 ) -> Result<(State<'a, 'b, 'c>, String)> {
     let root = statics.parser.preprocess(&sp.source, sp.parent.is_some())?;
 
@@ -330,11 +339,13 @@ fn render_preprocess<'a, 'b, 'c>(
         statics.base_time,
     )?;
 
+    let converter = converter_or_default(&statics.db.config().locale());
     let mut state = State {
         globals: ArticleState::new(statics.db.config(), Arc::clone(article)),
         load_mode,
         statics,
         strip_markers: <_>::default(),
+        target_converter: (converter, target_locale),
         timing: <_>::default(),
         vm_request_cache: <_>::default(),
     };
@@ -761,6 +772,8 @@ pub(crate) struct State<'s, 'config, 'dict> {
     pub statics: &'s mut Statics<'config, 'dict>,
     /// Stripped extension tag substitutions.
     pub strip_markers: StripMarkers,
+    /// Target language converter.
+    pub target_converter: (Converter, Locale),
     /// Page performance timing data.
     timing: HashMap<String, (usize, Duration)>,
     /// VM cache marker IDs already rendered for this rendering request.
@@ -821,7 +834,8 @@ fn eval_plugin(
     let root = state.statics.parser.parse(&sp.source)?;
     let mut outline = <_>::default();
     Ok(if fully_parse {
-        let mut out = Document::<ParseFully<'_>>::new(&mut outline);
+        let mut out =
+            Document::<ParseFully<'_>>::new((&mut outline, state.target_converter.clone()));
         out.adopt_tokens(state, &sp, &root)?;
         out.finish()
     } else {

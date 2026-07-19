@@ -1174,6 +1174,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "libwikitext-convert"
+version = "1.1.0-pre"
+dependencies = [
+ "icu_locale",
+ "libmisc",
+ "libphp-rs",
+ "libwikitext-common",
+ "log",
+ "peeknth",
+ "phf",
+ "regex",
+ "uncased",
+]
+
+[[package]]
 name = "libwikitext-data"
 version = "1.1.0-pre"
 dependencies = [
@@ -1265,6 +1280,7 @@ dependencies = [
  "libphp-rs",
  "libwikitext-common",
  "libwikitext-common-gpl",
+ "libwikitext-convert",
  "libwikitext-lua",
  "libwikitext-lua-gpl",
  "libwikitext-parse",
@@ -1299,6 +1315,7 @@ name = "libwikitext-tests-gpl"
 version = "1.1.0-pre"
 dependencies = [
  "env_logger",
+ "icu_locale",
  "libmisc",
  "libphp-rs",
  "libwikitext-common",
@@ -2805,6 +2822,7 @@ dependencies = [
  "bzip2-rs",
  "env_logger",
  "html-escape",
+ "icu_locale",
  "indexmap",
  "libphp-rs",
  "libwikitext-common",

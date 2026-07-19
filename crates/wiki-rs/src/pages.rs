@@ -168,6 +168,7 @@ pub(crate) async fn article(
         article: Arc::clone(&article),
         load_mode,
         redirect,
+        target_locale: state.database.config().locale(),
     };
 
     let output = call_renderer(&state, command)?;
@@ -227,6 +228,8 @@ pub(crate) async fn eval_post(
         markers: body.markers == Some(true),
         mode: body.mode,
         page_name: body.page_name.clone(),
+        // TODO: Get from request
+        target_locale: state.database.config().locale(),
     };
     let time = Instant::now();
     let output = call_renderer(&state, command)?;
@@ -559,6 +562,8 @@ pub(crate) async fn source(
                     SourceMode::PreTree => EvalPp::PreTree,
                 },
                 page_name: article.title().to_owned(),
+                // TODO: Get from request
+                target_locale: state.database.config().locale(),
             };
             Cow::Owned(call_renderer(&state, command)?.content)
         }

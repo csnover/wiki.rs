@@ -5158,14 +5158,14 @@ File:Foobar.jpg
 &#60;!-- comment --&#62;
 </p>
 !! html/wiki.rs # This output matches the PHP parser, but with some entities decoded
-<p>''None'' of '''this''' should be 
+<p>‘‘None’’ of ‘’‘this’’’ should be 
 * interpreted
  but rather passed unmodified
 {{test}}
-&#60;gallery&#62;
+&lt;gallery&gt;
 File:Foobar.jpg
-&#60;/gallery&#62;
-&#60;!-- comment --&#62;
+&lt;/gallery&gt;
+&lt;!-- comment --&gt;
 </p>
 !! end
 

@@ -105,26 +105,30 @@
 
 use super::{
     Error, ExpandMode, LinkKind, LinkKindOptions, PluginResult, PluginState, State, StripMarker,
-    document::{Document, ParseFully, ParseHalf},
-    eval_plugin, image, preprocess_frame,
+    document::{Document, DocumentSink, ParseFully, ParseHalf},
+    eval_plugin,
+    globals::Outline,
+    image, preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     tags::ExternalLinkKind,
-    transform::{Accumulator, AttributeFilter, Sink as _},
+    transform::{Accumulator, AttributeFilter, OutlineGenerator, ReplaceText, Sink},
 };
 use core::{fmt::Write as _, num::NonZeroU16, ops::Range};
 use either::Either;
+use icu_locale::Locale;
 use indexmap::IndexMap;
 use libmisc::CowExt as _;
 use libphp_rs::strtr;
 use libwikitext_common::{
-    AnchorEncodeMode,
+    AnchorEncodeMode, bcp47_to_lang,
     config::{GalleryCaptionLength, GalleryOptions},
     db::DatabaseProvider,
-    decode_html, escape, escape_all, escape_id, escape_id_url, escape_no_wiki,
+    decode_html, escape, escape_all, escape_id, escape_id_url, escape_no_wiki, lang_to_bcp47,
     normalize_whitespace,
     title::{Namespace, Title},
 };
+use libwikitext_convert::Converter;
 use libwikitext_parse::{Argument, FileMap, Span, Spanned, Token, strip};
 use numerals::roman::Roman;
 use regex::{Regex, RegexBuilder};
@@ -575,13 +579,161 @@ fn indicator(
 
     if let Some(image) = image {
         let mut outline = <_>::default();
-        let mut out = Document::<ParseFully<'_>>::new(&mut outline);
+        let mut out =
+            Document::<ParseFully<'_>>::new((&mut outline, state.target_converter.clone()));
         out.adopt_token(state, &sp, image)?;
         let indicator = out.finish();
         state.globals.indicators.insert(name.to_string(), indicator);
     }
 
     Ok(OutputMode::Empty)
+}
+
+/// The `<langconvert>` extension tag.
+fn lang_convert(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    arguments: &ExtensionTag<'_, '_, '_>,
+) -> Result {
+    fn validate_dont_parse(
+        state: &mut State<'_, '_, '_>,
+    ) -> impl FnOnce(Cow<'_, str>) -> Option<Locale> {
+        |code| {
+            let code = lang_to_bcp47::<false>(&code);
+            if state
+                .statics
+                .db
+                .config()
+                .language_conversions
+                .contains_key(&bcp47_to_lang(&code))
+            {
+                code.parse().ok()
+            } else {
+                None
+            }
+        }
+    }
+
+    let from = arguments
+        .get(state, "from")?
+        .and_then(validate_dont_parse(state));
+    let to = arguments
+        .get(state, "to")?
+        .and_then(validate_dont_parse(state));
+
+    if let (Some(from), Some(to)) = (from, to)
+        && from.id.language == to.id.language
+        && let Some(convert) = libwikitext_convert::converter(&from)
+    {
+        let body = preprocess_frame(state, arguments.sp, arguments.body(), ExpandMode::Normal)?;
+        let sp = arguments.sp.clone_with_source(FileMap::new(&body));
+        let root = state.statics.parser.parse(&sp.source)?;
+        let mut outline = <_>::default();
+        let mut document = Document::<ParseTranslate<'_>>::new((&mut outline, (convert, to)));
+        document.adopt_tokens(state, &sp, &root)?;
+        write!(out, "{}", document.finish())?;
+    } else {
+        let error =
+            state
+                .statics
+                .messages
+                .find_or_default(["invalid-langconvert-attrs"], None, true)?;
+        write!(out, r#"<span class="error">{error}</span>"#)?;
+    }
+
+    Ok(OutputMode::NoWiki)
+}
+
+/// A [`DocumentSink`] for rendering a “half parsed” Wikitext document.
+/// This is equivalent to `Parser::recursiveTagParse`.
+pub(super) struct ParseTranslate<'a>(
+    AttributeFilter<OutlineGenerator<'a, ReplaceText<Accumulator>>>,
+);
+
+impl<'a> DocumentSink for ParseTranslate<'a> {
+    const LIST_ITEMS: bool = false;
+    const UNSTRIP_MARKERS: bool = false;
+
+    type Args = (&'a mut Outline, (Converter, Locale));
+
+    #[inline]
+    fn new((outline, (converter, to)): Self::Args) -> Self
+    where
+        Self: Sized,
+    {
+        Self(AttributeFilter::new(OutlineGenerator::new(
+            outline,
+            ReplaceText::new(converter, to, Accumulator::new()),
+        )))
+    }
+
+    #[inline]
+    fn set_in_caption(&mut self, _: bool) {}
+
+    #[inline]
+    fn set_in_list(&mut self, _: bool) {}
+}
+
+impl Sink for ParseTranslate<'_> {
+    #[inline]
+    fn comment_end(&mut self) {
+        self.0.comment_end();
+    }
+
+    #[inline]
+    fn comment_start(&mut self) {
+        self.0.comment_start();
+    }
+
+    #[inline]
+    fn entity(&mut self, value: char, raw: &str) {
+        self.0.entity(value, raw);
+    }
+
+    #[inline]
+    fn finish(self) -> String {
+        self.0.finish()
+    }
+
+    #[inline]
+    fn new_line(&mut self) {
+        self.0.new_line();
+    }
+
+    #[inline]
+    fn strip_marker(&mut self, marker: &StripMarker<'_>) {
+        self.0.strip_marker(marker);
+    }
+
+    #[inline]
+    fn tag_attribute_end(&mut self, name: &str) {
+        self.0.tag_attribute_end(name);
+    }
+
+    #[inline]
+    fn tag_attribute_start(&mut self, name: &str) {
+        self.0.tag_attribute_start(name);
+    }
+
+    #[inline]
+    fn tag_end(&mut self, name: &str) {
+        self.0.tag_end(name);
+    }
+
+    #[inline]
+    fn tag_start(&mut self, name: &str) {
+        self.0.tag_start(name);
+    }
+
+    #[inline]
+    fn tag_start_end(&mut self, name: &str) {
+        self.0.tag_start_end(name);
+    }
+
+    #[inline]
+    fn text(&mut self, text: &str) {
+        self.0.text(text);
+    }
 }
 
 /// The `<mapframe>` extension tag.
@@ -665,7 +817,7 @@ fn no_wiki(
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
     write!(out, "{}", escape_no_wiki(arguments.body()))?;
-    Ok(OutputMode::Nowiki)
+    Ok(OutputMode::NoWiki)
 }
 
 /// The `<poem>` extension tag.
@@ -1413,6 +1565,7 @@ static EXTENSION_TAGS: phf::Map<&'static str, ExtensionTagFn> = phf::phf_map! {
     "gallery" => gallery,
     "graph" => graph,
     "indicator" => indicator,
+    "langconvert" => lang_convert,
     "mapframe" => map_frame,
     "math" => math,
     "nowiki" => no_wiki,
@@ -1436,7 +1589,7 @@ pub enum OutputMode {
     /// The extension tag outputs HTML.
     Html,
     /// The extension tag outputs plain text.
-    Nowiki,
+    NoWiki,
     /// The extension tag outputs its unprocessed self.
     Raw,
 }
@@ -1533,7 +1686,7 @@ pub(super) fn render_extension_tag(
     Ok(if span.is_none() && !matches!(mode, OutputMode::Raw) {
         let marker = state.strip_markers.push_indexed(match mode {
             OutputMode::Empty | OutputMode::Html => StripMarker::General(out.into()),
-            OutputMode::Nowiki => StripMarker::NoWiki(out.into()),
+            OutputMode::NoWiki => StripMarker::NoWiki(out.into()),
             OutputMode::Raw => panic!(),
         });
         let id = state.statics.vm_cache_marker_id;
@@ -1547,7 +1700,7 @@ pub(super) fn render_extension_tag(
         match mode {
             OutputMode::Empty => None,
             OutputMode::Html => Some(Either::Left(StripMarker::General(out.into()))),
-            OutputMode::Nowiki => Some(Either::Left(StripMarker::NoWiki(out.into()))),
+            OutputMode::NoWiki => Some(Either::Left(StripMarker::NoWiki(out.into()))),
             OutputMode::Raw => Some(Either::Right(out)),
         }
     })

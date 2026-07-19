@@ -29,6 +29,7 @@ use icu_datetime::provider::{
     names::{DatetimeNamesMonthGregorianV1, MonthNames},
     semantic_skeletons::marker_attrs::{ABBR_STANDALONE, WIDE_STANDALONE},
 };
+use icu_plurals::PluralRules;
 use icu_provider::DataIdentifierBorrowed;
 use libmisc::{CowExt as _, to_lower, to_upper};
 use libphp_rs::{floatval, fuzzy_cmp, intval, strtr};
@@ -947,7 +948,7 @@ mod string {
             .eval(state, 0)?
             .map(trim)
             .unwrap_or(Cow::Borrowed(state.statics.db.config().language));
-        write!(out, "{}", lang_to_bcp47(&code))?;
+        write!(out, "{}", lang_to_bcp47::<true>(&code))?;
         Ok(())
     }
 
@@ -1159,7 +1160,7 @@ mod string {
                 }
             });
         if name.is_empty() {
-            write!(out, "{}", lang_to_bcp47(&code))?;
+            write!(out, "{}", lang_to_bcp47::<true>(&code))?;
         } else {
             write!(out, "{name}")?;
         }
@@ -1269,9 +1270,8 @@ mod string {
             if let Some(value) = arguments.get(state, n_str)?.map(trim) {
                 write!(out, "{value}")?;
             } else {
-                let locale = lang_to_bcp47(state.statics.db.config().language)
-                    .parse::<icu_locale::Locale>()?;
-                let rules = icu_plurals::PluralRules::try_new(locale.into(), <_>::default())?;
+                let locale = state.statics.db.config().locale();
+                let rules = PluralRules::try_new(locale.into(), <_>::default())?;
                 let index =
                     usize::from(rules.category_for(n) as u8).min(arguments.len().saturating_sub(2));
                 if let Some(value) = arguments.eval(state, 1 + index)?.map(trim) {
@@ -1503,13 +1503,7 @@ mod time {
         }
 
         if let Some(date) = arguments.eval(state, 0)?.map(trim) {
-            let locale = state
-                .statics
-                .db
-                .config()
-                .language
-                .parse()
-                .unwrap_or(icu_locale::locale!("en"));
+            let locale = state.statics.db.config().locale();
 
             let wide_months = locale_months(&locale, WIDE_STANDALONE)?;
             let abbr_months = locale_months(&locale, ABBR_STANDALONE)?;

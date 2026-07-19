@@ -1,6 +1,7 @@
 //! The renderer manager.
 
 use super::{Limits, db::Database};
+use icu_locale::Locale;
 use libphp_rs::DateTime;
 use libwikitext_common::{
     Messages,
@@ -24,6 +25,8 @@ pub(crate) enum Command {
         load_mode: LoadMode,
         /// If true, follow the article’s redirect before rendering.
         redirect: bool,
+        /// The target locale variant for language conversion.
+        target_locale: Locale,
     },
     /// Render some arbitrary Wikitext.
     Eval {
@@ -37,6 +40,8 @@ pub(crate) enum Command {
         mode: EvalPp,
         /// The root page name.
         page_name: String,
+        /// The target locale variant for language conversion.
+        target_locale: Locale,
     },
     /// Extract the redirect target from an article.
     Redirect {
@@ -119,13 +124,15 @@ impl r2d2::ManageConnection for Manager {
                         article,
                         load_mode,
                         redirect,
-                    } => render_article(&mut statics, &article, load_mode, redirect),
+                        target_locale,
+                    } => render_article(&mut statics, &article, load_mode, redirect, target_locale),
                     Command::Eval {
                         args,
                         code,
                         markers,
                         mode,
                         page_name,
+                        target_locale,
                     } => render_string(
                         &mut statics,
                         &page_name,
@@ -133,6 +140,7 @@ impl r2d2::ManageConnection for Manager {
                         args.as_deref(),
                         mode,
                         markers,
+                        target_locale,
                     ),
                     Command::Redirect { article } => statics
                         .parser
