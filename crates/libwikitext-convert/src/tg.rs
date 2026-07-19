@@ -25,13 +25,8 @@ fn to_latin(c: char, iter: &mut Iter<'_>) -> Option<&'static str> {
         'ё' => Some("jo"),
         'ж' => Some("ƶ"),
         'з' => Some("z"),
-        'и' => {
-            if next_2(iter, 'и', ' ') {
-                Some("iji ")
-            } else {
-                Some("i")
-            }
-        }
+        'и' if next_2(iter, 'и', ' ') => Some("iji "),
+        'и' => Some("i"),
         'й' => Some("j"),
         'к' => Some("k"),
         'л' => Some("l"),

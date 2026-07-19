@@ -410,6 +410,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "daachorse"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5614204febbc33cc07a2806aa6440b904ac012b68eecc37f4493ea4a76455a3d"
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1177,7 +1183,10 @@ dependencies = [
 name = "libwikitext-convert"
 version = "1.1.0-pre"
 dependencies = [
+ "daachorse",
+ "fancy-regex",
  "icu_locale",
+ "indexmap",
  "libmisc",
  "libphp-rs",
  "libwikitext-common",

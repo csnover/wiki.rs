@@ -9,6 +9,8 @@ version.workspace = true
 workspace = true
 
 [dependencies]
+daachorse = "3.0"
+fancy-regex.workspace = true
 icu_locale.workspace = true
 libmisc.workspace = true
 libphp-rs.workspace = true
@@ -18,3 +20,6 @@ peeknth.workspace = true
 phf.workspace = true
 regex.workspace = true
 uncased.workspace = true
+
+[build-dependencies]
+indexmap.workspace = true

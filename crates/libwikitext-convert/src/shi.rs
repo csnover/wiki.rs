@@ -1,12 +1,13 @@
 //! Language conversion for the Shilha language.
 
+use core::str::CharIndices;
 use icu_locale::{LanguageIdentifier, langid};
 use std::borrow::Cow;
 
 /// A language conversion function for the Shilha language.
 pub fn convert<'a>(text: &'a str, to: &icu_locale::Locale) -> Cow<'a, str> {
     if to.id == SHI_TFNG {
-        convert_fast(text, |c| to_tifinagh(to_latin_lower(c)))
+        convert_fast(text, to_tifinagh)
     } else if to.id == SHI_LATN {
         convert_fast(text, to_latin)
     } else {
@@ -17,64 +18,53 @@ pub fn convert<'a>(text: &'a str, to: &icu_locale::Locale) -> Cow<'a, str> {
 /// Converts text with possible substitutions.
 fn convert_fast<F>(text: &str, mut f: F) -> Cow<'_, str>
 where
-    F: FnMut(char) -> char,
+    F: FnMut(char, &mut CharIndices<'_>) -> Option<&'static str>,
 {
-    for (pos, c) in text.char_indices() {
-        if c != f(c) {
-            return Cow::Owned(convert_slow(text, pos, f));
+    let mut iter = text.char_indices();
+    while let Some((pos, c)) = iter.next() {
+        if let Some(repl) = f(c, iter.by_ref()) {
+            return Cow::Owned(super::convert_slow(text, pos, repl, iter, f));
         }
     }
     Cow::Borrowed(text)
 }
 
-/// Converts text with substitutions.
-fn convert_slow<F>(text: &str, start: usize, mut f: F) -> String
-where
-    F: FnMut(char) -> char,
-{
-    let mut out = String::from(&text[..start]);
-    for c in text[start..].chars() {
-        out.push(f(c));
-    }
-    out
-}
-
 /// Tifinagh to Latin alphabet.
-fn to_latin(c: char) -> char {
+fn to_latin(c: char, _: &mut CharIndices<'_>) -> Option<&'static str> {
     match c {
-        'ⴰ' => 'a',
-        'ⴱ' => 'b',
-        'ⴳ' => 'g',
-        'ⴷ' => 'd',
-        'ⴹ' => 'ḍ',
-        'ⴻ' => 'e',
-        'ⴼ' => 'f',
-        'ⴽ' => 'k',
-        'ⵀ' => 'h',
-        'ⵃ' => 'ḥ',
-        'ⵄ' => 'ɛ',
-        'ⵅ' => 'x',
-        'ⵇ' => 'q',
-        'ⵉ' => 'i',
-        'ⵊ' => 'j',
-        'ⵍ' => 'l',
-        'ⵎ' => 'm',
-        'ⵏ' => 'n',
-        'ⵓ' => 'u',
-        'ⵔ' => 'r',
-        'ⵕ' => 'ṛ',
-        'ⵖ' => 'ɣ',
-        'ⵙ' => 's',
-        'ⵚ' => 'ṣ',
-        'ⵛ' => 'c',
-        'ⵜ' => 't',
-        'ⵟ' => 'ṭ',
-        'ⵡ' => 'w',
-        'ⵢ' => 'y',
-        'ⵣ' => 'z',
-        'ⵥ' => 'ẓ',
-        'ⵯ' => 'ʷ',
-        c => c,
+        'ⴰ' => Some("a"),
+        'ⴱ' => Some("b"),
+        'ⴳ' => Some("g"),
+        'ⴷ' => Some("d"),
+        'ⴹ' => Some("ḍ"),
+        'ⴻ' => Some("e"),
+        'ⴼ' => Some("f"),
+        'ⴽ' => Some("k"),
+        'ⵀ' => Some("h"),
+        'ⵃ' => Some("ḥ"),
+        'ⵄ' => Some("ɛ"),
+        'ⵅ' => Some("x"),
+        'ⵇ' => Some("q"),
+        'ⵉ' => Some("i"),
+        'ⵊ' => Some("j"),
+        'ⵍ' => Some("l"),
+        'ⵎ' => Some("m"),
+        'ⵏ' => Some("n"),
+        'ⵓ' => Some("u"),
+        'ⵔ' => Some("r"),
+        'ⵕ' => Some("ṛ"),
+        'ⵖ' => Some("ɣ"),
+        'ⵙ' => Some("s"),
+        'ⵚ' => Some("ṣ"),
+        'ⵛ' => Some("c"),
+        'ⵜ' => Some("t"),
+        'ⵟ' => Some("ṭ"),
+        'ⵡ' => Some("w"),
+        'ⵢ' => Some("y"),
+        'ⵣ' => Some("z"),
+        'ⵥ' => Some("ẓ"),
+        'ⵯ' => Some("ʷ"),
+        _ => None,
     }
 }
 
@@ -120,41 +110,41 @@ fn to_latin_lower(c: char) -> char {
 }
 
 /// Latin to Tifinagh alphabet.
-fn to_tifinagh(c: char) -> char {
-    match c {
-        'a' => 'ⴰ',
-        'b' | 'p' => 'ⴱ',
-        'g' => 'ⴳ',
-        'd' => 'ⴷ',
-        'ḍ' => 'ⴹ',
-        'e' => 'ⴻ',
-        'f' | 'v' => 'ⴼ',
-        'k' => 'ⴽ',
-        'h' => 'ⵀ',
-        'ḥ' => 'ⵃ',
-        'ɛ' => 'ⵄ',
-        'x' => 'ⵅ',
-        'q' => 'ⵇ',
-        'i' => 'ⵉ',
-        'j' => 'ⵊ',
-        'l' => 'ⵍ',
-        'm' => 'ⵎ',
-        'n' => 'ⵏ',
-        'o' | 'u' => 'ⵓ',
-        'r' => 'ⵔ',
-        'ṛ' => 'ⵕ',
-        'ɣ' => 'ⵖ',
-        's' => 'ⵙ',
-        'ṣ' => 'ⵚ',
-        'c' => 'ⵛ',
-        't' => 'ⵜ',
-        'ṭ' => 'ⵟ',
-        'w' => 'ⵡ',
-        'y' => 'ⵢ',
-        'z' => 'ⵣ',
-        'ẓ' => 'ⵥ',
-        'ʷ' => 'ⵯ',
-        c => c,
+fn to_tifinagh(c: char, _: &mut CharIndices<'_>) -> Option<&'static str> {
+    match to_latin_lower(c) {
+        'a' => Some("ⴰ"),
+        'b' | 'p' => Some("ⴱ"),
+        'g' => Some("ⴳ"),
+        'd' => Some("ⴷ"),
+        'ḍ' => Some("ⴹ"),
+        'e' => Some("ⴻ"),
+        'f' | 'v' => Some("ⴼ"),
+        'k' => Some("ⴽ"),
+        'h' => Some("ⵀ"),
+        'ḥ' => Some("ⵃ"),
+        'ɛ' => Some("ⵄ"),
+        'x' => Some("ⵅ"),
+        'q' => Some("ⵇ"),
+        'i' => Some("ⵉ"),
+        'j' => Some("ⵊ"),
+        'l' => Some("ⵍ"),
+        'm' => Some("ⵎ"),
+        'n' => Some("ⵏ"),
+        'o' | 'u' => Some("ⵓ"),
+        'r' => Some("ⵔ"),
+        'ṛ' => Some("ⵕ"),
+        'ɣ' => Some("ⵖ"),
+        's' => Some("ⵙ"),
+        'ṣ' => Some("ⵚ"),
+        'c' => Some("ⵛ"),
+        't' => Some("ⵜ"),
+        'ṭ' => Some("ⵟ"),
+        'w' => Some("ⵡ"),
+        'y' => Some("ⵢ"),
+        'z' => Some("ⵣ"),
+        'ẓ' => Some("ⵥ"),
+        'ʷ' => Some("ⵯ"),
+        _ => None,
     }
 }
 

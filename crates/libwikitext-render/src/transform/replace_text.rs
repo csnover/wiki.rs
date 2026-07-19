@@ -139,7 +139,9 @@ impl<S: Sink> Sink for ReplaceText<S> {
         // Because this runs before DomTree, it may receive imbalanced tags.
         // TODO: *Should* this run before DomTree? This is this way because it
         // is this way in the original parser.
-        self.in_code = self.in_code.saturating_sub(u8::from(Self::is_code_tag(name)));
+        self.in_code = self
+            .in_code
+            .saturating_sub(u8::from(Self::is_code_tag(name)));
         self.next.tag_end(name);
     }
 

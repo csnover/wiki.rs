@@ -19,7 +19,6 @@ pub fn convert<'a>(text: &'a str, to: &Locale) -> Cow<'a, str> {
 }
 
 /// Latin to Cyrillic alphabet.
-#[expect(clippy::too_many_lines, reason = "it is a giant switch")]
 fn to_cyrillic(c: char, iter: &mut Iter<'_>) -> Option<&'static str> {
     match c {
         'a' => Some("а"),
@@ -27,15 +26,9 @@ fn to_cyrillic(c: char, iter: &mut Iter<'_>) -> Option<&'static str> {
         'c' => Some("ц"),
         'č' => Some("ч"),
         'ć' => Some("ћ"),
-        'd' => {
-            if next_1(iter, 'ž') {
-                Some("џ")
-            } else if next_2(iter, '!', 'ž') {
-                Some("дж")
-            } else {
-                Some("д")
-            }
-        }
+        'd' if next_1(iter, 'ž') => Some("џ"),
+        'd' if next_2(iter, '!', 'ž') => Some("дж"),
+        'd' => Some("д"),
         'đ' => Some("ђ"),
         'e' => Some("е"),
         'f' => Some("ф"),
@@ -44,25 +37,13 @@ fn to_cyrillic(c: char, iter: &mut Iter<'_>) -> Option<&'static str> {
         'i' => Some("и"),
         'j' => Some("ј"),
         'k' => Some("к"),
-        'l' => {
-            if next_1(iter, 'j') {
-                Some("љ")
-            } else if next_2(iter, '!', 'ž') {
-                Some("лј")
-            } else {
-                Some("л")
-            }
-        }
+        'l' if next_1(iter, 'j') => Some("љ"),
+        'l' if next_2(iter, '!', 'ž') => Some("лј"),
+        'l' => Some("л"),
         'm' => Some("м"),
-        'n' => {
-            if next_1(iter, 'j') {
-                Some("њ")
-            } else if next_2(iter, '!', 'j') {
-                Some("нј")
-            } else {
-                Some("н")
-            }
-        }
+        'n' if next_1(iter, 'j') => Some("њ"),
+        'n' if next_2(iter, '!', 'j') => Some("нј"),
+        'n' => Some("н"),
         'o' => Some("о"),
         'p' => Some("п"),
         'r' => Some("р"),
@@ -78,15 +59,9 @@ fn to_cyrillic(c: char, iter: &mut Iter<'_>) -> Option<&'static str> {
         'C' => Some("Ц"),
         'Č' => Some("Ч"),
         'Ć' => Some("Ћ"),
-        'D' => {
-            if next_1(iter, 'ž') || next_1(iter, 'Ž') {
-                Some("Џ")
-            } else if next_2(iter, '!', 'ž') || next_2(iter, '!', 'Ž') {
-                Some("Дж")
-            } else {
-                Some("Д")
-            }
-        }
+        'D' if next_1(iter, 'ž') || next_1(iter, 'Ž') => Some("Џ"),
+        'D' if next_2(iter, '!', 'ž') || next_2(iter, '!', 'Ž') => Some("Дж"),
+        'D' => Some("Д"),
         'Đ' => Some("Ђ"),
         'E' => Some("Е"),
         'F' => Some("Ф"),
@@ -95,29 +70,15 @@ fn to_cyrillic(c: char, iter: &mut Iter<'_>) -> Option<&'static str> {
         'I' => Some("И"),
         'J' => Some("Ј"),
         'K' => Some("К"),
-        'L' => {
-            if next_1(iter, 'J') || next_1(iter, 'j') {
-                Some("Љ")
-            } else if next_2(iter, '!', 'j') {
-                Some("Лј")
-            } else if next_2(iter, '!', 'J') {
-                Some("ЛЈ")
-            } else {
-                Some("Л")
-            }
-        }
+        'L' if next_1(iter, 'J') || next_1(iter, 'j') => Some("Љ"),
+        'L' if next_2(iter, '!', 'j') => Some("Лј"),
+        'L' if next_2(iter, '!', 'J') => Some("ЛЈ"),
+        'L' => Some("Л"),
         'M' => Some("М"),
-        'N' => {
-            if next_1(iter, 'J') || next_1(iter, 'j') {
-                Some("Њ")
-            } else if next_2(iter, '!', 'j') {
-                Some("Нј")
-            } else if next_2(iter, '!', 'J') {
-                Some("НЈ")
-            } else {
-                Some("Н")
-            }
-        }
+        'N' if next_1(iter, 'J') || next_1(iter, 'j') => Some("Њ"),
+        'N' if next_2(iter, '!', 'j') => Some("Нј"),
+        'N' if next_2(iter, '!', 'J') => Some("НЈ"),
+        'N' => Some("Н"),
         'O' => Some("О"),
         'P' => Some("П"),
         'R' => Some("Р"),

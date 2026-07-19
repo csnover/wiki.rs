@@ -1,14 +1,18 @@
 //! Types and functions for Wikitext language conversion.
 
+use fancy_regex::Regex;
 use icu_locale::Locale;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::LazyLock};
 use uncased::UncasedStr;
 
 mod crh;
 mod en;
+mod ku;
 mod shi;
 mod sr;
 mod tg;
+mod uz;
+mod zh;
 
 /// A language conversion function.
 pub type Converter = for<'a> fn(&'a str, &Locale) -> Cow<'a, str>;
@@ -41,19 +45,94 @@ pub fn split_roman_numerals<F>(text: &str, mut f: F) -> Cow<'_, str>
 where
     F: FnMut(&str) -> Cow<'_, str>,
 {
-    log::warn!("TODO: Split roman numerals");
-    f(text)
+    static RE_ROMAN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\b(?=[MDCLXVI])M{0,4}(?:C[DM]|D?C{0,3})(?:X[LC]|L?X{0,3})(?:I[VX]|V?I{0,3})\b")
+            .unwrap()
+    });
+
+    let mut out = String::new();
+    let mut flushed = 0;
+    let mut last = 0;
+    while let Some(numerals) = RE_ROMAN.find_from_pos(text, last).ok().flatten() {
+        if let Cow::Owned(repl) = f(&text[last..numerals.start()]) {
+            out += &text[flushed..last];
+            out += &repl;
+            flushed = numerals.start();
+        }
+        last = numerals.end();
+    }
+
+    if let Cow::Owned(repl) = f(&text[last..]) {
+        out += &text[flushed..last];
+        out += &repl;
+        Cow::Owned(out)
+    } else if flushed == 0 {
+        Cow::Borrowed(text)
+    } else {
+        out += &text[flushed..];
+        Cow::Owned(out)
+    }
+}
+
+/// Converts text with substitutions.
+fn convert_slow<I, F>(text: &str, start: usize, first: &str, mut iter: I, mut f: F) -> String
+where
+    I: Iterator<Item = (usize, char)>,
+    F: FnMut(char, &mut I) -> Option<&'static str>,
+{
+    let mut out = String::from(&text[..start]);
+    out += first;
+    while let Some((_, c)) = iter.next() {
+        if let Some(s) = f(c, iter.by_ref()) {
+            out += s;
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// A map from supported BCP-47 codes to conversion functions.
 static CONVERTERS: phf::Map<&UncasedStr, Converter> = phf::phf_map! {
-    UncasedStr::new("crh") | UncasedStr::new("crh-cyrl") | UncasedStr::new("crh-latn") => crh::convert,
-    UncasedStr::new("en") | UncasedStr::new("en-x-piglatin") => en::convert,
-    UncasedStr::new("shi") | UncasedStr::new("shi-latn") | UncasedStr::new("shi-tfng") => shi::convert,
+    UncasedStr::new("crh")
+    | UncasedStr::new("crh-cyrl")
+    | UncasedStr::new("crh-latn") => crh::convert,
+
+    UncasedStr::new("en")
+    | UncasedStr::new("en-x-piglatin") => en::convert,
+
+    UncasedStr::new("ku")
+    | UncasedStr::new("ku-arab")
+    | UncasedStr::new("ku-latn") => ku::convert,
+
+    UncasedStr::new("shi")
+    | UncasedStr::new("shi-latn")
+    | UncasedStr::new("shi-tfng") => shi::convert,
+
     // TODO: This is sr-ec and sr-el in MediaWiki, but these are supposedly
     // non-standard codes that language conversion is never supposed to see.
-    UncasedStr::new("sr") | UncasedStr::new("sr-cyrl") | UncasedStr::new("sr-latn") => sr::convert,
-    UncasedStr::new("tg") | UncasedStr::new("tg-latn") => tg::convert,
+    UncasedStr::new("sr")
+    | UncasedStr::new("sr-cyrl")
+    | UncasedStr::new("sr-latn") => sr::convert,
+
+    UncasedStr::new("tg")
+    | UncasedStr::new("tg-latn") => tg::convert,
+
+    UncasedStr::new("uz")
+    | UncasedStr::new("uz-cyrl")
+    | UncasedStr::new("uz-latn") => uz::convert,
+
+    UncasedStr::new("gan-hans")
+    | UncasedStr::new("gan-hant")
+    | UncasedStr::new("zh")
+    | UncasedStr::new("zh-cn")
+    | UncasedStr::new("zh-hans")
+    | UncasedStr::new("zh-hant")
+    | UncasedStr::new("zh-hk")
+    | UncasedStr::new("zh-mo")
+    | UncasedStr::new("zh-my")
+    | UncasedStr::new("zh-sg")
+    | UncasedStr::new("zh-tw") => zh::convert,
 };
 
 /// Common functions for 2-character look-ahead conversion.
@@ -73,34 +152,11 @@ mod iter_2 {
         let mut iter = Iter::new(text.char_indices());
         while let Some((pos, c)) = iter.next() {
             if let Some(s) = f(c, iter.by_ref()) {
-                return Cow::Owned(convert_slow(text, pos, s, iter, f));
+                return Cow::Owned(super::convert_slow(text, pos, s, iter, f));
             }
         }
 
         Cow::Borrowed(text)
-    }
-
-    /// Converts text with substitutions.
-    fn convert_slow<F>(
-        text: &str,
-        start: usize,
-        first: &str,
-        mut iter: Iter<'_>,
-        mut f: F,
-    ) -> String
-    where
-        F: FnMut(char, &mut Iter<'_>) -> Option<&'static str>,
-    {
-        let mut out = String::from(&text[..start]);
-        out += first;
-        while let Some((_, c)) = iter.next() {
-            if let Some(s) = f(c, iter.by_ref()) {
-                out += s;
-            } else {
-                out.push(c);
-            }
-        }
-        out
     }
 
     /// Takes the next character and returns true if it is `a`.
