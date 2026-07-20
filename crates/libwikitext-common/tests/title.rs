@@ -34,14 +34,40 @@ fn join() {
 
 #[test]
 fn from_str() {
-    let title = Title::new(&CONFIG, "Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None).unwrap();
+    let title = Title::new(&CONFIG, "Talk:Aa/Bb/Cc#Dd/Ee/Ff", None).unwrap();
     assert_eq!(title.namespace().id, Namespace::TALK);
     assert_eq!(title.base_text(), "Aa/Bb");
+    assert_eq!(title.fragment(), Some("Dd/Ee/Ff"));
+    assert_eq!(title.full_text(), "Talk:Aa/Bb/Cc#Dd/Ee/Ff");
+    assert_eq!(title.interwiki(), None);
+    assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
+    assert_eq!(title.prefixed_text(), "Talk:Aa/Bb/Cc");
+    assert_eq!(title.root_text(), "Aa");
+    assert_eq!(title.subpage_text(), "Cc");
+    assert_eq!(title.text(), "Aa/Bb/Cc");
+
+    // Remote interwiki does not parse any namespace
+    let title = Title::new(&CONFIG, "Wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None).unwrap();
+    assert_eq!(title.namespace().id, Namespace::MAIN);
+    assert_eq!(title.base_text(), "Talk:Aa/Bb");
     assert_eq!(title.fragment(), Some("Dd/Ee/Ff"));
     assert_eq!(title.full_text(), "wikidata:Talk:Aa/Bb/Cc#Dd/Ee/Ff");
     assert_eq!(title.interwiki(), Some("wikidata"));
     assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
     assert_eq!(title.prefixed_text(), "wikidata:Talk:Aa/Bb/Cc");
+    assert_eq!(title.root_text(), "Talk:Aa");
+    assert_eq!(title.subpage_text(), "Cc");
+    assert_eq!(title.text(), "Talk:Aa/Bb/Cc");
+
+    // Local interwiki does not parse as an interwiki
+    let title = Title::new(&CONFIG, "W:Talk:Aa/Bb/Cc#Dd/Ee/Ff", None).unwrap();
+    assert_eq!(title.namespace().id, Namespace::TALK);
+    assert_eq!(title.base_text(), "Aa/Bb");
+    assert_eq!(title.fragment(), Some("Dd/Ee/Ff"));
+    assert_eq!(title.full_text(), "Talk:Aa/Bb/Cc#Dd/Ee/Ff");
+    assert_eq!(title.interwiki(), None);
+    assert_eq!(title.key(), "Talk:Aa/Bb/Cc");
+    assert_eq!(title.prefixed_text(), "Talk:Aa/Bb/Cc");
     assert_eq!(title.root_text(), "Aa");
     assert_eq!(title.subpage_text(), "Cc");
     assert_eq!(title.text(), "Aa/Bb/Cc");
@@ -51,12 +77,12 @@ fn from_str() {
 fn interwiki() {
     let title = Title::new(&CONFIG, "Wikidata:File:A.png", None).unwrap();
     assert_eq!(title.interwiki(), Some("wikidata"));
-    assert_eq!(title.namespace().id, Namespace::FILE);
+    assert_eq!(title.namespace().id, Namespace::MAIN);
     assert_eq!(title.key(), "File:A.png");
 
     let title = Title::new(&CONFIG, ":Wikidata:File:A.png", None).unwrap();
     assert_eq!(title.interwiki(), Some("wikidata"));
-    assert_eq!(title.namespace().id, Namespace::FILE);
+    assert_eq!(title.namespace().id, Namespace::MAIN);
     assert_eq!(title.key(), "File:A.png");
 
     let title = Title::new(&CONFIG, ":File:A.png", None).unwrap();
