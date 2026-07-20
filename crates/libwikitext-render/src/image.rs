@@ -4,7 +4,7 @@ use super::{
     Result, StackFrame, State, StripMarker, Surrogate as _,
     document::{Document, DocumentSink},
     tags::{self, LinkKind, LinkKindOptions},
-    transform::Sink,
+    transform::{ReplaceTextDictionary, Sink},
 };
 use crate::transform::tokenise;
 use core::{convert::Infallible, fmt::Write as _};
@@ -315,7 +315,15 @@ impl DocumentSink for ParseAttr {
         }
     }
 
+    #[inline]
+    fn lang_terms(&mut self) -> Option<&mut ReplaceTextDictionary> {
+        None
+    }
+
+    #[inline]
     fn set_in_caption(&mut self, _: bool) {}
+
+    #[inline]
     fn set_in_list(&mut self, _: bool) {}
 }
 

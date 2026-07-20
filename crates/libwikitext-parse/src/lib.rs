@@ -316,12 +316,33 @@ pub enum LangFlags {
 }
 
 impl LangFlags {
+    /// Returns true if this is a directive to add a replacement term.
+    #[inline]
+    #[must_use]
+    pub fn is_add(&self) -> bool {
+        match self {
+            Self::Combined(_) => false,
+            Self::Common(flags) => flags.contains(CommonLangFlags::ADD),
+        }
+    }
+
     /// Returns true if the associated rules should be interpreted as raw text.
+    #[inline]
     #[must_use]
     pub fn is_raw(&self) -> bool {
         match self {
             Self::Combined(_) => true,
             Self::Common(flags) => flags.intersects(CommonLangFlags::RAW | CommonLangFlags::NAME),
+        }
+    }
+
+    /// Returns true if this is a directive to remove a replacement term.
+    #[inline]
+    #[must_use]
+    pub fn is_remove(&self) -> bool {
+        match self {
+            Self::Combined(_) => false,
+            Self::Common(flags) => flags.contains(CommonLangFlags::REMOVE),
         }
     }
 }

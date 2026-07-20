@@ -112,7 +112,9 @@ use super::{
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
     tags::ExternalLinkKind,
-    transform::{Accumulator, AttributeFilter, OutlineGenerator, ReplaceText, Sink},
+    transform::{
+        Accumulator, AttributeFilter, OutlineGenerator, ReplaceText, ReplaceTextDictionary, Sink,
+    },
 };
 use core::{fmt::Write as _, num::NonZeroU16, ops::Range};
 use either::Either;
@@ -665,6 +667,11 @@ impl<'a> DocumentSink for ParseTranslate<'a> {
             outline,
             ReplaceText::new(converter, to, Accumulator::new()),
         )))
+    }
+
+    #[inline]
+    fn lang_terms(&mut self) -> Option<&mut ReplaceTextDictionary> {
+        None
     }
 
     #[inline]

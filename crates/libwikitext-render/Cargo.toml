@@ -12,6 +12,7 @@ workspace = true
 anyhow.workspace = true
 barely-css.workspace = true
 bitflags.workspace = true
+cedarwood.workspace = true
 easytimeline.workspace = true
 either.workspace = true
 fixed_decimal.workspace = true

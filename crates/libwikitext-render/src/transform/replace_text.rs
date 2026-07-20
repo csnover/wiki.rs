@@ -3,6 +3,7 @@
 use super::{Sink, chainable, flush_ws, tokenise};
 use crate::StripMarker;
 use icu_locale::Locale;
+use libmisc::CowExt as _;
 use libwikitext_convert::Converter;
 use std::borrow::Cow;
 
@@ -22,7 +23,7 @@ pub(crate) struct ReplaceText<S: Sink> {
     /// The output.
     next: S,
     /// Manual replacement terms table.
-    terms: Vec<(String, String)>,
+    terms: Dictionary,
     /// Target locale.
     to: Locale,
 }
@@ -53,7 +54,18 @@ impl<S: Sink> ReplaceText<S> {
         let text = if self.in_attr && self.buffer.contains("://") {
             Cow::Borrowed(self.buffer.as_str())
         } else {
-            (self.converter)(&self.buffer, &self.to)
+            // TODO: Technically, manually defined terms are supposed to
+            // integrate with the converter’s terms dictionary, if it has one,
+            // such that the leftmost-longest rule applies to everything and the
+            // searches are non-overlapping, and such that default terms can be
+            // deleted. As usual, everything in MediaWiki was designed to be
+            // maximally slow and annoying to implement. So this should pass a
+            // function into the converter that the converter can use to ask
+            // if there is a match at each position, thus destroying all
+            // optimisations.
+            self.terms
+                .replace_all(&self.buffer)
+                .map(|text| (self.converter)(text, &self.to))
         };
         flush_ws(&mut self.next, &text);
         self.buffer.clear();
@@ -63,6 +75,12 @@ impl<S: Sink> ReplaceText<S> {
     #[inline]
     fn is_code_tag(name: &str) -> bool {
         matches!(name, "code" | "math" | "pre" | "script" | "style" | "svg")
+    }
+
+    /// Returns a mutable reference to the replacement terms table.
+    #[inline]
+    pub fn terms_mut(&mut self) -> &mut Dictionary {
+        &mut self.terms
     }
 }
 
@@ -162,6 +180,93 @@ impl<S: Sink> Sink for ReplaceText<S> {
             self.buffer += text;
         } else {
             self.next.text(text);
+        }
+    }
+}
+
+/// A text replacement dictionary.
+#[derive(Debug)]
+pub(crate) struct Dictionary {
+    /// The term keys.
+    dict: cedarwood::Cedar,
+    /// The term replacements.
+    replacements: String,
+}
+
+impl Default for Dictionary {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            dict: <_>::default(),
+            // The replacements needs to always have an empty string in it, so
+            // that the value 0 can be used as a sentinel for using the original
+            // term. See [`Self::remove`] for details.
+            replacements: String::from(Self::TERMINATOR),
+        }
+    }
+}
+
+impl Dictionary {
+    /// Hey, it’s your old friend again, the C-string terminator!
+    const TERMINATOR: char = '\0';
+
+    /// Inserts a new term replacement to the dictionary.
+    #[inline]
+    pub fn insert(&mut self, term: &str, repl: &str) {
+        let index = i32::try_from(self.replacements.len()).unwrap();
+        self.dict.update(term, index).unwrap();
+        self.replacements += repl;
+        self.replacements.push(Self::TERMINATOR);
+    }
+
+    /// Removes a term replacement from the dictionary.
+    #[inline]
+    pub fn remove(&mut self, term: &str) {
+        // TODO: When a term replacement is removed, this might actually be
+        // an attempt to remove one of the built-in conversion terms (for the
+        // MW `ReplacementArray`-based converters, which is most of them, even
+        // the ones that are doing very simple transliteration). In this case,
+        // the sentinel value should cause the associated key term to be used as
+        // a replacement instead of allowing the built-in dictionary to match at
+        // this position.
+        self.dict.update(term, 0).unwrap();
+    }
+
+    /// Replaces any matching terms in `text`.
+    #[inline]
+    fn replace_all<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        if self.dict.is_empty() {
+            return Cow::Borrowed(text);
+        }
+
+        let mut out = String::new();
+        let mut pos = 0;
+        let mut flushed = 0;
+        while pos != text.len() {
+            if let Some((index, len)) = self
+                .dict
+                .common_prefix_iter(&text[pos..])
+                .max_by_key(|(_, len)| *len)
+                // TODO: Actually use the sentinel value to exclude replacements
+                // from the built-in dictionary.
+                && index != 0
+            {
+                out += &text[flushed..pos];
+                #[expect(clippy::cast_sign_loss, reason = "index came from usize")]
+                let repl = &self.replacements[index as usize..];
+                out.extend(repl.chars().take_while(|c| *c != Self::TERMINATOR));
+                pos += len;
+                flushed = pos;
+            } else {
+                pos += text.chars().next().unwrap().len_utf8();
+            }
+        }
+
+        if flushed == 0 {
+            Cow::Borrowed(text)
+        } else {
+            out += &text[flushed..];
+            Cow::Owned(out)
         }
     }
 }

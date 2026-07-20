@@ -10,7 +10,7 @@ use super::{
     tags::{self, ExternalLinkKind},
     transform::{
         Accumulator, AttributeFilter, Chain as _, DomTree, EmptyMarker, GrafWrapper,
-        OutlineGenerator, PrettyText, ReplaceText, Sink, TemplateMarker,
+        OutlineGenerator, PrettyText, ReplaceText, ReplaceTextDictionary, Sink, TemplateMarker,
     },
 };
 use either::Either;
@@ -19,6 +19,7 @@ use libmisc::{CowExt as _, to_ascii_lower};
 use libphp_rs::strtr;
 use libwikitext_common::{
     config::SpecialPages,
+    lang_to_bcp47,
     title::{Namespace, Title, is_force_link},
     title_decode,
 };
@@ -477,16 +478,63 @@ where
 
     fn adopt_lang_variant(
         &mut self,
-        _state: &mut State<'_, '_, '_>,
+        state: &mut State<'_, '_, '_>,
         sp: &StackFrame<'_>,
         span: Span,
-        _flags: &LangFlags,
-        _variants: &[LangVariant],
+        flags: &LangFlags,
+        variants: &[LangVariant],
     ) -> Result {
         self.flush_after_table();
-        // TODO: Implement language conversion.
-        log::warn!("TODO: language conversion");
-        self.next.text(&sp.source[span.into_range()]);
+
+        if let Some(table) = self.next.lang_terms() {
+            if flags.is_add() || flags.is_remove() {
+                for variant in variants {
+                    match variant {
+                        LangVariant::Empty | LangVariant::Text { .. } => {
+                            panic!("what?")
+                        }
+                        LangVariant::OneWay { from, lang, to } => {
+                            let lang = lang_to_bcp47::<true>(&sp.source[lang.into_range()]);
+                            // TODO: Fallbacks.
+                            if state.target_converter.1.normalizing_eq(&lang) {
+                                let from = sp.eval(state, from)?;
+                                if flags.is_add() {
+                                    let to = sp.eval(state, to)?;
+                                    table.insert(&from, &to);
+                                } else {
+                                    table.remove(&from);
+                                }
+                            }
+                        }
+                        LangVariant::TwoWay { lang, text } => {
+                            let source_locale = state.statics.db.config().locale();
+                            let lang = lang_to_bcp47::<true>(&sp.source[lang.into_range()]);
+                            let mut from = None;
+                            let mut to = None;
+                            // TODO: Fallbacks.
+                            if source_locale.normalizing_eq(&lang) {
+                                let text = sp.eval(state, text)?;
+                                if flags.is_remove() {
+                                    table.remove(&text);
+                                    continue;
+                                }
+                                from = Some(text);
+                            } else if state.target_converter.1.normalizing_eq(&lang) {
+                                to = Some(sp.eval(state, text)?);
+                            }
+                            if let (Some(from), Some(to)) = (from, to) {
+                                table.insert(&from, &to);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // TODO: Implement language conversion.
+                log::warn!("TODO: language conversion");
+            }
+        } else {
+            self.next.text(&sp.source[span.into_range()]);
+        }
         Ok(())
     }
 
@@ -1065,6 +1113,8 @@ pub(super) trait DocumentSink: Sink {
     where
         Self: Sized;
 
+    /// Returns a mutable reference to the manual text replacement terms map.
+    fn lang_terms(&mut self) -> Option<&mut ReplaceTextDictionary>;
     /// Enables or disables in-caption processing mode.
     fn set_in_caption(&mut self, in_caption: bool);
     /// Enables or disables in-list processing mode.
@@ -1089,6 +1139,11 @@ impl<'a> DocumentSink for ParseHalf<'a> {
             args,
             Accumulator::new(),
         )))
+    }
+
+    #[inline]
+    fn lang_terms(&mut self) -> Option<&mut ReplaceTextDictionary> {
+        None
     }
 
     #[inline]
@@ -1193,6 +1248,11 @@ impl<'a> DocumentSink for ParseFully<'a> {
                 )))),
             )),
         )))
+    }
+
+    #[inline]
+    fn lang_terms(&mut self) -> Option<&mut ReplaceTextDictionary> {
+        Some(self.0.next_mut().next_mut().next_mut().terms_mut())
     }
 
     #[inline]

@@ -318,6 +318,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cedarwood"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2039fbbd61ae7b13214b7118be15ed244195abdedca5ba1d0662e1ccfd6d046"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1274,6 +1283,7 @@ dependencies = [
  "anyhow",
  "barely-css",
  "bitflags",
+ "cedarwood",
  "easytimeline",
  "either",
  "fixed_decimal",

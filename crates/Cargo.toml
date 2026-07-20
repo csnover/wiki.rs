@@ -95,6 +95,7 @@ anyhow = "1.0"
 arrayvec = "0.7"
 barely-css = { path = "barely-css" }
 bitflags = "2.10"
+cedarwood = "0.6"
 csscolorparser = "0.8"
 easytimeline = { path = "easytimeline" }
 either = "1.15"

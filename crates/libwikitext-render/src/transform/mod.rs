@@ -21,7 +21,7 @@ pub(super) use graf_wrapper::GrafWrapper;
 use libwikitext_parse::VOID_TAGS;
 pub(super) use outline::OutlineGenerator;
 pub(super) use pretty_text::PrettyText;
-pub(super) use replace_text::ReplaceText;
+pub(super) use replace_text::{Dictionary as ReplaceTextDictionary, ReplaceText};
 
 /// An intermediate sink.
 pub(super) trait Chain {
