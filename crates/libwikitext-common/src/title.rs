@@ -14,8 +14,8 @@ use unicode_normalization::UnicodeNormalization as _;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The title contains illegal characters.
-    #[error("bad characters in title")]
-    BadChars,
+    #[error("bad characters in title {0:?}")]
+    BadChars(String),
     /// The title is empty inside, much like myself.
     #[error("empty title")]
     Empty,
@@ -26,11 +26,11 @@ pub enum Error {
     #[error("title is too long")]
     Length,
     /// The title contains relative path traversal segments.
-    #[error("relative path traversal segments in title")]
-    Path,
+    #[error("relative path traversal segments in title {0:?}")]
+    Path(String),
     /// The title contains a signature insertion sequence.
-    #[error("signature insertion sequence in title")]
-    Signature,
+    #[error("signature insertion sequence in title {0:?}")]
+    Signature(String),
 }
 
 /// The title casing strategy for a namespace.
@@ -451,11 +451,11 @@ impl Title {
             || title.starts_with(':')
             || title.contains(char::REPLACEMENT_CHARACTER)
         {
-            Err(Error::BadChars)
+            Err(Error::BadChars(title.to_owned()))
         } else if path_like(title) {
-            Err(Error::Path)
+            Err(Error::Path(title.to_owned()))
         } else if title.contains("~~~") {
-            Err(Error::Signature)
+            Err(Error::Signature(title.to_owned()))
         } else if title.len() > max_namespace_len(namespace) {
             Err(Error::Length)
         } else if title.is_empty() && interwiki.is_none() && namespace.id != Namespace::MAIN {
