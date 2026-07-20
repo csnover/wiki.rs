@@ -46,7 +46,7 @@ pub trait DatabaseProvider {
     /// # Errors
     ///
     /// * The database implementation returns an error
-    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, Self::Error>;
+    fn metadata(&self, title: &Title) -> Result<Option<&FileMetadata>, Self::Error>;
 
     /// The site name from the database.
     fn name(&self) -> &str;
@@ -101,7 +101,7 @@ pub trait DynDatabaseProvider: private::Sealed {
     /// # Errors
     ///
     /// * The database implementation returns an error
-    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, BoxedDbError>;
+    fn metadata(&self, title: &Title) -> Result<Option<&FileMetadata>, BoxedDbError>;
 
     /// The site name from the database.
     fn name(&self) -> &str;
@@ -149,7 +149,7 @@ where
     }
 
     #[inline]
-    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, BoxedDbError> {
+    fn metadata(&self, title: &Title) -> Result<Option<&FileMetadata>, BoxedDbError> {
         DatabaseProvider::metadata(self, title).map_err(|err| BoxedDbError(Box::new(err)))
     }
 
@@ -193,7 +193,7 @@ impl DatabaseProvider for Arc<dyn DynDatabaseProvider> {
     }
 
     #[inline]
-    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, Self::Error> {
+    fn metadata(&self, title: &Title) -> Result<Option<&FileMetadata>, Self::Error> {
         DynDatabaseProvider::metadata(self.as_ref(), title)
     }
 
@@ -425,24 +425,16 @@ impl HeapUsageCalculator for Article {
     }
 }
 
-/// A fake database used for testing.
-#[derive(Debug)]
-pub struct MockDatabase<'config> {
-    /// The mock articles.
-    articles: HashMap<String, Arc<Article>>,
-    /// The mock files.
-    files: HashMap<String, FileMetadata>,
-    /// The mock configuration.
-    config: &'config Configuration,
-    /// The mock configuration name.
-    name: &'config str,
-}
-
 /// Media file metadata.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum FileMetadata {
     /// Beeps and boops.
-    Audio,
+    Audio {
+        /// The media format.
+        format: FileMediaFormat,
+        /// Duration, in seconds.
+        duration: f32,
+    },
     /// A stolen soul.
     Image {
         /// Image height.
@@ -454,11 +446,165 @@ pub enum FileMetadata {
     },
     /// Witchcraft, sometimes with added beeps and boops.
     Video {
+        /// The media format.
+        format: FileMediaFormat,
+        /// Duration, in seconds.
+        duration: f32,
         /// Video height.
         height: u32,
+        /// Extra transcoded sources.
+        sources: Vec<FileMediaSource>,
         /// Video width.
         width: u32,
     },
+}
+
+impl FileMetadata {
+    /// The duration of timed media, in seconds.
+    #[inline]
+    #[must_use]
+    pub fn duration(&self) -> Option<f32> {
+        match self {
+            Self::Audio { duration, .. } | Self::Video { duration, .. } => Some(*duration),
+            Self::Image { .. } => None,
+        }
+    }
+
+    /// The visual dimensions of the media, width and height, in pixels.
+    #[inline]
+    #[must_use]
+    pub fn dims(&self) -> Option<(u32, u32)> {
+        match self {
+            Self::Audio { .. } => None,
+            Self::Image { height, width, .. } | Self::Video { height, width, .. } => {
+                Some((*width, *height))
+            }
+        }
+    }
+
+    /// Returns the MIME type of the file.
+    #[must_use]
+    pub fn mime(&self) -> Option<&'static str> {
+        match self {
+            Self::Audio { format, .. } | Self::Video { format, .. } => Some(format.mime()),
+            Self::Image { .. } => None,
+        }
+    }
+
+    /// Returns true if this is an audio file.
+    #[inline]
+    #[must_use]
+    pub fn is_audio(&self) -> bool {
+        matches!(self, Self::Audio { .. })
+    }
+
+    /// Returns true if this is an image file.
+    #[inline]
+    #[must_use]
+    pub fn is_image(&self) -> bool {
+        matches!(self, Self::Image { .. })
+    }
+
+    /// Returns true if this is a scalable visual file.
+    #[inline]
+    #[must_use]
+    pub fn is_scalable(&self) -> bool {
+        matches!(self, Self::Image { scalable, .. } if *scalable)
+    }
+
+    /// Returns true if this is timed media.
+    #[inline]
+    #[must_use]
+    pub fn is_timed_media(&self) -> bool {
+        matches!(self, Self::Audio { .. } | Self::Video { .. })
+    }
+
+    /// Returns true if this is a video.
+    #[inline]
+    #[must_use]
+    pub fn is_video(&self) -> bool {
+        matches!(self, Self::Video { .. })
+    }
+
+    /// Returns a list of secondary media sources.
+    #[inline]
+    #[must_use]
+    pub fn sources(&self) -> &[FileMediaSource] {
+        match self {
+            Self::Audio { .. } | Self::Image { .. } => &[],
+            Self::Video { sources, .. } => sources,
+        }
+    }
+}
+
+/// A file media format.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FileMediaFormat {
+    /// Ogg Theora.
+    Theora,
+    /// Ogg Vorbis.
+    Vorbis,
+    /// WebM VP8.
+    Vp8,
+    /// WebM VP9.
+    Vp9,
+}
+
+impl FileMediaFormat {
+    /// The MIME type for this format.
+    #[inline]
+    #[must_use]
+    pub fn mime(self) -> &'static str {
+        match self {
+            Self::Theora => r#"video/ogg; codecs="theora""#,
+            Self::Vorbis => r#"audio/ogg; codecs="vorbis""#,
+            Self::Vp8 => r#"video/webm; codecs="vp8, vorbis""#,
+            Self::Vp9 => r#"video/webm; codecs="vp9, opus""#,
+        }
+    }
+}
+
+/// A file media source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileMediaSource {
+    /// The media format.
+    pub format: FileMediaFormat,
+    /// The height, in pixels.
+    pub height: u32,
+}
+
+impl FileMediaSource {
+    /// The transcoded source key.
+    #[must_use]
+    pub fn key(&self) -> String {
+        let suffix = match self.format {
+            FileMediaFormat::Theora => ".ogv",
+            FileMediaFormat::Vorbis => ".ogg",
+            FileMediaFormat::Vp8 => ".vp8.webm",
+            FileMediaFormat::Vp9 => ".vp9.webm",
+        };
+        format!("{}p{suffix}", self.height)
+    }
+
+    /// The MIME type for the source format.
+    #[inline]
+    #[must_use]
+    pub fn mime(&self) -> &'static str {
+        self.format.mime()
+    }
+}
+
+/// A fake database used for testing.
+#[derive(Debug)]
+pub struct MockDatabase<'config> {
+    /// The mock articles.
+    articles: HashMap<String, Arc<Article>>,
+    /// The mock files.
+    files: HashMap<String, FileMetadata>,
+    /// The mock configuration.
+    config: &'config Configuration,
+    /// The mock configuration name.
+    name: &'config str,
 }
 
 impl<'config> MockDatabase<'config> {
@@ -541,10 +687,10 @@ impl DatabaseProvider for MockDatabase<'_> {
         self.name
     }
 
-    fn metadata(&self, title: &Title) -> Result<Option<FileMetadata>, Self::Error> {
+    fn metadata(&self, title: &Title) -> Result<Option<&FileMetadata>, Self::Error> {
         Ok(
             if matches!(title.namespace().id, Namespace::FILE | Namespace::MEDIA) {
-                self.files.get(title.text()).copied()
+                self.files.get(title.text())
             } else {
                 None
             },

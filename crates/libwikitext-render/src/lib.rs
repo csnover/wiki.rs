@@ -797,6 +797,8 @@ struct ArticleState {
     sections: extension_tags::LabelledSections,
     /// Collected CSS for the `<templatestyles>` extension tag.
     styles: extension_tags::Styles,
+    /// The last ordinal used by an `<audio>` or `<video>` tag.
+    timed_media_ordinal: u32,
     /// The title of the article.
     title: Title,
     /// Sometimes settable magic variables, e.g. `{{SHORTDESC}}`.
@@ -815,6 +817,7 @@ impl ArticleState {
             references: <_>::default(),
             sections: <_>::default(),
             styles: <_>::default(),
+            timed_media_ordinal: <_>::default(),
             title,
             variables: <_>::default(),
         }

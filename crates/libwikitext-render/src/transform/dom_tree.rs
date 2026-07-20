@@ -782,6 +782,7 @@ impl<S: Sink> DomTree<S> {
                 self.stack.push(tag);
                 EMIT
             }
+            Tag::Param | Tag::Source | Tag::Track => EMIT,
             Tag::Pre | Tag::Textarea => {
                 // For `<textarea>` the spec says to switch to RCDATA but this
                 // is not a tokeniser

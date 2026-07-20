@@ -140,6 +140,9 @@ Simple audio element
 </p>
 !! html/parsoid
 <p><span class="mw-default-size mw-default-audio-height" typeof="mw:File"><span><audio controls="" preload="none" data-mw-tmh="" height="32" width="180" style="width: 180px;" resource="./File:Audio.oga" data-durationhint="1" class="mw-file-element"><source src="http://example.com/images/4/41/Audio.oga" type='audio/ogg; codecs="vorbis"'/></audio></span></span></p>
+!! html/wiki.rs # This output matches the PHP parser, minus style and data-mw attributes
+<p><span class="mw-default-size" typeof="mw:File"><span><audio id="mwe_player_1" controls="" preload="none" class="mw-file-element" width="180" data-durationhint="1"><source src="http://example.com/images/4/41/Audio.oga" type="audio/ogg; codecs=&quot;vorbis&quot;" data-width="0" data-height="0"></audio></span></span>
+</p>
 !! end
 
 !! test
@@ -171,6 +174,8 @@ Video with a transcoded source
 [[File:Transcode.webm|thumb|Hello]]
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:File/Thumb"><span><video poster="http://example.com/images/thumb/0/09/Transcode.webm/180px--Transcode.webm.jpg" controls="" preload="none" data-mw-tmh="" height="132" width="180" resource="./File:Transcode.webm" data-durationhint="4" class="mw-file-element"><source src="http://example.com/images/0/09/Transcode.webm" type='video/webm; codecs="vp8, vorbis"' data-file-width="492" data-file-height="360"/><source src="http://example.com/images/transcoded/0/09/Transcode.webm/Transcode.webm.240p.vp9.webm" type='video/webm; codecs="vp9, opus"' data-width="328" data-height="240" data-transcodekey="240p.vp9.webm"/></video></span><figcaption>Hello</figcaption></figure>
+!! html/wiki.rs
+<figure class="mw-default-size" typeof="mw:File/Thumb"><span><video id="mwe_player_1" poster="http://example.com/images/thumb/0/09/Transcode.webm/180px--Transcode.webm.jpg" controls="" preload="none" class="mw-file-element" width="180" height="132" data-durationhint="4" resource="/wiki/File:Transcode.webm"><source src="http://example.com/images/0/09/Transcode.webm" type="video/webm; codecs=&quot;vp8, vorbis&quot;" data-width="492" data-height="360"><source src="http://example.com/images/transcoded/0/09/Transcode.webm/Transcode.webm.240p.vp9.webm" type="video/webm; codecs=&quot;vp9, opus&quot;" data-width="328" data-height="240" data-transcodekey="240p.vp9.webm"></video></span><figcaption>Hello</figcaption></figure>
 !! end
 
 !! test

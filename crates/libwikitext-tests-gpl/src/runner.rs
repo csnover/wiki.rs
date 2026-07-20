@@ -8,7 +8,9 @@ use libmisc::CowExt as _;
 use libphp_rs::{DateTime, strtr};
 use libwikitext_common::{
     Messages,
-    db::{Article, DynDatabaseProvider, FileMetadata, MockDatabase},
+    db::{
+        Article, DynDatabaseProvider, FileMediaFormat, FileMediaSource, FileMetadata, MockDatabase,
+    },
     title::Title,
     url::Url,
 };
@@ -369,17 +371,39 @@ fn load_files(db: &mut MockDatabase<'_>) {
     db.insert_file(
         "Video.ogv",
         FileMetadata::Video {
+            format: FileMediaFormat::Theora,
+            duration: 131.0 / 30.0,
             height: 240,
+            sources: vec![],
             width: 320,
         },
     );
-    db.insert_file("Audio.oga", FileMetadata::Audio);
+    db.insert_file(
+        "Audio.oga",
+        FileMetadata::Audio {
+            format: FileMediaFormat::Vorbis,
+            duration: 23.97 / 24.0,
+        },
+    );
     db.insert_file(
         "LoremIpsum.djvu",
         FileMetadata::Image {
             height: 3508,
             scalable: false,
             width: 2480,
+        },
+    );
+    db.insert_file(
+        "Transcode.webm",
+        FileMetadata::Video {
+            format: FileMediaFormat::Vp8,
+            duration: 4.0,
+            height: 360,
+            sources: vec![FileMediaSource {
+                format: FileMediaFormat::Vp9,
+                height: 240,
+            }],
+            width: 492,
         },
     );
 }
@@ -789,6 +813,21 @@ fn check_test_results(
                 }
             }
 
+            if fail && let Cow::Owned(expected_html) = mw_data_attr(expected_html) {
+                heuristic = "unpretty + mw data attr";
+                fail = expected_html != actual;
+
+                if fail && let Cow::Owned(expected_html) = devoid(&expected_html) {
+                    heuristic = "unpretty + mw data attr + devoid";
+                    fail = expected_html != actual;
+
+                    if fail && let Cow::Owned(expected_html) = gallery_styles(&expected_html) {
+                        heuristic = "unpretty + mw data attr + devoid + gallery styles";
+                        fail = expected_html != actual;
+                    }
+                }
+            }
+
             if !fail {
                 log::info!(target: target, "Passed using the {heuristic} heuristic");
             }
@@ -1013,6 +1052,12 @@ fn gallery_styles(html: &str) -> Cow<'_, str> {
         Regex::new(r#"(<li class="gallerybox"|<div class="thumb") style="[^"]+""#).unwrap()
     });
     RE_STYLES.replace_all(html, "$1")
+}
+
+fn mw_data_attr(html: &str) -> Cow<'_, str> {
+    static RE_MW_DATA: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#" data-mw[^"]+"[^"]*""#).unwrap());
+    RE_MW_DATA.replace_all(html, "")
 }
 
 fn replace_url(html: &str) -> Cow<'_, str> {

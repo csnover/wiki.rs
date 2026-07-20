@@ -8,13 +8,13 @@ use super::{
 };
 use crate::transform::tokenise;
 use core::{convert::Infallible, fmt::Write as _};
-use libmisc::CowExt as _;
+use libmisc::{CowExt as _, svg::ValueDisplay as _};
 use libwikitext_common::{
     db::{DatabaseProvider, FileMetadata},
     make_url,
     title::{Namespace, Title},
     url::Url,
-    url_decode,
+    url_decode, url_encode,
 };
 use libwikitext_parse::{Argument, Spanned, Token, borrow_fastest};
 use std::borrow::Cow;
@@ -106,8 +106,8 @@ pub(super) struct Options<'a> {
     class: Option<Cow<'a, str>>,
     /// If `true`, show controls on image… videos and audio.
     controls: bool,
-    /// The playback end time for a video… er… image.
-    end: Option<Cow<'a, str>>,
+    /// The playback end time for a video… er… image, in seconds.
+    end: Option<f32>,
     /// The intended format of the image.
     pub frame: Option<FrameKind<'a>>,
     /// The height override for the image.
@@ -137,12 +137,13 @@ pub(super) struct Options<'a> {
     /// height-dimension and make the sizes of a thumbnail `srcset` 1.5x larger
     /// than normal.
     pub scale: Option<u8>,
-    /// The playback start time for a video… er… image.
-    start: Option<Cow<'a, str>>,
+    /// The playback start time for a video… er… image, in seconds.
+    start: Option<f32>,
     /// The target of the image.
     pub target: LinkKind<'a>,
-    /// The timestamp to extract and render as a still from a video file.
-    thumbtime: Option<Cow<'a, str>>,
+    /// The timestamp to extract and render as a still from a video file, in
+    /// seconds.
+    thumbtime: Option<f32>,
     /// “Resizes an image to a multiple of the user’s thumbnail size
     /// preferences”.
     upright: Option<Upright>,
@@ -525,16 +526,13 @@ fn div_round(n: u32, d: u32) -> u32 {
     q + u32::from(r << 1 >= d)
 }
 
-/// Gets the appropriate metadata from `file` and `thumb` for rendering an
-/// image, or `None` if an image cannot be rendered.
-#[rustfmt::skip]
-fn image_metadata(file: Option<FileMetadata>, thumb: Option<FileMetadata>) -> Option<(Dims, bool)> {
-    if matches!(file, Some(FileMetadata::Image { .. })) {
-        match thumb {
-            None | Some(FileMetadata::Audio) => None,
-            Some(FileMetadata::Image { height, scalable, width }) => Some(((width, height), scalable)),
-            Some(FileMetadata::Video { height, width }) => Some(((width, height), false)),
-        }
+/// Gets the appropriate metadata from `thumb` for rendering an image, or `None`
+/// if an image cannot be rendered.
+fn image_metadata(thumb: Option<&FileMetadata>) -> Option<(Dims, bool)> {
+    if let Some(thumb) = thumb
+        && thumb.is_image()
+    {
+        thumb.dims().map(|dims| (dims, thumb.is_scalable()))
     } else {
         None
     }
@@ -645,9 +643,9 @@ pub(super) fn media_options<'s>(
 
 /// Gets the HTML tag associated with a kind of media.
 #[inline]
-fn media_tag_name(meta: FileMetadata) -> &'static str {
+fn media_tag_name(meta: &FileMetadata) -> &'static str {
     match meta {
-        FileMetadata::Audio => "audio",
+        FileMetadata::Audio { .. } => "audio",
         FileMetadata::Image { .. } => "img",
         FileMetadata::Video { .. } => "video",
     }
@@ -728,13 +726,13 @@ fn option_arg<'s>(
             options.height = height;
         }
     } else if key.contains(&"timedmedia_disablecontrols") {
-        options.controls = false;
+        // This is a no-op
     } else if key.contains(&"timedmedia_endtime") {
-        options.end = Some(arg);
+        options.end = parse_time_string(&arg, None);
     } else if key.contains(&"timedmedia_starttime") {
-        options.start = Some(arg);
+        options.start = parse_time_string(&arg, None);
     } else if key.contains(&"timedmedia_thumbtime") {
-        options.thumbtime = Some(arg);
+        options.thumbtime = parse_time_string(&arg, None);
     } else if for_gallery {
         option_caption(state, sp, options, raw_arg, for_gallery)?;
     } else {
@@ -1078,10 +1076,12 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
     out.next.tag_attribute_end("typeof");
     out.next.tag_start_end(tag_name);
 
-    if let Some((dims, scalable)) = image_metadata(file, thumb) {
+    if let Some(file) = thumb.or(file)
+        && file.is_timed_media()
+    {
+        render_timed_media(&mut out.next, state, options, &file.clone());
+    } else if let Some((dims, scalable)) = image_metadata(thumb) {
         render_image(&mut out.next, state, options, dims, scalable);
-    } else if let Some(file @ (FileMetadata::Audio | FileMetadata::Video { .. })) = file {
-        render_timed_media(&mut out.next, state, options, file);
     } else {
         state
             .globals
@@ -1104,53 +1104,213 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
 }
 
 /// Renders an audio or video tag.
-// TODO: This is even more bogus than the image tags; this does not even *use*
-// most of the timed media options.
 fn render_timed_media<S: Sink + ?Sized>(
     out: &mut S,
     state: &mut State<'_, '_, '_>,
     options: &Options<'_>,
-    media: FileMetadata,
+    media: &FileMetadata,
 ) {
+    // if media.is_video() && options.thumb_key().is_some() {
+    //     if let Some(title) = options.thumb() && let Ok(Some(file)) = state.statics.db.metadata(title) && let Some(dims) = file.dims() {
+    //         render_image(out, state, options, dims, false);
+    //     } else {
+    //         render_broken(out, state, options);
+    //     }
+    //     return;
+    // }
+
+    state.globals.timed_media_ordinal += 1;
+    let id = state.globals.timed_media_ordinal;
+
+    let target = options.thumb().unwrap();
+    let max_duration = media.duration().map_or(0.0, |time| time - 1.0);
+
+    let dims @ (native_width, native_height) = media.dims().unwrap_or_default();
+    let (width, height) = if media.is_audio() {
+        (
+            options.width.unwrap_or_else(|| default_thumb_limit(state)),
+            0,
+        )
+    } else {
+        let preferred_width = calc_preferred_width(state, options, native_width, false);
+        calc_image_dims(preferred_width, options.height, None, dims)
+    };
+
+    out.tag_start_full("span");
+
     out.tag_start(media_tag_name(media));
+
+    out.tag_attribute_start("id");
+    out.text("mwe_player_");
+    out.text(&id.to_string());
+    out.tag_attribute_end("id");
+
+    let base_name = target.text();
+
+    let thumb_src = make_media_url(
+        &state.statics.base_uri,
+        &format!("{}/thumb", state.statics.paths.media),
+        base_name,
+    );
+    out.tag_attribute_start("poster");
+    out.text(&thumb_src);
+    out.text("/");
+    out.text(&width.to_string());
+    out.text("px-");
+    if let Some(time) = options.thumbtime.or(options.start) {
+        out.text(&url_encode("seek="));
+        out.text(&url_encode(&time.min(max_duration).v_precision(3)));
+    }
+    out.text("-");
+    out.text(base_name);
+    out.text(".jpg");
+    out.tag_attribute_end("poster");
+
     if options.controls {
         out.tag_attribute_full("controls", "");
     }
-    if matches!(media, FileMetadata::Audio) {
-        out.tag_attribute_full("height", "23");
-        out.tag_attribute_full("width", &options.width.unwrap_or(300).min(35).to_string());
-    } else {
-        if let Some(height) = options.height {
-            out.tag_attribute_full("height", &height.to_string());
-        }
-        if let Some(width) = options.width {
-            out.tag_attribute_full("width", &width.to_string());
-        }
+
+    out.tag_attribute_full("preload", "none");
+    if options.muted {
+        out.tag_attribute_full("muted", "");
     }
     if options.r#loop {
         out.tag_attribute_full("loop", "");
     }
-    if options.muted {
-        out.tag_attribute_full("muted", "");
+    out.tag_attribute_full("data-mw-tmh", "");
+    out.tag_attribute_full("class", "mw-file-element");
+    if width != 0 {
+        out.tag_attribute_full("width", &width.to_string());
     }
-    if matches!(media, FileMetadata::Video { .. })
-        && let Some(FrameKind::Thumb(Some(FrameTitle::Valid(title)))) = &options.frame
-    {
-        let src = make_media_url(
-            &state.statics.base_uri,
-            state.statics.paths.media,
-            &title.text_url(),
-        );
-        out.tag_attribute_full("poster", &src);
+    if height != 0 {
+        out.tag_attribute_full("height", &height.to_string());
     }
+    if let Some(time) = media.duration() {
+        out.tag_attribute_full("data-durationhint", &time.ceil().to_string());
+    }
+    out.tag_attribute_full("data-mwtitle", base_name);
+    out.tag_attribute_full("data-mwprovider", "local");
+
+    if matches!(options.frame, Some(FrameKind::Thumb(..))) {
+        let href = resource_url(state, &options.target, None);
+        out.tag_attribute_full("resource", &href);
+    }
+
+    out.tag_start_end(media_tag_name(media));
+
     let src = make_media_url(
         &state.statics.base_uri,
         state.statics.paths.media,
-        &options.target.title().unwrap().text_url(),
+        &target.text_url(),
     );
-    out.tag_attribute_full("src", &src);
-    out.tag_start_end(media_tag_name(media));
+    let start = options.start.map(|start| start.min(max_duration));
+    let end = options.end.map(|end| end.min(max_duration));
+    render_timed_media_source(out, &src, start, end, media.mime(), None, dims);
+
+    for source in media.sources() {
+        let src = make_media_url(
+            &state.statics.base_uri,
+            &format!("{}/transcoded", state.statics.paths.media),
+            &target.text_url(),
+        );
+
+        let key = source.key();
+
+        let width = source.height * native_width / native_height;
+        render_timed_media_source(
+            out,
+            &src,
+            start,
+            end,
+            Some(source.mime()),
+            Some((&target.text_url(), &key)),
+            (width, source.height),
+        );
+    }
+
     out.tag_end(media_tag_name(media));
+    out.tag_end("span");
+}
+
+/// Renders a `<source>` element for timed media with the given `src` and native
+/// dimensions, optional `start` and `end` times, and optional `mime` type.
+fn render_timed_media_source<S: Sink + ?Sized>(
+    out: &mut S,
+    src: &str,
+    start: Option<f32>,
+    end: Option<f32>,
+    mime: Option<&str>,
+    key: Option<(&str, &str)>,
+    (native_width, native_height): Dims,
+) {
+    out.tag_start("source");
+
+    out.tag_attribute_start("src");
+    out.text(src);
+    if let Some((base_name, key)) = key {
+        out.text("/");
+        out.text(base_name);
+        out.text(".");
+        out.text(key);
+    }
+    if let Some(start) = start {
+        out.text("#t=");
+        out.text(&make_time_string(start));
+    }
+    if let Some(end) = end {
+        if start.is_none() {
+            out.text("#t=0");
+        }
+        out.text(",");
+        out.text(&make_time_string(end));
+    }
+    out.tag_attribute_end("src");
+
+    if let Some(mime) = mime {
+        out.tag_attribute_full("type", mime);
+    }
+
+    out.tag_attribute_full("data-width", &native_width.to_string());
+    out.tag_attribute_full("data-height", &native_height.to_string());
+    if let Some((_, key)) = key {
+        out.tag_attribute_full("data-transcodekey", key);
+    }
+
+    // This is a void tag
+    out.tag_start_end("source");
+}
+
+/// Parses a `h:m:s` time string into a duration, in seconds.
+fn parse_time_string(s: &str, max: Option<f32>) -> Option<f32> {
+    let mut time = 0.0;
+    let mut parts = s.splitn(4, ':');
+    for part in parts.by_ref().take(3) {
+        let part = part.parse::<f32>().ok()?;
+        time *= 60.0;
+        time += part;
+    }
+    if parts.next().is_some() {
+        None
+    } else if let Some(max) = max {
+        Some(time.ceil().min(max - 1.0))
+    } else {
+        Some(((time * 1000.0).round() / 1000.0).max(0.0))
+    }
+}
+
+/// Converts a duration, in seconds, to an `h:m:s[.ms]` string.
+#[expect(clippy::cast_possible_truncation, reason = "truncation is desired")]
+fn make_time_string(time: f32) -> String {
+    let h = time as i32 / 3600;
+    let m = (time as i32 / 60) % 60;
+    let s = time as i32 % 60;
+    let ms = (time * 1000.0).round() as i32 % 1000;
+    let ms = if ms == 0 {
+        format_args!("")
+    } else {
+        format_args!(".{ms:03}")
+    };
+    format!("{h:02}:{m:02}:{s:02}{ms}")
 }
 
 /// Resolves a media redirect for `title`.

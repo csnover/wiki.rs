@@ -37,6 +37,18 @@ pub trait ValueDisplay {
     fn v_precision(self, precision: u8) -> String;
 }
 
+impl ValueDisplay for f32 {
+    fn v_precision(self, precision: u8) -> String {
+        let precision = 10.0_f32.powi(precision.into());
+        let v = (self * precision).round() / precision;
+        if v == -0.0 {
+            "0".to_owned()
+        } else {
+            format!("{v}")
+        }
+    }
+}
+
 impl ValueDisplay for f64 {
     fn v_precision(self, precision: u8) -> String {
         let precision = 10.0_f64.powi(precision.into());

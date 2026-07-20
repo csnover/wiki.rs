@@ -518,7 +518,9 @@ static ALLOWED_ATTRS: phf::Map<&str, &[&phf::Set<&str>]> = phf::phf_map! {
     ],
     "video" => &[
         &COMMON_ATTRS,
-        &phf::phf_set! { "controls", "height", "poster", "preload", "width" }
+        // MediaWiki does not allow muted and loop, but there is no reason not
+        // to, and timed media emits HTML with these attributes
+        &phf::phf_set! { "controls", "height", "muted", "loop", "poster", "preload", "width" }
     ],
 };
 

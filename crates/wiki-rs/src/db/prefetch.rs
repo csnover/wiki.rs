@@ -230,7 +230,7 @@ impl DatabaseProvider for PrefetchableDatabase<'_> {
     }
 
     #[inline]
-    fn metadata(&self, _: &Title) -> Result<Option<FileMetadata>, Self::Error> {
+    fn metadata(&self, _: &Title) -> Result<Option<&FileMetadata>, Self::Error> {
         Ok(None)
     }
 
