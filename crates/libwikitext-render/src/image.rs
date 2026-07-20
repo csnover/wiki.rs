@@ -284,6 +284,19 @@ impl Options<'_> {
         }
     }
 
+    /// The title key for the file used for the thumbnail. This title may be
+    /// invalid.
+    #[inline]
+    fn thumb_key(&self) -> Option<&str> {
+        match &self.frame {
+            Some(FrameKind::Thumb(Some(title))) => Some(match title {
+                FrameTitle::Invalid(title) => title,
+                FrameTitle::Valid(title) => title.key(),
+            }),
+            _ => None,
+        }
+    }
+
     /// Returns the upright scaling for this image, if any.
     fn upright(&self) -> Option<Upright> {
         if matches!(self.frame, None | Some(FrameKind::Frame)) || self.width.is_some() {
@@ -834,7 +847,7 @@ fn render_broken<S: Sink + ?Sized>(
     }
     out.tag_start_end("span");
 
-    if let Some(FrameKind::Thumb(Some(FrameTitle::Invalid(bad_title)))) = &options.frame {
+    if let Some(bad_title) = options.thumb_key() {
         let text = state
             .statics
             .messages
@@ -1017,7 +1030,7 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
     }
 
     let thumb = if let Some(thumb) = options.thumb() {
-        state.statics.db.metadata(thumb)?.or(file)
+        state.statics.db.metadata(thumb)?
     } else {
         None
     };
@@ -1070,6 +1083,10 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
     } else if let Some(file @ (FileMetadata::Audio | FileMetadata::Video { .. })) = file {
         render_timed_media(&mut out.next, state, options, file);
     } else {
+        state
+            .globals
+            .categories
+            .tracking(&state.statics.messages, "broken-file-category")?;
         render_broken(&mut out.next, state, options);
     }
 
