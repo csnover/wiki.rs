@@ -1,7 +1,7 @@
 //! Code for handling MediaWiki images.
 
 use super::{
-    Result, StackFrame, State, StripMarker, Surrogate as _,
+    Result, StackFrame, State, StripMarker, Surrogate as _, add_tracking_category,
     document::{Document, DocumentSink},
     tags::{self, LinkKind, LinkKindOptions},
     transform::{ReplaceTextDictionary, Sink},
@@ -712,10 +712,7 @@ fn option_arg<'s>(
         options.upright = Some(Upright::Value(value));
     } else if key.contains(&"img_width") {
         if arg.ends_with("px") {
-            state
-                .globals
-                .categories
-                .tracking(&state.statics.messages, "double-px-category")?;
+            add_tracking_category(state, sp, "double-px-category")?;
         }
 
         let (width, height) = parse_dims(&arg);
@@ -1083,10 +1080,7 @@ pub(super) fn render_media_with_options<S: DocumentSink>(
     } else if let Some((dims, scalable)) = image_metadata(thumb) {
         render_image(&mut out.next, state, options, dims, scalable);
     } else {
-        state
-            .globals
-            .categories
-            .tracking(&state.statics.messages, "broken-file-category")?;
+        add_tracking_category(state, sp, "broken-file-category")?;
         render_broken(&mut out.next, state, options);
     }
 

@@ -35,8 +35,9 @@ use libwikitext_common::{
     FormatMessageError, FormatNumberError, Messages,
     config::Configuration,
     db::{Article, BoxedDbError, DynDatabaseProvider, resolve_redirects},
+    format_raw_message,
     lru_limiter::ByMemoryUsage,
-    title::Title,
+    title::{Namespace, Title},
     url::Url,
 };
 use libwikitext_convert::{Converter, converter_or_default};
@@ -822,6 +823,56 @@ impl ArticleState {
             variables: <_>::default(),
         }
     }
+}
+
+/// Adds a tracking `category` for the current page.
+fn add_tracking_category(
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    category: &str,
+) -> Result {
+    let mut title = String::new();
+    eval_message(&mut title, state, sp, category, |_, _| Ok::<_, Error>(None))?;
+    if title != "-" {
+        if let Ok(title) = Title::new(state.statics.db.config(), &title, Some(Namespace::CATEGORY))
+        {
+            state.globals.categories.insert(&title);
+        } else {
+            // Logging is what MediaWiki does in this situation also, for better
+            // or worse
+            log::warn!("Invalid tracking category title: {title:?}");
+        }
+    }
+    Ok(())
+}
+
+/// Evaluates an interface message with the given `message_id`, using `f` as the
+/// callback for argument replacements.
+fn eval_message<'a, F, E>(
+    out: &mut String,
+    state: &mut State<'_, '_, '_>,
+    sp: &StackFrame<'_>,
+    message_id: &str,
+    mut f: F,
+) -> Result
+where
+    F: FnMut(&mut State<'_, '_, '_>, &str) -> Result<Option<Cow<'a, str>>, E>,
+    Error: From<E>,
+{
+    let message = state
+        .statics
+        .messages
+        .find_or_default([message_id], None, true)?;
+    let message = format_raw_message(&message, |key| f(state, key))?;
+    let title = Title::new(
+        state.statics.db.config(),
+        message_id,
+        Some(Namespace::MEDIAWIKI),
+    )?;
+    let sp = sp.chain(title, FileMap::new(&message), &[])?;
+    let root = state.statics.parser.preprocess(&sp.source, true)?;
+    ExpandTemplates::new(out, ExpandMode::Include).adopt_output(state, &sp, &root)?;
+    Ok(())
 }
 
 /// Evaluates the given `source` in the context of the given `sp`, returning

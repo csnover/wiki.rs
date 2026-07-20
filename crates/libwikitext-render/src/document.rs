@@ -1,7 +1,7 @@
 //! The root of a Wikitext document.
 
 use super::{
-    Error, LinkKind, Result, State, StripMarker,
+    Error, LinkKind, Result, State, StripMarker, add_tracking_category,
     emitters::{ListEmitter, TableState, TextStyleEmitter},
     extension_tags,
     globals::Outline,
@@ -277,17 +277,14 @@ where
     fn adopt_behavior_switch(
         &mut self,
         state: &mut State<'_, '_, '_>,
-        _sp: &StackFrame<'_>,
+        sp: &StackFrame<'_>,
         _span: Span,
         name: &str,
     ) -> Result {
         self.flush_after_table();
         match name {
             "hiddencat" if state.globals.title.is_in_namespace(Namespace::CATEGORY) => {
-                state
-                    .globals
-                    .categories
-                    .tracking(&state.statics.messages, "hidden-category-category")?;
+                add_tracking_category(state, sp, "hidden-category-category")?;
             }
             _ => log::warn!("TODO: BehaviorSwitch __{name}__"),
         }
@@ -745,11 +742,7 @@ where
             }
         };
 
-        state
-            .globals
-            .categories
-            .tracking(&state.statics.messages, tracking)?;
-
+        add_tracking_category(state, sp, tracking)?;
         tags::render_start_link(&mut self.next, state, &link, false);
         self.next.text(&content);
         self.next.tag_end("a");

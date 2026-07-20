@@ -1,15 +1,8 @@
 //! Collections for semi-structured article data.
 
-use super::{Error, Result};
 use core::fmt;
 use libmisc::to_ascii_lower;
-use libwikitext_common::{
-    Messages,
-    db::DatabaseProvider,
-    make_url,
-    title::{Namespace, Title},
-    url::Url,
-};
+use libwikitext_common::{make_url, title::Title, url::Url};
 use libwikitext_parse::HeadingLevel;
 use std::{
     borrow::Cow,
@@ -65,21 +58,6 @@ impl Categories {
     /// Returns the number of categories.
     pub fn len(&self) -> usize {
         self.0.len()
-    }
-
-    /// Adds a tracking category using `messages` with the given `key`.
-    pub(super) fn tracking<Db>(&mut self, messages: &Messages<'_, Db>, key: &str) -> Result
-    where
-        Db: DatabaseProvider,
-        Error: From<Db::Error>,
-    {
-        if let Some(tracking) = messages.get_raw(key, None, true)?
-            && tracking != "-"
-        {
-            let title = Title::new(messages.db().config(), &tracking, Some(Namespace::CATEGORY))?;
-            self.insert(&title);
-        }
-        Ok(())
     }
 }
 

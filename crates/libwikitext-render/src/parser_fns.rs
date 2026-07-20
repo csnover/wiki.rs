@@ -8,12 +8,11 @@
 )]
 
 use super::{
-    Error, PluginResult, PluginState, Result, State, StripMarker,
-    expand_templates::{ExpandMode, ExpandTemplates},
+    Error, PluginResult, PluginState, Result, State, StripMarker, add_tracking_category,
+    eval_message,
     extension_tags::{self, eval_string},
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     strip_graf,
-    surrogate::Surrogate as _,
     tags::{LinkKind, render_start_link},
     template::call_module,
     transform::{Accumulator, Sink as _},
@@ -37,14 +36,13 @@ use libwikitext_common::{
     AnchorEncodeMode, Messages, bcp47_to_lang,
     config::{Configuration, SpecialPages},
     db::{Article, BoxedDbError, DatabaseProvider},
-    decode_html, format_date_mediawiki, format_raw_message, lang_to_bcp47, make_url,
-    parse_formatted_number,
+    decode_html, format_date_mediawiki, lang_to_bcp47, make_url, parse_formatted_number,
     title::{Namespace, Title},
     url::Url,
     url_encode,
 };
 use libwikitext_common_gpl::expr;
-use libwikitext_parse::{FileMap, Span, strip};
+use libwikitext_parse::{Span, strip};
 use regex::Regex;
 use std::{
     borrow::Cow,
@@ -981,16 +979,12 @@ mod string {
             config.languages.get(config.language)
         };
 
-        if language.is_none() {
-            state
-                .globals
-                .categories
-                .tracking(&state.statics.messages, "bad-language-code-category")?;
-        }
-
         if language.is_some_and(|language| language.is_rtl) {
             write!(out, "rtl")?;
         } else {
+            if language.is_none() {
+                add_tracking_category(state, arguments.sp, "bad-language-code-category")?;
+            }
             write!(out, "ltr")?;
         }
 
@@ -1108,22 +1102,10 @@ mod string {
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
         if let Some(which) = arguments.eval(state, 0)?.map(trim) {
-            let message = state
-                .statics
-                .messages
-                .find_or_default([which.as_ref()], None, true)?;
-            let message = format_raw_message(&message, |key| {
+            eval_message(out, state, arguments.sp, &which, |state, key| {
                 let index = key.parse::<usize>().unwrap();
                 arguments.eval(state, index)
             })?;
-            let title = Title::new(
-                state.statics.db.config(),
-                &which,
-                Some(Namespace::MEDIAWIKI),
-            )?;
-            let sp = arguments.sp.chain(title, FileMap::new(&message), &[])?;
-            let root = state.statics.parser.preprocess(&sp.source, true)?;
-            ExpandTemplates::new(out, ExpandMode::Include).adopt_output(state, &sp, &root)?;
         }
         Ok(())
     }
