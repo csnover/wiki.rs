@@ -81,9 +81,7 @@ fn call_parser_function(
 
         let (callee, first) = name
             .split_once(':')
-            .map_or((name.to_lowercase(), None), |(callee, first)| {
-                (callee.to_lowercase(), Some(first))
-            });
+            .map_or((name, None), |(callee, first)| (callee, Some(first)));
         if let Some(first) = first {
             args.insert(
                 0,
@@ -94,7 +92,7 @@ fn call_parser_function(
             );
         }
 
-        Ok((frame_id.to_owned(), callee, args))
+        Ok((frame_id.to_owned(), callee.to_owned(), args))
     })?;
 
     with_sp(&frame_id, sp, |sp| {
