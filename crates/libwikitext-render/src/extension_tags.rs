@@ -1405,49 +1405,37 @@ fn syntax_highlight(
         body.trim_start_matches('\n').trim_ascii_end()
     };
 
-    // To prevent graf wrapping, wrap the contents in a strip marker. The MW
-    // extension does this.
-    let mut no_graf_hack = String::new();
-
-    let target = if is_inline {
-        &mut *out
-    } else {
-        &mut no_graf_hack
-    };
+    // TODO: To prevent graf wrapping, MW wraps the contents in a nowiki strip
+    // marker. This actually does not work right now because the recursive
+    // unstripping of markers in `Document` means that nested nowiki get
+    // unstripped at the same time as general markers get unstripped. This
+    // probably wrecks some other edge cases and needs to be fixed eventually,
+    // but in the meantime, a less accurate but probably less stupid alternative
+    // is used where newlines are replaced by `<br>`.
 
     let mut highlighter = syntect::easy::HighlightLines::new(syntax, &THEME);
     for line in syntect::util::LinesWithEndings::from(body) {
         let regions = highlighter
-            .highlight_line(
-                if is_inline {
-                    line.trim_end_matches('\n')
-                } else {
-                    line
-                },
-                &SS,
-            )
+            .highlight_line(line.trim_ascii_end(), &SS)
             .map_err(|err| Error::Extension(Box::new(err)))?;
         syntect::html::append_highlighted_html_for_styled_line(
             &regions[..],
             syntect::html::IncludeBackground::No,
-            target,
+            out,
         )
         .map_err(|err| Error::Extension(Box::new(err)))?;
-        if is_inline && line.ends_with('\n') {
-            target.push(' ');
+
+        if line.ends_with('\n') {
+            if is_inline {
+                out.push(' ');
+            } else {
+                *out += "<br>";
+            }
         }
     }
 
-    if target.ends_with('\n') {
-        target.truncate(target.len() - 1);
-    }
-
-    if !is_inline {
-        state.strip_markers.push(
-            out,
-            "syntaxhighlightinner",
-            StripMarker::NoWiki(Cow::Owned(no_graf_hack)),
-        );
+    if out.ends_with("<br>") {
+        out.truncate(out.len() - "<br>".len());
     }
 
     write!(out, "</{tag}>")?;
