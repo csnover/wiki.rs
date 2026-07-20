@@ -130,6 +130,13 @@ pub(super) struct Options<'a> {
     muted: bool,
     /// The page number to extract and render from a DJVU or PDF image.
     page: Option<i32>,
+    /// The thumbnail scale multiplier.
+    ///
+    /// This is a fixed-precision single decimal number. It is used by the
+    /// packed gallery mode and literally nothing else to prefer the
+    /// height-dimension and make the sizes of a thumbnail `srcset` 1.5x larger
+    /// than normal.
+    pub scale: Option<u8>,
     /// The playback start time for a video… er… image.
     start: Option<Cow<'a, str>>,
     /// The target of the image.
@@ -165,6 +172,7 @@ impl Options<'_> {
             lossy: <_>::default(),
             muted: <_>::default(),
             page: <_>::default(),
+            scale: <_>::default(),
             start: <_>::default(),
             target: LinkKind::from_title(target),
             thumbtime: <_>::default(),
@@ -421,20 +429,21 @@ impl Sink for ParseAttr {
 /// Calculates the desired width and height for the image with the native
 /// dimensions `native_width` and `native_height` for the preferred `width`
 /// and optionally preferred `height`.
-fn calc_image_dims(width: u32, height: Option<u32>, (native_width, native_height): Dims) -> Dims {
+fn calc_image_dims(
+    width: u32,
+    height: Option<u32>,
+    scale: Option<u8>,
+    (native_width, native_height): Dims,
+) -> Dims {
     if native_width == 0 || native_height == 0 {
         return (0, 0);
     }
 
     let width = height.map_or(width, |height| {
-        let prefer_height = width * native_height > height * native_width;
+        let prefer_height = scale.is_some() || width * native_height > height * native_width;
         if prefer_height {
-            let best_width = (native_width * height).div_ceil(native_height);
-            if div_round(best_width * native_height, native_width) > height {
-                native_width * height / native_height
-            } else {
-                best_width
-            }
+            let (scale, scale_div) = scale.map_or((1, 1), |scale| (u32::from(scale), 10));
+            (native_width * height * scale).div_ceil(native_height * scale_div)
         } else {
             width
         }
@@ -452,7 +461,7 @@ fn calc_preferred_width(
     native_width: u32,
     scalable: bool,
 ) -> u32 {
-    if let Some(width) = options.width {
+    let width = if let Some(width) = options.width {
         if scalable || options.frame.is_none() {
             width
         } else {
@@ -473,6 +482,12 @@ fn calc_preferred_width(
         .min(native_width)
     } else {
         native_width
+    };
+
+    if let Some(scale) = options.scale {
+        div_round(u32::from(scale) * width, 10)
+    } else {
+        width
     }
 }
 
@@ -541,11 +556,13 @@ pub(super) fn make_media_url(base_uri: &Url, media_path: &str, text: &str) -> St
 /// Generates HTML `src` and `srcset` attribute values for an image with the
 /// given `max_width` and `width`, base filename `base_name`, and original scale
 /// URL `src`.
+#[expect(clippy::too_many_arguments, reason = "don’t care")]
 fn make_srcset(
     state: &mut State<'_, '_, '_>,
     base_width: u32,
     preferred_width: u32,
     height: Option<u32>,
+    scale: Option<u8>,
     native_dims @ (max_width, _): Dims,
     base_name: &str,
     src: &str,
@@ -564,6 +581,7 @@ fn make_srcset(
         let (size, _) = calc_image_dims(
             preferred_width * mult,
             height.map(|h| h * mult),
+            scale,
             native_dims,
         );
         let size = div_round(size, 10);
@@ -856,7 +874,12 @@ fn render_image<S: Sink + ?Sized>(
     let (width, height) = if options.is_unscaled() {
         native_dims
     } else {
-        calc_image_dims(preferred_width, options.height, native_dims)
+        calc_image_dims(preferred_width, options.height, options.scale, native_dims)
+    };
+    let (unscaled_width, unscaled_height) = if options.scale.is_some() {
+        calc_image_dims(preferred_width, options.height, None, native_dims)
+    } else {
+        (width, height)
     };
 
     out.tag_start(wrapper);
@@ -888,12 +911,13 @@ fn render_image<S: Sink + ?Sized>(
         state.statics.paths.media,
         &base_name,
     );
-    let (src, srcset) = if !scalable && width < native_width {
+    let (src, srcset) = if !scalable && unscaled_width < native_width {
         make_srcset(
             state,
             width,
             preferred_width,
             options.height,
+            options.scale,
             native_dims,
             &base_name,
             &src,
@@ -911,8 +935,8 @@ fn render_image<S: Sink + ?Sized>(
     }
     out.tag_attribute_full("src", &src);
     out.tag_attribute_full("decoding", "async");
-    out.tag_attribute_full("width", &width.to_string());
-    out.tag_attribute_full("height", &height.to_string());
+    out.tag_attribute_full("width", &unscaled_width.to_string());
+    out.tag_attribute_full("height", &unscaled_height.to_string());
 
     if let Some(upright) = options.upright() {
         out.tag_attribute_start("style");

@@ -111,7 +111,7 @@ use super::{
     image, preprocess_frame,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     surrogate::Surrogate as _,
-    tags::ExternalLinkKind,
+    tags::{ExternalLinkKind, InternalLinkKind},
     transform::{
         Accumulator, AttributeFilter, OutlineGenerator, ReplaceText, ReplaceTextDictionary, Sink,
     },
@@ -370,6 +370,10 @@ fn gallery(
             options.height = Some(body.options.height);
         }
 
+        if body.options.mode.is_packed() {
+            options.scale = Some(15);
+        }
+
         writeln!(out, "\t\t<li class=\"gallerybox\">")?;
 
         let mut outline = <_>::default();
@@ -378,9 +382,20 @@ fn gallery(
 
         writeln!(out, "\t\t\t<div class=\"thumb\">{}</div>", inner.finish())?;
 
-        write!(out, "\t\t\t<div class=\"gallerytext\">")?;
+        write!(out, "\t\t\t")?;
+        if body.options.mode.is_overlay() {
+            write!(out, r#"<div class="gallerytextwrapper">"#)?;
+        }
+        write!(out, "<div class=\"gallerytext\">")?;
         if body.show_filename {
-            let href = image::resource_url(state, &options.target, None);
+            let target = if let Some(title) = options.target.title()
+                && let Cow::Owned(title) = image::resolve_media(&state.statics.db, title)?
+            {
+                Cow::Owned(LinkKind::Internal(title, InternalLinkKind::Redirect))
+            } else {
+                Cow::Borrowed(&options.target)
+            };
+            let href = image::resource_url(state, &target, None);
 
             let mut acc = Accumulator::new();
             acc.tag_start("a");
@@ -394,7 +409,7 @@ fn gallery(
                 acc.text(" galleryfilename-truncate");
             }
             acc.tag_attribute_end("class");
-            let title = options.target.title().unwrap();
+            let title = target.title().unwrap();
             acc.tag_attribute_full("title", title.key());
             acc.tag_start_end("a");
             acc.text(title.text());
@@ -409,7 +424,11 @@ fn gallery(
             *out += &inner.finish();
         }
 
-        writeln!(out, "</div>\n\t\t</li>")?;
+        writeln!(out, "</div>")?;
+        if body.options.mode.is_overlay() {
+            writeln!(out, "\t\t\t</div>")?;
+        }
+        writeln!(out, "\t\t</li>")?;
     }
     write!(out, "</ul>")?;
 

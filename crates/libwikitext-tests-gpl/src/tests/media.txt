@@ -3065,6 +3065,13 @@ File:Foobar.jpg
 <ul class="gallery mw-gallery-packed" typeof="mw:Extension/gallery" about="#mwt3" data-mw='{"name":"gallery","attrs":{"mode":"packed"},"body":{}}'>
 <li class="gallerybox" style="width: 1061.3333333333px;"><div class="thumb" style="width: 1059.3333333333px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/1589px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="120" width="1060" srcset="http://example.com/images/3/3a/Foobar.jpg 1.5x, http://example.com/images/3/3a/Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext"></div></li>
 </ul>
+!! html/wiki.rs # This output matches the PHP parser, minus styles, and with insufferable rounding differences because PHP takes a totally separate code path
+<ul class="gallery mw-gallery-packed">
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/1589px-Foobar.jpg" decoding="async" width="1059" height="120" class="mw-file-element" srcset="http://example.com/images/3/3a/Foobar.jpg 1.5x"></a></span></div>
+			<div class="gallerytext"></div>
+		</li>
+</ul>
 !! end
 
 !! test
@@ -3090,6 +3097,17 @@ File:Tall.jpg
 <li class="gallerybox" style="width: 620px;"><div class="thumb" style="width: 618px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/927px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="70" width="618" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/1394px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/1853px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext"></div></li>
 <li class="gallerybox" style="width: 62px;"><div class="thumb" style="width: 60px;"><span typeof="mw:File"><a href="./File:Tall.jpg" class="mw-file-description"><img resource="./File:Tall.jpg" src="http://example.com/images/thumb/8/88/Tall.jpg/70px-Tall.jpg" decoding="async" data-file-width="400" data-file-height="600" data-file-type="bitmap" height="70" width="47" srcset="http://example.com/images/thumb/8/88/Tall.jpg/105px-Tall.jpg 1.5x, http://example.com/images/thumb/8/88/Tall.jpg/140px-Tall.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext"></div></li>
 </ul>
+!! html/wiki.rs # This output matches the PHP parser, minus styles, and with insufferable rounding differences because PHP takes a totally separate code path
+<ul class="gallery mw-gallery-packed">
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/927px-Foobar.jpg" decoding="async" width="618" height="70" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/1390px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/1853px-Foobar.jpg 2x"></a></span></div>
+			<div class="gallerytext"></div>
+		</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Tall.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/8/88/Tall.jpg/70px-Tall.jpg" decoding="async" width="47" height="71" class="mw-file-element" srcset="http://example.com/images/thumb/8/88/Tall.jpg/105px-Tall.jpg 1.5x, http://example.com/images/thumb/8/88/Tall.jpg/140px-Tall.jpg 2x"></a></span></div>
+			<div class="gallerytext"></div>
+		</li>
+</ul>
 !! end
 
 !! test
@@ -3112,6 +3130,15 @@ File:Foobar.jpg|foo
 <li class="gallerycaption">Packed Overlay!</li>
 <li class="gallerybox" style="width: 1061.3333333333px;"><div class="thumb" style="width: 1059.3333333333px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description" title="foo"><img alt="foo" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/1589px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="120" width="1060" srcset="http://example.com/images/3/3a/Foobar.jpg 1.5x, http://example.com/images/3/3a/Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytextwrapper" style="width: 1040px;"><div class="gallerytext">foo</div></div></li>
 </ul>
+!! html/wiki.rs # This output matches the PHP parser, minus styles, and with insufferable rounding differences because PHP takes a totally separate code path
+<ul class="gallery mw-gallery-packed-overlay">
+	<li class="gallerycaption">Packed Overlay!</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="foo"><img alt="foo" src="http://example.com/images/thumb/3/3a/Foobar.jpg/1589px-Foobar.jpg" decoding="async" width="1059" height="120" class="mw-file-element" srcset="http://example.com/images/3/3a/Foobar.jpg 1.5x"></a></span></div>
+			<div class="gallerytextwrapper"><div class="gallerytext">foo</div>
+			</div>
+		</li>
+</ul>
 !! end
 
 !! test
@@ -3133,6 +3160,15 @@ File:Foobar.jpg|foo
 <ul class="gallery mw-gallery-packed-hover" typeof="mw:Extension/gallery" about="#mwt3" data-mw='{"name":"gallery","attrs":{"mode":"packed-hover","showfilenames":"yes"},"body":{}}'>
 <li class="gallerycaption">Packed Hover!</li>
 <li class="gallerybox" style="width: 1061.3333333333px;"><div class="thumb" style="width: 1059.3333333333px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description" title="foo"><img alt="foo" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/1589px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="120" width="1060" srcset="http://example.com/images/3/3a/Foobar.jpg 1.5x, http://example.com/images/3/3a/Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytextwrapper" style="width: 1040px;"><div class="gallerytext">foo</div></div></li>
+</ul>
+!! html/wiki.rs # This output matches the PHP parser, minus styles, and with insufferable rounding differences because PHP takes a totally separate code path
+<ul class="gallery mw-gallery-packed-hover">
+	<li class="gallerycaption">Packed Hover!</li>
+		<li class="gallerybox">
+			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="foo"><img alt="foo" src="http://example.com/images/thumb/3/3a/Foobar.jpg/1589px-Foobar.jpg" decoding="async" width="1059" height="120" class="mw-file-element" srcset="http://example.com/images/3/3a/Foobar.jpg 1.5x"></a></span></div>
+			<div class="gallerytextwrapper"><div class="gallerytext">foo</div>
+			</div>
+		</li>
 </ul>
 !! end
 

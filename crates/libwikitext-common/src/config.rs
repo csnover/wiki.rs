@@ -352,15 +352,24 @@ impl GalleryMode {
     }
 
     /// Returns true if this is a “packed” gallery mode.
+    #[inline]
     #[must_use]
     pub fn is_packed(self) -> bool {
         matches!(self, Self::Packed | Self::PackedHover | Self::PackedOverlay)
     }
 
     /// Returns true if this is a “slideshow” gallery mode.
+    #[inline]
     #[must_use]
     pub fn is_slideshow(self) -> bool {
         matches!(self, Self::Slideshow)
+    }
+
+    /// Returns true if this is a “packed overlay” gallery mode.
+    #[inline]
+    #[must_use]
+    pub fn is_overlay(&self) -> bool {
+        matches!(self, Self::PackedHover | Self::PackedOverlay)
     }
 }
 
