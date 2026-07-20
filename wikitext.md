@@ -126,7 +126,8 @@ steps is run in order:
 18. [Unstrip strip markers](#unstrip) with mode `nowiki`;
 19. [Unstrip strip markers](#unstrip) with mode `general`[^gen2];
 20. [Parse into an HTML5 DOM] concurrently with the
-    [p-wrapping algorithm](#p-wrapping);
+    [figure-wrapping algorithm](#figure-wrapping) and the
+    [p-wrapping algorithm](#p-wrapping) and the;
 21. [Guard French quotation marks from word wrapping](#guard-quotes);
 22. [Format elements](#format-elements).
 
@@ -2728,11 +2729,33 @@ For the text content of each text node:
    followed by a space character, replace the following space character with a
    no-break space.
 
+## Figure-wrapping
+
+※ This algorithm *must* run concurrently with the HTML5 tree construction
+  algorithm. It *cannot* be run on an already-constructed DOM because the HTML5
+  algorithm for active formatting elements defeats it by making it ambiguous
+  whether or not formatting elements were opened in the original source.
+
+For each step in the HTML5 algorithm to “reconstruct the active formatting
+elements”:
+
+1. For each element in the “stack of open elements”, starting from the innermost
+   element:
+
+   1. If the element is `figcaption`, reconstruct the active formatting elements
+      and return; otherwise
+   2. If the element is `figure` with a `typeof` attribute whose value matches
+      the regular expression `\bmw:File\b`, do nothing and return.
+
+2. Reconstruct the active formatting elements.
+
 ## P-wrapping
 
 ※ This algorithm *must* run concurrently with the HTML5 tree construction
   algorithm. It *cannot* be run on an already-constructed DOM because the HTML5
-  adoption agency algorithm defeats it.
+  adoption agency algorithm defeats it by making it ambiguous whether or not a
+  potentially wrappable element was explicitly terminated in the original
+  source.
 
 1. Start with a new document where the root element is `html`.
 

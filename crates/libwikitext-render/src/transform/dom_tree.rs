@@ -16,6 +16,8 @@ use uncased::{Uncased, UncasedStr};
 pub(crate) struct DomTree<S> {
     /// The set of tags not matching any known HTML5 tag.
     custom_tags: CustomTags,
+    /// The buffer for a `<figure typeof>` attribute.
+    figure_attr: Option<String>,
     /// If true, filtering out an invalid start tag.
     filtering: bool,
     /// The index of the rightmost `<form>` element in [`Self::stack`].
@@ -42,6 +44,7 @@ impl<S: Sink> DomTree<S> {
     pub fn new(next: S) -> Self {
         Self {
             custom_tags: <_>::default(),
+            figure_attr: <_>::default(),
             filtering: <_>::default(),
             form_index: <_>::default(),
             format: <_>::default(),
@@ -461,8 +464,30 @@ impl<S: Sink> DomTree<S> {
         index: usize,
         range: R,
     ) {
+        if self.stack.suppress_reformat() {
+            return;
+        }
+
         for (i, (tag, attrs)) in self.format.iter(range).enumerate() {
             self.stack.insert(&self.custom_tags, index + i, tag, attrs);
+        }
+    }
+
+    /// Replaces a `<figure typeof=~"mw:File">` node with an identifiable
+    /// marker.
+    fn replace_mw_figure(&mut self) {
+        if let Some(value) = self.figure_attr.take()
+            && let Some(pos) = value.find("mw:File")
+            && value[..pos]
+                .chars()
+                .next_back()
+                .is_none_or(|c| c.is_ascii_whitespace())
+            && value[pos + "mw:File".len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| c.is_ascii_whitespace())
+        {
+            *self.stack.last_mut().unwrap() = TagNode::MwFigure;
         }
     }
 
@@ -1107,6 +1132,7 @@ impl<S: Sink> Sink for DomTree<S> {
         if !self.filtering {
             self.format.tag_attribute_end();
             self.stack.target().tag_attribute_end(name);
+            self.replace_mw_figure();
         }
     }
 
@@ -1115,6 +1141,9 @@ impl<S: Sink> Sink for DomTree<S> {
         if !self.filtering {
             self.format.tag_attribute_start(name);
             self.stack.target().tag_attribute_start(name);
+            if self.stack.last().is_some_and(|node| *node == Tag::Figure) && name == "typeof" {
+                self.figure_attr = Some(<_>::default());
+            }
         }
     }
 
@@ -2023,6 +2052,18 @@ impl<S: Sink> Stack<S> {
         self.inner.insert(index, tag);
     }
 
+    /// Returns a reference to the rightmost element in the stack.
+    #[inline]
+    fn last(&self) -> Option<&TagNode> {
+        self.inner.last()
+    }
+
+    /// Returns a mutable reference to the rightmost element in the stack.
+    #[inline]
+    fn last_mut(&mut self) -> Option<&mut TagNode> {
+        self.inner.last_mut()
+    }
+
     /// Returns the length of the stack, in elements.
     #[inline]
     fn len(&self) -> usize {
@@ -2189,6 +2230,21 @@ impl<S: Sink> Stack<S> {
         self.next.split_element(index);
         self.inner.insert(index + 1, tag.into());
         self.inc_foster();
+    }
+
+    /// Returns true if the stack is in a state where formatting elements should
+    /// not be reopened. This is a MediaWiki-specific hack.
+    #[inline]
+    fn suppress_reformat(&self) -> bool {
+        for node in self.inner.iter().rev() {
+            if node == &TagNode::MwFigure {
+                return true;
+            }
+            if *node == Tag::Figcaption {
+                break;
+            }
+        }
+        false
     }
 
     /// Returns the next output [`Sink`].
@@ -2604,6 +2660,8 @@ enum TagNode {
     /// niche-optimised index of the previous marker in [`DomTree::format`], if
     /// any.
     Marker(Option<NonZeroU8>),
+    /// A MediaWiki `<figure typeof=~"mw:File">` element.
+    MwFigure,
     /// An implicit p-wrapper.
     ImplicitP,
     /// An optimised `<table>` element that holds a niche-optimised index of the
@@ -2634,6 +2692,7 @@ impl TagNode {
             Self::Html(tag) => Some(tag.as_str(custom)),
             Self::ImplicitTbody | Self::Marker(_) => None,
             Self::ImplicitP => Some(UncasedStr::new("p")),
+            Self::MwFigure => Some(UncasedStr::new("figure")),
             Self::Table(_) => Some(UncasedStr::new("table")),
         }
     }
@@ -2696,6 +2755,7 @@ impl TagNode {
             Self::ImplicitTbody => Some(Tag::Tbody),
             Self::ImplicitP => Some(Tag::P),
             Self::Marker(_) => None,
+            Self::MwFigure => Some(Tag::Figure),
             Self::Table(_) => Some(Tag::Table),
         }
     }
