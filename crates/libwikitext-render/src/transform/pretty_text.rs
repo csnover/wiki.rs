@@ -191,7 +191,7 @@ impl<S: Sink> Sink for PrettyText<S> {
     #[inline]
     fn tag_end(&mut self, name: &str) {
         self.in_code -= u8::from(Self::is_code_tag(name));
-        if !PHRASING_TAGS.contains(name) {
+        if !self.prev_chars[1].is_whitespace() && !PHRASING_TAGS.contains(name) {
             self.push_char(' ');
         }
         self.next.tag_end(name);
@@ -206,7 +206,7 @@ impl<S: Sink> Sink for PrettyText<S> {
 
     #[inline]
     fn tag_start(&mut self, name: &str) {
-        if name == "br" || name == "hr" {
+        if matches!(name, "br" | "hr") {
             self.push_char('\n');
         }
         self.in_attr = true;
@@ -223,6 +223,9 @@ impl<S: Sink> Sink for PrettyText<S> {
                 self.in_code += 1;
             }
             *depth = depth.checked_add(1).unwrap();
+        }
+        if !self.prev_chars[1].is_whitespace() && !PHRASING_TAGS.contains(name) {
+            self.push_char(' ');
         }
     }
 
