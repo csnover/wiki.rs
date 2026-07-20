@@ -9,7 +9,11 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use core::num::NonZeroUsize;
-use libwikitext_common::{db::DatabaseProvider as _, make_url, title::Title};
+use libwikitext_common::{
+    db::DatabaseProvider as _,
+    make_url,
+    title::{self, Title},
+};
 use libwikitext_render::{Error as RenderError, EvalPp, LoadMode, RenderOutput};
 use rayon::{iter::ParallelIterator as _, slice::ParallelSliceMut as _};
 use sailfish::TemplateSimple;
@@ -54,7 +58,7 @@ pub(crate) enum Error {
     Template(#[from] sailfish::RenderError),
     /// An title error.
     #[error(transparent)]
-    Title(#[from] libwikitext_common::title::Error),
+    Title(#[from] title::Error),
     /// A non-utf-8 header could not be converted to a string.
     #[error(transparent)]
     ToStr(#[from] axum::http::header::ToStrError),
@@ -188,7 +192,7 @@ pub(crate) async fn article(
     ArticleTemplate {
         categories,
         base_path: state.base_uri.path(),
-        from: from.as_deref(),
+        from: from.as_deref().map(title::normalize).as_deref(),
         output: &output,
         site: state.database.name(),
         title: article.title(),
