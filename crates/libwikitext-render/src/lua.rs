@@ -514,11 +514,16 @@ pub(super) fn run_vm(
 
         match result {
             ControlFlow::Continue(host_call) => {
-                let result = run_host_call(&mut state, &sp, &host_call)?;
+                let result = run_host_call(&mut state, &sp, &host_call);
                 state.statics.vm.try_enter(|ctx| {
                     let ex = ctx.fetch(&ex);
-                    let result = ctx.fetch(&result);
-                    ex.resume(ctx, result)?;
+                    match result {
+                        Ok(result) => {
+                            let result = ctx.fetch(&result);
+                            ex.resume(ctx, result)?;
+                        }
+                        Err(err) => ex.resume_err(&ctx, err.into())?,
+                    }
                     Ok(())
                 })?;
             }
