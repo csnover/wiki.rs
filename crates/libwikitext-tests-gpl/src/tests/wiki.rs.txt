@@ -95,6 +95,6 @@ Newlines in attributes
 <span style="color:
 rebeccapurple"></span>
 !! html/wiki.rs
-<p><span style="--mw-output-color:rebeccapurple;"></span>
+<p><span style="--wr-output-color:rebeccapurple;"></span>
 </p>
 !! end

@@ -10,7 +10,7 @@
     border-block: thin solid var(--border-fg);
     display: grid;
     gap: var(--box-margin);
-    grid-template-columns: var(--mw-output-grid-template-columns, repeat(auto-fill, 20%));
+    grid-template-columns: var(--wr-output-grid-template-columns, repeat(auto-fill, 20%));
     justify-content: space-between;
     margin-inline: 0;
     padding-block: var(--box-margin);

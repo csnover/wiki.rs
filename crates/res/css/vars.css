@@ -184,12 +184,12 @@
             padding-inline: var(--table-padding-inline);
             text-align: start;
 
-            &[style*="--mw-output-background:"] {
-                background: var(--mw-output-background);
+            &[style*="--wr-output-background:"] {
+                background: var(--wr-output-background);
             }
 
-            &[style*="--mw-output-background-color:"] {
-                background: var(--mw-output-background-color);
+            &[style*="--wr-output-background-color:"] {
+                background: var(--wr-output-background-color);
             }
         }
 

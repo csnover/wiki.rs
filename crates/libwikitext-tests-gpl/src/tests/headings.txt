@@ -1667,7 +1667,7 @@ __TOC__
 !! html/wiki.rs # Uses HTML5+legacy escaping
 <h2 id="C++"><span id="C.2B.2B"></span><span dir="ltr">C++</span></h2>
 <h2 id="זבנג!"><span id=".D7.96.D7.91.D7.A0.D7.92.21"></span><span dir="rtl">זבנג!</span></h2>
-<h2 id="Attributes_other_than_dir"><span style="--mw-output-font-style:italic;" dir="ltr" title="hello">Attributes other than dir</span></h2>
+<h2 id="Attributes_other_than_dir"><span style="--wr-output-font-style:italic;" dir="ltr" title="hello">Attributes other than dir</span></h2>
 !! end
 
 !! test
@@ -2949,7 +2949,7 @@ notoc
 !! html/wiki.rs # This output matches the PHP parser, minus the TOC and wrappers, with __NOTOC__ enabled
 <h2 id="Normal_heading!"><span id="Normal_heading.21"></span>Normal heading!</h2>
 <h2 id="HTML_heading!"><span id="HTML_heading.21"></span>HTML heading!</h2>
-<h2 style="--mw-output-border:1px solid green;--mw-output-background:lightgreen;--mw-output-padding:5px;--mw-output-font-size:1.5em;" id="HTML_heading_with_attributes!"><span id="HTML_heading_with_attributes.21"></span>HTML heading with attributes!</h2>
+<h2 style="--wr-output-border:1px solid green;--wr-output-background:lightgreen;--wr-output-padding:5px;--wr-output-font-size:1.5em;" id="HTML_heading_with_attributes!"><span id="HTML_heading_with_attributes.21"></span>HTML heading with attributes!</h2>
 <div class="mw-heading mw-heading2">
 <h2 id="Normal_heading_with_existing_wrapper!"><span id="Normal_heading_with_existing_wrapper.21"></span>Normal heading with existing wrapper!</h2>
 </div>

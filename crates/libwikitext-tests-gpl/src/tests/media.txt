@@ -477,7 +477,7 @@ File:Foobar.jpg
 </li>
 </ul>
 !! html/wiki.rs # This output matches the PHP parser, minus XHTML and with different styles
-<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(auto-fill,100px);">
+<ul class="gallery mw-gallery-traditional" style="--wr-output-grid-template-columns:repeat(auto-fill,100px);">
 		<li class="gallerybox">
 			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/100px-Foobar.jpg" decoding="async" width="100" height="11" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/150px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/200px-Foobar.jpg 2x"></a></span></div>
 			<div class="gallerytext"></div>
@@ -2560,7 +2560,7 @@ image:foobar.jpg|alt=This is a foo-bar.|blabla.
 <li class="gallerybox" style="width: 105px;"><div class="thumb" style="width: 100px; height: 70px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description" title="blabla."><img alt="This is a foo-bar." resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="8" width="70" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x" data-parsoid='{"a":{"resource":"./File:Foobar.jpg","height":"8","width":"70"},"sa":{"resource":"image:foobar.jpg"}}' class="mw-file-element"/></a></span></div><div class="gallerytext">blabla.</div></li>
 </ul>
 !! html/wiki.rs # This output matches the PHP parser, minus XHTML, with different styles and URL
-<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(2,70px);">
+<ul class="gallery mw-gallery-traditional" style="--wr-output-grid-template-columns:repeat(2,70px);">
 	<li class="gallerycaption">Foo <a href="/wiki/Main_Page" title="Main Page">Main Page</a></li>
 		<li class="gallerybox">
 			<div class="thumb"><span typeof="mw:Error mw:File"><a href="/wiki/Special:Upload?wpDestFile=Nonexistent.jpg" class="new" title="File:Nonexistent.jpg"><span class="mw-file-element mw-broken-media" data-width="70" data-height="40">caption</span></a></span></div>
@@ -2603,7 +2603,7 @@ File:Foobar.jpg
 <li class="gallerybox" style="width: 105px;"><div class="thumb" style="width: 100px; height: 70px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description"><img resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="8" width="70" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext"></div></li>
 </ul>
 !! html/wiki.rs # This output matches the PHP parser, minus XHTML, with different styles
-<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(auto-fill,70px);">
+<ul class="gallery mw-gallery-traditional" style="--wr-output-grid-template-columns:repeat(auto-fill,70px);">
 		<li class="gallerybox">
 			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description"><img src="http://example.com/images/thumb/3/3a/Foobar.jpg/70px-Foobar.jpg" decoding="async" width="70" height="8" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/105px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/140px-Foobar.jpg 2x"></a></span></div>
 			<div class="gallerytext"></div>
@@ -4445,7 +4445,7 @@ File:Foobar.jpg|Two
 <li class="gallerybox" style="width: 155px;"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File"><a href="./File:Foobar.jpg" class="mw-file-description" title="Two"><img alt="Two" resource="./File:Foobar.jpg" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="14" width="120" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x" class="mw-file-element"/></a></span></div><div class="gallerytext">Two</div></li>
 </ul>
 !! html/wiki.rs # This output matches the PHP parser, minus XHTML, with different styles
-<ul class="gallery mw-gallery-traditional" style="--mw-output-grid-template-columns:repeat(1,1fr);--mw-output-color:red;">
+<ul class="gallery mw-gallery-traditional" style="--wr-output-grid-template-columns:repeat(1,1fr);--wr-output-color:red;">
 		<li class="gallerybox">
 			<div class="thumb"><span typeof="mw:File"><a href="/wiki/File:Foobar.jpg" class="mw-file-description" title="One"><img alt="One" src="http://example.com/images/thumb/3/3a/Foobar.jpg/120px-Foobar.jpg" decoding="async" width="120" height="14" class="mw-file-element" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/240px-Foobar.jpg 2x"></a></span></div>
 			<div class="gallerytext">One</div>

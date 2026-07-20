@@ -3314,7 +3314,7 @@ Incorrecly removing closing slashes from correctly formed XHTML
 <p><br style="clear:both;" />
 </p>
 !! html/wiki.rs # This output matches the PHP parser, but with prefixed styles and minus the self-closing tag
-<p><br style="--mw-output-clear:both;">
+<p><br style="--wr-output-clear:both;">
 </p>
 !! end
 
@@ -3330,9 +3330,9 @@ Failing to transform badly formed HTML into correct XHTML
 <br style="clear: both;" />
 </p>
 !! html/wiki.rs # This output matches the PHP parser, but with prefixed styles and minus the self-closing tag
-<p><br style="--mw-output-clear:left;">
-<br style="--mw-output-clear:right;">
-<br style="--mw-output-clear:both;">
+<p><br style="--wr-output-clear:left;">
+<br style="--wr-output-clear:right;">
+<br style="--wr-output-clear:both;">
 </p>
 !!end
 
@@ -6408,7 +6408,7 @@ Templates: Support for templates generating table attributes and content (with f
 <td>bar</td></tr>
 </tbody></table>
 !! html/wiki.rs # This output matches the PHP parser, but with prefixed styles, minus the tbody, plus one extra line of whitespace in the table interstitial area for some reason
-<table style="--mw-output-color:red;" title="T249740">
+<table style="--wr-output-color:red;" title="T249740">
 
 <tr>
 <td>foo
@@ -9166,7 +9166,7 @@ Expansion of multi-line parser-functions in attribute values (T8255)
 !! html/parsoid+integrated
 <div style="background: #00FF00" about="#mwt2" typeof="mw:ExpandedAttrs" data-parsoid='{"stx":"html","a":{"style":"background: #00FF00"},"sa":{"style":"background: {{#if:1|#00FF00|#FF00FF}}"}}' data-mw='{"attribs":[[{"txt":"style"},{"html":"background: &lt;span about=\"#mwt1\" typeof=\"mw:Transclusion\" data-parsoid=&apos;{\"pi\":[[{\"k\":\"1\"},{\"k\":\"2\"}]]}&apos; data-mw=&apos;{\"parts\":[{\"template\":{\"target\":{\"wt\":\"#if:1\",\"function\":\"if\"},\"params\":{\"1\":{\"wt\":\"#00FF00\"},\"2\":{\"wt\":\"#FF00FF\"}},\"i\":0}}]}&apos;>#00FF00&lt;/span>"}]]}'>-</div>
 !! html/wiki.rs # This output matches the PHP parser, but with prefixed styles
-<div style="--mw-output-background:#00FF00;">-</div>
+<div style="--wr-output-background:#00FF00;">-</div>
 !! end
 
 !! test
@@ -9188,7 +9188,7 @@ Expansion of multi-line templates in attribute values (T8255 check 2)
 !! html
 <div style="background: &#10;#00FF00">-</div>
 !! html/wiki.rs # Style normalisation removes junk space
-<div style="--mw-output-background:#00FF00;">-</div>
+<div style="--wr-output-background:#00FF00;">-</div>
 !! end
 
 # BlockLevelPass suppresses P-wrapping for tags whose names begin with
@@ -9712,7 +9712,7 @@ parsoid=wt2html,wt2wt
 !! html/parsoid
 <p><span style="margin: -0.125em -0.45em;  rgba(255, 0, 0, 0.3)">2013</span></p>
 !! html/wiki.rs # This output matches the PHP parser, but with prefixed styles
-<p><span style="--mw-output-margin:-0.125em -0.45em;  rgba(255, 0, 0, 0.3)">2013</span>
+<p><span style="--wr-output-margin:-0.125em -0.45em;  rgba(255, 0, 0, 0.3)">2013</span>
 </p>
 !! end
 
@@ -12993,10 +12993,10 @@ Play a bit with r67090 and T5158
 <div style="width:50%&#160;!important">&#160;</div>
 <div style="border : solid;">&#160;</div>
 !! html/wiki.rs # This output matches the PHP parser, but with prefixed styles and decoded entities
-<div style="--mw-output-width:50% !important;"> </div>
-<div style="--mw-output-width:50% !important;"> </div>
-<div style="--mw-output-width:50% !important;"> </div>
-<div style="--mw-output-border:solid;"> </div>
+<div style="--wr-output-width:50% !important;"> </div>
+<div style="--wr-output-width:50% !important;"> </div>
+<div style="--wr-output-width:50% !important;"> </div>
+<div style="--wr-output-border:solid;"> </div>
 !! html/parsoid
 <div style="width:50% !important" data-parsoid='{"stx":"html"}'><span typeof="mw:Entity" data-parsoid='{"srcContent":" "}'> </span></div>
 <div style="width:50% !important" data-parsoid='{"stx":"html","a":{"style":"width:50% !important"},"sa":{"style":"width:50%&amp;nbsp;!important"}}'><span typeof="mw:Entity" data-parsoid='{"srcContent":" "}'> </span></div>
@@ -13039,7 +13039,7 @@ T5158: Test for French spaces in attributes
 <p><br style="clear : both ;" />
 </p>
 !! html/wiki.rs # This output matches the PHP parser, but with prefixed styles and normalisation, minus self-closing tags
-<p><br style="--mw-output-clear:both;">
+<p><br style="--wr-output-clear:both;">
 </p>
 !! end
 

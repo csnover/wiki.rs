@@ -141,8 +141,8 @@
             .incorrect,
             .table-debate,
             .table-cast
-        ):is([style*="--mw-output-background:"], [style*="--mw-output-background-color:"]) {
-            --bg: var(--mw-output-background-color, var(--mw-output-background));
+        ):is([style*="--wr-output-background:"], [style*="--wr-output-background-color:"]) {
+            --bg: var(--wr-output-background-color, var(--wr-output-background));
 
             background: transparent linear-gradient(to right, var(--bg) 0, var(--bg) 5px, transparent 5px);
             color: var(--fg);
@@ -196,13 +196,13 @@
     }
 
     &.floatright,
-    &[style*="--mw-output-float:right;"]
+    &[style*="--wr-output-float:right;"]
     {
         @apply --float-right-table-addon;
     }
 
     &.floatleft,
-    &[style*="--mw-output-float:left;"]
+    &[style*="--wr-output-float:left;"]
     {
         @apply --float-left-table-addon;
     }
@@ -210,26 +210,26 @@
     /* Allow only floated tables to have an overridden inline-size, since
        in-flow tables with explicit widths look ugly */
     &:is(
-        [style*="--mw-output-width:"], [style*="--mw-output-inline-size:"]
+        [style*="--wr-output-width:"], [style*="--wr-output-inline-size:"]
     ):is(
-        [style*="--mw-output-float:"], .floatleft, .floatright
+        [style*="--wr-output-float:"], .floatleft, .floatright
     ) {
-        inline-size: var(--mw-output-inline-size, var(--mw-output-width));
+        inline-size: var(--wr-output-inline-size, var(--wr-output-width));
     }
 
     /* 'Mount Everest' manually floats a table right after a floated right
         figure and inevitably sad things happen */
-    &[style*="--mw-output-float:right;"] {
+    &[style*="--wr-output-float:right;"] {
         clear: inline-end;
     }
 
     /* 'Mount Everest' does float left and clear */
     &:is(
         .floatleft,
-        [style*="--mw-output-float:left;"]
+        [style*="--wr-output-float:left;"]
         .floatright,
-        [style*="--mw-output-float:right;"]
-    ):where(:not(:has(+ [style*="--mw-output-clear:"]))) {
+        [style*="--wr-output-float:right;"]
+    ):where(:not(:has(+ [style*="--wr-output-clear:"]))) {
         font-family: var(--sans);
         font-stretch: var(--side-body-stretch);
         font-size: unset;
@@ -243,7 +243,7 @@
 
 /* :-(((((
 /* 'Chelyabinsk meteor' commits this atrocity */
-[style*="--mw-output-float:right;"]:has(> .wikitable[style*="--mw-output-float:right;"][style*="--mw-output-margin:"]) {
+[style*="--wr-output-float:right;"]:has(> .wikitable[style*="--wr-output-float:right;"][style*="--wr-output-margin:"]) {
     margin-inline-start: var(--figure-margin);
 
     > * {
@@ -254,7 +254,7 @@
 }
 
 /* 'Toronto' */
-.mw-parser-output > .wikitable[style*="--mw-output-border:"][style*="--mw-output-margin:"]
+.mw-parser-output > .wikitable[style*="--wr-output-border:"][style*="--wr-output-margin:"]
 {
     border-width: 0;
     margin-inline: var(--table-margin-inline);
@@ -286,7 +286,7 @@
         td {
             border-color: var(--border-th);
 
-            &[style*="--mw-output-background-color:"] {
+            &[style*="--wr-output-background-color:"] {
                 background-image: var(--bar-fill-light);
                 background-position: 0;
             }
@@ -596,7 +596,7 @@ blockquote,
 
     /* axis display, part 1: out with the ugly dots, which reset in each column
        and so look like shit */
-    [style*="--mw-output-border-bottom:dotted"] {
+    [style*="--wr-output-border-bottom:dotted"] {
         display: none;
     }
 
@@ -628,15 +628,15 @@ blockquote,
             margin-inline: -.15em;
             padding-inline: .15em;
 
-            &[style*="--mw-output-font-size:70%;"] {
+            &[style*="--wr-output-font-size:70%;"] {
                 font-size: 80%;
                 font-stretch: var(--side-body-stretch);
             }
         }
 
         /* the actual temperature and precipitation bars */
-        div[style*="--mw-output-background:#e44;"],
-        div[style*="--mw-output-background:#ace;"] {
+        div[style*="--wr-output-background:#e44;"],
+        div[style*="--wr-output-background:#ace;"] {
             background: var(--bar-fill);
             border: thin solid #000;
             /* to stop unscaled giant precipitation interfering with the
@@ -644,7 +644,7 @@ blockquote,
             pointer-events: none;
         }
 
-        div[style*="--mw-output-background:#ace;"] {
+        div[style*="--wr-output-background:#ace;"] {
             background: var(--bar-fill-alt);
         }
     }
@@ -742,8 +742,8 @@ blockquote,
         max-inline-size: var(--max-width);
     }
 
-    [style*="--mw-output-display:inline-grid;"] {
-        + [style*="--mw-output-display:inline-grid;"] {
+    [style*="--wr-output-display:inline-grid;"] {
+        + [style*="--wr-output-display:inline-grid;"] {
             margin-inline-start: var(--box-margin);
         }
 
@@ -869,7 +869,7 @@ blockquote,
         margin-block-start: var(--box-margin);
     }
 
-    &[style*="--mw-output-float:right;"] {
+    &[style*="--wr-output-float:right;"] {
         border: 0;
         font-stretch: var(--side-body-stretch);
         margin-block: 0 var(--figure-margin);
@@ -967,7 +967,7 @@ blockquote,
 [data-wiki-rs~=template-historical-populations] {
     @apply --tabular-data;
 
-    &[style*="--mw-output-float:none;"] {
+    &[style*="--wr-output-float:none;"] {
         float: none;
     }
 
@@ -1024,7 +1024,7 @@ blockquote,
 }
 
 /* 'Tromsø' */
-[data-wiki-rs~=template-historical-populations][style*="--mw-output-float:none;"] {
+[data-wiki-rs~=template-historical-populations][style*="--wr-output-float:none;"] {
     font-size: 1em;
     inline-size: var(--table-width);
     margin-inline: var(--table-margin-inline);
@@ -1041,7 +1041,7 @@ blockquote,
     }
 }
 
-[data-wiki-rs~=template-historical-populations]:where([style*="--mw-output-float:right;"], [style*="--mw-output-float:left;"]) {
+[data-wiki-rs~=template-historical-populations]:where([style*="--wr-output-float:right;"], [style*="--wr-output-float:left;"]) {
     caption, th {
         font-stretch: var(--side-body-stretch);
     }
@@ -1059,11 +1059,11 @@ blockquote,
     /* api.php?meta=siteinfo&siprop=general thumblimits maxes out at 400 */
     /* 'Module:Wide image' defaults non-existing image width to 0 (and therefore
        max-width to 10px) */
-    &[style*="--mw-output-max-width:10px;"] {
+    &[style*="--wr-output-max-width:10px;"] {
         max-inline-size: 400px;
     }
 
-    .multiimageinner[style*="--mw-output-max-width:100px;"] {
+    .multiimageinner[style*="--wr-output-max-width:100px;"] {
         /* This module blindly calculates values even if none are available,
            which means it ends up forced to 100px wide */
         inline-size: auto;
@@ -1134,11 +1134,11 @@ blockquote,
         }
     }
 
-    &[style*="--mw-output-float:left;"] {
+    &[style*="--wr-output-float:left;"] {
         @apply --float-left;
     }
 
-    [style*="--mw-output-line-height:"] {
+    [style*="--wr-output-line-height:"] {
         line-height: inherit;
     }
 
@@ -1149,7 +1149,7 @@ blockquote,
         .mw-parser-output,
         .documentation,
         .hidden-content
-    ) > &:not([style*="--mw-output-float:left;"], [style*="--mw-output-float:none;"]) {
+    ) > &:not([style*="--wr-output-float:left;"], [style*="--wr-output-float:none;"]) {
         @apply --float-right;
 
         max-inline-size: var(--aside-max);
@@ -2522,7 +2522,7 @@ figcaption {
     padding-block: var(--side-margin);
     padding-inline: 0;
 
-    &[style*="--mw-output-float:right;"] {
+    &[style*="--wr-output-float:right;"] {
         margin-block-end: var(--figure-margin);
         margin-inline: var(--figure-margin) 0;
     }
@@ -2956,7 +2956,7 @@ figcaption {
             padding-block-start: calc(5px + 3px);
             vertical-align: baseline;
 
-            [style*="--mw-output-color:"] {
+            [style*="--wr-output-color:"] {
                 color: unset;
             }
         }
@@ -3074,7 +3074,7 @@ figcaption {
                 border-block-start-width: 3px;
             }
 
-            [style*="--mw-output-font-size:"] {
+            [style*="--wr-output-font-size:"] {
                 display: block;
                 font-family: var(--sans);
                 font-size: .95em;
@@ -3389,7 +3389,7 @@ figcaption {
                 padding-inline: var(--table-padding-inline);
             }
 
-            &[style*="--mw-output-color:"] {
+            &[style*="--wr-output-color:"] {
                 background-image: var(--bar-fill-light);
                 background-blend-mode: soft-light;
             }
@@ -3401,7 +3401,7 @@ figcaption {
             border-block-end-width: 1px;
             text-align: center;
 
-            &[style*="--mw-output-border-left-width:medium"] {
+            &[style*="--wr-output-border-left-width:medium"] {
                 position: relative;
                 &::after {
                     border-block-end: 1px solid var(--border-th);

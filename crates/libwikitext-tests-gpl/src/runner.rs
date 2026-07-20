@@ -1074,7 +1074,7 @@ fn styles(html: &str) -> Cow<'_, str> {
 
     fn re_style(caps: &regex::Captures<'_>) -> String {
         let (orig, [prefix, decls]) = caps.extract();
-        if let Cow::Owned(s) = RE_PREFIX_STYLE_DECL.replace_all(decls, "--mw-output-$1:$2;") {
+        if let Cow::Owned(s) = RE_PREFIX_STYLE_DECL.replace_all(decls, "--wr-output-$1:$2;") {
             format!(r#"{prefix}style="{s}""#)
         } else {
             orig.to_owned()

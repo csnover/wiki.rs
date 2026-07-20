@@ -98,7 +98,7 @@ impl<S: Sink> AttributeFilter<S> {
                         next.text(value);
                         next.text(";");
                     } else {
-                        next.text("--mw-output-");
+                        next.text("--wr-output-");
                         next.text(name);
                         next.text(":");
                         next.text(value);
