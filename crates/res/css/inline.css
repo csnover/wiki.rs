@@ -15,6 +15,7 @@
 [style*="--mw-output-inset:"] { inset: var(--mw-output-inset); }
 [style*="--mw-output-bottom:"] { bottom: var(--mw-output-bottom); }
 [style*="--mw-output-border:"] { border: var(--mw-output-border); }
+[style*="--mw-output-border-collapse:"] { border-collapse: var(--mw-output-border-collapse); }
 [style*="--mw-output-border-color:"] { border-color: var(--mw-output-border-color); }
 [style*="--mw-output-border-style:"] { border-style: var(--mw-output-border-style); }
 [style*="--mw-output-border-width:"] { border-width: var(--mw-output-border-width); }
@@ -35,6 +36,7 @@
 [style*="--mw-output-border-top-style:"] { border-top-style: var(--mw-output-border-top-style); }
 [style*="--mw-output-border-top-width:"] { border-top-width: var(--mw-output-border-top-width); }
 [style*="--mw-output-border-radius:"] { border-radius: var(--mw-output-border-radius); }
+[style*="--mw-output-border-spacing:"] { border-spacing: var(--mw-output-border-spacing); }
 [style*="--mw-output-border-bottom-left-radius:"] { border-bottom-left-radius: var(--mw-output-border-bottom-left-radius); }
 [style*="--mw-output-border-bottom-right-radius:"] { border-bottom-right-radius: var(--mw-output-border-bottom-right-radius); }
 [style*="--mw-output-border-top-left-radius:"] { border-top-left-radius: var(--mw-output-border-top-left-radius); }
@@ -87,6 +89,8 @@
 [style*="--mw-output-grid-row-end:"] { grid-row-end: var(--mw-output-grid-row-end); }
 [style*="--mw-output-grid-row-gap:"] { grid-row-gap: var(--mw-output-grid-row-gap); }
 [style*="--mw-output-grid-row-start:"] { grid-row-start: var(--mw-output-grid-row-start); }
+[style*="--mw-output-grid-template-columns:"] { grid-template-columns: var(--mw-output-grid-template-columns); }
+[style*="--mw-output-grid-template-rows:"] { grid-template-rows: var(--mw-output-grid-template-rows); }
 [style*="--mw-output-height:"] { height: var(--mw-output-height); }
 [style*="--mw-output-block-size:"] { block-size: var(--mw-output-block-size); }
 [style*="--mw-output-image-orientation:"] { image-orientation: var(--mw-output-image-orientation); }

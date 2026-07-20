@@ -837,13 +837,26 @@ blockquote,
 /*= Template:Gallery */
 
 .mod-gallery,
-.mod-gallery > .main,
-.mod-gallery > .main > div {
+.mod-gallery > :is(.main, .title),
+.mod-gallery > :is(.main, .title) > div {
     display: block;
+}
+
+.mod-gallery > .title {
+    @apply --gallery-caption;
+
+    > div {
+        font-weight: inherit;
+        padding: 0;
+    }
 }
 
 .mw-parser-output > * + .mod-gallery {
     margin-block-start: var(--box-margin);
+}
+
+.mod-gallery-center {
+    margin-inline: 0;
 }
 
 /*= Template:Graphical timeline */
@@ -1037,6 +1050,7 @@ blockquote,
 /*=
 /* Template:Image frame
 /* Template:Multiple image
+/* `<gallery>`
 /*/
 
 .thumb {

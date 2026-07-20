@@ -120,6 +120,16 @@
     max-inline-size: 50cqi;
 }
 
+@mixin --gallery-caption() {
+    border-block-start: 3px solid var(--fg);
+    font-family: var(--sans);
+    font-size: var(--big-caption);
+    font-stretch: var(--side-title-stretch);
+    font-weight: var(--bold);
+    grid-column: 1 / -1;
+    text-align: center;
+}
+
 @mixin --pre() {
     hyphens: none;
     /* Technically this is supposed to be the HTML default of 8, and using 4
