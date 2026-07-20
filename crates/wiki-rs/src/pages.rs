@@ -38,8 +38,8 @@ pub(crate) enum Error {
     #[error(transparent)]
     RenderRx(#[from] mpsc::RecvError),
     /// A renderer thread message transmission error.
-    #[error(transparent)]
-    RenderTx(#[from] mpsc::SendError<renderer::In>),
+    #[error("sending on a closed channel")]
+    RenderTx,
     /// A Wikitext article renderer error.
     #[error(transparent)]
     Renderer(#[from] RenderError),
@@ -60,23 +60,29 @@ pub(crate) enum Error {
     ToStr(#[from] axum::http::header::ToStrError),
 }
 
+impl<T> From<mpsc::SendError<T>> for Error {
+    fn from(_: mpsc::SendError<T>) -> Self {
+        Self::RenderTx
+    }
+}
+
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        match self {
-            Self::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
-            Self::Renderer(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::Template(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::Style(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::Source(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::Fmt(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::RenderTx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::RenderRx(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::Pool(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-            Self::Title(error) => (StatusCode::BAD_REQUEST, format!("{error}")),
-            Self::ToStr(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{error}")),
-        }
-        .into_response()
+        let code = match self {
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Title(_) => StatusCode::BAD_REQUEST,
+            Self::Database(_)
+            | Self::Fmt(_)
+            | Self::Pool(_)
+            | Self::RenderRx(_)
+            | Self::RenderTx
+            | Self::Renderer(_)
+            | Self::Source(_)
+            | Self::Style(_)
+            | Self::Template(_)
+            | Self::ToStr(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (code, self.to_string()).into_response()
     }
 }
 
