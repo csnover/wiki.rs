@@ -2889,11 +2889,12 @@ Because strip markers are exposed to Lua scripts and parser functions, they MUST
 match this format exactly:
 
 1. The character sequence ``"\x7f'\"`UNIQ-"``;
-2. The tag name of the extension tag;
-3. The character `'-'`;
-4. A lowercase hexadecimal ordinal which, in combination with the tag
+2. The character `'-'`;
+3. The tag name of the extension tag;
+4. The character `'-'`;
+5. A lowercase hexadecimal ordinal which, in combination with the tag
    name, is unique within the *entire* document;
-5. The character sequence ``"-QINU`\"'\x7f"``.
+6. The character sequence ``"-QINU`\"'\x7f"``.
 
 ## Title
 
