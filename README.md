@@ -50,8 +50,8 @@ badly things can go when you don’t know what you are doing, but think you can 
 it using regular expressions, and then your project becomes super popular and it
 can’t ever be fixed. wiki.rs implements all of the irregular grammars, the wacky
 artistic interpretations of HTML, and the many parser functions & extension tags
-needed just to render basic things one expects to see like message boxes and nav
-boxes and info boxes. So many boxes… maybe we can edit some of them out in post…
+needed just to render basic things one expects, like message boxes and nav boxes
+and info boxes and image boxes. So many boxes… can we fix some of these in post?
 
 ### wiki.rs is beautiful, maybe? ###############################################
 
@@ -85,9 +85,10 @@ which means features like maps show up as blobs of unformatted code rather than,
 like, a map or whatever. Also, anything which relies on client-side scripting is
 not supported right now. Here are all of the currently supported extension tags:
 
-* `<gallery>` (partial), which is used to display several images in a collection
+* `<gallery>` which is used to display many images and said to be “not the best”
 * `<graph>` (partial), which is used to draw graphs, but without the XSS problem
 * `<indicator>`, which is used to show indicator badges at the top of some pages
+* `<langconvert>`, which is used for semi-automatic transliteration of documents
 * `<mapframe>` (stub), which is used to draw a map so you may know where you are
 * `<math>` (partial), which is used to display mathematical formulae and symbols
 * `<nowiki>`, which is used to stop sections of text from being read as Wikitext
@@ -105,7 +106,7 @@ not supported right now. Here are all of the currently supported extension tags:
 Everything is ｂ🆁⌾ʞ𝐄𝓝? Wikitext is a mess of a format, and this is my first day
 being a programmer, so of course it is! The first step is to set the environment
 variable `RUST_LOG=trace`, and the second step is to question all of the various
-life choices which led you to this moment of debugging a random Wikitext reader.
+life choices which led you to a place where you think this might be a good idea.
 
 ### Cargo profile ##############################################################
 
