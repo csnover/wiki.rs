@@ -2212,7 +2212,6 @@ figcaption {
 .mbox-image {
     padding-block: .25rem 0;
     padding-inline: .5rem;
-    vertical-align: top;
 }
 
 .mbox-empty-cell {

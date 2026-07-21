@@ -111,15 +111,36 @@ dt {
     }
 }
 
-[typeof~="mw:File"] {
+[typeof~="mw:File"],
+[typeof~="mw:File/Frame"],
+[typeof~="mw:File/Frameless"],
+[typeof~="mw:File/Thumb"] {
     font-family: var(--sans);
+}
+
+[typeof~="mw:File/Frame"],
+[typeof~="mw:File/Frameless"],
+[typeof~="mw:File/Thumb"] {
+    min-width: 16rem;
+}
+
+.mw-broken-media {
+    display: inline-block;
+    height: 18px;
+    overflow: hidden;
+    vertical-align: top;
+    width: 16px;
+
+    &::before {
+        content: url('/media/oops.svg');
+    }
 }
 
 figure {
     display: table;
 
-    &[typeof~="mw:File/Thumb"],
-    &[typeof~="mw:File/Frame"] {
+    &[typeof~="mw:File/Frame"],
+    &[typeof~="mw:File/Thumb"] {
         @apply --float-right;
     }
 
