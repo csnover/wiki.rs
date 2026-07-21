@@ -2834,7 +2834,7 @@ dependencies = [
 
 [[package]]
 name = "wiki-rs"
-version = "2026.7.2-pre"
+version = "2026.7.2"
 dependencies = [
  "axum",
  "barely-css",
