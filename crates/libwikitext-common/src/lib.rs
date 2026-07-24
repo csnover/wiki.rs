@@ -10,13 +10,32 @@ use core::{fmt::Write as _, iter};
 use db::DatabaseProvider;
 use fixed_decimal::{FloatPrecision, ParseError};
 use html_escape::NAMED_ENTITIES;
+use icu_datetime::provider::{
+    names::{DatetimeNamesMonthGregorianV1, DatetimeNamesWeekdayV1, MonthNames},
+    semantic_skeletons::marker_attrs::{ABBR_STANDALONE, WIDE_STANDALONE},
+};
 use icu_decimal::{DecimalFormatter, input::Decimal, options::GroupingStrategy};
 use icu_locale::Locale;
+use icu_provider::DataIdentifierBorrowed;
 use libmisc::{CowExt as _, to_ascii_lower, to_ascii_upper};
 use libphp_rs::{DateTime, DateTimeError, DateTimeZone, strtr, ucfirst};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 use uncased::UncasedStr;
+
+/// A date formatting error.
+#[derive(Debug, thiserror::Error)]
+pub enum FormatDateError {
+    /// There was something wrong with the date or formatting string.
+    #[error(transparent)]
+    DateTime(#[from] DateTimeError),
+    /// The language code was not recognised as a valid locale.
+    #[error(transparent)]
+    Locale(#[from] icu_locale::ParseError),
+    /// ICU4X did not like getting the data for the localiser.
+    #[error(transparent)]
+    Localizer(#[from] icu_provider::DataError),
+}
 
 /// A message formatting error.
 #[derive(Debug, thiserror::Error)]
@@ -465,8 +484,9 @@ pub fn format_date_mediawiki(
     now: &DateTime,
     format: &str,
     date: Option<&str>,
-    local: bool,
-) -> Result<String, DateTimeError> {
+    lang: &str,
+    local_tz: bool,
+) -> Result<String, FormatDateError> {
     let date = if let Some(date) = date {
         let date = if date.len() == 4 && date.chars().all(|c| c.is_ascii_digit()) {
             Cow::Owned(format!("00:00 {date}"))
@@ -479,13 +499,124 @@ pub fn format_date_mediawiki(
         *now
     };
 
-    let tz = if local {
+    let tz = if local_tz {
         DateTimeZone::local()?
     } else {
         DateTimeZone::UTC
     };
 
-    date.into_offset(tz)?.format(format).map_err(Into::into)
+    let locale = lang_to_bcp47::<true>(lang).parse::<icu_locale::Locale>()?;
+    let localizer = IcuDateTimeLocalizer::try_from(&locale)?;
+
+    date.into_offset(tz)?
+        .format(format, localizer)
+        .map_err(|err| FormatDateError::DateTime(err.into()))
+}
+
+/// A localiser that uses baked data from [`icu_datetime`].
+#[derive(Clone, Copy, Debug)]
+pub struct IcuDateTimeLocalizer<'a> {
+    /// The list of abbreviated month names.
+    month_abbr: &'a zerovec::VarZeroVec<'a, str>,
+    /// The list of full month names.
+    month_full: &'a zerovec::VarZeroVec<'a, str>,
+    /// The list of abbreviated weekday names.
+    weekday_abbr: &'a zerovec::VarZeroVec<'a, str>,
+    /// The list of full weekday names.
+    weekday_full: &'a zerovec::VarZeroVec<'a, str>,
+}
+
+impl IcuDateTimeLocalizer<'_> {
+    /// Retrieves a list of month names for the given `locale` with the given
+    /// `marker` variant.
+    ///
+    /// # Errors
+    ///
+    /// * no data exists for the given `locale` and `marker`
+    pub fn months<'a>(
+        locale: &'a Locale,
+        marker: &icu_provider::DataMarkerAttributes,
+    ) -> Result<&'a zerovec::VarZeroVec<'a, str>, icu_provider::DataError> {
+        let data_locale = icu_locale::DataLocale::from(locale);
+        let MonthNames::Linear(months) =
+            icu_provider::DataProvider::<DatetimeNamesMonthGregorianV1>::load(
+                &icu_datetime::provider::Baked,
+                icu_provider::DataRequest {
+                    id: DataIdentifierBorrowed::for_marker_attributes_and_locale(
+                        marker,
+                        &data_locale,
+                    ),
+                    metadata: <_>::default(),
+                },
+            )?
+            .payload
+            .get_static()
+            .ok_or(icu_provider::DataErrorKind::Custom.with_str_context("expected baked data"))?
+        else {
+            unreachable!()
+        };
+        Ok(months)
+    }
+
+    /// Retrieves a list of weekday names for the given `locale` with the given
+    /// `marker` variant.
+    ///
+    /// # Errors
+    ///
+    /// * no data exists for the given `locale` and `marker`
+    pub fn weekdays<'a>(
+        locale: &'a Locale,
+        marker: &icu_provider::DataMarkerAttributes,
+    ) -> Result<&'a zerovec::VarZeroVec<'a, str>, icu_provider::DataError> {
+        let data_locale = icu_locale::DataLocale::from(locale);
+        icu_provider::DataProvider::<DatetimeNamesWeekdayV1>::load(
+            &icu_datetime::provider::Baked,
+            icu_provider::DataRequest {
+                id: DataIdentifierBorrowed::for_marker_attributes_and_locale(marker, &data_locale),
+                metadata: <_>::default(),
+            },
+        )?
+        .payload
+        .get_static()
+        .map(|days| &days.names)
+        .ok_or(icu_provider::DataErrorKind::Custom.with_str_context("expected baked data"))
+    }
+}
+
+impl<'a> TryFrom<&'a icu_locale::Locale> for IcuDateTimeLocalizer<'a> {
+    type Error = icu_provider::DataError;
+
+    fn try_from(locale: &'a icu_locale::Locale) -> Result<Self, Self::Error> {
+        Ok(Self {
+            month_abbr: Self::months(locale, ABBR_STANDALONE)?,
+            month_full: Self::months(locale, WIDE_STANDALONE)?,
+            weekday_abbr: Self::weekdays(locale, ABBR_STANDALONE)?,
+            weekday_full: Self::weekdays(locale, WIDE_STANDALONE)?,
+        })
+    }
+}
+
+impl<'a> libphp_rs::DateTimeLocalizer for IcuDateTimeLocalizer<'a> {
+    type AbbrMonthOutput = &'a str;
+    type AbbrWeekdayOutput = &'a str;
+    type FullMonthOutput = &'a str;
+    type FullWeekdayOutput = &'a str;
+
+    fn month_abbr(&self, month: time::Month) -> Self::AbbrMonthOutput {
+        &self.month_abbr[usize::from(month as u8 - 1)]
+    }
+
+    fn month_full(&self, month: time::Month) -> Self::FullMonthOutput {
+        &self.month_full[usize::from(month as u8 - 1)]
+    }
+
+    fn weekday_abbr(&self, day: time::Weekday) -> Self::AbbrWeekdayOutput {
+        &self.weekday_abbr[usize::from(day.number_days_from_sunday())]
+    }
+
+    fn weekday_full(&self, day: time::Weekday) -> Self::FullWeekdayOutput {
+        &self.weekday_full[usize::from(day.number_days_from_sunday())]
+    }
 }
 
 /// Formats a message, using `callback` to replace any `$N` placeholders in the

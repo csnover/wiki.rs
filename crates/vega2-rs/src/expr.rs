@@ -1737,7 +1737,10 @@ impl<'s> ValueExt<'s> for VmValue<'s> {
                 out.into()
             }
             Self::Callable(_) => Cow::Borrowed("function () { [native code] }"),
-            Self::Date(date) => date.format(r"D M Y H:i:s \G\M\TO").unwrap().into(),
+            Self::Date(date) => date
+                .format(r"D M Y H:i:s \G\M\TO", libphp_rs::DefaultDateTimeLocalizer)
+                .unwrap()
+                .into(),
             Self::Object(_) => Cow::Borrowed("[object Object]"),
             Self::Regex(regex, flags) => {
                 // TODO: Check if the compiled regex retains escapes or not.

@@ -36,6 +36,53 @@ pub enum DateTimeFormatError {
     Write(#[from] core::fmt::Error),
 }
 
+/// A provider for localising date components.
+pub trait DateTimeLocalizer: Clone + Copy {
+    /// The output display type for [`Self::month_abbr`].
+    type AbbrMonthOutput: core::fmt::Display;
+    /// The output display type for [`Self::weekday_abbr`].
+    type AbbrWeekdayOutput: core::fmt::Display;
+    /// The output display type for [`Self::month_full`].
+    type FullMonthOutput: core::fmt::Display;
+    /// The output display type for [`Self::weekday_full`].
+    type FullWeekdayOutput: core::fmt::Display;
+
+    /// Returns the abbreviated localised name for the given `month`.
+    fn month_abbr(&self, month: Month) -> Self::AbbrMonthOutput;
+    /// Returns the localised name for the given `month`.
+    fn month_full(&self, month: Month) -> Self::FullMonthOutput;
+    /// Returns the abbreviated localised name for the given `month`.
+    fn weekday_abbr(&self, day: Weekday) -> Self::AbbrWeekdayOutput;
+    /// Returns the localised name for the given `weekday`.
+    fn weekday_full(&self, day: Weekday) -> Self::FullWeekdayOutput;
+}
+
+/// A default date component localiser.
+#[derive(Clone, Copy, Debug)]
+pub struct DefaultDateTimeLocalizer;
+impl DateTimeLocalizer for DefaultDateTimeLocalizer {
+    type AbbrMonthOutput = String;
+    type AbbrWeekdayOutput = String;
+    type FullMonthOutput = Month;
+    type FullWeekdayOutput = Weekday;
+
+    fn month_abbr(&self, month: Month) -> Self::AbbrMonthOutput {
+        format!("{month:.3}")
+    }
+
+    fn month_full(&self, month: Month) -> Self::FullMonthOutput {
+        month
+    }
+
+    fn weekday_abbr(&self, day: Weekday) -> Self::AbbrWeekdayOutput {
+        format!("{day:.3}")
+    }
+
+    fn weekday_full(&self, day: Weekday) -> Self::FullWeekdayOutput {
+        day
+    }
+}
+
 /// A time zone.
 #[derive(Clone, Copy, Debug)]
 pub enum DateTimeZone {
@@ -257,7 +304,11 @@ impl DateTime {
     /// # Errors
     ///
     /// * A write to the output buffer fails
-    pub fn format(&self, format: &str) -> Result<String, DateTimeFormatError> {
+    pub fn format(
+        &self,
+        format: &str,
+        localizer: impl DateTimeLocalizer,
+    ) -> Result<String, DateTimeFormatError> {
         let mut out = String::new();
         let mut f = format.chars();
         let d = &self.inner;
@@ -287,12 +338,12 @@ impl DateTime {
 
             match c {
                 'd' => write!(out, "{:02}", d.day())?,
-                'D' => write!(out, "{:.3}", d.weekday())?,
+                'D' => write!(out, "{}", localizer.weekday_abbr(d.weekday()))?,
                 'j' => write!(out, "{}", d.day())?,
-                'l' => write!(out, "{}", d.weekday())?,
-                'F' => write!(out, "{}", d.month())?,
+                'l' => write!(out, "{}", localizer.weekday_full(d.weekday()))?,
+                'F' => write!(out, "{}", localizer.month_full(d.month()))?,
                 'm' => write!(out, "{:02}", u8::from(d.month()))?,
-                'M' => write!(out, "{:.3}", d.month())?,
+                'M' => write!(out, "{}", localizer.month_abbr(d.month()))?,
                 'n' => write!(out, "{}", u8::from(d.month()))?,
                 'Y' => write!(out, "{:04}", d.year())?,
                 'y' => write!(out, "{:02}", d.year() % 100)?,
@@ -852,6 +903,7 @@ pub fn floatval(n: &str) -> Result<(f64, &str), core::num::ParseFloatError> {
 pub fn format_date_strftime(
     time: DateTime,
     format: impl IntoIterator<Item = u8>,
+    localizer: impl DateTimeLocalizer,
 ) -> Result<Vec<u8>, DateTimeFormatError> {
     let mut format = format.into_iter();
     let mut out = Vec::<u8>::new();
@@ -866,7 +918,7 @@ pub fn format_date_strftime(
             Some(b'A') => write!(out, "{}", time.weekday()),
             Some(b'b' | b'h') => write!(out, "{:.3}", time.month()),
             Some(b'B') => write!(out, "{}", time.month()),
-            Some(b'c') => write!(out, "{}", time.format("r")?),
+            Some(b'c') => write!(out, "{}", time.format("r", localizer)?),
             Some(b'C') => write!(out, "{}", time.year() / 100),
             Some(b'd') => write!(out, "{:02}", time.day()),
             Some(b'D') => write!(

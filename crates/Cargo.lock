@@ -1154,6 +1154,7 @@ dependencies = [
  "fancy-regex",
  "fixed_decimal",
  "html-escape",
+ "icu_datetime",
  "icu_decimal",
  "icu_locale",
  "icu_provider",
@@ -1176,6 +1177,7 @@ dependencies = [
  "typed-builder",
  "uncased",
  "unicode-normalization",
+ "zerovec",
 ]
 
 [[package]]

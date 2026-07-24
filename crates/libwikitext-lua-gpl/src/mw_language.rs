@@ -182,13 +182,11 @@ where
             Option<bool>,
         ),
     ) -> Result<Value<'gc>, VmError<'gc>> {
-        if code != "en" {
-            log::warn!("stub: mw.language.formatDate({code:?}, {format:?}, {date:?}), {local:?}");
-        }
         Ok(format_date_mediawiki(
             &ctx.singleton::<Rootable![WallTime]>().get(),
             format.to_str()?,
             date.map(VmString::to_str).transpose()?,
+            code.to_str()?,
             local == Some(true),
         )?
         .into_value(ctx))

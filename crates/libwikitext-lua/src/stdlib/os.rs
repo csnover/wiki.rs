@@ -52,7 +52,7 @@ pub fn load_os(ctx: Context<'_>) {
             }
 
             let format = format.as_bytes()[start..].iter().copied();
-            let out = format_date_strftime(time, format)?;
+            let out = format_date_strftime(time, format, libphp_rs::DefaultDateTimeLocalizer)?;
 
             stack.replace(ctx, ctx.intern(&out));
             Ok(CallbackReturn::Return)

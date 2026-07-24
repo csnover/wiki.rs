@@ -73,7 +73,8 @@ pub(super) fn make_formatter<'b, 's: 'b>(
                     format
                 };
                 let date =
-                    format_date_strftime(date, format.bytes()).expect("infallible date formatting");
+                    format_date_strftime(date, format.bytes(), libphp_rs::DefaultDateTimeLocalizer)
+                        .expect("infallible date formatting");
                 // SAFETY: The format string came from UTF-8.
                 Cow::Owned(unsafe { String::from_utf8_unchecked(date) })
             })

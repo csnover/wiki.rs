@@ -196,7 +196,9 @@ impl Filter<'_> {
             }),
             Self::Time(fmt, is_utc) => {
                 let date = value.to_date(is_utc).unwrap();
-                let date = format_date_strftime(date, fmt.bytes()).unwrap();
+                let date =
+                    format_date_strftime(date, fmt.bytes(), libphp_rs::DefaultDateTimeLocalizer)
+                        .unwrap();
                 // SAFETY: The format string came from UTF-8.
                 Cow::Owned(unsafe { String::from_utf8_unchecked(date) }.into())
             }

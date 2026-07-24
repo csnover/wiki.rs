@@ -24,12 +24,8 @@ use core::{
     str::FromStr,
 };
 use either::Either;
-use icu_datetime::provider::{
-    names::{DatetimeNamesMonthGregorianV1, MonthNames},
-    semantic_skeletons::marker_attrs::{ABBR_STANDALONE, WIDE_STANDALONE},
-};
+use icu_datetime::provider::semantic_skeletons::marker_attrs::{ABBR_STANDALONE, WIDE_STANDALONE};
 use icu_plurals::PluralRules;
-use icu_provider::DataIdentifierBorrowed;
 use libmisc::{CowExt as _, to_lower, to_upper};
 use libphp_rs::{floatval, fuzzy_cmp, intval, strtr};
 use libwikitext_common::{
@@ -1519,8 +1515,10 @@ mod time {
         if let Some(date) = arguments.eval(state, 0)?.map(trim) {
             let locale = state.statics.db.config().locale();
 
-            let wide_months = locale_months(&locale, WIDE_STANDALONE)?;
-            let abbr_months = locale_months(&locale, ABBR_STANDALONE)?;
+            let wide_months =
+                libwikitext_common::IcuDateTimeLocalizer::months(&locale, WIDE_STANDALONE)?;
+            let abbr_months =
+                libwikitext_common::IcuDateTimeLocalizer::months(&locale, ABBR_STANDALONE)?;
 
             if let Ok((y, m, d)) = simple_date::date(&date, wide_months, abbr_months) {
                 let m = u8::from(m);
@@ -1608,7 +1606,11 @@ mod time {
     ) -> Result {
         if let Some(format) = arguments.eval(state, 0)?.map(trim) {
             let date = arguments.eval(state, 1)?.map(trim);
-            let local = arguments
+            let lang = arguments
+                .eval(state, 2)?
+                .map(trim)
+                .unwrap_or(Cow::Borrowed(state.statics.db.config().language));
+            let local_tz = arguments
                 .eval(state, 3)?
                 .map(trim)
                 .is_some_and(|local| !local.trim_ascii().is_empty());
@@ -1619,7 +1621,8 @@ mod time {
                 &state.statics.base_time,
                 &format,
                 date.as_deref(),
-                local,
+                &lang,
+                local_tz,
             )) {
                 Ok(result) => {
                     write!(out, "{result}")?;
@@ -2245,30 +2248,6 @@ fn get_article(
     } else {
         state.statics.db.get(&title)?
     })
-}
-
-/// Retrieves a list of month names for the given `locale` with the given
-/// `marker` variant.
-fn locale_months<'a>(
-    locale: &'a icu_locale::Locale,
-    marker: &icu_provider::DataMarkerAttributes,
-) -> Result<&'a zerovec::VarZeroVec<'a, str>> {
-    let data_locale = icu_locale::DataLocale::from(locale);
-    let MonthNames::Linear(months) =
-        icu_provider::DataProvider::<DatetimeNamesMonthGregorianV1>::load(
-            &icu_datetime::provider::Baked,
-            icu_provider::DataRequest {
-                id: DataIdentifierBorrowed::for_marker_attributes_and_locale(marker, &data_locale),
-                metadata: <_>::default(),
-            },
-        )?
-        .payload
-        .get_static()
-        .ok_or(icu_provider::DataErrorKind::Custom.with_str_context("expected baked data"))?
-    else {
-        unreachable!()
-    };
-    Ok(months)
 }
 
 /// Tries to match the given `alias` to any of the canonical representations
