@@ -553,13 +553,16 @@ fn load_articles(base_time: DateTime, db: &mut MockDatabase<'_>, chunks: &[Chunk
                     article.build()
                 });
             }
-            Chunk::FunctionHooks => {
-                panic!("but no tests use this?!");
-            }
-            Chunk::Comment | Chunk::Line | Chunk::Hooks | Chunk::Test { .. } => {
+            Chunk::Comment
+            | Chunk::FunctionHooks
+            | Chunk::Line
+            | Chunk::Hooks
+            | Chunk::Test { .. } => {
                 // Hooks is used only by timedMediaHandlerParserTests to signal
                 // to extensions that wiki.rs does not have to enable those
-                // tests, and Line and Comment are just garbage
+                // tests, and Line and Comment are just garbage, and
+                // FunctionHooks is used to get the runner to load extensions
+                // that do not need to be loaded in this implementation
             }
         }
     }
