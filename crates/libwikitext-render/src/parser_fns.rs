@@ -291,16 +291,16 @@ mod cond {
 
         let lhs = arguments.eval(state, 0)?.map_or("".into(), decode_trim);
         let mut found = false;
+        let mut terminate = false;
         let mut consequent = None;
 
         let len = arguments.len();
         for (index, arg) in arguments.iter().enumerate().skip(1) {
             // log::trace!("#switch: arg '{:?}'", &arg.value);
 
-            // If the case is in the form `k=v` then it is a new case,
-            // otherwise we must record whether the case matched and
-            // continue processing until a `k=v` is encountered to know
-            // the consequent
+            // If a case is in the form `k=v` then it is a terminal case.
+            // Otherwise, `found` records whether the case matched and
+            // processing continues until `k=v` to get the consequent
             let (rhs, is_kv) = if let Some(name) = arg.name(state, arguments.sp)? {
                 (name, true)
             } else {
@@ -308,27 +308,28 @@ mod cond {
             };
             let rhs = decode_trim(rhs);
 
-            // Default value can either be a bare final parameter or it
-            // can be `#default = value`
-            if magic_matches(state, DEFAULT, &rhs) && is_kv {
-                consequent = Some(arg);
-            }
-
+            // Default value can be a bare final parameter, or
+            // `#default = value`, or `#default | useless_garbage = value`.
+            // For a found `#default`, the consequent is recorded but matching
+            // does not terminate
             if !found {
-                found = fuzzy_cmp(&lhs, &rhs);
+                terminate = fuzzy_cmp(&lhs, &rhs);
+                found = terminate || magic_matches(state, DEFAULT, &rhs);
                 // log::trace!("#switch: '{lhs}' == '{rhs}'? {found}");
             }
 
             if found && is_kv {
                 consequent = Some(arg);
-                break;
+                if terminate {
+                    break;
+                }
+                found = false;
             }
 
-            // If the case is the last one, there was no `#default`, and it
-            // is not a `k=v`, then it is the default value
-            if index + 1 == len && consequent.is_none() && !is_kv {
+            // If the case is the last one and it is not a `k=v`, then it is the
+            // default value
+            if index + 1 == len && !is_kv {
                 consequent = Some(arg);
-                break;
             }
         }
 
