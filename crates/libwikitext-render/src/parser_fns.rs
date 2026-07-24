@@ -418,7 +418,7 @@ mod page {
 
     use super::*;
 
-    /// `{{BASEPAGENAME}}`
+    /// `{{BASEPAGENAME[: title] }}`
     pub fn base_page_name(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
@@ -471,7 +471,7 @@ mod page {
         Ok(())
     }
 
-    /// `{{FULLPAGENAME}}`
+    /// `{{FULLPAGENAME[: title] }}`
     pub fn full_page_name(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
@@ -497,7 +497,7 @@ mod page {
         Ok(())
     }
 
-    /// `{{PAGENAME}}`
+    /// `{{PAGENAME[: title] }}`
     pub fn page_name(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
@@ -511,7 +511,7 @@ mod page {
     fn page_name_impl<FnT, FnU>(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
-        IndexedArgs { callee, .. }: &IndexedArgs<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
         text: FnT,
         uri: FnU,
     ) -> Result
@@ -519,12 +519,16 @@ mod page {
         FnT: FnOnce(&Title) -> &str,
         FnU: FnOnce(&Title) -> Cow<'_, str>,
     {
-        let title = &state.globals.title;
-        let as_uri = callee.ends_with("ee");
-        let part = if as_uri {
-            uri(title)
+        let title = if let Some(title) = arguments.eval(state, 0)? {
+            Cow::Owned(Title::new(state.statics.db.config(), &title, None)?)
         } else {
-            text(title).into()
+            Cow::Borrowed(&state.globals.title)
+        };
+        let as_uri = arguments.callee.ends_with("ee");
+        let part = if as_uri {
+            uri(&title)
+        } else {
+            text(&title).into()
         };
         write!(
             out,
@@ -736,7 +740,7 @@ mod page {
         revision_time_impl(state, arguments, |time| write!(out, "{}", time.year()))
     }
 
-    /// `{{ROOTPAGENAME}}`
+    /// `{{ROOTPAGENAME[: title] }}`
     pub fn root_page_name(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
@@ -761,7 +765,7 @@ mod page {
         Ok(())
     }
 
-    /// `{{SUBPAGENAME}}`
+    /// `{{SUBPAGENAME[: title] }}`
     pub fn sub_page_name(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
