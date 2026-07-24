@@ -1265,54 +1265,86 @@ mod string {
         Ok(())
     }
 
+    /// `{{#pos: haystack | needle [| start] }}`
+    pub fn pos(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        let Some(haystack) = arguments.eval(state, 0)?.map(|s| trim(s).map(strip::kill)) else {
+            return Ok(());
+        };
+        let mut needle = arguments
+            .eval(state, 1)?
+            .map(|s| trim(s).map(strip::kill))
+            .unwrap_or_default();
+        if needle.is_empty() {
+            needle = Cow::Borrowed(" ");
+        }
+        let start = arguments
+            .eval(state, 2)?
+            .map_or(Ok(0), |s| s.trim().parse::<isize>())?;
+        let start = if start < 0 {
+            haystack
+                .char_indices()
+                .nth_back((start + 1).unsigned_abs())
+                .map_or(0, |(pos, _)| pos)
+        } else {
+            haystack
+                .char_indices()
+                .nth(start.cast_unsigned())
+                .map_or(haystack.len(), |(pos, _)| pos)
+        };
+        let mut iter = haystack[start..].chars();
+        for pos in haystack[..start].chars().count().. {
+            if iter.as_str().is_empty() {
+                break;
+            }
+            if iter.as_str().starts_with(needle.as_ref()) {
+                write!(out, "{pos}")?;
+                break;
+            }
+            iter.next();
+        }
+        Ok(())
+    }
+
     /// `{{#titleparts: title [| len [| start]] }}`
     pub fn title_parts(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let page_name = arguments.eval(state, 0)?.unwrap_or_default();
-        let page_name = decode_html(&page_name);
-        let return_count = arguments
-            .eval(state, 1)?
-            .map_or(0, |len| len.trim().parse::<i32>().unwrap_or(0));
-        let start_at = arguments
+        let title = arguments.eval(state, 0)?.map(trim).unwrap_or_default();
+        let Ok(title) = Title::new(state.statics.db.config(), &title, None) else {
+            return Ok(());
+        };
+        let len = arguments.eval(state, 1)?.map_or(isize::MAX, |len| {
+            len.trim().parse::<isize>().unwrap_or(isize::MAX)
+        });
+        let start = arguments
             .eval(state, 2)?
-            .map_or(1, |len| len.trim().parse::<i32>().unwrap_or(1));
+            .map_or(0, |len| len.trim().parse::<isize>().unwrap_or(0));
 
-        let title = page_name.split('/');
-        let (return_count, start_at) = if return_count < 0 || start_at < 0 {
-            let count = i32::try_from(title.clone().count()).unwrap();
-
-            let return_count = usize::try_from(if return_count < 0 {
-                count + return_count
-            } else {
-                return_count
-            })
-            .unwrap();
-
-            let start_at = usize::try_from(if start_at < 0 {
-                count + start_at
-            } else {
-                start_at
-            })
-            .unwrap();
-
-            (return_count, start_at)
+        let split = title.prefixed_text().splitn(25, '/');
+        let start = if start < 0 {
+            split.clone().count().saturating_add_signed(start)
         } else {
-            (
-                usize::try_from(return_count).unwrap(),
-                usize::try_from(start_at).unwrap(),
-            )
+            start.cast_unsigned().saturating_sub(1)
+        };
+        let len = match len {
+            0 => usize::MAX,
+            len if len < 0 => split.clone().count().saturating_add_signed(len),
+            len => len.cast_unsigned(),
         };
 
         // `#[feature(iter_intersperse)]` any day now
-        // TODO: This needs to entity-encode output. (Or the `fmt::Write`
-        // interface needs to guarantee it and nothing shall use that to write
-        // HTML.)
-        for (index, part) in title.skip(start_at - 1).take(return_count).enumerate() {
-            if index != 0 {
-                out.write_char('/')?;
+        let mut first = true;
+        for part in split.skip(start).take(len) {
+            if first {
+                first = false;
+            } else {
+                write!(out, "/")?;
             }
             write!(out, "{part}")?;
         }
