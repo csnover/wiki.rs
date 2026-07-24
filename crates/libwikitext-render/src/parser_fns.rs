@@ -356,7 +356,7 @@ mod ext {
     ) -> Result {
         if let (Some(name), Some(body)) = (arguments.eval(state, 0)?, arguments.eval(state, 1)?) {
             // Extension tags may contain non-ASCII characters
-            let name = strip::kill(&name).map_ref(str::trim_ascii).map(to_lower);
+            let name = trim_kill(name).map(to_lower);
             match extension_tags::render_extension_tag(
                 state,
                 arguments.sp,
@@ -992,6 +992,43 @@ mod string {
         Ok(())
     }
 
+    /// `{{#explode: string | delimiter [| start [| limit]] }}`
+    pub fn explode(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        let value = arguments.eval(state, 0)?.map(trim_kill).unwrap_or_default();
+
+        let delim = trim_kill_or(arguments.eval(state, 1)?, " ");
+
+        let limit = arguments.eval(state, 2)?.map_or(isize::MAX, |limit| {
+            limit.trim().parse::<isize>().unwrap_or(0)
+        });
+        let limit = if limit < 0 {
+            usize::MAX
+        } else {
+            limit.cast_unsigned()
+        };
+
+        let mut split = value.splitn(limit, delim.as_ref());
+
+        let index = arguments
+            .eval(state, 2)?
+            .map_or(0, |len| len.trim().parse::<isize>().unwrap_or(0));
+        let index = if index < 0 {
+            split.clone().count().saturating_add_signed(index)
+        } else {
+            index.cast_unsigned().saturating_sub(1)
+        };
+
+        if let Some(value) = split.nth(index) {
+            write!(out, "{value}")?;
+        }
+
+        Ok(())
+    }
+
     /// `{{formatnum: number [|flag [|flag]] }}`
     pub fn format_number(
         out: &mut String,
@@ -1181,6 +1218,18 @@ mod string {
         Ok(())
     }
 
+    /// `{{#len: string }}`
+    pub fn len(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim_kill) {
+            write!(out, "{}", value.chars().count())?;
+        }
+        Ok(())
+    }
+
     /// Common implementation for all `{{#padXXX}}` functions.
     fn pad_impl<const LEFT: bool>(
         out: &mut String,
@@ -1198,7 +1247,7 @@ mod string {
             if value.len() < len {
                 let pad = arguments
                     .eval(state, 2)?
-                    .map_or(Cow::Borrowed("0"), |pad| trim(pad).map(strip::kill));
+                    .map_or(Cow::Borrowed("0"), trim_kill);
                 // log::trace!("padleft({value}, {len}, {pad})");
                 if !pad.is_empty() {
                     for c in iter::repeat(&pad)
@@ -1272,16 +1321,10 @@ mod string {
         state: &mut State<'_, '_, '_>,
         arguments: &IndexedArgs<'_, '_, '_>,
     ) -> Result {
-        let Some(haystack) = arguments.eval(state, 0)?.map(|s| trim(s).map(strip::kill)) else {
+        let Some(haystack) = arguments.eval(state, 0)?.map(trim_kill) else {
             return Ok(());
         };
-        let mut needle = arguments
-            .eval(state, 1)?
-            .map(|s| trim(s).map(strip::kill))
-            .unwrap_or_default();
-        if needle.is_empty() {
-            needle = Cow::Borrowed(" ");
-        }
+        let needle = trim_kill_or(arguments.eval(state, 1)?, " ");
         let start = arguments
             .eval(state, 2)?
             .map_or(Ok(0), |s| s.trim().parse::<isize>())?;
@@ -1384,6 +1427,19 @@ mod string {
         Ok(())
     }
 
+    /// `{{#urldecode: string }}`
+    pub fn url_decode(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        if let Some(value) = arguments.eval(state, 0)?.map(trim_kill) {
+            let value = percent_encoding::percent_decode_str(&value);
+            write!(out, "{}", value.decode_utf8_lossy())?;
+        }
+        Ok(())
+    }
+
     /// `{{urlencode: string }}`
     pub fn url_encode(
         out: &mut String,
@@ -1393,8 +1449,7 @@ mod string {
         const URL_PATH: &str = "url_path";
         const URL_WIKI: &str = "url_wiki";
 
-        if let Some(value) = arguments.eval(state, 0)?.map(trim) {
-            let value = strip::kill(&value);
+        if let Some(value) = arguments.eval(state, 0)?.map(trim_kill) {
             match arguments
                 .eval(state, 1)?
                 .and_then(|arg| magic_flag(state, &[URL_PATH, URL_WIKI], &arg))
@@ -2102,17 +2157,21 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "anchorencode" => string::anchor_encode,
     "bcp47" => string::bcp_47,
     "dir" => string::dir,
+    "explode" => string::explode,
     "formatnum" => string::format_number,
     "int" => string::interface_message,
     "language" => string::language,
     "lc" => string::lc,
     "lcfirst" => string::lc_first,
+    "len" => string::len,
     "padleft" => string::pad_left,
     "padright" => string::pad_right,
+    "pos" => string::pos,
     "plural" => string::plural,
     "titleparts" => string::title_parts,
     "uc" => string::uc,
     "ucfirst" => string::uc_first,
+    "urldecode" => string::url_decode,
     "urlencode" => string::url_encode,
 
     "currentday" => time::day,
@@ -2310,4 +2369,20 @@ fn on_error_resume_next<T, E: fmt::Display>(value: Result<T, E>) -> Result<T, St
 /// strings.
 fn trim(value: Cow<'_, str>) -> Cow<'_, str> {
     value.map_ref(|value| value.trim_ascii())
+}
+
+/// Trims ASCII whitespace and removes strip markers from the value.
+fn trim_kill(value: Cow<'_, str>) -> Cow<'_, str> {
+    trim(value).map(strip::kill)
+}
+
+/// Trims whitespace and removes strip markers from the value. If the result is
+/// an empty string, `default` is returned instead.
+fn trim_kill_or<'a>(value: Option<Cow<'a, str>>, default: &'static str) -> Cow<'a, str> {
+    let value = value.map(trim_kill).unwrap_or_default();
+    if value.is_empty() {
+        Cow::Borrowed(default)
+    } else {
+        value
+    }
 }

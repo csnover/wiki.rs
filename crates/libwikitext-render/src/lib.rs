@@ -455,6 +455,10 @@ pub enum Error {
     #[error(transparent)]
     ParseFloat(#[from] core::num::ParseFloatError),
 
+    /// An error occurred parsing an integer.
+    #[error(transparent)]
+    ParseInt(#[from] core::num::ParseIntError),
+
     /// An error occurred while parsing a Wikitext string.
     #[error(transparent)]
     Peg(#[from] libwikitext_parse::Error),

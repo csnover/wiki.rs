@@ -34,7 +34,7 @@ test_from_file! {
     quotes => "core/quotes",
     redirects => "core/redirects",
     regressions => "core/regressions",
-    string_function_tests => "parser-functions/stringParserTests",
+    string_function_tests => "parser-functions/stringFunctionTests",
     table_fixups_parser_tests => "core/tableFixupsParserTests",
     tables => "core/tables",
     timed_media_handler_parser_tests => "core/timedMediaHandlerParserTests",
