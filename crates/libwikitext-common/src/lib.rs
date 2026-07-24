@@ -487,29 +487,12 @@ pub fn format_date_mediawiki(
     lang: &str,
     local_tz: bool,
 ) -> Result<String, FormatDateError> {
-    let date = if let Some(date) = date {
-        let date = if date.len() == 4 && date.chars().all(|c| c.is_ascii_digit()) {
-            Cow::Owned(format!("00:00 {date}"))
-        } else {
-            date.into()
-        };
-
-        DateTime::new(&date, Some(&DateTimeZone::UTC), Some(now))?
-    } else {
-        *now
-    };
-
-    let tz = if local_tz {
-        DateTimeZone::local()?
-    } else {
-        DateTimeZone::UTC
-    };
+    let date = parse_date(now, date, local_tz)?;
 
     let locale = lang_to_bcp47::<true>(lang).parse::<icu_locale::Locale>()?;
     let localizer = IcuDateTimeLocalizer::try_from(&locale)?;
 
-    date.into_offset(tz)?
-        .format(format, localizer)
+    date.format(format, localizer)
         .map_err(|err| FormatDateError::DateTime(err.into()))
 }
 
@@ -751,6 +734,40 @@ pub fn make_url<P: core::fmt::Display>(
         write!(url, "#{}", escape_id_url(fragment, AnchorEncodeMode::Html5)).unwrap();
     }
     url
+}
+
+/// Parses a `date` string according to the MediaWiki rules, using `now` as the
+/// current instant. If `local_tz` is true, the date will be interpreted in the
+/// local timezone; otherwise, it will be interpreted in UTC.
+///
+/// # Errors
+///
+/// * parsing the date string fails
+/// * getting the local timezone fails
+pub fn parse_date(
+    now: &DateTime,
+    date: Option<&str>,
+    local_tz: bool,
+) -> Result<DateTime, DateTimeError> {
+    let date = if let Some(date) = date {
+        let date = if date.len() == 4 && date.chars().all(|c| c.is_ascii_digit()) {
+            Cow::Owned(format!("00:00 {date}"))
+        } else {
+            date.into()
+        };
+
+        DateTime::new(&date, Some(&DateTimeZone::UTC), Some(now))?
+    } else {
+        *now
+    };
+
+    let tz = if local_tz {
+        DateTimeZone::local()?
+    } else {
+        DateTimeZone::UTC
+    };
+
+    date.into_offset(tz)
 }
 
 /// Strips formatting characters from a numeric string.

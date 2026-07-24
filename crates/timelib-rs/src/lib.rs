@@ -104,15 +104,21 @@ impl<'a> DateTime<'a> {
             .or(default_tz)
             .unwrap_or_else(|| Timezone::Offset(now.offset().whole_seconds()));
 
-        let other = DateTimeBuilder {
-            date: (now.year(), now.month(), now.day()).into(),
-            time: (
+        let time = if state.have_date {
+            <_>::default()
+        } else {
+            let time = (
                 Hour24(now.hour()),
                 now.minute(),
                 now.second(),
                 now.microsecond(),
-            )
-                .into(),
+            );
+            time.into()
+        };
+
+        let other = DateTimeBuilder {
+            date: (now.year(), now.month(), now.day()).into(),
+            time,
             offset: Some(tz.clone()),
             ..Default::default()
         };
@@ -166,7 +172,8 @@ struct DateTimeBuilder<'a> {
     offset: Option<Timezone<'a>>,
     /// Relative adjustments to the absolute time.
     relative: Relatime,
-    /// A parser-specific state flag to avoid double-parsing of dates.
+    /// A parser-specific state flag to avoid double-parsing of dates and
+    /// improper adoption of a time-part.
     have_date: bool,
     /// A parser-specific state flag to avoid double-parsing of times.
     have_time: bool,

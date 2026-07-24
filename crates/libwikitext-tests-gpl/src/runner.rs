@@ -447,6 +447,9 @@ fn check_skips(
     } else if options.get("styletag") == Some(true) {
         log::warn!(target: target, "TODO {name}: styletag not implemented");
         true
+    } else if options.contains("wglocaltimezone") {
+        log::warn!(target: target, "TODO {name}: setting local timezone not implemented");
+        true
     } else if options.get("wgenableuploads") == Some(false) {
         log::warn!(target: target, "TODO {name}: disable uploads not implemented");
         true

@@ -5,7 +5,7 @@ use std::{borrow::Cow, io::Write as _};
 pub use time::{Date, Duration, Month, Time, UtcOffset, Weekday};
 use time::{
     OffsetDateTime,
-    format_description::well_known::{Iso8601, Rfc2822},
+    format_description::well_known::{Rfc2822, iso8601},
 };
 pub use timelib_rs::Error as DateTimeParseError;
 use timelib_rs::Timezone;
@@ -309,6 +309,15 @@ impl DateTime {
         format: &str,
         localizer: impl DateTimeLocalizer,
     ) -> Result<String, DateTimeFormatError> {
+        fn write_offset_hm(out: &mut String, offset: UtcOffset, sep: &str) -> core::fmt::Result {
+            write!(
+                out,
+                "{:+03}{sep}{:02}",
+                offset.whole_hours(),
+                offset.minutes_past_hour().abs()
+            )
+        }
+
         let mut out = String::new();
         let mut f = format.chars();
         let d = &self.inner;
@@ -356,22 +365,19 @@ impl DateTime {
                 'i' => write!(out, "{:02}", d.minute())?,
                 's' => write!(out, "{:02}", d.second())?,
                 'c' => {
-                    out += &d.format(&Iso8601::DEFAULT)?;
+                    const DATE_TIME_NO_NANOS: u128 = iso8601::Config::DEFAULT
+                        .set_time_precision(iso8601::TimePrecision::Second {
+                            decimal_digits: None,
+                        })
+                        .set_formatted_components(iso8601::FormattedComponents::DateTime)
+                        .encode();
+                    out += &d.format(&iso8601::Iso8601::<DATE_TIME_NO_NANOS>)?;
+                    write_offset_hm(&mut out, d.offset(), ":")?;
                 }
                 'r' => out += &d.format(&Rfc2822)?,
                 'e' => out += &self.time_zone_designation(),
-                'O' => write!(
-                    out,
-                    "{:+}{}",
-                    d.offset().whole_hours(),
-                    d.offset().minutes_past_hour().abs()
-                )?,
-                'P' => write!(
-                    out,
-                    "{:+}:{}",
-                    d.offset().whole_hours(),
-                    d.offset().minutes_past_hour().abs()
-                )?,
+                'O' => write_offset_hm(&mut out, d.offset(), "")?,
+                'P' => write_offset_hm(&mut out, d.offset(), ":")?,
                 'T' => write!(out, "{:+}", d.offset().whole_hours())?,
                 'w' => write!(out, "{}", d.weekday().number_days_from_sunday())?,
                 'N' => write!(out, "{}", d.weekday().number_days_from_monday() + 1)?,

@@ -407,6 +407,10 @@ pub enum Error {
     #[error("fmt error: {0}")]
     Fmt(#[from] fmt::Error),
 
+    /// A date could not be formatted.
+    #[error(transparent)]
+    FormatDate(#[from] libwikitext_common::FormatDateError),
+
     /// ICU4X was sad about retrieving data.
     #[error(transparent)]
     IcuData(#[from] icu_provider::DataError),

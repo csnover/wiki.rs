@@ -1302,6 +1302,7 @@ dependencies = [
  "libwikitext-common",
  "libwikitext-common-gpl",
  "libwikitext-convert",
+ "libwikitext-data",
  "libwikitext-lua",
  "libwikitext-lua-gpl",
  "libwikitext-parse",

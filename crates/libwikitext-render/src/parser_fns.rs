@@ -1658,7 +1658,8 @@ mod time {
         Ok(())
     }
 
-    /// `{{#time: format [| time [| language code [| local ]]] }}`
+    /// `{{#time: format [| time [| language code [| local ]]] }}` or
+    /// `{{#timel: format [| time [| language code ]] }}`
     pub fn time(
         out: &mut String,
         state: &mut State<'_, '_, '_>,
@@ -1670,10 +1671,11 @@ mod time {
                 .eval(state, 2)?
                 .map(trim)
                 .unwrap_or(Cow::Borrowed(state.statics.db.config().language));
-            let local_tz = arguments
-                .eval(state, 3)?
-                .map(trim)
-                .is_some_and(|local| !local.trim_ascii().is_empty());
+            let local_tz = arguments.callee.ends_with('l')
+                || arguments
+                    .eval(state, 3)?
+                    .map(trim)
+                    .is_some_and(|local| !local.trim_ascii().is_empty());
 
             // 'Template:Date' sends garbage values to `#time` without an
             // `#iferror` guard to capture the errors.
@@ -1710,6 +1712,62 @@ mod time {
             time.minute(),
             time.second()
         )?;
+        Ok(())
+    }
+
+    /// `{{#timef[: date [| format kind [| language code ]]] }}` or
+    /// `{{#timefl[: date [| format kind [| language code ]]] }}`
+    pub fn time_f(
+        out: &mut String,
+        state: &mut State<'_, '_, '_>,
+        arguments: &IndexedArgs<'_, '_, '_>,
+    ) -> Result {
+        const BOTH: &str = "timef-both";
+        const DATE: &str = "timef-date";
+        const PRETTY: &str = "timef-pretty";
+        const TIME: &str = "timef-time";
+
+        let local_tz = arguments.callee.ends_with('l');
+        let date = arguments.eval(state, 0)?.map(trim);
+        let Some(format) = arguments
+            .eval(state, 1)?
+            .map(trim)
+            .map_or(Some(BOTH), |format| {
+                magic_flag(state, &[BOTH, DATE, PRETTY, TIME], &format)
+            })
+        else {
+            let message =
+                state
+                    .statics
+                    .messages
+                    .find_or_default(["pfunc_timef_bad_format"], None, true)?;
+            return Err(Error::Extension(message.into_owned().into()));
+        };
+        let lang = arguments
+            .eval(state, 2)?
+            .map(trim)
+            .unwrap_or(Cow::Borrowed(state.statics.db.config().language));
+
+        if let Some(formats) = libwikitext_data::DATE_FORMATS.get(&lang) {
+            let format = match format {
+                BOTH => formats.both,
+                DATE => formats.date,
+                PRETTY => formats.pretty.or(formats.date),
+                TIME => formats.time,
+                _ => unreachable!(),
+            };
+            if let Some(format) = format {
+                let date = format_date_mediawiki(
+                    &state.statics.base_time,
+                    format,
+                    date.as_deref(),
+                    &lang,
+                    local_tz,
+                )?;
+                write!(out, "{date}")?;
+            }
+        }
+
         Ok(())
     }
 
@@ -2206,6 +2264,9 @@ static PARSER_FUNCTIONS: phf::Map<&'static str, ParserFn> = phf::phf_map! {
     "localweek" => time::week,
     "localyear" => time::year,
     "time" => time::time,
+    "timel" => time::time,
+    "timef" => time::time_f,
+    "timefl" => time::time_f,
 
     "canonicalurl" => title::canonical_url,
     "canonicalurle" => title::canonical_url,
