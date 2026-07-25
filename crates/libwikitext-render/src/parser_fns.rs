@@ -11,6 +11,7 @@ use super::{
     Error, PluginResult, PluginState, Result, State, StripMarker, add_tracking_category,
     eval_message,
     extension_tags::{self, eval_string},
+    image::resolve_media,
     stack::{IndexedArgs, KeyCacheKvs, Kv, StackFrame},
     strip_graf,
     tags::{LinkKind, render_start_link},
@@ -1900,7 +1901,20 @@ mod title {
             let Ok(title) = Title::new(state.statics.db.config(), &value, None) else {
                 return false;
             };
-            state.statics.db.contains(&title)
+
+            if title.is_in_namespace(Namespace::MEDIA) {
+                if let Ok(title) = resolve_media(&state.statics.db, &title) {
+                    state
+                        .statics
+                        .db
+                        .metadata(&title)
+                        .is_ok_and(|meta| meta.is_some())
+                } else {
+                    false
+                }
+            } else {
+                state.statics.db.contains(&title)
+            }
         });
         if let Some(value) = arguments.eval(state, 1 + usize::from(!exists))?.map(trim) {
             write!(out, "{value}")?;
