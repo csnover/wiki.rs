@@ -139,8 +139,7 @@ dt {
 figure {
     display: table;
 
-    &[typeof~="mw:File/Frame"],
-    &[typeof~="mw:File/Thumb"] {
+    &:is([typeof~="mw:File/Frame"], [typeof~="mw:File/Thumb"]):not(.mw-halign-center, .mw-halign-left, .mw-halign-none) {
         @apply --float-right;
     }
 
