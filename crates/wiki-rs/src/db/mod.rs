@@ -367,6 +367,12 @@ static MODULE_INFOBOX: Hack = Hack::HorsePills(&[(
     "'(</[Tt][Rr]%s*>%s*)(<templatestyles%s+[^>]*>)'",
 )]);
 
+/// A fix for 'Module:Rotten Tomatoes data'.
+///
+/// This module contains an invalid string which does not lex in a
+/// Lua 5.4-conforming engine.
+static MODULE_ROTTEN_TOMATOES_DATA: Hack = Hack::HorsePills(&[(r"^\+(.+)$", "^+(.+)$")]);
+
 /// A fix for 'Module:TNT'.
 ///
 /// Like its name accidentally implies, this module explodes if someone tries
@@ -443,6 +449,7 @@ static HACKS: phf::Map<&str, &Hack> = phf::phf_map! {
     "Module:Footnotes/anchor id list" => &MODULE_FOOTNOTE_ANCHOR_ID_LIST,
     "Module:Hatnote list" => &MODULE_HATNOTE_LIST,
     "Module:Infobox" => &MODULE_INFOBOX,
+    "Module:Rotten Tomatoes data" => &MODULE_ROTTEN_TOMATOES_DATA,
     "Module:TNT" => &MODULE_TNT,
     "Module:Wikidata" => &MODULE_WIKIDATA,
     "Module:WPSHIPS utilities" => &MODULE_WPSHIPS_UTILITIES,
