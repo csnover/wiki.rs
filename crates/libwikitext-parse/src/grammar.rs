@@ -1003,6 +1003,7 @@ peg::parser! {pub grammar wikitext(o: &Parser<'_>) for str {
     = first:wikilink_inline_line(&inline_item, &inline_term)
       rest:(&at_sol() t:wikilink_line(&inline_item, &inline_term) { t })*
     { first.into_iter().chain(rest.into_iter().flatten()).collect() }
+    / inline_term()
     / &("|" / "]]") { vec![] }
 
     /// Whole-line expressions allowed in a Wikilink body.

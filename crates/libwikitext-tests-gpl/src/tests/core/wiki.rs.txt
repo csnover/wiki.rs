@@ -98,3 +98,10 @@ rebeccapurple"></span>
 <p><span style="--wr-output-color:rebeccapurple;"></span>
 </p>
 !! end
+
+!! test
+Empty category sort k-v
+!! wikitext
+[[Category:A|=]]
+!! html/wiki.rs
+!! end
