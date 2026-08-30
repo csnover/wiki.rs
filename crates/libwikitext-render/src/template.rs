@@ -300,43 +300,51 @@ pub(super) fn render_template<'tt>(
     // “T2529: if the template begins with a table or block-level
     //  element, it should be treated as beginning a new line.
     //  This behavior is somewhat controversial.”
-    let needs_newline =
-        !line_start && (partial.starts_with("{|") || partial.starts_with([':', ';', '#', '*']));
+    let starts_with_block = starts_with_block_token(&partial);
+    let needs_newline = !line_start && starts_with_block;
 
+    let out = out.out();
     if let Some(key) = wrapper_key {
-        if needs_newline {
-            writeln!(out.out())?;
-        }
-
         // Since a template may emit whitespace at the start and end which
         // gets manhandled by GrafWrapper, make sure the source marker is placed
         // adjacent to the nearest non-whitespace at the start and end instead
         // of being put around the whole template
-        let start = partial.find(|c: char| !c.is_ascii_whitespace());
+        let start = partial
+            .find(|c: char| !c.is_ascii_whitespace())
+            .map(|start| {
+                let ends_with_nl = partial[..start].bytes().next_back() == Some(b'\n');
+                start - usize::from(ends_with_nl && starts_with_block_token(&partial[start..]))
+            });
         let end = partial
             .rfind(|c: char| !c.is_ascii_whitespace())
             .map(|index| index + 1);
+
         if let (Some(start), Some(end)) = (start, end) {
-            let out = out.out();
             *out += &partial[..start];
             state.strip_markers.push(
                 out,
                 "wiki-rs",
                 StripMarker::WikiRsSourceStart(key.clone().into()),
             );
+            if starts_with_block {
+                writeln!(out)?;
+            }
             *out += &partial[start..end];
             state
                 .strip_markers
                 .push(out, "wiki-rs", StripMarker::WikiRsSourceEnd(key.into()));
             *out += &partial[end..];
         } else {
-            write!(out.out(), "{partial}")?;
+            if needs_newline {
+                writeln!(out)?;
+            }
+            write!(out, "{partial}")?;
         }
     } else {
         if needs_newline {
-            writeln!(out.out())?;
+            writeln!(out)?;
         }
-        write!(out.out(), "{partial}")?;
+        write!(out, "{partial}")?;
     }
 
     Ok(())
@@ -740,6 +748,13 @@ pub(super) fn render_fallback<W: fmt::Write + ?Sized>(
         r#"[{href} <span class="wiki-rs-incomplete">Run scripts</span>]"#
     )?;
     Ok(())
+}
+
+/// Returns true if the given string `s` starts with a possible Wikitext token
+/// that is sensitive to the start of a line.
+#[inline]
+fn starts_with_block_token(s: &str) -> bool {
+    s.starts_with("{|") || s.starts_with([':', ';', '#', '*'])
 }
 
 /// Scans for templates and links to allow database entries to be fetched whilst
