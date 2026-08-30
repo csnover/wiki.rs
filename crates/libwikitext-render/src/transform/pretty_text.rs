@@ -2,6 +2,7 @@
 
 use super::{Sink, chainable, tokenise};
 use crate::{StripMarker, tags::PHRASING_TAGS};
+use libwikitext_parse::VOID_TAGS;
 
 /// Converts runs of text to typographically beautiful HTML.
 #[derive(Debug)]
@@ -219,10 +220,16 @@ impl<S: Sink> Sink for PrettyText<S> {
         self.in_attr = false;
         self.next.tag_start_end(name);
         if let CodeRole::Yes(depth) = &mut self.in_code_role {
-            if *depth == 0 {
-                self.in_code += 1;
+            if VOID_TAGS.contains(name) {
+                if *depth == 0 {
+                    self.in_code_role = <_>::default();
+                }
+            } else {
+                if *depth == 0 {
+                    self.in_code += 1;
+                }
+                *depth += 1;
             }
-            *depth = depth.checked_add(1).unwrap();
         }
         if !self.prev_chars[1].is_whitespace() && !PHRASING_TAGS.contains(name) {
             self.push_char(' ');
