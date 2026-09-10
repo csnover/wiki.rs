@@ -62,8 +62,11 @@ impl<'a> StackFrame<'a> {
         name: Title,
         source: FileMap<'a>,
         arguments: &'a [Kv<'a>],
+        allow_recursion: bool,
     ) -> Result<Self, Error> {
-        check_recursion(self, &name)?;
+        if !allow_recursion {
+            check_recursion(self, &name)?;
+        }
 
         Ok(Self {
             arguments: KeyCacheKvs::new(arguments),

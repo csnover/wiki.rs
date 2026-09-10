@@ -598,7 +598,12 @@ where
     let mut frame = Some(sp);
     while let Some(sp) = frame {
         if let Some(child) = sp.children.borrow().get(frame_id) {
-            return f(&sp.chain(child.title.clone(), FileMap::new(""), &child.arguments)?);
+            return f(&sp.chain(
+                child.title.clone(),
+                FileMap::new(""),
+                &child.arguments,
+                false,
+            )?);
         }
         frame = sp.parent;
     }

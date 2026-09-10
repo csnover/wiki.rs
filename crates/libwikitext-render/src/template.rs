@@ -126,7 +126,7 @@ pub(super) fn call_module(
     // TODO: The source code in the frame has to be the one associated with the
     // `arguments`, not the module source code, for arguments lookups to work
     // correctly, which is bad.
-    let sp = sp.chain(callee, sp.source.clone(), &arguments[2..])?;
+    let sp = sp.chain(callee, sp.source.clone(), &arguments[2..], true)?;
 
     // log::trace!("Invoking {}|{}", &code.title, fn_name);
     let start = Instant::now();
@@ -597,7 +597,12 @@ pub(crate) fn call_template(
 
     // The 'Module:Arguments' wrapper argument expects that redirected templates
     // use the final target name, not the source alias name
-    let sp = sp.chain(resolved_title, FileMap::new(template.body()), arguments)?;
+    let sp = sp.chain(
+        resolved_title,
+        FileMap::new(template.body()),
+        arguments,
+        false,
+    )?;
 
     let cached_root = if let Some(cache) = &state.statics.template_cache
         && template.revision_id() != Article::UNSAVED_ID

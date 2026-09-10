@@ -221,6 +221,7 @@ pub fn render_string(
             Title::new(statics.db.config(), "(include-eval)", None)?,
             source,
             &kvs,
+            false,
         )?
     } else {
         sp
@@ -877,7 +878,7 @@ where
         message_id,
         Some(Namespace::MEDIAWIKI),
     )?;
-    let sp = sp.chain(title, FileMap::new(&message), &[])?;
+    let sp = sp.chain(title, FileMap::new(&message), &[], false)?;
     let root = state.statics.parser.preprocess(&sp.source, true)?;
     ExpandTemplates::new(out, ExpandMode::Include).adopt_output(state, &sp, &root)?;
     Ok(())
