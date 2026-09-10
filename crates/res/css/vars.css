@@ -10,6 +10,8 @@
     --fg: black;
     --highlight: rebeccapurple;
     --shade-bg: #f9f9f9;
+    --link: hsl(225, 73%, 22%);
+    --visited: hsl(270, 50%, 20%);
 
     /*= fonts */
 

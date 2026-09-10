@@ -53,12 +53,12 @@
 }
 
 :link {
-    color: hsl(225, 73%, 22%);
+    color: var(--link);
     text-decoration-color: royalblue;
 }
 
 :visited {
-    color: hsl(270, 50%, 20%);
+    color: var(--visited);
     text-decoration-color: rebeccapurple;
 }
 
@@ -211,21 +211,23 @@ h3 {
 
     * + & {
         margin-block-start: calc(var(--box-margin) * 1.5);
-
-        /* Allow many cute things to cuddle up to the heading */
-        + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block, .tright, .sidebar),
-        + :is([typeof~="mw:File/Frame"], [typeof~="mw:File/Thumb"]):not(.mw-halign-center, .mw-halign-left, .mw-halign-none),
-        /* This is for containers that show up sometimes like `.excerpt` */
-        + :not(blockquote):has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
-        /* Things which take themselves out of the flow by float mean the next
-           thing also needs to be cuddled */
-        + :is(.floatright, .mw-halign-left, .mw-halign-right, .tright, .sidebar) + *,
-        + :is([typeof~="mw:File/Frame"], [typeof~="mw:File/Thumb"]):not(.mw-halign-center, .mw-halign-left, .mw-halign-none) + * {
-            margin-block-start: 0;
-        }
     }
 
     + h4 {
+        margin-block-start: 0;
+    }
+}
+
+:is(h3, h3 + p:has(> .anchor:first-child:last-child:empty)) {
+    /* Allow many cute things to cuddle up to the heading */
+    + :is(dl, p, ol, ul, .floatright, .mw-halign-left, .mw-halign-right, .excerpt-block, .tright, .sidebar),
+    + :is([typeof~="mw:File/Frame"], [typeof~="mw:File/Thumb"]):not(.mw-halign-center, .mw-halign-left, .mw-halign-none),
+    /* This is for containers that show up sometimes like `.excerpt` */
+    + :not(blockquote):has(> :first-child:is(dl, ol, p, ul, .floatright, .mw-halign-left, .mw-halign-right)),
+    /* Things which take themselves out of the flow by float mean the next
+        thing also needs to be cuddled */
+    + :is(.floatright, .mw-halign-left, .mw-halign-right, .tright, .sidebar) + *,
+    + :is([typeof~="mw:File/Frame"], [typeof~="mw:File/Thumb"]):not(.mw-halign-center, .mw-halign-left, .mw-halign-none) + * {
         margin-block-start: 0;
     }
 }

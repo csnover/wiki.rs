@@ -797,6 +797,23 @@ blockquote,
     }
 }
 
+/*= Template:Episode table */
+
+/* specificity for overriding .wikitable */
+.wikiepisodetable.wikiepisodetable.wikiepisodetable.wikiepisodetable {
+    /* paranoid selector avoids matching any nested tables */
+    > * > * > th,
+    > * > * > td[colspan] {
+        background-color: transparent;
+        border-block-end: 3px solid var(--wr-output-background-color, var(--wr-output-background));
+        color: var(--fg);
+    }
+
+    > * > * > td[colspan] {
+        border-block-end-width: 1px;
+    }
+}
+
 /*= Template:Excerpt */
 
 /* This is a viewer, so no reason to show edit links */
@@ -933,7 +950,7 @@ blockquote,
     margin-block-end: 0;
     padding-inline-start: 0;
 
-    :is(h2, h3, h4, h5, dl:has(> dt:first-child:last-child)) + &,
+    :is(h2, h3, h4, h5, dl:has(> dt:first-child:last-child), p:has(> .anchor:first-child:last-child:empty)) + &,
     .hatnote + &,
     .hatnote + .mw-halign-right + & {
         margin-block-start: 0;
@@ -950,7 +967,7 @@ blockquote,
     }
 }
 
-:not(.mbox-text-span) > .hidden-begin > .hidden-title {
+:not(.mbox-text-span) > .hidden-begin > .hidden-title:not(:empty) {
     border-block-start: 3px solid var(--fg);
     border-block-end: thin solid var(--border-th);
     font-family: var(--sans);
@@ -1044,6 +1061,18 @@ blockquote,
 [data-wiki-rs~=template-historical-populations]:where([style*="--wr-output-float:right;"], [style*="--wr-output-float:left;"]) {
     caption, th {
         font-stretch: var(--side-body-stretch);
+    }
+}
+
+/*= Template:History of the United States sidebar */
+
+.US-history-sidebar .sidebar-title-with-pretitle {
+    :link {
+        color: var(--link);
+    }
+
+    :visited {
+        color: var(--visited);
     }
 }
 
@@ -1389,6 +1418,7 @@ blockquote,
     .infobox-header,
     .sidebar-heading {
         background: transparent;
+        color: var(--fg);
         font-size: var(--side-head-font-size);
         font-stretch: var(--side-body-stretch);
         font-weight: var(--bold);
@@ -2699,6 +2729,102 @@ figcaption {
     background-size: 4px 4px;
 }
 
+/*= Template:Population pyramid */
+
+[data-wiki-rs="template-population-pyramid"].infobox.infobox {
+    min-width: 0;
+}
+
+[data-wiki-rs="template-population-pyramid"] > * > * > .infobox-full-data {
+    &.infobox-full-data.infobox-full-data {
+        padding-block-start: 0;
+    }
+
+    > table > tbody {
+        --last-width: 2.5em;
+
+        display: flex;
+        flex-direction: column;
+        position: relative;
+
+        > tr {
+            display: flex;
+            background: var(--bg);
+
+            &:nth-child(2n + 1) {
+                background: var(--shade-bg);
+            }
+
+            > td {
+                border: 0;
+                flex: 0 1 auto;
+                min-width: 0;
+                order: 1;
+            }
+
+            &:first-child {
+                border-block-end: thin solid var(--border-th);
+                font-weight: var(--bold);
+
+                > :nth-child(2),
+                > :nth-child(4) {
+                    text-align: center;
+                }
+            }
+
+            > :nth-child(1),
+            > :nth-child(3),
+            > :nth-child(5) {
+                width: 2em;
+            }
+
+            > :nth-child(1),
+            > :nth-child(5) {
+                font-variant-numeric: tabular-nums;
+            }
+
+            > :nth-child(2),
+            > :nth-child(4) {
+                /* 85px matches the hard-coded output of the template */
+                flex: 1 0 85px;
+
+                > div {
+                    background-blend-mode: overlay;
+                    line-height: calc(1lh - 1px);
+                }
+            }
+
+            > :nth-child(2) {
+                padding-inline-end: 1px;
+
+                > div {
+                    background: #444 var(--bar-fill);
+                    margin-inline-start: auto;
+                }
+            }
+
+            > :nth-child(3) {
+                order: 0;
+                width: 4em;
+                padding-inline-start: var(--table-padding-inline);
+            }
+
+            > :nth-child(4) > div {
+                background: hsl(247, 80%, 70%) var(--bar-fill);
+            }
+
+            > :nth-child(5) {
+                padding-inline: .5em var(--table-padding-inline);
+                width: var(--last-width);
+            }
+        }
+    }
+
+    td {
+        font-size: inherit;
+    }
+}
+
 /*=
 /* Template:Portal
 /* Template:Portal bar
@@ -2881,18 +3007,22 @@ figcaption {
 }
 
 /*= Template:Quote box */
+/*= Template:Rquote */
 
-.quotebox {
+.quotebox,
+.rquote {
     background: transparent;
     color: var(--fg);
+    font-size: 88%; /* .quotebox already does this, .rquote does not */
     border: 0;
     border-block-end: thin solid var(--fg);
     border-block-start: 3px solid var(--fg);
-    padding-block: calc(var(--box-margin) * 2) calc(var(--box-margin) * 2);
+    padding-block: calc(var(--box-margin) * 2);
     padding-inline: calc(var(--box-margin) * 2) var(--box-margin);
 
     &.floatright,
-    &.floatleft {
+    &.floatleft,
+    &.rquote {
         margin-block: var(--box-margin) var(--figure-margin);
         margin-inline: var(--figure-margin) calc(var(--box-margin) * -1);
         max-inline-size: var(--aside-max);
@@ -2907,13 +3037,62 @@ figcaption {
         text-align: justify;
     }
 
-    cite {
-        font-style: italic;
+    > :not(.templatequotecite):has(> cite, > .templatequotecite) {
+        margin: 0;
+        padding: 0;
+    }
 
-        /* 'Social class' uses this and it looks bad */
-        &.left-aligned {
-            text-align: end;
+    .quotebox-title {
+        background: transparent;
+        border-block-end: thin solid currentColor;
+        font-family: var(--sans);
+        font-size: 1rem;
+        font-stretch: var(--side-title-stretch);
+        margin-block: calc(var(--box-margin) * -2) var(--figure-margin);
+        margin-inline: calc(var(--box-margin) * -2) calc(var(--box-margin) * -1);
+        padding-block: calc(var(--box-margin) * .125);
+    }
+
+    .quotebox-quote {
+        padding-inline: 0;
+
+        &.quoted {
+            padding-inline: calc(var(--box-margin) * .5) calc(var(--box-margin) * 1.5);
+
+            &::before,
+            &::after {
+                color: var(--fg);
+                float: inline-start;
+                font: var(--bold) italic 3rem/1.5lh var(--serif);
+                margin-inline-start: calc(var(--box-margin) * -2);
+            }
+
+            &::after {
+                float: inline-end;
+                line-height: 0;
+                margin-inline: 0 calc(var(--box-margin) * -1.5);
+            }
+
+            + * {
+                clear: both;
+            }
         }
+
+        &.center-aligned p {
+            text-align: center;
+        }
+    }
+}
+
+.quotebox cite,
+.rquote .templatequotecite {
+    font-family: var(--sans);
+    font-style: normal;
+    margin-top: var(--box-margin);
+
+    /* 'Social class' uses this and it looks bad */
+    &.left-aligned {
+        text-align: end;
     }
 }
 
