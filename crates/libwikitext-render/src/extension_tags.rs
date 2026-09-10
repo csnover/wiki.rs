@@ -1193,10 +1193,17 @@ fn r#ref(
     state: &mut State<'_, '_, '_>,
     arguments: &ExtensionTag<'_, '_, '_>,
 ) -> Result {
-    // Due to transclusion it is necessary to render immediately instead of
-    // storing the node list for later, since rendering later would require
-    // retaining the stack frame too
-    let reference = eval_string(state, arguments.sp, arguments.body().trim_ascii(), false)?;
+    // (1) Due to transclusion it is necessary to render immediately instead of
+    //     storing the node list for later, since rendering later would require
+    //     retaining the stack frame too.
+    // (2) In MW, this does a half-parse, not a full-parse. It works there
+    //     because general strip markers are unstripped before block-level pass.
+    //     Since wiki.rs controls the strip marker contents, and there is no API
+    //     for Lua scripts to peek generic strip markers, there should be no
+    //     substantive difference for running a full-parse (though I bet there
+    //     will be some language conversion related edge-case that makes a fool
+    //     of me for saying this).
+    let reference = eval_string(state, arguments.sp, arguments.body().trim_ascii(), true)?;
 
     let group = arguments.get(state, "group")?.as_deref().map_or_else(
         || {
@@ -1226,15 +1233,10 @@ fn r#ref(
             state
                 .globals
                 .references
-                .insert_named(group.clone(), name, &reference),
+                .insert_named(group, name, &reference),
         )
     } else if !reference.is_empty() {
-        Some(
-            state
-                .globals
-                .references
-                .insert_unnamed(group.clone(), &reference),
-        )
+        Some(state.globals.references.insert_unnamed(group, &reference))
     } else {
         None
     };
